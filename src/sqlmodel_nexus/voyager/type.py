@@ -104,3 +104,4 @@ class CoreData:
     show_fields: FieldType
     module_color: dict[str, str] | None = None
     schema: str | None = None
+    show_pydantic_resolve_meta: bool = False

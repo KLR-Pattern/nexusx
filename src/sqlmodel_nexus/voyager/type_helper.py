@@ -10,6 +10,7 @@ from typing import Annotated, Any, ForwardRef, Generic, Union, get_args, get_ori
 
 from pydantic import BaseModel
 
+from sqlmodel_nexus.context import AutoLoadInfo, ExposeInfo, ICollector, SendToInfo
 from sqlmodel_nexus.voyager.type import FieldInfo
 
 logger = logging.getLogger(__name__)
@@ -158,6 +159,51 @@ def get_bases_fields(schemas: list[type[BaseModel]]) -> set[str]:
     return fields
 
 
+def analysis_pydantic_resolve_fields(schema: type[BaseModel], field_name: str) -> dict:
+    """Analyze resolve/post/expose/send metadata for a field.
+
+    Checks for resolve_*, post_*, ExposeAs, SendTo, AutoLoad, and Collector.
+
+    Returns a dict with keys matching FieldInfo resolve attributes.
+    """
+    is_resolve = hasattr(schema, f'resolve_{field_name}')
+    is_post = hasattr(schema, f'post_{field_name}')
+    expose_as_info: str | None = None
+    send_to_info_list: list[str] = []
+    post_collector: list[str] = []
+
+    field_info = schema.model_fields.get(field_name)
+    if field_info:
+        for meta in field_info.metadata:
+            if isinstance(meta, AutoLoadInfo):
+                is_resolve = True
+            if isinstance(meta, ExposeInfo):
+                expose_as_info = meta.alias
+            if isinstance(meta, SendToInfo):
+                if isinstance(meta.collector_name, str):
+                    send_to_info_list.append(meta.collector_name)
+                else:
+                    send_to_info_list.extend(meta.collector_name)
+
+    if is_post:
+        post_method = getattr(schema, f'post_{field_name}')
+        for _, param in inspect.signature(post_method).parameters.items():
+            if isinstance(param.default, ICollector):
+                post_collector.append(param.default.alias)
+
+    send_to_info = list(set(send_to_info_list)) if send_to_info_list else None
+    has_meta = any([is_resolve, is_post, expose_as_info, send_to_info])
+
+    return {
+        "has_pydantic_resolve_meta": has_meta,
+        "is_resolve": is_resolve,
+        "is_post": is_post,
+        "expose_as_info": expose_as_info,
+        "send_to_info": send_to_info,
+        "collect_info": None if len(post_collector) == 0 else post_collector,
+    }
+
+
 def get_pydantic_fields(schema: type[BaseModel], bases_fields: set[str]) -> list[FieldInfo]:
     """Extract pydantic model fields with metadata."""
     def _is_object(anno):
@@ -167,6 +213,7 @@ def get_pydantic_fields(schema: type[BaseModel], bases_fields: set[str]) -> list
     fields: list[FieldInfo] = []
     for k, v in schema.model_fields.items():
         anno = v.annotation
+        resolve_meta = analysis_pydantic_resolve_fields(schema, k)
         fields.append(FieldInfo(
             is_object=_is_object(anno),
             name=k,
@@ -174,6 +221,12 @@ def get_pydantic_fields(schema: type[BaseModel], bases_fields: set[str]) -> list
             type_name=get_type_name(anno),
             is_exclude=bool(v.exclude),
             desc=v.description or '',
+            has_pydantic_resolve_meta=resolve_meta["has_pydantic_resolve_meta"],
+            is_resolve=resolve_meta["is_resolve"],
+            is_post=resolve_meta["is_post"],
+            expose_as_info=resolve_meta["expose_as_info"],
+            send_to_info=resolve_meta["send_to_info"],
+            collect_info=resolve_meta["collect_info"],
         ))
     return fields
 

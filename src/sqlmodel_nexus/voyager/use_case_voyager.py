@@ -236,7 +236,7 @@ class UseCaseVoyager:
                     ):
                         self._analysis_schemas(anno)
 
-    def dump_core_data(self) -> CoreData:
+    def dump_core_data(self, show_pydantic_resolve_meta: bool = False) -> CoreData:
         _tags, _routes, _nodes, _links = filter_graph(
             schema=self.schema,
             schema_field=self.schema_field,
@@ -254,6 +254,7 @@ class UseCaseVoyager:
             show_fields=self.show_fields,
             module_color=self.module_color,
             schema=self.schema,
+            show_pydantic_resolve_meta=show_pydantic_resolve_meta,
         )
 
     def calculate_filtered_tag_and_route(self) -> list[Tag]:
@@ -271,7 +272,7 @@ class UseCaseVoyager:
             t.routes = [r for r in t.routes if r.id in route_ids]
         return _tags
 
-    def render_dot(self) -> str:
+    def render_dot(self, show_pydantic_resolve_meta: bool = False) -> str:
         _tags, _routes, _nodes, _links = filter_graph(
             schema=self.schema,
             schema_field=self.schema_field,
@@ -288,6 +289,7 @@ class UseCaseVoyager:
             schema=self.schema,
             show_module=self.show_module,
             theme_color=self.theme_color,
+            show_pydantic_resolve_meta=show_pydantic_resolve_meta,
         )
 
         _tags, _routes, _links = self._handle_hide(_tags, _routes, _links)

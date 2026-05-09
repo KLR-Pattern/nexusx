@@ -76,6 +76,12 @@ class VoyagerContext:
         """Get the option parameter for the voyager UI."""
         dot, tags, schemas = self.analyze_and_get_dot()
 
+        has_resolve_meta = any(
+            f.has_pydantic_resolve_meta
+            for s in schemas
+            for f in s.fields
+        )
+
         return {
             "tags": tags,
             "schemas": schemas,
@@ -85,7 +91,7 @@ class VoyagerContext:
             "swagger_url": None,
             "initial_page_policy": self.initial_page_policy,
             "has_er_diagram": self.er_manager is not None,
-            "enable_pydantic_resolve_meta": False,
+            "enable_pydantic_resolve_meta": has_resolve_meta,
             "framework_name": self.name,
         }
 
@@ -119,7 +125,9 @@ class VoyagerContext:
             show_module=payload.get("show_module", True),
         )
         voyager.analysis()
-        return voyager.render_dot()
+        return voyager.render_dot(
+            show_pydantic_resolve_meta=payload.get("show_pydantic_resolve_meta", False),
+        )
 
     def get_core_data(self, payload: dict) -> CoreData:
         """Get core data for the graph."""
@@ -131,7 +139,9 @@ class VoyagerContext:
             route_name=payload.get("route_name"),
         )
         voyager.analysis()
-        return voyager.dump_core_data()
+        return voyager.dump_core_data(
+            show_pydantic_resolve_meta=payload.get("show_pydantic_resolve_meta", False),
+        )
 
     def render_dot_from_core_data(self, core_data: CoreData) -> str:
         """Render dot graph from core data."""
@@ -140,6 +150,7 @@ class VoyagerContext:
             module_color=core_data.module_color,
             schema=core_data.schema,
             theme_color=self.theme_color,
+            show_pydantic_resolve_meta=core_data.show_pydantic_resolve_meta,
         )
         return renderer.render_dot(
             core_data.tags, core_data.routes, core_data.nodes, core_data.links
