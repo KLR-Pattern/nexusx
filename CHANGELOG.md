@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.9.0
+
+### New Feature: UseCaseService 自动生成 FastAPI Router
+
+新增 `create_router()` 函数，从 `UseCaseService` 的 `@query`/`@mutation` 方法自动生成 FastAPI POST 路由，复用 `UseCaseAppConfig` 配置，与 MCP 服务共享同一套业务逻辑。
+
+```python
+from sqlmodel_nexus import UseCaseAppConfig, create_use_case_router
+
+router = create_use_case_router(
+    UseCaseAppConfig(
+        name="project",
+        services=[UserService, TaskService],
+    )
+)
+app.include_router(router)
+```
+
+**特性：**
+- 全部 POST 方法，参数通过 request body 传递
+- URL 按 service snake_case 分组：`/api/user_service/list_users`
+- `FromContext` 参数通过 `context_extractor(request)` + `Depends` 自动注入
+- 支持 `enable_mutation=False` 过滤 mutation 方法
+- 支持自定义 `prefix` 和 `url_mapper`
+- 完整 OpenAPI 文档（tags、description、response_model）
+
+**新增文件：**
+- `use_case/router.py` — `create_router()` 及参数分类、请求模型动态生成、handler 工厂
+
+**Changes：**
+- `use_case/router.py`: 新增 `_classify_params`、`_build_request_model`、`_make_handler`、`create_router`
+- `use_case/__init__.py`: 导出 `create_router`
+- `__init__.py`: 导出 `create_use_case_router`
+
+**Demos：**
+- `demo/use_case/fastapi_auto.py` — 自动生成 demo，含 `FromContext` 示例（`ReportService`，`X-User-Id` header 注入）
+
+**Tests：**
+- `tests/test_use_case_router.py` — 23 个测试覆盖路由结构、参数处理、FromContext 注入、mutation 过滤、OpenAPI 文档
+
 ## 1.8.0
 
 ### Voyager ER Diagram: 关系字段重构

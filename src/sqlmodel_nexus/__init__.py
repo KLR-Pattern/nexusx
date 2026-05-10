@@ -54,7 +54,7 @@ Example (Core API mode):
 
 from __future__ import annotations
 
-__version__ = "1.0.0"
+__version__ = "1.9.0"
 
 from sqlmodel_nexus.context import Collector, ExposeAs, SendTo
 from sqlmodel_nexus.decorator import mutation, query
@@ -72,6 +72,9 @@ from sqlmodel_nexus.use_case import (
     UseCaseAppConfig,
     UseCaseService,
     create_use_case_mcp_server,
+)
+from sqlmodel_nexus.use_case import (
+    create_router as create_use_case_router,
 )
 from sqlmodel_nexus.voyager import create_use_case_voyager
 
@@ -108,6 +111,7 @@ __all__ = [
     "UseCaseAppConfig",
     "FromContext",
     "create_use_case_mcp_server",
+    "create_use_case_router",
     # Voyager visualization
     "create_use_case_voyager",
 ]
