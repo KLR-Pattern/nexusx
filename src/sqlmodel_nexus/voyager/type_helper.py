@@ -285,17 +285,22 @@ def safe_issubclass(kls, target_kls):
         return False
 
 
-def update_forward_refs(kls):
+def update_forward_refs(kls, _visited: set | None = None):
     """Recursively update forward references in Pydantic models."""
+    if _visited is None:
+        _visited = set()
     for shelled_type in get_core_types(kls):
         if safe_issubclass(shelled_type, BaseModel):
+            if shelled_type in _visited:
+                continue
+            _visited.add(shelled_type)
             try:
                 shelled_type.model_rebuild()
             except Exception:
                 pass
             # Recurse into fields
             for field in shelled_type.model_fields.values():
-                update_forward_refs(field.annotation)
+                update_forward_refs(field.annotation, _visited)
 
 
 def is_generic_container(cls):

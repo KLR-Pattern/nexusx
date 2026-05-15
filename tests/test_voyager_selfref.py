@@ -9,12 +9,14 @@ Reproduction:
     3. Pass the DTO as a UseCaseService return type
     4. Access Voyager endpoint → triggers update_forward_refs → RecursionError
 
-Root cause: `update_forward_refs` has no visited-set, so self-referencing types
-cause unbounded recursion through field annotations.
+Root cause: `update_forward_refs` had no visited-set, so self-referencing types
+caused unbounded recursion through field annotations.
+
+Fix: Added a `_visited` set parameter to track already-processed types and
+skip them on re-encounter, breaking the recursion cycle.
 """
 from sqlmodel import Field, SQLModel
 
-import pytest
 from sqlmodel_nexus import DefineSubset, SubsetConfig
 from sqlmodel_nexus.voyager.type_helper import update_forward_refs
 
@@ -37,10 +39,8 @@ class CommentDTO(DefineSubset):
 
 
 class TestVoyagerSelfReference:
-    def test_update_forward_refs_on_self_referencing_dto_raises_recursion(self):
-        """Directly calling update_forward_refs on a self-referencing DTO
-        triggers RecursionError. This documents the known bug — the fix
-        should add a visited-set to prevent re-processing seen types."""
+    def test_update_forward_refs_on_self_referencing_dto_completes(self):
+        """update_forward_refs should handle self-referencing DTOs
+        without RecursionError by using a visited-set to avoid cycles."""
 
-        with pytest.raises(RecursionError):
-            update_forward_refs(CommentDTO)
+        update_forward_refs(CommentDTO)  # should not raise
