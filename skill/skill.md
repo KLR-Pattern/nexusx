@@ -20,8 +20,33 @@ argument-hint: "[项目路径] 创建四阶段项目的目标目录"
 
 - **需求确认是 Phase 0，必须反复与用户确认后才能进入 Phase 1**（详见下方「Phase 0: 需求确认」）
 - 非功能模块与业务模块解耦，业务概念不侵入基础设施层
-- **每个阶段必须暂停，展示产出物，等用户确认后再进入下一阶段**
+- **每个 Phase 采用 V 型验收：先定义验收标准（V 降），再实现，最后回查验收（V 升）**
+- **每个 Phase 实现完成后必须暂停，展示验收结果，等用户确认后再进入下一阶段**
 - Phase 间递进：同一项目目录下逐步丰富，只新增不修改已有代码
+
+### V 型验收模型（贯穿所有 Phase）
+
+每个 Phase 的结构统一为三段：
+
+```
+┌──────────────────────────────────────────────┐
+│ V 降：定义验收标准                              │
+│   "在当前 Phase 开始之前，先定义什么算做完。"      │
+│   写入 spec/<phase>.md 的"验收标准"部分            │
+└──────────────────────────────────────────────┘
+                      ↓
+              ┌───────────────┐
+              │   实现 Phase   │
+              └───────────────┘
+                      ↓
+┌──────────────────────────────────────────────┐
+│ V 升：逐条回查验收                             │
+│   "一条一条对照验收标准，通过才可继续。"           │
+│   用户逐条确认 → 写入 spec/<phase>.md             │
+└──────────────────────────────────────────────┘
+```
+
+验收标准必须是**可观察、可操作的**——不写"代码健壮"，写"GraphiQL 中执行 X query 返回 Y"。
 
 ## Phase 0: 需求确认（必做）
 
@@ -188,12 +213,26 @@ src/
 - mock seed data 用于讨论数据样本是否合理（数量、关联关系、边界值）
 - Voyager 通过 `create_use_case_voyager(services=[], er_manager=er)` 展示 ER diagram
 
-**阶段结束 → 暂停确认**:
-- 展示实体、关系、聚合根划分
-- **展示 mock seed data，与用户确认数据样本的合理性和覆盖度**
-- 启动服务，Voyager 中查看 ER diagram
-- 展示 `/schema` 的 GraphQL SDL
-- 等用户全部确认后再进入 Phase 2
+**V 降 — 定义验收标准:**
+进入 Phase 1 实现之前，在 `spec/phase1.md` 中记录以下验收标准：
+
+| # | 验收项 | 验证方式 |
+|---|--------|----------|
+| 1 | 每个 Entity 在 Voyager ER 图中正确显示，关系线方向正确 | 浏览器打开 Voyager |
+| 2 | `/schema` 返回的 GraphQL SDL 覆盖所有实体 + 关系查询 | curl /schema |
+| 3 | mock seed 数据样本展示合理的数量、关联关系和边界值 | 打印 database.py 中 seed 数据 |
+| 4 | mock seed 中的数据能从 GraphiQL 中查询到 | GraphiQL 执行 `{ userGetAll { id name } }` |
+
+**实现：**
+编写 `db.py` → `models.py` → `database.py` → `main.py`
+
+**V 升 — 逐条回查验收:**
+按验收标准逐条验证，用户确认后才写入 `spec/phase1.md`：
+
+- [ ] 1. Voyager ER 图：实体节点、关系线、聚合根高亮
+- [ ] 2. SDL：Schema 覆盖全部实体 + 查询入口
+- [ ] 3. mock seed：数据量合理、关联关系正确、包含边界用例
+- [ ] 4. GraphiQL seed 可见：`{ userGetAll { id name } }` 返回预期数据
 
 ### Phase 2: 方法实现 + Entity 挂载
 
@@ -209,20 +248,32 @@ src/
 - GraphQL 作为辅助测试接口，`@query`/`@mutation` 装饰器在挂载时应用
 - 挂载代码放在 Entity class 定义之后、ErManager 之前
 
-**测试验收描述（先确认测试集，再做具体实现）**:
+**V 降 — 定义验收标准:**
+进入 Phase 2 编码之前，先与用户确认测试验收集并写入 `spec/phase2.md`：
 
-进入 Phase 2 编码之前，必须先与用户确认测试验收集。对每个 `@query` / `@mutation` 方法列出：
+| # | 方法 | 测试场景 | 预期结果 | 验证方式 |
+|---|------|----------|----------|----------|
+| 1 | create_user | 正常创建 | 返回新用户对象，含关联关系 | GraphiQL mutation |
+| 2 | create_user | 重复邮箱 | 返回错误提示 | GraphiQL mutation |
+| 3 | list_users | 分页查询 | 返回正确分页数据 | GraphiQL query |
+| ... | ... | ... | ... | ... |
 
-| 方法 | 测试场景 | 预期结果 | 验证方式 |
-|------|----------|----------|----------|
-| method_a | 正常场景 | 返回预期数据 | GraphQL query |
-| method_a | 边界/异常 | 错误提示 | GraphQL query |
+验收标准要求：
+- 每个 `@query`/`@mutation` 至少覆盖：**一个正常场景 + 一个边界/异常场景**
+- 异常场景的预期结果必须是可观察的（不写"不出错"，写"返回 status: error, message: xx"）
+- 验证方式统一通过 GraphQL query/mutation 在 GraphiQL 中执行
 
-验证方式统一通过 GraphQL query/mutation 在 GraphiQL 中执行，不写自动化测试。
+**实现：**
+编写 `service/<domain>/methods.py` → `models.py` 挂载
 
-**阶段结束 → 暂停确认**:
-- 启动服务，在 GraphiQL 中执行查询，验证关系加载正确
-- 确认 seed 数据合理、Loader 行为符合预期
+**V 升 — 逐条回查验收:**
+启动服务，在 GraphiQL 中逐一执行验收表：
+
+- [ ] 1. create_user（正常）→ 返回新用户数据，关系字段正确
+- [ ] 2. create_user（重复）→ 返回预期错误信息
+- [ ] 3. list_users（分页）→ 分页参数生效
+- [ ] ...（每条对标验收表）
+- [ ] 确认 seed 数据仍可查询，Loader 行为符合预期
 
 ### Phase 3: UseCase 响应组装 + MCP
 
@@ -245,22 +296,50 @@ src/
 - `create_use_case_mcp_server()` + `UseCaseAppConfig` 暴露给 AI agent
 - REST 端点通过 `tags=[Service.get_tag_name()]` 分组
 
-**阶段结束 → 暂停确认**:
-- 启动服务，测试 REST 端点返回数据正确
-- 访问 Voyager 确认服务可视化完整
-- 测试 MCP 端点可被发现和调用
+**V 降 — 定义验收标准:**
+进入 Phase 3 编码之前，先与用户确认以下验收项并写入 `spec/phase3.md`：
+
+| # | 验收项 | 验证方式 |
+|---|--------|----------|
+| 1 | 每个 REST 端点返回的响应字段符合 DTO 定义（FK 字段隐藏、关系字段包含） | curl POST endpoint |
+| 2 | Voyager 中 service 树展示完整（每个服务的方法可见） | 浏览器打开 Voyager |
+| 3 | MCP 四层渐进式披露完整：discover → inspect → execute | MCP 客户端调用 |
+| 4 | POST body 参数校验生效（参数缺少返回 422） | curl 发送非法请求 |
+
+**实现：**
+编写 `dtos.py` → `service.py` → `router/` → `main.py` 挂载
+
+**V 升 — 逐条回查验收:**
+
+- [ ] 1. REST 响应：`curl /api/sprint_service/list_sprints -X POST` 返回字段符合 DTO
+- [ ] 2. FK 隐藏：返回数据中不包含 FK 字段（如 `owner_id`）
+- [ ] 3. Voyager：service 节点和 method 方法都可见
+- [ ] 4. MCP：依次调用 list_apps → list_services → describe_service → call_use_case
+- [ ] 5. 参数校验：缺少必填参数返回 422
 
 ### Phase 4: OpenAPI → TS SDK
 
 **目标**: 从 FastAPI OpenAPI spec 生成 TypeScript SDK。
 
-提示用户执行：
+**V 降 — 定义验收标准:**
+确认后写入 `spec/phase4.md`：
+
+| # | 验收项 | 验证方式 |
+|---|--------|----------|
+| 1 | `openapi.json` 中每个后端的 DTO 字段都有对应 TS 类型 | 检查生成的 d.ts |
+| 2 | 后端字段名（snake_case）原样映射到 TS 类型 | 检查类型字段名 |
+| 3 | 嵌套关系在 TS 类型中有正确的递归结构 | 检查嵌套类型定义 |
+
+**实现：**
 ```bash
 npx openapi-typescript http://localhost:8000/openapi.json -o sdk/schema.d.ts
 ```
 
-**阶段结束 → 暂停确认**:
-- 验证生成的 TS 类型与实际 API 一致
+**V 升 — 逐条回查验收:**
+
+- [ ] 1. TS 类型覆盖：所有 UseCaseService 的返回类型都有对应定义
+- [ ] 2. 字段名一致：snake_case 字段名与后端一致
+- [ ] 3. 嵌套结构：DTO 的关系字段推导为正确的嵌套 TS 类型
 
 ## 阶段间变化对照
 
@@ -315,7 +394,7 @@ spec/<编号>-<需求简述>/
 
 ### 文件内容格式
 
-每个 phase 文件分两个部分：
+每个 phase 文件分三个部分：
 
 ```markdown
 # Phase N: <阶段标题>
@@ -324,9 +403,13 @@ spec/<编号>-<需求简述>/
 
 （记录用户在对话中提出的原始需求、约束条件和确认结论）
 
+## 验收标准
+
+（V 降阶段定义的验收标准表格，每项标注验证方式）
+
 ## 实现描述
 
-（记录该阶段的具体技术实现方案、产出文件和关键决策）
+（记录该阶段的具体技术实现方案、产出文件和关键决策，以及 V 升的逐条回查结果）
 ```
 
 ### 写入时机
@@ -335,10 +418,10 @@ spec/<编号>-<需求简述>/
 |------|----------|
 | story.md | 用户首次描述需求时记录原始表述；Phase 0 确认后补充 Overview Design（见下方说明） |
 | phase0.md | Phase 0 全部确认后，进入 Phase 1 之前 |
-| phase1.md | Phase 1 完成并经用户确认后 |
-| phase2.md | Phase 2 完成并经用户确认后 |
-| phase3.md | Phase 3 完成并经用户确认后 |
-| phase4.md | Phase 4 完成并经用户确认后 |
+| phase1.md | V 降写入验收标准 → 实现 → V 升回查全部通过后写入完整内容 |
+| phase2.md | V 降写入验收标准 → 实现 → V 升回查全部通过后写入完整内容 |
+| phase3.md | V 降写入验收标准 → 实现 → V 升回查全部通过后写入完整内容 |
+| phase4.md | V 降写入验收标准 → 实现 → V 升回查全部通过后写入完整内容 |
 
 ## 执行步骤
 
@@ -347,10 +430,22 @@ spec/<编号>-<需求简述>/
 1. **创建 spec 目录**: 用户首次描述需求时，在项目根目录创建 `spec/<编号>-<需求简述>/`，将用户原始需求写入 `story.md`，预建 phase0 ~ phase4 空文件
 2. **Phase 0 需求确认**: 按 Step 0-1 ~ 0-6 逐步与用户确认实体、关系、聚合根、用例方法、第三方库 → 确认后写入 `phase0.md` → **补充 `story.md` 的 Overview Design 部分** → **用户全部确认后才继续**
 3. **创建项目结构**: 目录 + pyproject.toml（依赖 sqlmodel-nexus）
-4. **Phase 1**: 生成 db.py + models.py + database.py(mock seed) + main.py(voyager) → 展示 ER diagram + SDL + seed data → 写入 `phase1.md` → **暂停等用户确认**
-5. **Phase 2**: 先列出测试验收集与用户确认 → 补充 models 方法体 → 启动服务 → GraphiQL 查询验证 → 写入 `phase2.md` → **暂停等用户确认**
-6. **Phase 3**: 新增 dtos.py + services.py + router → 启动服务 → 测试 REST + Voyager + MCP → 写入 `phase3.md` → **暂停等用户确认**
-7. **Phase 4**: 提示 openapi-typescript 命令和 SDK 使用模式 → 写入 `phase4.md` → **暂停等用户确认**
+4. **Phase 1**:
+   - **V 降**: 与用户确认验收标准表并写入 `spec/phase1.md#验收标准`
+   - **实现**: 生成 db.py + models.py + database.py(mock seed) + main.py(voyager)
+   - **V 升**: 逐条回查验收标准 → 通过后写入 `phase1.md` 完整内容 → **暂停等用户确认**
+5. **Phase 2**:
+   - **V 降**: 与用户确认测试验收集（正常场景 + 边界异常）并写入 `spec/phase2.md#验收标准`
+   - **实现**: 编写 service/<domain>/methods.py → models.py 挂载
+   - **V 升**: 在 GraphiQL 中逐一执行验收表 → 通过后写入 `phase2.md` → **暂停等用户确认**
+6. **Phase 3**:
+   - **V 降**: 与用户确认 REST 端点、DTO 字段、MCP 分层的验收标准并写入 `spec/phase3.md#验收标准`
+   - **实现**: 新增 dtos.py + services.py + router → main.py 挂载
+   - **V 升**: 测试 REST 响应结构 + Voyager 可视化 + MCP 调用链 → 通过后写入 `phase3.md` → **暂停等用户确认**
+7. **Phase 4**:
+   - **V 降**: 确认 TS 类型覆盖、字段名一致性、嵌套结构等验收项并写入 `spec/phase4.md#验收标准`
+   - **实现**: 执行 openapi-typescript 命令
+   - **V 升**: 检查生成的 schema.d.ts → 通过后写入 `phase4.md` → **暂停等用户确认**
 
 ### story.md 的 Overview Design 部分
 
