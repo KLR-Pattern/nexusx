@@ -88,12 +88,48 @@ Conversation ──1:N──→ Message
 
 ### Step 0-4: 业务域划分 + 用例方法
 
-**先划分业务域（Service），再按域列出用例方法。**
+**⚠️ 禁止自行决定 Service 切分方案。必须提出候选方案与用户讨论，由用户最终确认。**
 
-业务域按功能边界划分，不按实体划分。例如 `auth`（认证）、`chat`（聊天）、`order`（订单）等。
-每个业务域对应一个 service 目录，后续 Phase 2/3 的 methods.py / service.py / dtos.py 都按此组织。
+#### Step 0-4a: 提出 Service 切分候选方案
 
-列出每个业务域的用例方法，每个方法说明：
+业务域（Service）按功能边界划分，不按实体划分。Service 切分直接影响：
+- 目录结构（`service/<domain>/`）
+- Phase 2 的 methods.py 粒度
+- Phase 3 的 UseCaseService 类划分
+- MCP 和 REST 的入口组织
+
+**必须向用户提出至少一种候选方案**，说明每种方案的切分依据和优劣，由用户选择或修正。
+
+常见的切分策略参考：
+
+| 策略 | 示例 | 适用场景 |
+|------|------|----------|
+| 按业务功能域 | `auth` / `chat` / `order` | 业务边界清晰，领域间耦合低 |
+| 按聚合根 | `user` / `conversation` / `message` | 实体独立性强，CRUD 为主 |
+| 混合（功能域 + 独立聚合） | `auth` / `chat`(含 conversation+message) | 部分域跨实体协作 |
+
+**向用户展示的格式：**
+
+```
+方案 A：按功能域
+  auth/    → register, login
+  chat/    → create_conversation, list_messages, send_message
+  优势：业务内聚，方法自然归组
+  劣势：chat 域可能过大
+
+方案 B：按聚合根
+  user/         → register, login
+  conversation/ → create_conversation, list_messages
+  message/      → send_message
+  优势：每个 service 粒度均匀
+  劣势：conversation 和 message 强耦合却拆开了
+```
+
+**必须等用户明确选择后才能继续。** 如果用户提出自己的分法，按用户的来。
+
+#### Step 0-4b: 按确认的 Service 划分列出用例方法
+
+用户确认 Service 切分后，按每个业务域列出用例方法。每个方法说明：
 
 - **方法名**（动词开头，如 `create_conversation`、`list_messages`）
 - **业务意图**（一句话，如「创建群聊并自动将创建者加入为 owner」）
@@ -114,7 +150,7 @@ Conversation ──1:N──→ Message
 - 创建类 mutation 是否有遗漏的副作用（如自动创建关联记录）
 - 查询类方法是否覆盖了核心场景
 
-### Step 0-4a: GraphQL 定位
+### Step 0-5: GraphQL 定位
 
 GraphQL 是辅助开发测试和 AI 测试的接口，不是正式 API。
 
@@ -130,7 +166,7 @@ service/<domain>/methods.py  ← 独立定义业务逻辑（核心）
 - Phase 2：方法体在 `service/<domain>/methods.py` 中实现，`models.py` 通过直接赋值挂载到 Entity
 - Phase 3：同一个方法挂载到 UseCaseService（REST/MCP 使用），DTO 转换在 Service 层完成
 
-### Step 0-5: 第三方库确认
+### Step 0-6: 第三方库确认
 
 列出项目中涉及的非业务功能领域（认证、实时推送、文件存储、数据迁移等），对每个领域：
 
@@ -152,14 +188,14 @@ service/<domain>/methods.py  ← 独立定义业务逻辑（核心）
 
 **必须与用户确认每个领域的选型后才能继续。**
 
-### Step 0-6: 检查清单
+### Step 0-7: 检查清单
 
 全部确认后，向用户展示汇总，确保以下问题已回答：
 
 - [ ] 所有实体和字段是否完整，约束是否清晰？
 - [ ] 实体关系方向和基数是否正确？
 - [ ] 聚合根是否明确？
-- [ ] 业务域划分是否合理？
+- [ ] **Service 切分方案是否由用户确认（不是模型自行决定）？**
 - [ ] 核心用例是否覆盖主要业务场景，逻辑是否自洽？
 - [ ] 第三方库选型是否确认，维护状态是否已调查？
 - [ ] 是否有明显的遗漏或边界情况需要讨论？
