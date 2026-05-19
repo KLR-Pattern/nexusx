@@ -246,7 +246,7 @@ fe/                 # Phase 4 前端 SDK
 
 **新增/修改文件**:
 - `db.py` — aiosqlite engine + session_factory（不导入 models，避免循环依赖）
-- `models.py` — 纯 SQLModel 实体 + Relationship（仅字段和关系，不含方法，不导入 `sqlmodel_nexus`）
+- `models.py` — 纯 SQLModel 实体 + Relationship（仅字段和关系，不含方法，不导入 `sqlmodel_nexus`）。所有 Relationship 必须加 `sa_relationship_kwargs={"lazy": "noload"}`
 - `database.py` — mock seed data（从 `db.py` 导入 engine/session，从 `models.py` 导入实体）
 - `main.py` — FastAPI + Voyager（ER diagram 可视化）
 
@@ -350,10 +350,11 @@ fe/                 # Phase 4 前端 SDK
 - `UseCaseService` 统一业务逻辑入口（同时服务 MCP 和 FastAPI）
 - `@query` / `@mutation` 装饰器标记服务方法
 - **UseCaseService 方法必须声明返回类型注解**（如 `-> list[ChatSummary]`、`-> ChatSummary | None`），`create_use_case_router()` 从中提取 `response_model`，使 OpenAPI spec 正确反映 DTO 结构
-- `build_dto_select()` 只查 DTO 需要的列
 - **UseCaseService 复用 `service/<domain>/methods.py` 中的核心逻辑，不重新实现**：
-  - **mutation 方法**：直接调用 methods.py 函数获取 Entity，再转换为 DTO
-  - **query 方法**：使用 `build_dto_select` 高效查询 DTO 字段（查询模式遵循 methods.py 语义）
+  - **query 方法（list）**：调用 methods.py 拿 `list[Model]` → `[DtoType.model_validate(m) for m in models]` → `Resolver().resolve(dtos)`
+  - **query 方法（get 单条）**：调用 methods.py 拿 `Model | None` → `DtoType.model_validate(entity)` → `Resolver().resolve(dto)`
+  - **mutation 方法**：同 get 单条模式，调用 methods.py 获取 Model 后转换
+  - **service.py 不直接操作数据库**（无 `build_dto_select`、`async_session`）
 - **`create_use_case_router()` 自动生成 REST 路由** — 从 UseCaseAppConfig 生成 POST 路由，自动提取 `response_model`、构建 request body model、注册路由。不需要手写 `router/` 目录
   ```python
   from sqlmodel_nexus import UseCaseAppConfig, create_use_case_router
@@ -483,6 +484,8 @@ cd fe && npm install && npm run generate-client
 16. **Use `create_use_case_router()` 而非手写路由** — 手写路由无法声明 `response_model`，导致 OpenAPI spec 中响应类型为空（`unknown`），TS SDK 无法生成有效类型。`create_use_case_router()` 从 UseCaseService 方法的返回类型注解（如 `-> list[ChatSummary]`）自动提取 `response_model`，使 FastAPI 在 OpenAPI spec 中正确描述响应结构
 17. **UseCaseService 方法必须声明返回类型注解** — `create_use_case_router()` 通过 `get_type_hints(method).get("return")` 提取返回类型作为 `response_model`。缺少返回注解的方法，其响应类型在 OpenAPI spec 中为空
 18. **`@hey-api/sdk` 的 `asClass` 已废弃** — v0.97+ 使用 `operations: { strategy: 'byTags' }` 替代 `asClass: true`，按 OpenAPI tags 分组生成 SDK class
+19. **所有 Relationship 加 `sa_relationship_kwargs={"lazy": "noload"}`** — 项目通过显式查询 + Resolver DataLoader 加载关系数据，不依赖 ORM lazy-load。`noload` 使 relationship 属性直接返回默认值（`None`/`[]`），避免 session 关闭后 `model_validate(entity)` 访问 relationship descriptor 触发 DetachedInstanceError
+20. **methods.py 返回 Model，service.py 负责 DTO 转换** — methods.py 是纯业务逻辑层，所有方法（query + mutation）返回 ORM Model 实体。service.py 统一调用 methods.py，DTO 转换在 service.py 中进行：(1) list 方法调 methods 拿 `list[Model]` → `[DtoType.model_validate(m) for m in models]` → `Resolver().resolve(dtos)`；(2) 单条 get 方法调 methods 拿 `Model | None` → `DtoType.model_validate(entity)` → `Resolver().resolve(dto)`；(3) mutation 方法同单条 get。service.py 不直接操作数据库（无 `build_dto_select`、`async_session`）
 
 ## 需求文档管理
 

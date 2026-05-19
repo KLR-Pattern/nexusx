@@ -23,8 +23,8 @@ class User(BaseEntity, table=True):
     id: int | None = Field(default=None, primary_key=True, description="用户唯一标识")
     name: str = Field(description="用户显示名称")
 
-    # ORM relationships
-    tasks: list["Task"] = Relationship(back_populates="owner")
+    # ORM relationships (noload: use explicit queries or Resolver DataLoader)
+    tasks: list["Task"] = Relationship(back_populates="owner", sa_relationship_kwargs={"lazy": "noload"})
 
 
 class Sprint(BaseEntity, table=True):
@@ -33,10 +33,10 @@ class Sprint(BaseEntity, table=True):
     id: int | None = Field(default=None, primary_key=True, description="Sprint 唯一标识")
     name: str = Field(description="Sprint 名称，如 'Sprint 1'")
 
-    # ORM relationships
+    # ORM relationships (noload)
     tasks: list["Task"] = Relationship(
         back_populates="sprint",
-        sa_relationship_kwargs={"order_by": "Task.id"},
+        sa_relationship_kwargs={"lazy": "noload", "order_by": "Task.id"},
     )
 
 
@@ -50,9 +50,9 @@ class Task(BaseEntity, table=True):
     sprint_id: int = Field(foreign_key="sprint.id", description="所属 Sprint ID")
     owner_id: int | None = Field(default=None, foreign_key="user.id", description="负责人 ID，可为空表示未分配")
 
-    # ORM relationships
-    sprint: Optional["Sprint"] = Relationship(back_populates="tasks")
-    owner: Optional["User"] = Relationship()
+    # ORM relationships (noload)
+    sprint: Optional["Sprint"] = Relationship(back_populates="tasks", sa_relationship_kwargs={"lazy": "noload"})
+    owner: Optional["User"] = Relationship(sa_relationship_kwargs={"lazy": "noload"})
 
 
 # ── Method mounting (Phase 2) ─────────────────────────────────────────

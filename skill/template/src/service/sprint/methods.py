@@ -20,3 +20,9 @@ async def create_sprint(name: str) -> Sprint:
         await session.commit()
         await session.refresh(sprint)
         return sprint
+
+
+async def get_sprint(sprint_id: int) -> Sprint | None:
+    """获取单个 Sprint。"""
+    async with async_session() as session:
+        return await session.get(Sprint, sprint_id)
