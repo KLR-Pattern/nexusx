@@ -199,12 +199,23 @@ def create_use_case_mcp_server(
                 ]
                 method_names = [m["name"] for m in info["methods"]]
 
-            hint = (
-                f"Methods in '{service_name}' (app: '{app_name}'): {method_names}. "
-                f"Use call_use_case(app_name='{app_name}', "
-                f"service_name='{service_name}', "
-                f"method_name='...', params='{{...}}') to execute."
-            )
+            has_types = bool(info.get("types", "").strip())
+            if has_types:
+                hint = (
+                    f"Methods: {method_names}. "
+                    f"Response includes 'types' field with SDL type definitions — "
+                    f"read it if you need to understand the data model before calling. "
+                    f"Use call_use_case(app_name='{app_name}', "
+                    f"service_name='{service_name}', "
+                    f"method_name='...', params='{{...}}') to execute."
+                )
+            else:
+                hint = (
+                    f"Methods: {method_names}. "
+                    f"Use call_use_case(app_name='{app_name}', "
+                    f"service_name='{service_name}', "
+                    f"method_name='...', params='{{...}}') to execute."
+                )
 
             result = create_success_response(info)
             result["hint"] = hint
