@@ -1,6 +1,80 @@
 # Changelog
 
-## 2.0
+## 2.2.0
+
+### Bug Fix: DefineSubset PK/FK 字段处理
+
+修复 DefineSubset 的两个问题：PK 字段不再需要手动声明即可支持 ONETOMANY 关系的隐式 auto-loading；显式声明的 FK 字段不再被强制 `exclude=True`。
+
+**Changes:**
+- `src/nexusx/subset.py`: 新增 `_get_pk_field_names()` 自动检测主键字段并注入 SubsetMeta；移除 `_extract_field_infos` 中对所有 FK 字段的 `exclude=True` 标记，显式声明的 FK 字段现在正常出现在序列化输出中
+- 新增回归测试覆盖 PK 自动包含、FK 可见性、omit_fields 场景
+
+### Bug Fix: describe_service 类型提示引导
+
+`describe_service` 返回的 methods 信息中增加 hint，引导 LLM 读取 `types` 字段获取完整的 DTO 类型定义，避免 agent 直接从 method signature 推断类型结构。
+
+**Changes:**
+- `src/nexusx/use_case/introspector.py`: method description 增加 hint 文本
+
+### Bug Fix: Service 缺失 docstring 时自动摘要
+
+`UseCaseService` 子类未提供 docstring 时，`list_services` 和 `describe_service` 现在自动从方法的 docstring 摘要生成 service 描述。
+
+**Changes:**
+- `src/nexusx/use_case/introspector.py`: 新增 `_summarize_from_methods` fallback 逻辑
+
+### Feature: Resource 使用说明书
+
+新增 `Resource` 类的使用说明书，描述如何在 MCP context 中暴露资源供 LLM 使用。
+
+**Changes:**
+- 新增 `docs/resource_manual.md`
+
+### Feature: ER Diagram Builder 校验
+
+ER diagram builder 对 `Relationship.target` 为 model-like 类型（SQLModel/Pydantic BaseModel）时进行校验，防止因 target 类型错误导致渲染崩溃。
+
+**Changes:**
+- `src/nexusx/er_diagram.py`: 新增 target 类型校验
+- 新增回归测试
+
+### Docs: 知乎文章 Demo
+
+新增 `demo/zhihu_article/` 目录，包含完整的订单系统 demo（models/dtos/services/mcp_server）和 MCP-first 定位的知乎文章。
+
+## 2.1.0
+
+### New Feature: UseCase MCP Selection 投影
+
+`call_use_case` 新增 `selection` 参数，允许 AI agent 指定返回哪些字段，优化 MCP 响应 payload 大小。使用类似 GraphQL 的 rootless selection 语法，如 `{ id title owner { name } }`。
+
+**用法：**
+
+```python
+# describe_service 返回 selection_usage 元数据和每个方法的 selection_supported / selection_example
+# call_use_case 传递 selection 过滤响应
+result = await call_use_case(
+    app_name="project",
+    service_name="SprintService",
+    method_name="get_sprint",
+    params='{"sprint_id": 1}',
+    selection="{ id task_count contributors { name } }",
+)
+```
+
+**Selection 规则：**
+- 仅支持返回 Pydantic BaseModel / list[BaseModel] 的方法
+- 嵌套 DTO 字段必须提供子选择
+- 标量、dict、Any 字段不可有子选择
+- 不支持 GraphQL arguments
+
+**Changes:**
+- `use_case/selection.py`: 新增 `SelectionError`、`apply_selection`、`parse_selection`、`build_subset_model` — 解析 selection 字符串并动态构建 Pydantic 子集模型进行投影
+- `use_case/introspector.py`: `describe_service` 输出新增 `selection_usage`（format/source/rules）和每个方法的 `selection_supported` / `selection_example`
+- `use_case/server.py`: `call_use_case` 新增 `selection` 参数；`describe_service` hint 包含 selection 使用提示；新增 `_get_return_annotation`
+- `use_case/__init__.py`、`__init__.py`: 导出 `SelectionError`
+- 新增 16 个测试覆盖 selection 投影和错误场景
 
 ## 2.0.0
 rename to nexusx

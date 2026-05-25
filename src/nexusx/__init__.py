@@ -69,6 +69,7 @@ from nexusx.standard_queries import AutoQueryConfig, add_standard_queries
 from nexusx.subset import DefineSubset, SubsetConfig, build_dto_select
 from nexusx.use_case import (
     FromContext,
+    SelectionError,
     UseCaseAppConfig,
     UseCaseService,
     create_use_case_mcp_server,
@@ -110,6 +111,7 @@ __all__ = [
     "UseCaseService",
     "UseCaseAppConfig",
     "FromContext",
+    "SelectionError",
     "create_use_case_mcp_server",
     "create_use_case_router",
     # Voyager visualization

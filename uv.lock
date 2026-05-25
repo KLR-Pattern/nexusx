@@ -994,7 +994,7 @@ wheels = [
 
 [[package]]
 name = "nexusx"
-version = "2.0.1"
+version = "2.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiodataloader" },

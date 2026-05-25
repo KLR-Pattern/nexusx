@@ -24,6 +24,7 @@ from nexusx.mcp.types.errors import (
 from nexusx.use_case.business import USE_CASE_METHODS_ATTR
 from nexusx.use_case.context import FromContext
 from nexusx.use_case.manager import UseCaseManager
+from nexusx.use_case.selection import SelectionError, apply_selection
 from nexusx.use_case.types import UseCaseAppConfig
 
 if TYPE_CHECKING:
@@ -254,22 +255,26 @@ list_apps()
                 method_names = [m["name"] for m in info["methods"]]
 
             has_types = bool(info.get("types", "").strip())
+            hint_parts = [
+                f"Methods: {method_names}.",
+            ]
             if has_types:
-                hint = (
-                    f"Methods: {method_names}. "
-                    f"Response includes 'types' field with SDL type definitions — "
-                    f"read it if you need to understand the data model before calling. "
-                    f"Use call_use_case(app_name='{app_name}', "
-                    f"service_name='{service_name}', "
-                    f"method_name='...', params='{{...}}') to execute."
+                hint_parts.append(
+                    "Response includes 'types' field with SDL type definitions — "
+                    "read it if you need to understand the data model before calling."
                 )
-            else:
-                hint = (
-                    f"Methods: {method_names}. "
-                    f"Use call_use_case(app_name='{app_name}', "
-                    f"service_name='{service_name}', "
-                    f"method_name='...', params='{{...}}') to execute."
-                )
+            hint_parts.append(
+                f"Use call_use_case(app_name='{app_name}', "
+                f"service_name='{service_name}', "
+                f"method_name='...', params='{{...}}') to execute."
+            )
+            hint_parts.append(
+                "For methods with selection_supported=true, you may also pass "
+                "selection='{ id owner { name } }'. Use each method's "
+                "selection_example and the top-level selection_usage/types fields "
+                "to choose valid fields."
+            )
+            hint = " ".join(hint_parts)
 
             result = create_success_response(info)
             result["hint"] = hint
@@ -286,18 +291,30 @@ list_apps()
         service_name: str,
         method_name: str,
         params: str = "{}",
+        selection: str | None = None,
         ctx: Context = None,  # type: ignore[assignment]
     ) -> dict[str, Any]:
         """Execute a use case method on a specific service.
 
         Call a method discovered via describe_service. The params argument
         should be a JSON object string matching the method's parameter schema.
+        For methods returning Pydantic DTOs, you can optionally pass a
+        rootless GraphQL-like selection string such as
+        ``{ id title owner { name } }`` to project the response payload.
+        Use describe_service first to inspect the returned DTO types.
+        selection only changes the response shape; it does not change
+        params, loading, pagination, or business execution.
 
         Args:
             app_name: Name of the application.
             service_name: Name of the service.
             method_name: Name of the method to call.
             params: JSON string with method parameters (default: "{}").
+            selection: Optional rootless GraphQL-like field projection for
+                Pydantic return values, for example ``{ id title owner { name } }``.
+                Use fields from describe_service.types. Nested DTOs require
+                sub-selection; scalar/dict/Any fields cannot have sub-selection;
+                GraphQL arguments are not supported.
 
         Returns:
             Dictionary with success, data (method result), and hint.
@@ -400,6 +417,16 @@ list_apps()
                 MCPErrors.QUERY_EXECUTION_ERROR,
             )
 
+        if selection is not None:
+            try:
+                return_anno = _get_return_annotation(method)
+                result = apply_selection(result, return_anno, selection)
+            except SelectionError as e:
+                return create_error_response(
+                    f"Invalid selection for {service_name}.{method_name}: {e}",
+                    MCPErrors.VALIDATION_ERROR,
+                )
+
         # Serialize result
         data = _serialize_result(result)
 
@@ -451,6 +478,26 @@ def _coerce_value(value: Any, annotation: Any) -> Any:
         return adapter.validate_python(value)
     except Exception:
         return value
+
+
+def _get_return_annotation(method: Any) -> Any:
+    """Get the return type annotation for a method."""
+    func = method.__func__ if isinstance(method, classmethod) else method
+    try:
+        hints = get_type_hints(func)
+    except Exception:
+        hints = {}
+    return_anno = hints.get("return")
+    if return_anno is not None:
+        return return_anno
+    # Fallback to inspect.signature
+    try:
+        sig = inspect.signature(func)
+    except (ValueError, TypeError):
+        return None
+    if sig.return_annotation is inspect.Signature.empty:
+        return None
+    return sig.return_annotation
 
 
 def _coerce_kwargs(func: Any, kwargs: dict[str, Any]) -> dict[str, Any]:

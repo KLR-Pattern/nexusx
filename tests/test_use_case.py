@@ -937,3 +937,373 @@ class TestTypeCoercion:
         data = json.loads(result.content[0].text)
         assert data["success"] is True
         assert data["data"]["name"] == "Charlie"
+
+
+# ──────────────────────────────────────────────────
+# Test DTOs and Services for Selection
+# ──────────────────────────────────────────────────
+
+
+class SelectionMetaDTO(BaseModel):
+    source: str
+
+
+class SelectionUserDTO(BaseModel):
+    id: int
+    name: str
+    email: str
+
+
+class SelectionTaskDTO(BaseModel):
+    id: int
+    title: str
+    owner: SelectionUserDTO | None = None
+    watchers: list[SelectionUserDTO | None] = []
+    metadata: dict = {}
+    meta: SelectionMetaDTO | None = None
+
+
+class SelectionService(UseCaseService):
+    """Service for selection projection tests."""
+
+    @query
+    async def get_task(cls) -> SelectionTaskDTO:
+        """Get a task with nested DTO fields."""
+        return SelectionTaskDTO(
+            id=1,
+            title="Task 1",
+            owner=SelectionUserDTO(id=10, name="Alice", email="a@example.com"),
+            watchers=[SelectionUserDTO(id=11, name="Bob", email="b@example.com")],
+            metadata={"priority": "high", "hidden": True},
+            meta=SelectionMetaDTO(source="demo"),
+        )
+
+    @query
+    async def list_tasks(cls) -> list[SelectionTaskDTO]:
+        """List tasks with nested DTO fields."""
+        return [await cls.get_task()]
+
+    @query
+    async def get_missing_owner(cls) -> SelectionTaskDTO:
+        """Return a task with a nullable nested DTO set to None."""
+        return SelectionTaskDTO(id=2, title="Task 2", owner=None)
+
+    @query
+    async def list_empty(cls) -> list[SelectionTaskDTO]:
+        """Return an empty task list."""
+        return []
+
+    @query
+    async def get_count(cls) -> int:
+        """Return a non-Pydantic value."""
+        return 1
+
+    @query
+    async def list_users_with_gaps(cls) -> list[SelectionUserDTO | None]:
+        """Return a list with nullable DTO items."""
+        return [
+            SelectionUserDTO(id=11, name="Bob", email="b@example.com"),
+            None,
+        ]
+
+    @query
+    async def get_task_with_missing_watcher(cls) -> SelectionTaskDTO:
+        """Return a DTO with a nullable list element."""
+        task = await cls.get_task()
+        task.watchers = [
+            SelectionUserDTO(id=11, name="Bob", email="b@example.com"),
+            None,
+        ]
+        return task
+
+
+# ──────────────────────────────────────────────────
+# Tests: ServiceIntrospector Selection Metadata
+# ──────────────────────────────────────────────────
+
+
+class TestServiceIntrospectorSelection:
+    def test_describe_service_includes_selection_usage(self):
+        """describe_service includes selection_usage metadata."""
+        introspector = ServiceIntrospector([SelectionService])
+        info = introspector.describe_service("SelectionService")
+        assert info is not None
+        assert info["selection_usage"]["format"].startswith("Rootless GraphQL-like")
+        assert "types" in info["selection_usage"]["source"]
+        assert any(
+            "Nested Pydantic DTO fields require sub-selection." == rule
+            for rule in info["selection_usage"]["rules"]
+        )
+
+    def test_describe_service_marks_selection_capability_per_method(self):
+        """Methods returning DTOs get selection_supported=True, others False."""
+        introspector = ServiceIntrospector([SelectionService])
+        info = introspector.describe_service("SelectionService")
+        assert info is not None
+
+        methods = {m["name"]: m for m in info["methods"]}
+
+        get_task = methods["get_task"]
+        assert get_task["selection_supported"] is True
+        assert get_task["selection_example"] is not None
+        assert "id" in get_task["selection_example"]
+
+        get_count = methods["get_count"]
+        assert get_count["selection_supported"] is False
+        assert get_count["selection_example"] is None
+
+
+# ──────────────────────────────────────────────────
+# Tests: MCP Server Selection (integration)
+# ──────────────────────────────────────────────────
+
+
+@pytest.fixture
+def selection_server():
+    return create_use_case_mcp_server(
+        apps=[
+            UseCaseAppConfig(
+                name="selection",
+                services=[SelectionService],
+            ),
+        ],
+    )
+
+
+class TestUseCaseMcpServerSelection:
+    """Tests for call_use_case selection projection."""
+
+    @pytest.mark.asyncio
+    async def test_describe_service_includes_selection_usage(self, selection_server):
+        """describe_service response contains selection_usage."""
+        result = await selection_server.call_tool(
+            "describe_service",
+            {"app_name": "selection", "service_name": "SelectionService"},
+        )
+        data = json.loads(result.content[0].text)
+        assert data["success"] is True
+        get_user = next(
+            m for m in data["data"]["methods"] if m["name"] == "get_task"
+        )
+        assert get_user["selection_supported"] is True
+        assert get_user["selection_example"] is not None
+        assert data["data"]["selection_usage"]["format"].startswith(
+            "Rootless GraphQL-like"
+        )
+        assert "selection_supported=true" in data["hint"]
+
+    @pytest.mark.asyncio
+    async def test_selection_filters_single_dto(self, selection_server):
+        result = await selection_server.call_tool(
+            "call_use_case",
+            {
+                "app_name": "selection",
+                "service_name": "SelectionService",
+                "method_name": "get_task",
+                "params": "{}",
+                "selection": "{ id owner { name } }",
+            },
+        )
+        data = json.loads(result.content[0].text)
+        assert data["success"] is True
+        assert data["data"]["id"] == 1
+        assert "title" not in data["data"]
+        assert data["data"]["owner"]["name"] == "Alice"
+        assert "email" not in data["data"]["owner"]
+
+    @pytest.mark.asyncio
+    async def test_selection_filters_list_dto(self, selection_server):
+        result = await selection_server.call_tool(
+            "call_use_case",
+            {
+                "app_name": "selection",
+                "service_name": "SelectionService",
+                "method_name": "list_tasks",
+                "params": "{}",
+                "selection": "{ watchers { name } }",
+            },
+        )
+        data = json.loads(result.content[0].text)
+        assert data["success"] is True
+        assert len(data["data"]) == 1
+        assert "id" not in data["data"][0]
+        assert len(data["data"][0]["watchers"]) == 1
+        assert data["data"][0]["watchers"][0]["name"] == "Bob"
+
+    @pytest.mark.asyncio
+    async def test_selection_preserves_none_in_top_level_list(self, selection_server):
+        result = await selection_server.call_tool(
+            "call_use_case",
+            {
+                "app_name": "selection",
+                "service_name": "SelectionService",
+                "method_name": "list_users_with_gaps",
+                "params": "{}",
+                "selection": "{ name }",
+            },
+        )
+        data = json.loads(result.content[0].text)
+        assert data["success"] is True
+        assert data["data"][0]["name"] == "Bob"
+        assert data["data"][1] is None
+
+    @pytest.mark.asyncio
+    async def test_selection_preserves_none_in_nested_list(self, selection_server):
+        result = await selection_server.call_tool(
+            "call_use_case",
+            {
+                "app_name": "selection",
+                "service_name": "SelectionService",
+                "method_name": "get_task_with_missing_watcher",
+                "params": "{}",
+                "selection": "{ watchers { name } }",
+            },
+        )
+        data = json.loads(result.content[0].text)
+        assert data["success"] is True
+        assert data["data"]["watchers"][0]["name"] == "Bob"
+        assert data["data"]["watchers"][1] is None
+
+    @pytest.mark.asyncio
+    async def test_selection_preserves_none_nested_dto(self, selection_server):
+        result = await selection_server.call_tool(
+            "call_use_case",
+            {
+                "app_name": "selection",
+                "service_name": "SelectionService",
+                "method_name": "get_missing_owner",
+                "params": "{}",
+                "selection": "{ id owner { name } }",
+            },
+        )
+        data = json.loads(result.content[0].text)
+        assert data["success"] is True
+        assert data["data"]["id"] == 2
+        assert data["data"]["owner"] is None
+
+    @pytest.mark.asyncio
+    async def test_selection_preserves_empty_list(self, selection_server):
+        result = await selection_server.call_tool(
+            "call_use_case",
+            {
+                "app_name": "selection",
+                "service_name": "SelectionService",
+                "method_name": "list_empty",
+                "params": "{}",
+                "selection": "{ id }",
+            },
+        )
+        data = json.loads(result.content[0].text)
+        assert data["success"] is True
+        assert data["data"] == []
+
+    @pytest.mark.asyncio
+    async def test_selection_rejects_non_pydantic_return(self, selection_server):
+        result = await selection_server.call_tool(
+            "call_use_case",
+            {
+                "app_name": "selection",
+                "service_name": "SelectionService",
+                "method_name": "get_count",
+                "params": "{}",
+                "selection": "{ id }",
+            },
+        )
+        data = json.loads(result.content[0].text)
+        assert data["success"] is False
+        assert "selection" in data["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_selection_rejects_unknown_field(self, selection_server):
+        result = await selection_server.call_tool(
+            "call_use_case",
+            {
+                "app_name": "selection",
+                "service_name": "SelectionService",
+                "method_name": "get_task",
+                "params": "{}",
+                "selection": "{ missing }",
+            },
+        )
+        data = json.loads(result.content[0].text)
+        assert data["success"] is False
+        assert "Unknown field" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_selection_rejects_missing_dto_sub_selection(self, selection_server):
+        result = await selection_server.call_tool(
+            "call_use_case",
+            {
+                "app_name": "selection",
+                "service_name": "SelectionService",
+                "method_name": "get_task",
+                "params": "{}",
+                "selection": "{ owner }",
+            },
+        )
+        data = json.loads(result.content[0].text)
+        assert data["success"] is False
+        assert "requires sub-selection" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_selection_rejects_scalar_sub_selection(self, selection_server):
+        result = await selection_server.call_tool(
+            "call_use_case",
+            {
+                "app_name": "selection",
+                "service_name": "SelectionService",
+                "method_name": "get_task",
+                "params": "{}",
+                "selection": "{ title { value } }",
+            },
+        )
+        data = json.loads(result.content[0].text)
+        assert data["success"] is False
+        assert "cannot have sub-selection" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_selection_rejects_arguments(self, selection_server):
+        result = await selection_server.call_tool(
+            "call_use_case",
+            {
+                "app_name": "selection",
+                "service_name": "SelectionService",
+                "method_name": "get_task",
+                "params": "{}",
+                "selection": "{ watchers(limit: 1) { name } }",
+            },
+        )
+        data = json.loads(result.content[0].text)
+        assert data["success"] is False
+        assert "arguments are not supported" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_selection_rejects_empty_string(self, selection_server):
+        result = await selection_server.call_tool(
+            "call_use_case",
+            {
+                "app_name": "selection",
+                "service_name": "SelectionService",
+                "method_name": "get_task",
+                "params": "{}",
+                "selection": "",
+            },
+        )
+        data = json.loads(result.content[0].text)
+        assert data["success"] is False
+        assert "selection cannot be empty" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_selection_rejects_syntax_error(self, selection_server):
+        result = await selection_server.call_tool(
+            "call_use_case",
+            {
+                "app_name": "selection",
+                "service_name": "SelectionService",
+                "method_name": "get_task",
+                "params": "{}",
+                "selection": "{ id ",
+            },
+        )
+        data = json.loads(result.content[0].text)
+        assert data["success"] is False

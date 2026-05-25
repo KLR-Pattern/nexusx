@@ -375,6 +375,117 @@ def _auto_summary(service_cls: type[UseCaseService]) -> str:
 
 
 # ──────────────────────────────────────────────────
+# Selection metadata
+# ──────────────────────────────────────────────────
+
+
+def _get_selection_model(anno: Any) -> type[BaseModel] | None:
+    """Return the Pydantic model type when selection can be inferred."""
+    if anno is None or anno is inspect.Parameter.empty or isinstance(anno, str):
+        return None
+
+    core_types = _collect_core_types(anno)
+    pydantic_types = [
+        tp for tp in core_types if isinstance(tp, type) and issubclass(tp, BaseModel)
+    ]
+    if len(pydantic_types) == 1:
+        return pydantic_types[0]
+    return None
+
+
+def _collect_core_types(tp: Any) -> list[type]:
+    """Extract all concrete types from a possibly-wrapped annotation."""
+    if tp is None or tp is inspect.Parameter.empty or isinstance(tp, str):
+        return []
+    if isinstance(tp, type):
+        return [tp]
+
+    origin = get_origin(tp)
+
+    if origin is list:
+        args = get_args(tp)
+        return _collect_core_types(args[0]) if args else []
+
+    import types as _types
+
+    if origin is typing.Union or isinstance(tp, _types.UnionType):
+        results: list[type] = []
+        for arg in get_args(tp):
+            results.extend(_collect_core_types(arg))
+        return results
+
+    if origin is typing.Annotated:
+        args = get_args(tp)
+        return _collect_core_types(args[0]) if args else []
+
+    return [tp] if isinstance(tp, type) else []
+
+
+def _build_selection_example(
+    model_type: type[BaseModel], visited: set[str] | None = None
+) -> str | None:
+    """Build a small rootless selection example from a DTO type."""
+    if visited is None:
+        visited = set()
+
+    type_name = model_type.__name__
+    if type_name in visited:
+        return None
+    visited.add(type_name)
+
+    scalar_fields: list[str] = []
+    nested_fields: list[str] = []
+
+    for field_name, field_info in model_type.model_fields.items():
+        nested_model = _get_selection_model(field_info.annotation)
+        if nested_model is None:
+            scalar_fields.append(field_name)
+            continue
+
+        nested_example = _build_selection_example(nested_model, visited.copy())
+        if nested_example:
+            inner = nested_example.strip()[1:-1].strip()
+            if inner:
+                nested_fields.append(f"{field_name} {{ {inner} }}")
+
+    parts: list[str] = []
+    if scalar_fields:
+        parts.append(scalar_fields[0])
+    if nested_fields:
+        parts.append(nested_fields[0])
+    elif len(scalar_fields) > 1:
+        parts.append(scalar_fields[1])
+    elif not parts and nested_fields:
+        parts.append(nested_fields[0])
+
+    if not parts:
+        return None
+
+    return "{ " + " ".join(parts) + " }"
+
+
+def _build_selection_method_info(return_anno: Any) -> dict[str, Any]:
+    """Build selection metadata for a method response."""
+    if isinstance(return_anno, str):
+        return {
+            "selection_supported": None,
+            "selection_example": None,
+        }
+
+    model_type = _get_selection_model(return_anno)
+    if model_type is None:
+        return {
+            "selection_supported": False,
+            "selection_example": None,
+        }
+
+    return {
+        "selection_supported": True,
+        "selection_example": _build_selection_example(model_type),
+    }
+
+
+# ──────────────────────────────────────────────────
 # ServiceIntrospector
 # ──────────────────────────────────────────────────
 
@@ -475,6 +586,8 @@ class ServiceIntrospector:
                     "signature_sdl": m["signature_sdl"],
                     "parameters": m["parameters"],
                     "kind": m["kind"],
+                    "selection_supported": m["selection_supported"],
+                    "selection_example": m["selection_example"],
                 }
             )
 
@@ -483,6 +596,17 @@ class ServiceIntrospector:
             "description": _auto_summary(service_cls),
             "methods": clean_methods,
             "types": types_str,
+            "selection_usage": {
+                "format": "Rootless GraphQL-like string, for example { id owner { name } }",
+                "source": "Use field names from the SDL in 'types'.",
+                "rules": [
+                    "Only methods returning Pydantic models, list[PydanticModel],"
+                    " or optional variants support selection.",
+                    "Nested Pydantic DTO fields require sub-selection.",
+                    "Scalar, dict, and Any fields cannot have sub-selection.",
+                    "GraphQL arguments are not supported in selection.",
+                ],
+            },
         }
 
     def get_service(self, name: str) -> type[UseCaseService] | None:
@@ -506,7 +630,10 @@ class ServiceIntrospector:
                 "name": method_name,
                 "description": None,
                 "signature": f"{method_name}()",
+                "signature_sdl": f"{method_name}()",
                 "parameters": {},
+                "selection_supported": None,
+                "selection_example": None,
                 "_return_anno": None,
             }
 
@@ -551,6 +678,7 @@ class ServiceIntrospector:
 
         signature_sdl = f"{method_name}({sdl_param_str}){sdl_suffix}"
         signature = f"{method_name}({legacy_param_str}){legacy_suffix}"
+        selection_info = _build_selection_method_info(return_anno)
 
         return {
             "name": method_name,
@@ -558,6 +686,8 @@ class ServiceIntrospector:
             "signature": signature,
             "signature_sdl": signature_sdl,
             "parameters": parameters,
+            "selection_supported": selection_info["selection_supported"],
+            "selection_example": selection_info["selection_example"],
             "_return_anno": return_anno,
         }
 
