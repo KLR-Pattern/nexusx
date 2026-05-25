@@ -72,6 +72,59 @@ def create_use_case_mcp_server(
     manager = UseCaseManager(apps)
     mcp = FastMCP(name)
 
+    # ──────────────────────────────────────────────────
+    # Resource: usage manual
+    # ──────────────────────────────────────────────────
+
+    @mcp.resource("nexusx://manual")
+    def usage_manual() -> str:
+        """nexusx UseCase API 使用说明书。
+
+        首次连接时请先读取此资源，了解整体能力结构和推荐调用顺序。
+        包含完整的四层渐进式工具使用指南。
+        """
+        app_names = list(manager.apps.keys())
+        app_lines = "\n".join(f"  - `{a}`: {manager.apps[a].description or 'No description'}"
+                              for a in app_names)
+        return f"""# nexusx UseCase API — AI 使用指南
+
+## 能力结构
+
+本 MCP 服务器以**四层渐进式披露**组织工具，避免一次性暴露所有方法：
+
+| 层级 | 工具 | 用途 |
+|------|------|------|
+| 0 | `list_apps()` | 发现可用应用 |
+| 1 | `list_services(app_name)` | 查看某应用的服务 |
+| 2 | `describe_service(app_name, service_name)` | 查看方法签名 + SDL 类型定义 |
+| 3 | `call_use_case(...)` | 执行具体方法 |
+
+## 推荐调用流程
+
+```
+list_apps()
+  → list_services(app_name="xxx")
+    → describe_service(app_name="xxx", service_name="yyy")
+      → call_use_case(app_name="xxx", service_name="yyy", method_name="zzz", params='{{...}}')
+```
+
+## 可用应用
+
+{app_lines}
+
+## 注意事项
+
+- `describe_service` 返回的 `types` 字段包含 SDL 格式的数据模型定义，
+  在调用 `call_use_case` 前阅读它有助于理解返回结构
+- Mutation 默认开启，可通过 `UseCaseAppConfig(enable_mutation=False)` 禁用
+- `call_use_case` 的 `params` 参数接受 JSON 字符串
+
+## 错误处理
+
+所有工具返回统一格式：{{"success": bool, "data": ..., "hint": "..."}}
+错误时返回：{{"success": false, "error": "...", "error_code": "..."}}
+"""
+
     # Layer 0: Application discovery
     @mcp.tool()
     def list_apps() -> dict[str, Any]:
@@ -103,10 +156,11 @@ def create_use_case_mcp_server(
             app_names = [a["name"] for a in apps_info]
             hint = (
                 f"IMPORTANT: All subsequent tool calls require app_name parameter. "
+                f"First time? Read resource 'nexusx://manual' for the full usage guide. "
                 f"Available apps: {app_names}. "
-                f"Example: list_services(app_name='{app_names[0] if app_names else 'app_name'}')"
+                f"Example: list_services(app_name='{app_names[0] if app_names else 'app_name'}')\n"
+                f"After exploring, use call_use_case to execute methods."
             )
-
             return {
                 "success": True,
                 "data": apps_info,
