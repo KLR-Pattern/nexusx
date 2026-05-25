@@ -72,6 +72,7 @@ from nexusx.use_case import (
     SelectionError,
     UseCaseAppConfig,
     UseCaseService,
+    create_flat_mcp_server,
     create_use_case_mcp_server,
 )
 from nexusx.use_case import (
@@ -113,6 +114,7 @@ __all__ = [
     "FromContext",
     "SelectionError",
     "create_use_case_mcp_server",
+    "create_flat_mcp_server",
     "create_use_case_router",
     # Voyager visualization
     "create_use_case_voyager",
