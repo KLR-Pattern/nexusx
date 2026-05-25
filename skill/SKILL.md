@@ -375,10 +375,47 @@ fe/                 # Phase 4 前端 SDK
   app.include_router(use_case_router)
   ```
 - `create_use_case_voyager()` 可视化服务结构
-- `create_use_case_mcp_server()` + `UseCaseAppConfig` 暴露给 AI agent
+- `create_use_case_mcp_server()` + `UseCaseAppConfig` 暴露给 AI agent（四层渐进式披露：list_apps → list_services → describe_service → call_use_case）
+- `create_flat_mcp_server()` + `UseCaseAppConfig` 扁平化 MCP 暴露（每个方法一个 tool，类型定义通过 MCP resource 提供）。适用于方法少（<20 个 tool）、LLM context 充足、需要直接调用的场景
 - MCP http_app 必须使用 `transport="streamable-http", stateless_http=True`
 - MCP http_app 的 lifespan 必须在 FastAPI lifespan 中通过 `async with mcp_http.lifespan(mcp_http)` 嵌套启动
 - MCP http_app 对象必须在 lifespan 函数定义之前创建，以便引用
+- **MCP 模式必须在实现时由用户选择** — 向用户展示两种模式的对比，由用户决定：
+  | 特性 | `create_use_case_mcp_server`（渐进式） | `create_flat_mcp_server`（扁平化） |
+  |------|---------------------------------------|-----------------------------------|
+  | 工具数量 | 4 个固定 tool | 每个方法一个 tool |
+  | 发现流程 | list_apps → list_services → describe_service → call | 直接调用 tool |
+  | 类型定义 | describe_service 返回值 | MCP resource |
+  | 适用场景 | 大型 API、多服务（>20 方法） | 小型 API、直接访问 |
+  | prompt 支持 | `@mcp.prompt()` | `@mcp.prompt()` |
+- **main.py 典型模式 — 三种 API 并存**（GraphQL + REST + MCP）：
+  ```python
+  from nexusx import (
+      UseCaseAppConfig, create_use_case_router,
+      create_use_case_mcp_server, create_flat_mcp_server,
+      create_use_case_voyager, GraphQLHandler,
+  )
+
+  app_config = UseCaseAppConfig(
+      name="project",
+      services=[UserService, TaskService, SprintService],
+  )
+
+  # REST（自动路由，OpenAPI spec）
+  app.include_router(create_use_case_router(app_config))
+
+  # GraphQL（辅助开发测试）
+  graphql_handler = GraphQLHandler(base=Base, session_factory=async_session)
+
+  # MCP（选一种 — 由用户决定）
+  # 渐进式：
+  mcp = create_use_case_mcp_server(apps=[app_config], name="API")
+  # 扁平化：
+  mcp = create_flat_mcp_server(apps=[app_config], name="API")
+
+  # Voyager 可视化
+  voyager = create_use_case_voyager(apps=[app_config], er_manager=er)
+  ```
 
 **V 降 — 定义验收标准:**
 进入 Phase 3 编码之前，先与用户确认以下验收项并写入 `spec/phase3.md`：
@@ -387,7 +424,7 @@ fe/                 # Phase 4 前端 SDK
 |---|--------|----------|
 | 1 | 每个 REST 端点返回的响应字段符合 DTO 定义（FK 字段隐藏、关系字段包含） | curl POST endpoint |
 | 2 | Voyager 中 service 树展示完整（每个服务的方法可见） | 浏览器打开 Voyager |
-| 3 | MCP 四层渐进式披露完整：discover → inspect → execute | MCP 客户端调用 |
+| 3 | MCP 模式由用户选择并可用：渐进式（4 层发现）或扁平化（直接 tool + resource） | MCP 客户端调用 |
 | 4 | POST body 参数校验生效（参数缺少返回 422） | curl 发送非法请求 |
 
 **实现：**
@@ -398,7 +435,9 @@ fe/                 # Phase 4 前端 SDK
 - [ ] 1. REST 响应：`curl /api/sprint_service/list_sprints -X POST` 返回字段符合 DTO
 - [ ] 2. FK 隐藏：返回数据中不包含 FK 字段（如 `owner_id`）
 - [ ] 3. Voyager：service 节点和 method 方法都可见
-- [ ] 4. MCP：依次调用 list_apps → list_services → describe_service → call_use_case
+- [ ] 4. MCP（按用户选择的模式验证）：
+  - 渐进式：依次调用 list_apps → list_services → describe_service → call_use_case
+  - 扁平化：直接调用 `{ServiceName}_{method_name}` tool + 读取 `nexusx://{app_name}` resource
 - [ ] 5. 参数校验：缺少必填参数返回 422
 
 ### Phase 4: OpenAPI → TS SDK
@@ -496,6 +535,8 @@ cd fe && npm install && npm run generate-client
 18. **`@hey-api/sdk` 的 `asClass` 已废弃** — v0.97+ 使用 `operations: { strategy: 'byTags' }` 替代 `asClass: true`，按 OpenAPI tags 分组生成 SDK class
 19. **所有 Relationship 加 `sa_relationship_kwargs={"lazy": "noload"}`** — 项目通过显式查询 + Resolver DataLoader 加载关系数据，不依赖 ORM lazy-load。`noload` 使 relationship 属性直接返回默认值（`None`/`[]`），避免 session 关闭后 `model_validate(entity)` 访问 relationship descriptor 触发 DetachedInstanceError
 20. **methods.py 返回 Model，service.py 负责 DTO 转换** — methods.py 是纯业务逻辑层，所有方法（query + mutation）返回 ORM Model 实体。service.py 统一调用 methods.py，DTO 转换在 service.py 中进行：(1) list 方法调 methods 拿 `list[Model]` → `[DtoType.model_validate(m) for m in models]` → `Resolver().resolve(dtos)`；(2) 单条 get 方法调 methods 拿 `Model | None` → `DtoType.model_validate(entity)` → `Resolver().resolve(dto)`；(3) mutation 方法同单条 get。service.py 不直接操作数据库（无 `build_dto_select`、`async_session`）
+23. **交付前必须校验 spec 文件完整性** — 在告诉用户"任务完成"之前，检查 `spec/<编号>-*/` 下所有 .md 文件是否有内容（非空文件）。合并 Phase 实现时尤其容易遗漏 spec 写入。可用 `wc -l` 快速检查。空文件 = 未完成
+24. **`create_flat_mcp_server()` 返回 FastMCP 实例，可直接添加 `@mcp.prompt()`** — 如果项目需要 MCP prompt 功能，flat server 和渐进式 server 都提供了方便的挂载点，两者返回的都是标准 FastMCP 对象
 
 ## 需求文档管理
 
@@ -572,12 +613,21 @@ spec/<编号>-<需求简述>/
    - **V 升**: 运行 `pytest tests/` + 在 GraphiQL 中逐一执行验收表 → 通过后写入 `phase2.md` → **暂停等用户确认**
 6. **Phase 3**:
    - **V 降**: 与用户确认 REST 端点、DTO 字段、MCP 分层的验收标准并写入 `spec/phase3.md#验收标准`
-   - **实现**: 新增 dtos.py + services.py → main.py 用 `create_use_case_router()` 挂载 REST
-   - **V 升**: 测试 REST 响应结构 + Voyager 可视化 + MCP 调用链 → 通过后写入 `phase3.md` → **暂停等用户确认**
+   - **实现**: 新增 dtos.py + services.py → **向用户展示 MCP 模式对比（渐进式 vs 扁平化），由用户选择** → main.py 用 `create_use_case_router()` 挂载 REST + 选定的 MCP 模式
+   - **V 升**: 测试 REST 响应结构 + Voyager 可视化 + MCP 调用链（按选定模式验证） → 通过后写入 `phase3.md` → **暂停等用户确认**
 7. **Phase 4**:
    - **V 降**: 确认 TS 类型覆盖、字段名一致性、嵌套结构等验收项并写入 `spec/phase4.md#验收标准`
    - **实现**: 创建 `fe/` 目录，配置 `@hey-api/openapi-ts`，执行 `npm run generate-client`
    - **V 升**: 检查生成的 sdk.gen.ts + types.gen.ts → 通过后写入 `phase4.md` → **暂停等用户确认**
+
+### 迭代功能的处理
+
+当用户在现有项目上做增量迭代时：
+
+1. **仍需创建 spec 目录** — `spec/<编号>-<需求简述>/`，story.md 记录原始需求
+2. **Phase 0 快速确认** — 只确认变更部分（新增实体/字段/方法），不变的部分不重复讨论
+3. **允许合并 Phase 实现，但 spec 写入不可跳过** — 可以将 Phase 1-3 合并为一次编码，但编码完成后必须逐 Phase 回填 spec 文件（验收标准 + 产出文件）
+4. **交付前执行 spec 完整性检查** — 确认所有 phaseN.md 非空后再告知用户完成
 
 ### story.md 的 Overview Design 部分
 
