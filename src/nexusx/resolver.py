@@ -1092,13 +1092,21 @@ class Resolver:
 
         return next_items
 
-    async def resolve(self, node: T) -> T:
+    async def resolve(self, node: T, *, mode: str = "bfs") -> T:
         """Resolve a model tree: execute resolve_* and post_* methods.
-
-        Uses BFS traversal for batched DataLoader calls per level.
 
         Args:
             node: A BaseModel instance, or list of BaseModel instances.
+            mode: Traversal strategy — ``"bfs"`` (default) or ``"dfs"``.
+
+                - ``"bfs"`` — breadth-first: processes all nodes at one level
+                  before moving to the next. Relationships are batched via
+                  ``DataLoader.load_many``, minimizing SQL round-trips. Best
+                  for wide trees with auto-loaded relationships, especially
+                  when database latency is non-trivial.
+                - ``"dfs"`` — depth-first: processes each node recursively.
+                  Simpler overhead per node. Best for narrow/deep trees or
+                  when resolve_* methods return varied sub-trees.
 
         Returns:
             The same node with all resolve_* and post_* fields populated.
@@ -1107,5 +1115,8 @@ class Resolver:
             self._registry.clear_cache()
         self._node_collectors.clear()
         self._loader_cache.clear()
-        await self._bfs_resolve(node)
+        if mode == "dfs":
+            await self._traverse(node, None)
+        else:
+            await self._bfs_resolve(node)
         return node
