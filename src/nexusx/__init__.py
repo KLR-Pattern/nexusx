@@ -80,6 +80,13 @@ from nexusx.use_case import (
 )
 from nexusx.voyager import create_use_case_voyager
 
+
+def __getattr__(name: str):
+    if name == "create_cli":
+        from nexusx.use_case.cli import create_cli
+        return create_cli
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 __all__ = [
     # Version
     "__version__",
@@ -115,6 +122,7 @@ __all__ = [
     "SelectionError",
     "create_use_case_mcp_server",
     "create_flat_mcp_server",
+    "create_cli",
     "create_use_case_router",
     # Voyager visualization
     "create_use_case_voyager",
