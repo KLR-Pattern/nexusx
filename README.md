@@ -18,58 +18,16 @@ flowchart LR
     model --> ai["AI-friendly Layer<br/>MCP tools<br/>Agent integration"]
 ```
 
-## Quick Start with AI Agent Skills
+## Two ways to build with nexusx
 
-This project ships a [skill](./skill/) that operationalizes the same path described above: clarify the idea, build the POC, harden the product surface, then expose it cleanly for AI. The skill uses the standard `SKILL.md` format supported by both Claude Code and OpenAI Codex.
+- **Manually** — use the API directly (GraphQL / Core API / MCP). Start at [Install](#install) and read straight down.
+- **AI-guided** — let an AI coding agent run a structured 4-phase workflow (idea → POC → product → TS SDK). Jump to [AI Bootstrap](#ai-bootstrap).
 
-### Claude Code
-
-```bash
-ln -s $(pwd)/skill ~/.claude/skills/nexusx-4phase
-```
-
-Then describe your requirements and invoke `/nexusx-4phase` to start.
-
-### OpenAI Codex
-
-**Repo-scope** (recommended — skill travels with the repo, all team members get it):
-
-```bash
-mkdir -p .agents/skills
-ln -s ../../skill .agents/skills/nexusx-4phase
-```
-
-**User-scope** (personal, works across all repos):
-
-```bash
-mkdir -p ~/.agents/skills
-ln -s $(pwd)/skill ~/.agents/skills/nexusx-4phase
-```
-
-Then start Codex and type `$nexusx-4phase` or describe your requirements to trigger the skill implicitly.
-
-| Phase | Focus | Output |
-|-------|-------|--------|
-| Phase 0 | Clarify the idea | Entities, relationships, aggregates, use-case methods |
-| Phase 1 | Build the POC model | models + db + voyager |
-| Phase 2 | Make the model queryable | service methods, GraphQL queryable |
-| Phase 3 | Productize and make it AI-ready | DTOs + services + REST + MCP |
-
-Manual setup is also straightforward — see [Install](#install) below.
+If you're evaluating the library, read top to bottom. If you want the agent workflow, skip ahead to the skill.
 
 ## From Idea to Product
 
-The core loop is simple: use one model to move through each delivery stage without rewriting your API surface.
-
-```
-Idea ──> SQLModel entities and relationships
-         ├── GraphQL for fast validation
-         ├── REST + OpenAPI for product delivery
-         ├── MCP for AI agents
-         └── Voyager for visualizing the system
-```
-
-**GraphQL for validation, REST for delivery, MCP for AI.**
+One model moves through each delivery stage without rewriting your API surface — **GraphQL for validation, REST for delivery, MCP for AI.**
 
 At the idea stage, you want feedback quickly: are the entities right, are the relationships right, does the shape of the response support the use case? GraphQL gives you that shortest path. Once the POC proves the model, `DefineSubset` DTOs and route generation turn the same entities into N+1-safe FastAPI endpoints with OpenAPI output, so frontend delivery stops depending on hand-written DTO duplication. When the product also needs to serve AI, the same model and service definitions can be exposed through MCP with progressive disclosure, from schema discovery to method execution.
 
@@ -641,9 +599,43 @@ uv run uvicorn demo.use_case.fastapi:app --port 8007
 # visit /docs to see routes grouped by service tag
 ```
 
-## Skill (Claude Code)
+## AI Bootstrap
 
-See [Quick Start with Claude Code Skill](#quick-start-with-claude-code-skill) at the top of this README for setup instructions and the four-phase workflow.
+> The fastest way to build with nexusx is to let an AI coding agent drive a
+> guided workflow that carries one model across its **whole lifecycle** —
+> idea → POC → product → TS SDK — not just initial scaffolding.
+
+This repo ships a [skill](./skill/) in the standard `SKILL.md` format,
+supported by both Claude Code and OpenAI Codex.
+
+**For the agent** — install the skill, then invoke it:
+
+```bash
+# Claude Code
+ln -s $(pwd)/skill ~/.claude/skills/nexusx-4phase
+# then describe your requirements and run: /nexusx-4phase
+
+# OpenAI Codex (repo-scope — travels with the repo)
+mkdir -p .agents/skills && ln -s ../../skill .agents/skills/nexusx-4phase
+# then start Codex and type: $nexusx-4phase
+
+# OpenAI Codex (user-scope — personal, all repos)
+mkdir -p ~/.agents/skills && ln -s $(pwd)/skill ~/.agents/skills/nexusx-4phase
+```
+
+| Phase | Focus | Output |
+|-------|-------|--------|
+| 0 | Clarify the idea | entities, relationships, aggregates, use-case methods |
+| 1 | Build the POC model | models + db + voyager |
+| 2 | Make the model queryable | service methods, GraphQL queryable |
+| 3 | Productize and make it AI-ready | DTOs + services + REST + MCP |
+| 4 | Generate the SDK | OpenAPI spec → end-to-end TS SDK |
+
+Each phase uses V-shaped acceptance (define criteria, implement, verify) and
+pauses for your confirmation before the next. Full methodology — Phase 0
+checklist, acceptance model, spec rules — lives in
+[`skill/SKILL.md`](./skill/SKILL.md). Whole-API context for agents:
+[`llms-full.txt`](./llms-full.txt).
 
 ## License
 
