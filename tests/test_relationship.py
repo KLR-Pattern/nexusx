@@ -228,7 +228,7 @@ class TestErManagerCustomRelationships:
         assert rel_info.fk_field == "id"
         assert rel_info.target_entity is Tag
 
-    def test_registry_custom_loader_works(self):
+    async def test_registry_custom_loader_works(self):
         """DataLoader from custom loader should work correctly."""
         registry = ErManager(
             entities=[Post, Tag, RelUser],

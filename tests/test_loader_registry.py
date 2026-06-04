@@ -111,7 +111,7 @@ class TestErManagerDiscovery:
 
 
 class TestErManagerCache:
-    def test_get_loader_caches_instance(self):
+    async def test_get_loader_caches_instance(self):
         """get_loader should return same instance for same loader class."""
         registry = ErManager(
             entities=[FixtureUser, FixtureSprint, FixtureTask],
@@ -126,7 +126,7 @@ class TestErManagerCache:
 
         assert loader1 is loader2
 
-    def test_clear_cache_resets_instances(self):
+    async def test_clear_cache_resets_instances(self):
         """clear_cache should remove all cached loader instances."""
         registry = ErManager(
             entities=[FixtureUser, FixtureSprint, FixtureTask],
@@ -185,7 +185,7 @@ class TestErManagerCustomRelationships:
                 session_factory=lambda: None,
             )
 
-    def test_get_loader_by_name(self):
+    async def test_get_loader_by_name(self):
         """get_loader_by_name should find loader across all entities."""
         registry = ErManager(
             entities=[RegPost, RegTag],
@@ -205,7 +205,7 @@ class TestErManagerCustomRelationships:
         loader = registry.get_loader_by_name("nonexistent")
         assert loader is None
 
-    def test_get_loader_for_entity(self):
+    async def test_get_loader_for_entity(self):
         """get_loader_for_entity should return loader for specific entity."""
         registry = ErManager(
             entities=[FixtureUser, FixtureSprint, FixtureTask],
@@ -293,7 +293,6 @@ class TestPaginationValidation:
 
     def test_multi_column_order_by_raises(self):
         """Multi-column order_by should raise ValueError."""
-        from sqlalchemy import desc
         from nexusx.loader.registry import _extract_sort_field
 
         with pytest.raises(ValueError, match="Only single-column"):
@@ -304,6 +303,7 @@ class TestPaginationValidation:
         # Verify the validation path by testing _validate_pagination directly
         # with a mock registry that has a list relationship without page_loader
         from unittest.mock import MagicMock
+
         from nexusx.loader.registry import RelationshipInfo
 
         registry = ErManager.__new__(ErManager)

@@ -293,7 +293,7 @@ class TestGenerateTypeKeyFromDto:
 
 
 class TestErManagerSplitMode:
-    def test_split_creates_separate_instances(self):
+    async def test_split_creates_separate_instances(self):
         from nexusx.loader.registry import ErManager
         from tests.conftest import FixtureTask, FixtureUser
 
@@ -314,7 +314,7 @@ class TestErManagerSplitMode:
 
         assert inst1 is not inst2
 
-    def test_split_same_type_key_shares_instance(self):
+    async def test_split_same_type_key_shares_instance(self):
         from nexusx.loader.registry import ErManager
         from tests.conftest import FixtureTask, FixtureUser
 
@@ -333,7 +333,7 @@ class TestErManagerSplitMode:
 
         assert inst1 is inst2
 
-    def test_default_mode_ignores_type_key(self):
+    async def test_default_mode_ignores_type_key(self):
         from nexusx.loader.registry import ErManager
         from tests.conftest import FixtureTask, FixtureUser
 
@@ -354,7 +354,7 @@ class TestErManagerSplitMode:
         # Default mode: always returns same instance regardless of type_key
         assert inst1 is inst2
 
-    def test_clear_cache_resets_split_instances(self):
+    async def test_clear_cache_resets_split_instances(self):
         from nexusx.loader.registry import ErManager
         from tests.conftest import FixtureTask, FixtureUser
 

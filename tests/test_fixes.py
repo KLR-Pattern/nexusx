@@ -241,7 +241,7 @@ class AmbigTarget(SQLModel, table=True):
 
 
 class TestGetLoaderByNameAmbiguity:
-    def test_ambiguous_name_logs_warning(self, caplog):
+    async def test_ambiguous_name_logs_warning(self, caplog):
         """get_loader_by_name should log a warning when name is ambiguous."""
 
         async def session_factory():
@@ -259,7 +259,7 @@ class TestGetLoaderByNameAmbiguity:
         assert "Ambiguous loader lookup" in caplog.text
         assert "items" in caplog.text
 
-    def test_unique_name_no_warning(self, caplog):
+    async def test_unique_name_no_warning(self, caplog):
         """get_loader_by_name should not warn when name is unique."""
 
         async def session_factory():
