@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.5.1
+## 2.5.2
 
 ### New Feature: 公共函数 `get_return_type`
 
