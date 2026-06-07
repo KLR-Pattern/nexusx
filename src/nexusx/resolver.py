@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import typing
+import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, TypeVar, get_args, get_origin
@@ -195,21 +196,15 @@ def _build_class_meta(kls: type) -> _ClassMeta:
     return meta
 
 
-# Module-level class metadata cache. Safe because class structure doesn't
-# change at runtime. Shared across all Resolver instances.
-_class_meta_cache: dict[type, _ClassMeta] = {}
-
-# Auto-load plan cache: (DTO class, registry id) → auto-load specs
-_auto_load_cache: dict[tuple[type, int], list] = {}
-
-# Type extraction cache: annotation → DTO class or None
-_dto_cls_cache: dict[Any, type[BaseModel] | None] = {}
+# Module-level class metadata cache. Uses WeakKeyDictionary so entries are
+# released when the class itself is garbage-collected (e.g. dynamically
+# created DefineSubset classes in tests).
+_class_meta_cache: weakref.WeakKeyDictionary[type, _ClassMeta] = weakref.WeakKeyDictionary()
 
 
 def _clear_resolver_caches() -> None:
     """Clear all resolver-level caches. For testing only."""
-    _auto_load_cache.clear()
-    _dto_cls_cache.clear()
+    _class_meta_cache.clear()
 
 
 def _get_class_meta(kls: type) -> _ClassMeta:
@@ -255,6 +250,11 @@ class Resolver:
         self._node_collectors: dict[int, dict[str, ICollector]] = {}
         # Loader instance cache for Depends-based loaders
         self._loader_cache: dict[Any, DataLoader] = {}
+        # Auto-load plan cache: DTO class → auto-load specs (per Resolver,
+        # avoids id(registry) reuse issues across ErManager lifetimes)
+        self._auto_load_cache: dict[type, list] = {}
+        # Type extraction cache: annotation → DTO class or None
+        self._dto_cls_cache: dict[Any, type[BaseModel] | None] = {}
 
     def _get_loader(
         self,
@@ -328,30 +328,30 @@ class Resolver:
         if not isinstance(node, BaseModel) or self._registry is None:
             return []
 
-        cache_key = (type(node), id(self._registry))
-        cached = _auto_load_cache.get(cache_key)
+        node_type = type(node)
+        cached = self._auto_load_cache.get(node_type)
         if cached is not None:
             return cached
 
         from nexusx.subset import get_subset_source
         from nexusx.utils.type_compat import is_compatible_type
 
-        source_entity = get_subset_source(type(node))
+        source_entity = get_subset_source(node_type)
         if source_entity is None:
-            _auto_load_cache[cache_key] = []
+            self._auto_load_cache[node_type] = []
             return []
 
         # Get relationship names from source entity
         entity_rels = self._registry.get_relationships(source_entity)
 
         # Get subset field names so we can skip them (only extra fields are candidates)
-        subset_field_names = set(getattr(type(node), "__subset_fields__", []))
+        subset_field_names = set(getattr(node_type, "__subset_fields__", []))
 
         # Build set of resolve method field names from cached meta
         resolve_field_names = {fname for fname, _ in meta.resolve_methods}
 
         results = []
-        for field_name, field_info in type(node).model_fields.items():
+        for field_name, field_info in node_type.model_fields.items():
             if field_name in resolve_field_names:
                 continue
             if field_name in subset_field_names:
@@ -371,7 +371,7 @@ class Resolver:
             if is_compatible_type(dto_cls, rel_info.target_entity):
                 results.append((field_name, field_name, rel_info, field_info))
 
-        _auto_load_cache[cache_key] = results
+        self._auto_load_cache[node_type] = results
         return results
 
     def _extract_dto_cls(self, field_info: Any) -> type[BaseModel] | None:
@@ -381,14 +381,14 @@ class Resolver:
         Results are cached by annotation object for repeated lookups.
         """
         anno = field_info.annotation
-        cached = _dto_cls_cache.get(anno)
+        cached = self._dto_cls_cache.get(anno)
         if cached is not None:
             return cached
-        if anno in _dto_cls_cache:
+        if anno in self._dto_cls_cache:
             return None
 
         result = self._do_extract_dto_cls(anno)
-        _dto_cls_cache[anno] = result
+        self._dto_cls_cache[anno] = result
         return result
 
     @staticmethod

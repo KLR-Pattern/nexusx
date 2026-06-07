@@ -22,7 +22,10 @@ import asyncio
 import inspect
 import json
 import re
-from typing import Any, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, get_args, get_origin, get_type_hints
+
+if TYPE_CHECKING:
+    from nexusx.use_case.types import UseCaseAppConfig
 
 try:
     import typer
