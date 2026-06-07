@@ -1,8 +1,10 @@
-"""Query executor using level-by-level DataLoader resolution."""
+"""Query executor using level-by-level BFS DataLoader resolution."""
 
 from __future__ import annotations
 
+import asyncio
 import inspect
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from graphql import FieldNode, OperationDefinitionNode, parse
@@ -16,6 +18,16 @@ if TYPE_CHECKING:
     from nexusx.loader.registry import ErManager, RelationshipInfo
 
 
+@dataclass
+class _FieldJob:
+    """A single field's load task within one BFS level."""
+
+    parents: list
+    parent_entity: type[SQLModel]
+    rel_info: RelationshipInfo
+    child_sel: FieldSelection
+
+
 class QueryExecutor:
     """Executes GraphQL queries using DataLoader for relationship resolution.
 
@@ -25,7 +37,7 @@ class QueryExecutor:
 
     Execution flow:
     1. Execute root query method → get root entity instances
-    2. resolve_relationships: level-by-level batch load via DataLoader
+    2. BFS resolve: level-by-level batch load via DataLoader (concurrent per level)
     3. Build response from resolved data
     """
 
@@ -123,7 +135,7 @@ class QueryExecutor:
                             # Get selection tree
                             field_sel = parsed_selections.get(field_name)
 
-                            # Resolve relationships via DataLoader
+                            # Resolve relationships via BFS DataLoader
                             if field_sel and result is not None:
                                 await self._resolve_result(
                                     result, entity, field_sel
@@ -146,6 +158,10 @@ class QueryExecutor:
             response["errors"] = errors
         return response
 
+    # ──────────────────────────────────────────────────────────
+    # BFS resolution
+    # ──────────────────────────────────────────────────────────
+
     async def _resolve_result(
         self,
         result: Any,
@@ -157,61 +173,112 @@ class QueryExecutor:
             return
 
         if isinstance(result, list):
-            await self._resolve_relationships(result, entity, field_sel)
+            await self._bfs_resolve(result, entity, field_sel)
         else:
-            await self._resolve_relationships([result], entity, field_sel)
+            await self._bfs_resolve([result], entity, field_sel)
 
-    async def _resolve_relationships(
+    async def _bfs_resolve(
         self,
         parents: list,
         parent_entity: type[SQLModel],
         field_sel: FieldSelection,
     ) -> None:
-        """Level-by-level relationship resolution using DataLoaders."""
+        """Level-by-level BFS relationship resolution using DataLoaders.
+
+        At each level, all relationship fields are loaded concurrently via
+        asyncio.gather. The loaded children become the parents for the next
+        level.
+        """
+        queue: list[_FieldJob] = self._build_field_jobs(
+            parents, parent_entity, field_sel
+        )
+
+        while queue:
+            # Concurrent load all fields in this level
+            load_results = await asyncio.gather(
+                *(self._load_field(job) for job in queue)
+            )
+
+            # Build next level's jobs from loaded children
+            next_jobs: list[_FieldJob] = []
+            for job, children in zip(queue, load_results, strict=True):
+                next_jobs.extend(
+                    self._build_field_jobs(
+                        children, job.rel_info.target_entity, job.child_sel
+                    )
+                )
+            queue = next_jobs
+
+    def _build_field_jobs(
+        self,
+        parents: list,
+        parent_entity: type[SQLModel],
+        field_sel: FieldSelection,
+    ) -> list[_FieldJob]:
+        """Extract relationship fields that need loading and build FieldJobs."""
         if not parents or not field_sel.sub_fields:
-            return
+            return []
 
+        jobs: list[_FieldJob] = []
         for field_name, child_sel in field_sel.sub_fields.items():
-            if not child_sel.sub_fields:
-                rel_info = self._registry.get_relationship(parent_entity, field_name)
-                if rel_info is None:
-                    continue
-                continue
-
             rel_info = self._registry.get_relationship(parent_entity, field_name)
             if rel_info is None:
                 continue
 
-            # Collect FK values
+            if not child_sel.sub_fields:
+                continue
+
+            # Paginated: use items sub-selection for deeper resolution
+            effective_sel = child_sel
+            if (
+                self._enable_pagination
+                and rel_info.is_list
+                and rel_info.page_loader is not None
+            ):
+                items_sel = (
+                    child_sel.sub_fields.get("items")
+                    if child_sel.sub_fields
+                    else None
+                )
+                if items_sel and items_sel.sub_fields:
+                    effective_sel = items_sel
+
+            if not effective_sel.sub_fields:
+                continue
+
+            # Collect valid FK values
             fk_values = [getattr(p, rel_info.fk_field, None) for p in parents]
             valid_indices = [i for i, fk in enumerate(fk_values) if fk is not None]
             if not valid_indices:
                 continue
 
             valid_parents = [parents[i] for i in valid_indices]
-            valid_fks = [fk_values[i] for i in valid_indices]
-
-            if (
-                self._enable_pagination
-                and rel_info.is_list
-                and rel_info.page_loader is not None
-            ):
-                await self._load_paginated(
-                    valid_parents, valid_fks, rel_info, child_sel
+            jobs.append(
+                _FieldJob(
+                    parents=valid_parents,
+                    parent_entity=parent_entity,
+                    rel_info=rel_info,
+                    child_sel=effective_sel,
                 )
-            else:
-                await self._load_batch(
-                    valid_parents, valid_fks, rel_info, child_sel
-                )
+            )
+        return jobs
 
-    async def _load_batch(
-        self,
-        parents: list,
-        fk_values: list,
-        rel_info: RelationshipInfo,
-        child_sel: FieldSelection,
-    ) -> None:
-        """Batch load relationship data and recursively resolve nested."""
+    async def _load_field(self, job: _FieldJob) -> list:
+        """Load a single field's relationship data and store results.
+
+        Returns a flat list of all loaded child entities for the next BFS level.
+        """
+        if (
+            self._enable_pagination
+            and job.rel_info.is_list
+            and job.rel_info.page_loader is not None
+        ):
+            return await self._load_field_paginated(job)
+        else:
+            return await self._load_field_batch(job)
+
+    async def _load_field_batch(self, job: _FieldJob) -> list:
+        """Batch load a non-paginated relationship field."""
         from nexusx.loader.query_meta import (
             generate_query_meta_from_selection,
             generate_type_key_from_selection,
@@ -219,8 +286,10 @@ class QueryExecutor:
             set_query_meta,
         )
 
+        rel_info = job.rel_info
+        child_sel = job.child_sel
+
         # Build FK lookup from target entity's registered relationships
-        # so query_meta uses actual FK names instead of {rel}_id convention
         target_rels = self._registry.get_relationships(rel_info.target_entity)
         fk_lookup = {name: info.fk_field for name, info in target_rels.items()}
 
@@ -239,31 +308,23 @@ class QueryExecutor:
         else:
             merge_query_meta(loader, meta)
 
+        fk_values = [getattr(p, rel_info.fk_field) for p in job.parents]
         results = await loader.load_many(fk_values)
 
-        for parent, result in zip(parents, results, strict=True):
+        all_children: list = []
+        for parent, result in zip(job.parents, results, strict=True):
             if rel_info.is_list:
                 items = result or []
                 self._store(parent, rel_info.name, items)
-                if items:
-                    await self._resolve_relationships(
-                        items, rel_info.target_entity, child_sel
-                    )
+                all_children.extend(items)
             else:
                 self._store(parent, rel_info.name, result)
                 if result is not None:
-                    await self._resolve_relationships(
-                        [result], rel_info.target_entity, child_sel
-                    )
+                    all_children.append(result)
+        return all_children
 
-    async def _load_paginated(
-        self,
-        parents: list,
-        fk_values: list,
-        rel_info: RelationshipInfo,
-        child_sel: FieldSelection,
-    ) -> None:
-        """Load paginated relationship data."""
+    async def _load_field_paginated(self, job: _FieldJob) -> list:
+        """Load a paginated relationship field."""
         from nexusx.loader.query_meta import (
             generate_query_meta_from_selection,
             generate_type_key_from_selection,
@@ -271,50 +332,42 @@ class QueryExecutor:
             set_query_meta,
         )
 
+        rel_info = job.rel_info
+        child_sel = job.child_sel
+
+        # Extract page args from original field_sel (before items adjustment)
+        # The job.child_sel is already the items sub-selection;
+        # we need the original for pagination args.
         page_args = self._extract_page_args(child_sel, rel_info)
 
-        # For paginated results, use items sub-selection if available
-        items_sel = child_sel.sub_fields.get("items") if child_sel.sub_fields else None
-        sel = items_sel if items_sel and items_sel.sub_fields else child_sel
-
-        # Build FK lookup from target entity's registered relationships
         target_rels = self._registry.get_relationships(rel_info.target_entity)
         fk_lookup = {name: info.fk_field for name, info in target_rels.items()}
 
-        # Generate type_key for split mode (None in default mode)
         type_key = generate_type_key_from_selection(
-            sel, rel_info.target_entity, fk_lookup=fk_lookup,
+            child_sel, rel_info.target_entity, fk_lookup=fk_lookup,
         )
         loader = self._registry.get_loader(rel_info.page_loader, type_key=type_key)
 
-        # Inject _query_meta for SQL column pruning
         meta = generate_query_meta_from_selection(
-            sel, rel_info.target_entity, fk_lookup=fk_lookup,
+            child_sel, rel_info.target_entity, fk_lookup=fk_lookup,
         )
         if type_key is not None and self._registry._split_mode:
             set_query_meta(loader, meta)
         else:
             merge_query_meta(loader, meta)
 
+        fk_values = [getattr(p, rel_info.fk_field) for p in job.parents]
         commands = [
             PageLoadCommand(fk_value=fk, page_args=page_args) for fk in fk_values
         ]
         results = await loader.load_many(commands)
 
-        all_items = []
-
-        for parent, page_result in zip(parents, results, strict=True):
+        all_children: list = []
+        for parent, page_result in zip(job.parents, results, strict=True):
             self._store(parent, rel_info.name, page_result)
             if page_result and page_result.get("items"):
-                all_items.extend(page_result["items"])
-
-        # Recursively resolve nested relationships on items
-        if all_items and child_sel.sub_fields:
-            items_sel = child_sel.sub_fields.get("items")
-            if items_sel and items_sel.sub_fields:
-                await self._resolve_relationships(
-                    all_items, rel_info.target_entity, items_sel
-                )
+                all_children.extend(page_result["items"])
+        return all_children
 
     def _extract_page_args(
         self, field_sel: FieldSelection, rel_info: RelationshipInfo
@@ -327,6 +380,10 @@ class QueryExecutor:
             default_page_size=rel_info.default_page_size,
             max_page_size=rel_info.max_page_size,
         )
+
+    # ──────────────────────────────────────────────────────────
+    # Serialization (unchanged)
+    # ──────────────────────────────────────────────────────────
 
     def _serialize(
         self,

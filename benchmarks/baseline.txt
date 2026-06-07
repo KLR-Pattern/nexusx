@@ -1,0 +1,26 @@
+======================================================================
+  GraphQL QueryExecutor Benchmark
+  Database: SQLite in-memory
+======================================================================
+
+  ── Small (5 users, 3 sprints, 15 tasks) ──
+
+  Scenario                                             Avg        P50        P95
+  ──────────────────────────────────────────────────────────────────────────────
+  Q1: 1-level (task→owner)                           915us      875us     1.04ms
+  Q2: 2-level (sprint→tasks→owner)                  1.44ms     1.38ms     1.64ms
+  Q3: wide (user→posts+comments)                    2.03ms     1.53ms     1.95ms
+  Q4: deep+wide (user→posts→comments + comments→post)     5.97ms     5.83ms     6.43ms
+
+  ── Medium (20 users, 10 sprints, 200 tasks) ──
+
+  Verifying correctness...
+  Correctness verification: PASSED
+
+  Scenario                                             Avg        P50        P95
+  ──────────────────────────────────────────────────────────────────────────────
+  Q1: 1-level (task→owner)                          1.83ms     1.78ms     1.96ms
+  Q2: 2-level (sprint→tasks→owner)                  2.53ms     2.48ms     2.75ms
+  Q3: wide (user→posts+comments)                    3.39ms     2.47ms    11.62ms
+  Q4: deep+wide (user→posts→comments + comments→post)    22.06ms    20.90ms    31.38ms
+

@@ -1,0 +1,35 @@
+======================================================================
+  GraphQL QueryExecutor Benchmark
+  Database: MySQL 8.0 (localhost)
+======================================================================
+
+  ── Small (5 users, 3 sprints, 15 tasks) ──
+
+  Scenario                                             Avg        P50        P95
+  ──────────────────────────────────────────────────────────────────────────────
+  Q1: 1-level (task→owner)                          1.57ms     1.49ms     1.82ms
+  Q2: 2-level (sprint→tasks→owner)                  2.97ms     2.69ms     3.37ms
+  Q3: wide (user→posts+comments)                    3.01ms     2.45ms     3.75ms
+  Q4: deep+wide (user→posts→comments + comments→post)     4.42ms     4.31ms     4.84ms
+
+  ── Medium (20 users, 10 sprints, 200 tasks) ──
+
+  Verifying correctness...
+  Correctness verification: PASSED
+
+  Scenario                                             Avg        P50        P95
+  ──────────────────────────────────────────────────────────────────────────────
+  Q1: 1-level (task→owner)                          3.06ms     2.40ms     3.47ms
+  Q2: 2-level (sprint→tasks→owner)                  5.00ms     4.53ms     5.02ms
+  Q3: wide (user→posts+comments)                    4.23ms     3.69ms     4.40ms
+  Q4: deep+wide (user→posts→comments + comments→post)     8.62ms     7.18ms    27.83ms
+
+  ── Large (50 users, 20 sprints, 1000 tasks) ──
+
+  Scenario                                             Avg        P50        P95
+  ──────────────────────────────────────────────────────────────────────────────
+  Q1: 1-level (task→owner)                         11.88ms     8.35ms    32.34ms
+  Q2: 2-level (sprint→tasks→owner)                 14.29ms    10.72ms    34.87ms
+  Q3: wide (user→posts+comments)                    9.11ms     6.61ms    29.99ms
+  Q4: deep+wide (user→posts→comments + comments→post)    19.21ms    13.94ms    37.68ms
+
