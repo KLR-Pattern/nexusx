@@ -202,7 +202,91 @@ service/<domain>/methods.py  ← 独立定义业务逻辑（核心）
 
 **必须与用户确认每个领域的选型后才能继续。**
 
-### Step 0-7: 检查清单
+### Step 0-7: 非功能性指标确认
+
+非功能性指标直接影响配方生成方式和库选型，必须在 Phase 0 确认。逐一与用户确认以下维度。
+
+#### Step 0-7a: 延迟要求
+
+**说明**：不同协议的延迟预期不同——REST 通常要求 100ms-500ms，MCP 工具可以接受 2-3s。延迟要求影响 DataLoader 是否需要预聚合、post_* 派生字段能否实时计算。
+
+| 场景 | 典型延迟预期 | 做法 |
+|------|-------------|------|
+| REST 单条查询 | 100ms | 禁止跨服务 RPC 组合，一次查询出完 |
+| REST 列表查询 | 300ms | 分页 + 预加载所有关联 |
+| MCP 工具调用 | 2-3s | 允许逐层加载，多步组合 |
+| 后台批量任务 | 10s+ | 异步执行、事件驱动 |
+
+**引导追问**：
+- "这个接口用户在页面上能不能接受转圈 1 秒？"
+- "MCP 工具是给 AI agent 用的，Agent 等 3 秒正常吗？"
+
+**必须与用户逐一确认每个主要 Use Case 的延迟预期。**
+
+#### Step 0-7b: 一致性要求
+
+**说明**：强一致 vs 最终一致。不同场景对一致性的容忍度不同，直接影响配方中是否需要事务、版本号、补偿逻辑。
+
+| 强一致场景 | 最终一致可接受场景 |
+|-----------|-------------------|
+| 支付扣款 | 头像修改 |
+| 库存扣减 | 昵称更新 |
+| 权限变更 | 推荐列表刷新 |
+| 数据导出历史快照 | 阅读计数 |
+
+**引导追问**：
+- "用户改了头像，别人立刻能看到吗？还是等几秒可以接受？"
+- "如果同时两个人修改同一条数据，后提交的应该覆盖还是报冲突？"
+
+**对每个 Use Case 标记其一致性要求。标记结果会决定 R 层配方中是否包含补偿逻辑或乐观锁。**
+
+#### Step 0-7c: 规模预期
+
+**说明**：用户对规模往往没有准确概念，需要基于业务场景帮助估算。估算结果影响 L 层选型和 R 层配方参数。
+
+**常用估算方法**：
+
+```
+日活用户 × 日均操作次数 = 日均调用量
+日均调用量 × 峰值倍数（通常 3-5 倍）= 峰值 QPS
+日均调用量 × 90 天 = 初始数据规模
+```
+
+**引导追问**：
+- "预计这个系统多久上线？第一个月大概多少用户？"
+- "增长率大约多少？"
+- "有没有大客户入驻或营销活动会导致突发流量？"
+
+**记录估算结果并以表格确认：**
+
+| 维度 | 估算值 | 影响 |
+|------|--------|------|
+| 日均调用量 | ~5000 | 单 sqlite 可支持 |
+| 峰值 QPS | ~50 | 需要连接池，不需要缓存层 |
+| 单表最大行数 | ~100 万 | 需要索引 + 分页，不需要分库 |
+| 90 天数据量 | ~50GB | 单机够用，不需要分片 |
+
+#### Step 0-7d: 部署约束
+
+**说明**：部署环境直接决定可用库的范围和配方中的协议选择。
+
+| 约束 | 影响 |
+|------|------|
+| 不能装额外的服务（DB/Redis） | 只能用 sqlite/aiosqlite，不用 Redis |
+| 公司内网，不能通外网 | 不能走外部 LLM 推理、不能 CDN |
+| 容器化部署（Docker/K8s） | 可用连接池、可选 PostgreSQL |
+| 纯 stdio 模式 | 不能用 FastAPI，只用 MCP stdio Server |
+| 低资源设备（内存 <512MB） | 禁用大库依赖、禁用异步框架 |
+
+**引导追问**：
+- "这个服务部署在哪？自己的服务器还是云上？"
+- "能装数据库吗？MySQL/PostgreSQL 还是只能用文件型？"
+- "服务架构有要求吗？容器化、Serverless、还是裸机？"
+- "目标环境是微服务架构的一部分，还是独立服务？"
+
+**记录部署约束，确认后它们会作为 L 层选型和 R 层配方协议的硬约束。**
+
+### Step 0-8: 检查清单
 
 全部确认后，向用户展示汇总，确保以下问题已回答：
 
@@ -212,6 +296,11 @@ service/<domain>/methods.py  ← 独立定义业务逻辑（核心）
 - [ ] **Service 切分方案是否由用户确认（不是模型自行决定）？**
 - [ ] 核心用例是否覆盖主要业务场景，逻辑是否自洽？
 - [ ] 第三方库选型是否确认，维护状态是否已调查？
+- [ ] 非功能性指标是否确认？包括：
+  - [ ] 延迟预期（每个主要 Use Case）
+  - [ ] 一致性要求（强一致 / 最终一致）
+  - [ ] 规模预期（调用量、QPS、数据量）
+  - [ ] 部署约束（环境、服务、资源限制）
 - [ ] 是否有明显的遗漏或边界情况需要讨论？
 
 **全部确认后才能进入 Phase 1。**
@@ -261,3 +350,122 @@ fe/                 # Phase 4 前端 SDK
 | 查询 | 无方法 | methods.py + `mount_method()` 挂载 | UseCaseService 封装（复用 methods.py） | - |
 | API | Voyager(ER diagram) | GraphiQL | GraphQL + REST + Voyager(+services) + MCP | TS SDK |
 | 响应 | N/A | 完整实体 | DefineSubset DTO | OpenAPI spec |
+
+## 踩坑经验
+
+1. **engine/session 必须独立为 `db.py`** — `models.py` 需要 `async_session`，`database.py` 需要 models，放在同一文件会导致循环导入。`db.py` 只放 engine + session_factory，不导入任何 model
+2. **`pyproject.toml` 必须配置 `packages = ["src"]`** — hatchling 默认按项目名找目录，`src/` 布局需要显式指定 `[tool.hatch.build.targets.wheel]`
+3. **不要在 DefineSubset 文件中使用 `from __future__ import annotations`** — 会使类型注解变字符串，SubsetMeta 无法检测 Annotated 元数据
+4. **DTO 字段类型必须用 DTO 类型** — 不能直接用 SQLModel 实体，否则 TypeError
+5. **列表关系需要 order_by** — 分页功能要求 `sa_relationship_kwargs={"order_by": "Entity.column"}`
+6. **ErManager base 和 entities 互斥** — 不能同时提供
+7. **目录命名不能以数字开头** — Python 模块名限制
+8. **UseCaseService 只有被 @query/@mutation 装饰的 async classmethod 会被发现** — 普通方法不会暴露
+9. **build_dto_select → dict(row._mapping) → DTO 构造** — 这是 Core API 的标准查询模式
+10. **每个 Model 必须有 docstring，每个 Field 必须有 description** — Phase 1 就要确保语义清晰，description 会传递到 OpenAPI spec
+11. **每个 service 子目录必须包含 spec.md** — 记录服务目的、用途、方法需求、DTO 说明和变更记录，方便团队理解服务边界
+12. **fastmcp>=3.2.4 挂载到 FastAPI 需要 lifespan 合并** — `app.mount("/mcp", mcp.http_app(path="/"))` 会报 `Task group is not initialized`。必须：(1) 使用 `transport="streamable-http", stateless_http=True`；(2) 在 lifespan 函数定义之前创建 MCP http_app 对象；(3) 将 MCP http_app 的 lifespan 嵌套到 FastAPI lifespan 中（`async with mcp_http.lifespan(mcp_http):`）
+13. **methods.py 函数需通过 `_mount()` 桥接 classmethod 协议** — `query()`/`mutation()` 返回 `classmethod`，会自动注入 `cls` 参数。methods.py 中的独立函数不含 `cls`，直接用 `query(fn)` 挂载到 Entity 后调用会 TypeError。使用 `_mount()` 辅助函数包装一层 `async def wrapper(cls, *args, **kwargs): return await fn(*args, **kwargs)` 来桥接。`@functools.wraps(fn)` 保留 docstring，确保 GraphQL SDL 正确生成描述
+21. **`GraphQLHandler` 必须在 `mount_method()` 之后创建** — `GraphQLHandler` 在初始化时扫描 BaseEntity 子类的 `@query`/`@mutation` 方法构建 schema。如果先创建 handler 再挂载方法，GraphQL schema 会为空。`main.py` 中必须先调用 `mount_method()` 再创建 `graphql_handler`
+22. **`mount_method()` 定义在 `models.py` 中，`main.py` 显式调用** — 挂载逻辑和 entity 定义放在一起，减少文件跳转。函数体内做延迟 import（`from src.service.xxx.methods import ...`）避免循环依赖。`main.py` 中 `from src.models import mount_method` + `mount_method()` 显式调用，比 import 副作用更清晰
+14. **测试需 monkey-patch 每个 methods 模块的 `async_session`** — methods.py 执行 `from src.db import async_session` 时已绑定原始值，运行时 patch `src.db.async_session` 不会影响已导入的局部绑定。必须同时 patch `src.db` 和每个 methods 模块：`monkeypatch.setattr(mod, "async_session", test_factory)`
+15. **测试放在项目级 `tests/` 目录** — 不放在 `service/*/` 子目录，避免循环导入（tests 导入 src.models，而 models.py 底部导入 service methods）。每个业务域一个 `test_<domain>_methods.py` 文件
+16. **Use `create_use_case_router()` 而非手写路由** — 手写路由无法声明 `response_model`，导致 OpenAPI spec 中响应类型为空（`unknown`），TS SDK 无法生成有效类型。`create_use_case_router()` 从 UseCaseService 方法的返回类型注解（如 `-> list[ChatSummary]`）自动提取 `response_model`，使 FastAPI 在 OpenAPI spec 中正确描述响应结构
+17. **UseCaseService 方法必须声明返回类型注解** — `create_use_case_router()` 通过 `get_type_hints(method).get("return")` 提取返回类型作为 `response_model`。缺少返回注解的方法，其响应类型在 OpenAPI spec 中为空
+18. **`@hey-api/sdk` 的 `asClass` 已废弃** — v0.97+ 使用 `operations: { strategy: 'byTags' }` 替代 `asClass: true`，按 OpenAPI tags 分组生成 SDK class
+19. **所有 Relationship 加 `sa_relationship_kwargs={"lazy": "noload"}`** — 项目通过显式查询 + Resolver DataLoader 加载关系数据，不依赖 ORM lazy-load。`noload` 使 relationship 属性直接返回默认值（`None`/`[]`），避免 session 关闭后 `model_validate(entity)` 访问 relationship descriptor 触发 DetachedInstanceError
+20. **methods.py 返回 Model，service.py 负责 DTO 转换** — methods.py 是纯业务逻辑层，所有方法（query + mutation）返回 ORM Model 实体。service.py 统一调用 methods.py，DTO 转换在 service.py 中进行：(1) list 方法调 methods 拿 `list[Model]` → `[DtoType.model_validate(m) for m in models]` → `Resolver().resolve(dtos)`；(2) 单条 get 方法调 methods 拿 `Model | None` → `DtoType.model_validate(entity)` → `Resolver().resolve(dto)`；(3) mutation 方法同单条 get。service.py 不直接操作数据库（无 `build_dto_select`、`async_session`）
+
+## 需求文档管理
+
+每次使用 skill 时，必须在项目根目录下创建 `spec/` 目录，按以下规则组织需求文档：
+
+### 目录命名
+
+```
+spec/<编号>-<需求简述>/
+```
+
+- **编号格式**: `YY-MM-DD` + 两位序号，如 `250510-01`
+- **需求简述**: 英文短横线连接，如 `chat-demo`
+
+示例: `spec/250510-01-chat-demo/`
+
+### 文件结构
+
+```
+spec/<编号>-<需求简述>/
+├── story.md        # 用户原始需求 + Overview Design
+├── phase0.md       # 需求确认
+├── phase1.md       # Schema + ER Diagram
+├── phase2.md       # Loader 实现
+├── phase3.md       # UseCase + MCP
+└── phase4.md       # TS SDK
+```
+
+### 文件内容格式
+
+每个 phase 文件分三个部分：
+
+```markdown
+# Phase N: <阶段标题>
+
+## 需求说明
+
+（记录用户在对话中提出的原始需求、约束条件和确认结论）
+
+## 验收标准
+
+（V 降阶段定义的验收标准表格，每项标注验证方式）
+
+## 实现描述
+
+（记录该阶段的具体技术实现方案、产出文件和关键决策，以及 V 升的逐条回查结果）
+```
+
+### 写入时机
+
+| 文件 | 写入时机 |
+|------|----------|
+| story.md | 用户首次描述需求时记录原始表述；Phase 0 确认后补充 Overview Design（见下方说明） |
+| phase0.md | Phase 0 全部确认后，进入 Phase 1 之前 |
+| phase1.md | V 降写入验收标准 → 实现 → V 升回查全部通过后写入完整内容 |
+| phase2.md | V 降写入验收标准 → 实现 → V 升回查全部通过后写入完整内容 |
+| phase3.md | V 降写入验收标准 → 实现 → V 升回查全部通过后写入完整内容 |
+| phase4.md | V 降写入验收标准 → 实现 → V 升回查全部通过后写入完整内容 |
+
+## 执行步骤
+
+当用户要求创建四阶段项目时：
+
+1. **创建 spec 目录**: 用户首次描述需求时，在项目根目录创建 `spec/<编号>-<需求简述>/`，将用户原始需求写入 `story.md`，预建 phase0 ~ phase4 空文件
+2. **Phase 0 需求确认**: 按 Step 0-1 ~ 0-7 逐步与用户确认实体、关系、聚合根、用例方法、第三方库、非功能性指标 → 确认后写入 `phase0.md` → **补充 `story.md` 的 Overview Design 部分** → **用户全部确认后才继续**
+3. **创建项目结构**: 目录 + pyproject.toml（依赖 nexusx）
+4. **Phase 1**:
+   - **V 降**: 与用户确认验收标准表并写入 `spec/phase1.md#验收标准`
+   - **实现**: 生成 db.py + models.py(纯实体，无方法) + database.py(mock seed) + main.py(voyager)
+   - **V 升**: 逐条回查验收标准 → 通过后写入 `phase1.md` 完整内容 → **暂停等用户确认**
+5. **Phase 2**:
+   - **V 降**: 与用户确认测试验收集（正常场景 + 边界异常）并写入 `spec/phase2.md#验收标准`
+   - **实现**: 编写 service/<domain>/methods.py → models.py 中 `mount_method()` 挂载 → main.py 调用 `mount_method()` → tests/ 自动化测试
+   - **V 升**: 运行 `pytest tests/` + 在 GraphiQL 中逐一执行验收表 → 通过后写入 `phase2.md` → **暂停等用户确认**
+6. **Phase 3**:
+   - **V 降**: 与用户确认 REST 端点、DTO 字段、MCP 分层的验收标准并写入 `spec/phase3.md#验收标准`
+   - **实现**: 新增 dtos.py + services.py → main.py 用 `create_use_case_router()` 挂载 REST
+   - **V 升**: 测试 REST 响应结构 + Voyager 可视化 + MCP 调用链 → 通过后写入 `phase3.md` → **暂停等用户确认**
+7. **Phase 4**:
+   - **V 降**: 确认 TS 类型覆盖、字段名一致性、嵌套结构等验收项并写入 `spec/phase4.md#验收标准`
+   - **实现**: 创建 `fe/` 目录，配置 `@hey-api/openapi-ts`，执行 `npm run generate-client`
+   - **V 升**: 检查生成的 sdk.gen.ts + types.gen.ts → 通过后写入 `phase4.md` → **暂停等用户确认**
+
+### story.md 的 Overview Design 部分
+
+Phase 0 全部确认后、进入 Phase 1 之前，在 `story.md` 中补充 `## Overview Design` 部分，内容包含：
+
+- **业务流程**：核心用户操作路径（用文本流程图）
+- **实体关系**：ER 图（文本格式）
+- **聚合根**：明确入口实体
+- **关键设计决策**：第三方库选型、分页策略、幂等策略等（表格形式）
+- **四阶段产出**：每个 Phase 的预期交付物概要
+
+目的：让团队在进入 Phase 1 之前对系统全貌有清晰共识。
