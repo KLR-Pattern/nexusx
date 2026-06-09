@@ -27,10 +27,12 @@ def _python_type_to_graphql(
     if origin is list:
         args = get_args(python_type)
         if args:
+            inner = args[0]
+            is_element_nullable = converter.is_optional(inner)
             inner_type = _python_type_to_graphql_inner(
-                args[0], converter, nullable=True, entity_names=entity_names
+                inner, converter, nullable=is_element_nullable, entity_names=entity_names
             )
-            return f"[{inner_type}!]!"
+            return f"[{inner_type}]!"
         return "[String!]!"
 
     # Handle Optional
@@ -299,8 +301,10 @@ class SDLGenerator:
         if origin is list:
             args = get_args(python_type)
             if args:
-                inner_type = self._input_type_to_graphql(args[0])
-                return f"[{inner_type}!]!"
+                inner = args[0]
+                is_element_nullable = self._converter.is_optional(inner)
+                inner_type = self._input_type_to_graphql(inner, is_optional=is_element_nullable)
+                return f"[{inner_type}]!"
             return "[String!]!"
 
         # Handle Optional

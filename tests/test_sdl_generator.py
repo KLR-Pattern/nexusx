@@ -270,12 +270,11 @@ class TestPythonTypeToGraphql:
     def test_list_optional_int(self) -> None:
         """Test converting list[Optional[int]] type.
 
-        Note: Current implementation doesn't unwrap Optional inside list,
-        so it falls back to String. This is a known edge case.
+        Optional inside list is detected, element is nullable (no !).
+        Falls back to String since int|None doesn't map to a scalar directly.
         """
         result = _python_type_to_graphql(list[int | None], self.converter)
-        # Current behavior: Optional inside list is not handled, defaults to String
-        assert result == "[String!]!"
+        assert result == "[String]!"
 
     def test_list_str(self) -> None:
         """Test converting list[str] type."""
