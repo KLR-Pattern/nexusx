@@ -257,6 +257,22 @@ def _compute_should_traverse(kls: type) -> bool:
     return False
 
 
+def _fast_orm_to_dto(
+    orm_instance: Any, dto_cls: type[BaseModel], subset_fields: tuple[str, ...],
+) -> BaseModel:
+    """Fast-path ORM→DTO conversion using pre-extracted subset_fields.
+
+    Skips the defensive getattr/try-except branches in _orm_to_dto by
+    assuming subset_fields is already known and forward refs are resolved.
+    Falls back to Resolver._orm_to_dto on forward-ref errors.
+    """
+    kwargs = {f: v for f in subset_fields if (v := getattr(orm_instance, f, None)) is not None}
+    try:
+        return dto_cls(**kwargs)
+    except (PydanticUserError, NameError):
+        return Resolver._orm_to_dto(orm_instance, dto_cls)
+
+
 # ──────────────────────────────────────────────────────────
 # Resolver implementation
 # ──────────────────────────────────────────────────────────
@@ -723,18 +739,20 @@ class Resolver:
     def _collect_existing_children(
         self,
         level_state: _LevelState,
-        auto_loaded_fields: set[tuple[int, str]],
+        auto_loaded_fields: dict[int, set[str]],
         next_level: list[_WorkItem],
     ) -> None:
         """Collect existing object-field children (skip auto-loaded and non-traversable)."""
+        _EMPTY: frozenset[str] = frozenset()
         for item, _meta, new_ancestor_ctx, merged_collectors in level_state:
             node = item.node
             node_id = id(node)
             traversable = self._get_traversable_fields(type(node))
             if traversable is None:
                 continue
+            loaded = auto_loaded_fields.get(node_id, _EMPTY)
             for field_name, is_list in traversable:
-                if (node_id, field_name) in auto_loaded_fields:
+                if field_name in loaded:
                     continue
                 val = getattr(node, field_name, None)
                 if val is None:
@@ -811,18 +829,18 @@ class Resolver:
         self,
         level_state: list[tuple[_WorkItem, _ClassMeta, dict[str, Any], dict[str, ICollector]]],
         next_level: list[_WorkItem],
-    ) -> set[tuple[int, str]]:
+    ) -> dict[int, set[str]]:
         """Batch auto-load relationships for all nodes at a level.
 
         Groups nodes by relationship, collects all FK values, uses load_many
         for batched loading, then ORM→DTO conversion.  Appends child WorkItems
         directly into *next_level*.
 
-        Returns set of (id(node), field_name) pairs that were auto-loaded,
+        Returns dict of node_id → set[field_name] pairs that were auto-loaded,
         so the caller can skip them in the existing-fields scan.
         """
         if self._registry is None:
-            return set()
+            return {}
 
         from nexusx.loader.query_meta import (
             generate_query_meta_from_dto,
@@ -830,7 +848,7 @@ class Resolver:
             set_query_meta,
         )
 
-        auto_loaded: set[tuple[int, str]] = set()
+        auto_loaded: dict[int, set[str]] = {}
 
         # Collect auto-load specs per node, group by (node_type, rel_name)
         groups: dict[
@@ -871,6 +889,9 @@ class Resolver:
             is_list = first_rel.is_list
             fk_field = first_rel.fk_field
 
+            # Pre-extract subset_fields for inlined DTO construction
+            subset_fields = getattr(first_dto, "__subset_fields__", None) if first_dto else None
+
             # Collect all FK/PK values and dispatch batch load
             keys: list[Any] = []
             valid_entries: list[tuple[int, Any, str, type[BaseModel] | None]] = []
@@ -893,13 +914,21 @@ class Resolver:
                 if is_list:
                     items_list = result if result is not None else []
                     if dto_cls and items_list:
-                        items_list = [
-                            r if (is_custom and isinstance(r, BaseModel))
-                            else self._orm_to_dto(r, dto_cls)
-                            for r in items_list
-                        ]
+                        if subset_fields is not None:
+                            items_list = [
+                                _fast_orm_to_dto(r, dto_cls, subset_fields)
+                                if not (is_custom and isinstance(r, BaseModel))
+                                else r
+                                for r in items_list
+                            ]
+                        else:
+                            items_list = [
+                                r if (is_custom and isinstance(r, BaseModel))
+                                else self._orm_to_dto(r, dto_cls)
+                                for r in items_list
+                            ]
                     setattr(node, field_name, items_list)
-                    auto_loaded.add((id(node), field_name))
+                    auto_loaded.setdefault(id(node), set()).add(field_name)
                     for child in items_list:
                         if isinstance(child, BaseModel):
                             next_level.append(_WorkItem(
@@ -910,9 +939,12 @@ class Resolver:
                         continue
                     if dto_cls:
                         if not (is_custom and isinstance(result, BaseModel)):
-                            result = self._orm_to_dto(result, dto_cls)
+                            if subset_fields is not None:
+                                result = _fast_orm_to_dto(result, dto_cls, subset_fields)
+                            else:
+                                result = self._orm_to_dto(result, dto_cls)
                     setattr(node, field_name, result)
-                    auto_loaded.add((id(node), field_name))
+                    auto_loaded.setdefault(id(node), set()).add(field_name)
                     if isinstance(result, BaseModel):
                         next_level.append(_WorkItem(
                             result, node, new_ancestor_ctx, merged_collectors,
