@@ -71,6 +71,7 @@ from nexusx.use_case import (
     create_jsonrpc_router,
     create_use_case_cli,
     create_use_case_flat_server,
+    create_use_case_grpc_server,
     create_use_case_mcp_server,
 )
 from nexusx.use_case import (
@@ -109,6 +110,7 @@ __all__ = [
     "SelectionError",
     "create_use_case_mcp_server",
     "create_use_case_flat_server",
+    "create_use_case_grpc_server",
     "create_use_case_cli",
     "create_jsonrpc_router",
     "create_use_case_router",
