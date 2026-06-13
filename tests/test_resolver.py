@@ -931,3 +931,190 @@ class TestShouldTraverse:
         result = await Resolver().resolve(root)
 
         assert result.middle.leaf.source_name == "source_5"
+
+
+# ──────────────────────────────────────────────────────────
+# Test: post_default_handler — finalization hook (runs after all post_*)
+# ──────────────────────────────────────────────────────────
+
+
+class TestResolverPostDefaultHandler:
+    async def test_runs_after_all_post_methods(self):
+        """post_default_handler runs after every post_* at the same node,
+        so it can read fields those post_* methods populated."""
+
+        class Sprint(BaseModel):
+            total_tasks: int = 0
+            completed_tasks: int = 0
+            completion_rate: float = 0.0
+
+            def post_total_tasks(self):
+                return 10
+
+            def post_completed_tasks(self):
+                return 4
+
+            def post_default_handler(self):
+                self.completion_rate = (
+                    self.completed_tasks / self.total_tasks
+                    if self.total_tasks
+                    else 0.0
+                )
+
+        result = await Resolver().resolve(Sprint())
+        assert result.total_tasks == 10
+        assert result.completed_tasks == 4
+        assert result.completion_rate == 0.4
+
+    async def test_return_value_ignored_and_no_field_auto_assigned(self):
+        """The handler's return value is NOT auto-assigned to any field
+        (in particular, no spurious `default_handler` field is created),
+        and the body may set several fields manually."""
+
+        class Model(BaseModel):
+            a: int = 0
+            b: int = 0
+
+            def post_default_handler(self):
+                self.a = 1
+                self.b = 2
+                return "this return value must be ignored"
+
+        result = await Resolver().resolve(Model())
+        assert result.a == 1
+        assert result.b == 2
+        # No field named after the method is created.
+        assert not hasattr(result, "default_handler")
+
+    async def test_async_handler(self):
+        """async def post_default_handler is awaited correctly."""
+
+        class Model(BaseModel):
+            value: int = 0
+
+            async def post_default_handler(self):
+                await asyncio.sleep(0)
+                self.value = 42
+
+        result = await Resolver().resolve(Model())
+        assert result.value == 42
+
+    async def test_handler_reads_collector_populated_by_descendants(self):
+        """post_default_handler can read a Collector that descendants
+        populated via SendTo — recursion finishes before the handler runs."""
+
+        from typing import Annotated
+
+        from nexusx.context import Collector, SendTo
+
+        class Task(BaseModel):
+            id: Annotated[int, SendTo("task_ids")]
+
+        class Sprint(BaseModel):
+            tasks: list[Task] = []
+            task_ids: list[int] = []
+
+            def post_default_handler(self, collector=Collector("task_ids")):
+                self.task_ids = sorted(collector.values())
+
+        sprint = Sprint(tasks=[Task(id=3), Task(id=1), Task(id=2)])
+        result = await Resolver().resolve(sprint)
+        assert result.task_ids == [1, 2, 3]
+
+    async def test_handler_with_context(self):
+        """The context parameter is injected from Resolver(context=...)."""
+
+        class Model(BaseModel):
+            label: str = ""
+
+            def post_default_handler(self, context=None):
+                if context is None:
+                    context = {}
+                self.label = context.get("env", "unknown")
+
+        result = await Resolver(context={"env": "prod"}).resolve(Model())
+        assert result.label == "prod"
+
+    async def test_handler_with_parent(self):
+        """The parent parameter references the direct parent node."""
+
+        class Child(BaseModel):
+            parent_name: str = ""
+
+            def post_default_handler(self, parent=None):
+                self.parent_name = getattr(parent, "name", "?") if parent else "?"
+
+        class Parent(BaseModel):
+            name: str
+            child: Child
+
+        result = await Resolver().resolve(
+            Parent(name="Root", child=Child())
+        )
+        assert result.child.parent_name == "Root"
+
+    async def test_handler_with_ancestor_context(self):
+        """The ancestor_context parameter receives ExposeAs values."""
+
+        from typing import Annotated
+
+        from nexusx.context import ExposeAs
+
+        class Leaf(BaseModel):
+            tenant_label: str = ""
+
+            def post_default_handler(self, ancestor_context=None):
+                if ancestor_context is None:
+                    ancestor_context = {}
+                self.tenant_label = f"tenant={ancestor_context.get('tenant')}"
+
+        class Middle(BaseModel):
+            leaf: Leaf
+
+        class Root(BaseModel):
+            tenant: Annotated[str, ExposeAs("tenant")] = "acme"
+            middle: Middle
+
+        result = await Resolver().resolve(
+            Root(tenant="acme", middle=Middle(leaf=Leaf()))
+        )
+        assert result.middle.leaf.tenant_label == "tenant=acme"
+
+    async def test_handler_only_class_still_executes(self):
+        """A child node whose ONLY hook is post_default_handler must still
+        be traversed (regression: _compute_should_traverse must count it)."""
+
+        class Child(BaseModel):
+            name: str
+            processed: bool = False
+
+            def post_default_handler(self):
+                self.processed = True
+
+        class Parent(BaseModel):
+            child: Child
+
+        result = await Resolver().resolve(Parent(child=Child(name="x")))
+        assert result.child.processed is True
+
+    async def test_handler_runs_after_post_on_every_node_at_level(self):
+        """When multiple sibling nodes each have post_* + post_default_handler,
+        every node's handler runs after that node's post_* — independent of
+        ordering across siblings."""
+
+        class Counter(BaseModel):
+            n: int
+            doubled: int = 0
+            quadrupled: int = 0
+
+            def post_doubled(self):
+                return self.n * 2
+
+            def post_default_handler(self):
+                # reads the post_doubled value written moments ago
+                self.quadrupled = self.doubled * 2
+
+        root = [Counter(n=1), Counter(n=5), Counter(n=10)]
+        result = await Resolver().resolve(root)
+        assert [r.doubled for r in result] == [2, 10, 20]
+        assert [r.quadrupled for r in result] == [4, 20, 40]

@@ -4,6 +4,13 @@ Traverses Pydantic/DefineSubset model trees, executing resolve_* methods
 to load related data and post_* methods to compute derived fields.
 Supports cross-layer data flow via ExposeAs, SendTo, and Collector.
 
+A reserved ``post_default_handler(self)`` method may be defined to run
+finalization logic after all ``post_*`` methods at the same node complete.
+Unlike ``post_*``, it is not auto-assigned to a field — the body must set
+fields manually (and may set several). It accepts the same parameter
+injection as ``post_*`` (context / parent / ancestor_context / Loader /
+Collector) and may be ``async``.
+
 Uses the same ErManager as GraphQL mode for DataLoader access.
 Not intended for direct construction — use ``ErManager.create_resolver()``.
 
@@ -132,7 +139,10 @@ class _ClassMeta:
     # attr_name -> pre-parsed parameter info
     resolve_params: dict[str, _MethodParamInfo] = field(default_factory=dict)
     post_params: dict[str, _MethodParamInfo] = field(default_factory=dict)
-    # Collector aliases found in post_* methods: alias -> flat
+    # Special post_default_handler method, if present: (attr_name, param_info).
+    # Runs after all post_* methods; return value is ignored.
+    post_default_handler: tuple[str, _MethodParamInfo] | None = None
+    # Collector aliases found in post_* / post_default_handler: alias -> flat
     collector_aliases: dict[str, bool] = field(default_factory=dict)
     # Whether this class or any descendant needs traversal.
     # None = not yet computed; True/False = computed result.
@@ -175,6 +185,9 @@ def _analyze_method_params(
 
 RESOLVE_PREFIX = "resolve_"
 POST_PREFIX = "post_"
+# Reserved method name (not a field-bound post_*): runs after all post_*
+# methods at the same node, does not auto-assign — body sets fields manually.
+POST_DEFAULT_HANDLER = "post_default_handler"
 
 
 def _build_class_meta(kls: type) -> _ClassMeta:
@@ -182,6 +195,19 @@ def _build_class_meta(kls: type) -> _ClassMeta:
     meta = _ClassMeta()
 
     for attr_name in dir(kls):
+        # Reserved name — must be checked BEFORE the post_* prefix branch,
+        # otherwise it would be treated as `post_default_handler` → field
+        # `default_handler` and auto-assigned.
+        if attr_name == POST_DEFAULT_HANDLER:
+            attr = getattr(kls, attr_name, None)
+            if attr is not None and callable(attr):
+                param_info = _analyze_method_params(attr, include_collectors=True)
+                meta.post_default_handler = (attr_name, param_info)
+                for _pname, collector in param_info.collector_deps:
+                    if collector.alias not in meta.collector_aliases:
+                        meta.collector_aliases[collector.alias] = collector.flat
+            continue
+
         if attr_name.startswith(RESOLVE_PREFIX):
             field_name = attr_name[len(RESOLVE_PREFIX):]
             # Verify it's actually callable (not just an attribute)
@@ -244,6 +270,7 @@ def _compute_should_traverse(kls: type) -> bool:
 
     # Check own configuration
     if (meta.resolve_methods or meta.post_methods or meta.collector_aliases
+            or meta.post_default_handler is not None
             or scan_expose_fields(kls) or scan_send_to_fields(kls)):
         return True
 
@@ -750,7 +777,15 @@ class Resolver:
                     ))
 
     async def _execute_posts(self, level_state: _LevelState) -> None:
-        """Phase 3: run all post_* methods."""
+        """Phase 3: run all post_* methods, then post_default_handler if present.
+
+        post_default_handler runs after every post_* method at this level has
+        finished (so it can read fields populated by them) and is not
+        auto-assigned — its body sets fields manually. It shares the same
+        parameter injection as post_* (context / parent / ancestor_context /
+        Loader / Collector); by this point descendant SendTo values have
+        already populated ancestor Collectors (recursion precedes this phase).
+        """
         for item, meta, _new_ancestor_ctx, _merged_collectors in level_state:
             if not meta.post_methods:
                 continue
@@ -762,6 +797,18 @@ class Resolver:
                     node, field_name, method, param_info,
                     parent=item.parent, ancestor_context=item.ancestor_context,
                 )
+
+        for item, meta, _new_ancestor_ctx, _merged_collectors in level_state:
+            if meta.post_default_handler is None:
+                continue
+            attr_name, param_info = meta.post_default_handler
+            node = item.node
+            method = getattr(node, attr_name)
+            # Return value intentionally ignored — the handler sets fields itself.
+            await self._execute_post_method(
+                node, method, param_info,
+                parent=item.parent, ancestor_context=item.ancestor_context,
+            )
 
     def _collect_send_to(
         self, level_state: _LevelState, type_meta: dict[type, _LevelMeta]

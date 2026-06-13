@@ -1,5 +1,82 @@
 # Changelog
 
+## 2.10.0
+
+### New Feature: Resolver `post_default_handler` 收尾钩子
+
+新增保留方法 `post_default_handler(self)`，在该节点所有 `post_*` 方法执行完毕后运行，用于跨多个 `post_*` 字段的聚合 / 收尾计算（如根据多个计数算 completion_rate、拼接 summary）。语义对齐 pydantic-resolve 的同名特性。
+
+**行为：**
+- 固定方法名 `post_default_handler`（非 `post_<field>`，不绑定到某个字段）
+- 在同节点所有 `post_*` 完成后执行（可安全读取它们写入的字段）
+- **不自动赋值**：返回值被忽略，方法体内手动 `self.xxx = ...`（可一次写多个字段）
+- 支持与 `post_*` 相同的参数注入：`context` / `parent` / `ancestor_context` / `Loader` / `Collector`，可为 `async`
+- 由于 BFS 递归先于 `post_*` 阶段，`post_default_handler` 能读到后代 `SendTo` 已经收集进祖先 Collector 的值
+
+**与 pydantic-resolve 的差异：** nexusx 额外允许在 `post_default_handler` 中使用 `Loader`（pydantic-resolve 显式禁用），保持与 `post_*` 内部一致。
+
+**示例：**
+
+```python
+class SprintView(BaseModel):
+    total_tasks: int = 0
+    completed_tasks: int = 0
+    completion_rate: float = 0.0
+    summary: str = ""
+
+    def post_total_tasks(self):
+        return len(self.tasks)
+
+    def post_completed_tasks(self):
+        return len([t for t in self.tasks if t.status == "done"])
+
+    def post_default_handler(self):
+        # runs after post_total_tasks / post_completed_tasks
+        self.completion_rate = (
+            self.completed_tasks / self.total_tasks
+            if self.total_tasks else 0.0
+        )
+        self.summary = f"{self.completion_rate:.0%} complete"
+```
+
+**Changes：**
+- `src/nexusx/resolver.py`: 新增 `POST_DEFAULT_HANDLER` 常量；`_ClassMeta` 增加 `post_default_handler` 字段；`_build_class_meta` 优先识别保留名（避免被 `post_*` 前缀分支误当成 `default_handler` 字段）；`_compute_should_traverse` 计入该方法（否则仅含该钩子的子节点不会被遍历）；`_execute_posts` 末尾追加一轮调用（不 setattr）
+- `tests/test_resolver.py`: 新增 `TestResolverPostDefaultHandler`（9 个测试覆盖执行顺序、返回值忽略、async、Collector、context、parent、ancestor_context、仅含 handler 的子节点遍历、多兄弟节点）
+- `CLAUDE.md`: 更新 Resolver 执行顺序（新增第 4 步）与常见陷阱（保留方法名）
+
+## 2.9.2
+
+### New Feature: DefineSubset FK 字段自动注入
+
+FK 字段自动注入到 DTO（`model_fields`），供 Resolver 用作 DataLoader key 加载关系。与 PK auto-include 机制对称：字段存在但 `exclude=True`，不出现在 `model_dump()` 序列化输出中。`build_dto_select()` 自动排除这些字段，不生成多余的 SELECT 列。
+
+**行为：**
+- 未在 `__subset__` 中声明的 FK 字段自动注入，annotation 改为 `Optional`（`default=None`），`exclude=True`
+- 显式声明在 `__subset__` 中的 FK 字段保持原样，不受影响
+- `SubsetConfig(omit_fields=["owner_id"])` 可阻止 auto-include，但如果 DTO 同时声明了对应的关系字段（如 `owner: OwnerDTO`），会抛出 `ValueError`
+
+**Changes：**
+- `src/nexusx/subset.py`: 新增 `_get_fk_field_names()`；`_resolve_subset_fields` FK auto-include（尊重 `omit_fields`）；`_build_field_definitions` 对 auto-included FK 设 `Optional + default=None + exclude=True`；`_create_subset_class` 存 `__subset_auto_excluded__`；`build_dto_select` 排除 auto-excluded 字段；新增 `_validate_omitted_fk_not_needed()` 校验 omit FK 与关系字段冲突
+- 修正旧测试适配新行为；新增 2 个测试覆盖 omit FK 场景
+
+## 2.9.1
+
+### Bug Fix: `list[T] | None` 和 `list[T | None]` 类型转换错误
+
+修复 `_python_type_to_graphql` 中 Optional 与 list 组合类型的 GraphQL SDL 生成错误。
+
+**根因：** `_python_type_to_graphql` 先检查 `origin is list`，再检查 Optional。对于 `list[str] | None`，`get_origin()` 返回 `UnionType` 而非 `list`，list 检查被跳过。Optional 分支 unwrap 后调用 `_python_type_to_graphql_inner`，而 `_inner` 不处理 list 类型，fallback 为 `String`。同理，`list[Entity | None]` 的元素类型也因 `_inner` 不处理 Optional 而 fallback 为 `String`。
+
+**影响：**
+- `list[str] | None` 参数/返回值 → SDL 中生成 `String` 而非 `[String!]`
+- `list[int] | None` 参数/返回值 → SDL 中生成 `String` 而非 `[Int!]`
+- `list[Entity | None]` 参数/返回值 → SDL 中元素类型丢失，fallback 为 `String`
+
+**Changes：**
+- `src/nexusx/sdl_generator.py`: Optional 分支改为递归调用 `_python_type_to_graphql`（而非 `_inner`），使 list 检查能再次命中；list 分支先 unwrap 元素的 Optional，再传给 `_inner`
+- 修正 `tests/test_sdl_generator.py::test_list_optional_int` 的错误期望（`[String]!` → `[Int]!`）
+- 新增 `tests/test_optional_list_param.py`：9 个测试覆盖 `list[str] | None`、`Optional[list[str]]`、`list[int] | None`、`list[str]`、`list[Entity | None]`、`list[str | None]` 及完整 SDL 生成
+
 ## 2.9.0
 
 ### Bug Fix: 自定义关系在全局分页下无法查询

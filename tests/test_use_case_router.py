@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Annotated
 
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
+from starlette.requests import Request
 
 from nexusx.decorator import mutation, query
 from nexusx.use_case.business import UseCaseService
@@ -347,3 +348,110 @@ class TestOpenAPI:
         user_path = schema["paths"].get("/api/user_service/list_users", {})
         if "post" in user_path:
             assert "UserService" in user_path["post"].get("tags", [])
+
+
+# ──────────────────────────────────────────────────
+# Tests: Extensibility (dependencies, route_options, router_kwargs)
+# ──────────────────────────────────────────────────
+
+
+class TestRouterExtensibility:
+    def test_router_dependencies_applied_to_all_routes(self):
+        """Router-level dependencies are enforced on every route."""
+        async def require_auth(request: Request) -> None:
+            if request.headers.get("X-Auth") != "secret":
+                raise HTTPException(status_code=403, detail="Forbidden")
+
+        config = UseCaseAppConfig(name="test", services=[PingService])
+        router = create_router(config, dependencies=[Depends(require_auth)])
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+
+        # Without auth header → 403
+        response = client.post("/api/ping_service/ping")
+        assert response.status_code == 403
+
+        # With auth header → 200
+        response = client.post("/api/ping_service/ping", headers={"X-Auth": "secret"})
+        assert response.status_code == 200
+        assert response.json() == "pong"
+
+    def test_route_options_status_code(self):
+        """route_options can override status_code for a specific route."""
+        config = UseCaseAppConfig(name="test", services=[PingService])
+        router = create_router(
+            config,
+            route_options={
+                "PingService.ping": {"status_code": 201},
+            },
+        )
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+
+        response = client.post("/api/ping_service/ping")
+        assert response.status_code == 201
+
+    def test_route_options_per_route_dependencies(self):
+        """Per-route dependencies only affect the targeted route."""
+        async def require_admin(request: Request) -> None:
+            if request.headers.get("X-Admin") != "yes":
+                raise HTTPException(status_code=403, detail="Admin only")
+
+        config = UseCaseAppConfig(name="test", services=[UserService, PingService])
+        router = create_router(
+            config,
+            route_options={
+                "UserService.create_user": {
+                    "dependencies": [Depends(require_admin)],
+                },
+            },
+        )
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+
+        # create_user without admin → 403
+        response = client.post(
+            "/api/user_service/create_user",
+            json={"name": "X", "email": "x@test.com"},
+        )
+        assert response.status_code == 403
+
+        # list_users is unaffected → 200
+        response = client.post("/api/user_service/list_users")
+        assert response.status_code == 200
+
+        # ping is unaffected → 200
+        response = client.post("/api/ping_service/ping")
+        assert response.status_code == 200
+
+    def test_router_kwargs_passthrough(self):
+        """**router_kwargs are forwarded to APIRouter constructor."""
+        config = UseCaseAppConfig(name="test", services=[PingService])
+        # Pass deprecated=True through router_kwargs
+        router = create_router(config, deprecated=True)
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+
+        # Route still works
+        response = client.post("/api/ping_service/ping")
+        assert response.status_code == 200
+
+        # Deprecated flag appears in OpenAPI schema
+        schema = client.get("/openapi.json").json()
+        ping_op = schema["paths"]["/api/ping_service/ping"]["post"]
+        assert ping_op.get("deprecated") is True
+
+    def test_backward_compatible_no_new_args(self):
+        """Existing call sites with no new arguments still work."""
+        config = UseCaseAppConfig(name="test", services=[UserService])
+        router = create_router(config)
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+
+        response = client.post("/api/user_service/list_users")
+        assert response.status_code == 200

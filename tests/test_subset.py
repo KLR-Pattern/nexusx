@@ -12,6 +12,7 @@ from nexusx.context import scan_expose_fields
 from nexusx.subset import (
     SUBSET_REFERENCE,
     DefineSubset,
+    SubsetConfig,
     get_subset_source,
 )
 from tests.conftest import FixtureSprint, FixtureTask, FixtureUser, get_test_session_factory
@@ -125,16 +126,20 @@ class TestDefineSubsetFK:
         assert "author_id" in data
         assert data["author_id"] == 42
 
-    def test_fk_not_auto_included_when_not_in_fields(self):
-        """FK fields NOT in fields list are NOT auto-included.
-        Users who need DataLoader key resolution must declare FK fields explicitly.
+    def test_fk_auto_included_when_not_in_fields(self):
+        """FK fields NOT in fields list are auto-included (with exclude=True)
+        so Resolver can use them as DataLoader keys for relationship loading.
         """
 
         class PostSummary(DefineSubset):
             __subset__ = (SamplePost, ("id", "title"))
 
-        # FK is NOT auto-included
-        assert "author_id" not in PostSummary.model_fields
+        # FK is auto-included but excluded from serialization
+        assert "author_id" in PostSummary.model_fields
+        dto = PostSummary(id=1, title="Hello")
+        assert dto.author_id is None
+        dumped = dto.model_dump()
+        assert "author_id" not in dumped
 
 
 # ──────────────────────────────────────────────────────────
@@ -1039,10 +1044,76 @@ class TestFKFieldHandling:
         assert dto.owner_id == 5
 
     def test_fk_field_not_in_fields_excluded(self):
-        """FK fields not in __subset__ should not appear."""
+        """FK fields not in __subset__ should not appear in serialized output."""
         from tests.conftest import FixtureTask
 
         class TaskDTO(DefineSubset):
             __subset__ = (FixtureTask, ("id", "title"))
 
+        # FK should be auto-included for Resolver but excluded from serialization
+        assert "owner_id" in TaskDTO.model_fields
+        dto = TaskDTO(id=1, title="T", owner_id=5)
+        assert dto.owner_id == 5
+        dumped = dto.model_dump()
+        assert "owner_id" not in dumped
+        assert dumped["title"] == "T"
+
+    def test_fk_auto_included_for_resolver(self):
+        """FK fields should be auto-included and excluded from serialization,
+        mirroring PK auto-inject behavior, so Resolver can use them as DataLoader keys."""
+
+        class TaskDTO(DefineSubset):
+            __subset__ = (FixtureTask, ("id", "title"))
+
+        # FK fields auto-included
+        assert "sprint_id" in TaskDTO.model_fields
+        assert "owner_id" in TaskDTO.model_fields
+
+        dto = TaskDTO(id=1, title="My Task", sprint_id=10, owner_id=20)
+        assert dto.sprint_id == 10
+        assert dto.owner_id == 20
+
+        # But excluded from serialization
+        dumped = dto.model_dump()
+        assert "sprint_id" not in dumped
+        assert "owner_id" not in dumped
+        assert dumped["title"] == "My Task"
+
+    def test_fk_auto_excluded_with_explicit_fields(self):
+        """FK auto-include should work with SubsetConfig + excluded_fields too."""
+        from tests.conftest import FixtureTask
+
+        class TaskDTO(DefineSubset):
+            __subset__ = SubsetConfig(
+                kls=FixtureTask,
+                fields=["id", "title"],
+            )
+
+        assert "owner_id" in TaskDTO.model_fields
+        dto = TaskDTO(id=1, title="T", owner_id=5)
+        assert dto.owner_id == 5
+        assert "owner_id" not in dto.model_dump()
+
+    def test_omit_fk_without_relationship_allowed(self):
+        """Omitting a FK is fine when no relationship field depends on it."""
+
+        class TaskDTO(DefineSubset):
+            __subset__ = SubsetConfig(
+                kls=FixtureTask, omit_fields=["owner_id"],
+            )
+
         assert "owner_id" not in TaskDTO.model_fields
+
+    def test_omit_fk_with_relationship_raises(self):
+        """Omitting a FK that a relationship field needs should raise ValueError."""
+        import pytest
+
+        class OwnerDTO(DefineSubset):
+            __subset__ = (FixtureUser, ("id", "name"))
+
+        with pytest.raises(ValueError, match="Cannot omit FK field 'owner_id'"):
+            class BadDTO(DefineSubset):
+                __subset__ = SubsetConfig(
+                    kls=FixtureTask, omit_fields=["owner_id"],
+                )
+                owner: OwnerDTO | None = None

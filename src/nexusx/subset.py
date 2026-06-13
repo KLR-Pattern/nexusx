@@ -94,6 +94,15 @@ def _get_pk_field_names(entity: type[SQLModel]) -> list[str]:
     return pk_names
 
 
+def _get_fk_field_names(entity: type[SQLModel]) -> list[str]:
+    """Get foreign key field names from a SQLModel entity."""
+    fk_names: list[str] = []
+    for field_name, field_info in entity.model_fields.items():
+        if _is_fk_field(field_info):
+            fk_names.append(field_name)
+    return fk_names
+
+
 def _get_sqlmodel_scalar_fields(entity: type[SQLModel]) -> dict[str, FieldInfo]:
     """Get only scalar fields from a SQLModel entity (exclude relationships and FK fields)."""
     relationship_names = _get_relationship_names(entity)
@@ -325,6 +334,36 @@ def _validate_extra_field_types(
             )
 
 
+def _validate_omitted_fk_not_needed(
+    entity_kls: type[SQLModel],
+    subset_info: Any,
+    extra_fields: dict[str, tuple[Any, Any]],
+) -> None:
+    """Raise if a FK is in omit_fields but a relationship extra field needs it."""
+    if not isinstance(subset_info, SubsetConfig) or not subset_info.omit_fields:
+        return
+
+    fk_names = set(_get_fk_field_names(entity_kls))
+    omitted_fks = set(subset_info.omit_fields) & fk_names
+    if not omitted_fks:
+        return
+
+    rel_names = _get_all_relationship_names(entity_kls)
+    extra_rel_fields = set(extra_fields.keys()) & rel_names
+    if not extra_rel_fields:
+        return
+
+    for fk in omitted_fks:
+        # Convention: owner_id → owner, sprint_id → sprint
+        rel_name = fk.removesuffix("_id")
+        if rel_name in extra_rel_fields:
+            raise ValueError(
+                f"Cannot omit FK field '{fk}' from {entity_kls.__name__} subset: "
+                f"relationship field '{rel_name}' requires it for DataLoader resolution. "
+                f"Either remove '{rel_name}' from the DTO or remove '{fk}' from omit_fields."
+            )
+
+
 # ──────────────────────────────────────────────────────────
 # SubsetMeta metaclass
 # ──────────────────────────────────────────────────────────
@@ -469,9 +508,13 @@ class SubsetMeta(type):
             cls._merge_config_overrides(field_definitions, subset_info, local_ns, namespace)
 
         _validate_extra_field_types(extra_fields, entity_kls, global_ns, namespace)
+        _validate_omitted_fk_not_needed(
+            entity_kls, subset_info, extra_fields,
+        )
 
         return cls._create_subset_class(
             name, field_definitions, subset_fields, entity_kls, namespace,
+            auto_excluded,
         )
 
     @staticmethod
@@ -521,6 +564,17 @@ class SubsetMeta(type):
                 if pk in user_omit:
                     auto_excluded.add(pk)
 
+        # Auto-include FK fields for DataLoader key resolution (relationship loading).
+        # FK fields in user_omit are skipped — validation later checks for conflicts.
+        fk_fields = _get_fk_field_names(entity_kls)
+        for fk in fk_fields:
+            if fk in user_omit:
+                continue
+            if fk not in existing_set:
+                subset_fields.append(fk)
+                existing_set.add(fk)
+                auto_excluded.add(fk)
+
         return entity_kls, subset_fields, auto_excluded
 
     @staticmethod
@@ -544,13 +598,19 @@ class SubsetMeta(type):
         field_definitions.update(field_infos)
         field_definitions.update(extra_fields)
 
-        # Hide auto-included PK fields from serialization
+        # Hide auto-included PK/FK fields from serialization
         for field_name in auto_excluded:
             if field_name in field_definitions:
                 _anno, fi = field_definitions[field_name]
                 if isinstance(fi, FieldInfo):
                     new_fi = copy.deepcopy(fi)
                     new_fi.exclude = True
+                    # Make auto-included FK fields optional with default None
+                    if _is_fk_field(fi):
+                        from typing import Union as _Union
+
+                        _anno = _Union[_anno, type(None)]
+                        new_fi.default = None
                     field_definitions[field_name] = (_anno, new_fi)
 
         if isinstance(subset_info, SubsetConfig):
@@ -649,6 +709,7 @@ class SubsetMeta(type):
         subset_fields: list[str],
         entity_kls: type[SQLModel],
         namespace: dict,
+        auto_excluded: set[str] | None = None,
     ) -> Any:
         """Create the Pydantic model, attach methods and metadata."""
         methods = _extract_methods(namespace)
@@ -672,6 +733,7 @@ class SubsetMeta(type):
         setattr(subset_class, SUBSET_REFERENCE, entity_kls)
         _subset_registry[subset_class] = entity_kls
         subset_class.__subset_fields__ = list(subset_fields)
+        subset_class.__subset_auto_excluded__ = auto_excluded or set()
 
         return subset_class
 
@@ -758,9 +820,14 @@ def build_dto_select(
             f"{dto_cls.__name__} has no __subset_fields__"
         )
 
-    # Filter out relationship field names — they are not table columns
+    # Filter out relationship field names and auto-excluded fields —
+    # they are not needed in the SELECT statement.
     rel_names = _get_all_relationship_names(entity_cls)
-    column_fields = [f for f in subset_fields if f not in rel_names]
+    auto_excluded = getattr(dto_cls, "__subset_auto_excluded__", set())
+    column_fields = [
+        f for f in subset_fields
+        if f not in rel_names and f not in auto_excluded
+    ]
     columns = [getattr(entity_cls, f) for f in column_fields]
 
     stmt = select(*columns)

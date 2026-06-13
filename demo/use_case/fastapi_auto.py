@@ -134,6 +134,39 @@ context_config = UseCaseAppConfig(
 )
 app.include_router(create_use_case_router(context_config))
 
+# ──────────────────────────────────────────────────
+# Advanced: dependencies + route_options
+# ──────────────────────────────────────────────────
+#
+# Router-level dependencies (e.g. auth) applied to all routes:
+#
+#   from fastapi import Depends, HTTPException, Request
+#
+#   async def require_auth(request: Request):
+#       if not request.headers.get("Authorization"):
+#           raise HTTPException(status_code=401, detail="Unauthorized")
+#
+#   app.include_router(
+#       create_use_case_router(
+#           config,
+#           dependencies=[Depends(require_auth)],
+#       ),
+#   )
+#
+# Per-route overrides (status_code, extra dependencies, response_model, etc.):
+#
+#   app.include_router(
+#       create_use_case_router(
+#           config,
+#           route_options={
+#               "UserService.create_user": {"status_code": 201},
+#               "SprintService.get_sprint_detail": {
+#                   "dependencies": [Depends(require_auth)],
+#               },
+#           },
+#       ),
+#   )
+
 
 if __name__ == "__main__":
     import os

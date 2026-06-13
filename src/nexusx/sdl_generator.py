@@ -29,6 +29,8 @@ def _python_type_to_graphql(
         if args:
             inner = args[0]
             is_element_nullable = converter.is_optional(inner)
+            if is_element_nullable:
+                inner = converter.unwrap_optional(inner)
             inner_type = _python_type_to_graphql_inner(
                 inner, converter, nullable=is_element_nullable, entity_names=entity_names
             )
@@ -38,9 +40,11 @@ def _python_type_to_graphql(
     # Handle Optional
     if converter.is_optional(python_type):
         inner = converter.unwrap_optional(python_type)
-        return _python_type_to_graphql_inner(
-            inner, converter, nullable=True, entity_names=entity_names
-        )
+        result = _python_type_to_graphql(inner, converter, entity_names=entity_names)
+        # Strip trailing '!' if present — Optional means nullable
+        if result.endswith("!"):
+            result = result[:-1]
+        return result
 
     # Non-nullable type
     return _python_type_to_graphql_inner(

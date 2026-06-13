@@ -7,7 +7,7 @@ methods in a ``UseCaseAppConfig``, with proper OpenAPI documentation and
 
 import inspect
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated, Any, get_args, get_origin, get_type_hints
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -218,6 +218,10 @@ def create_router(
     config: UseCaseAppConfig,
     prefix: str = "/api",
     url_mapper: Callable[[type[UseCaseService]], str] | None = None,
+    *,
+    dependencies: Sequence[Any] | None = None,
+    route_options: dict[str, dict[str, Any]] | None = None,
+    **router_kwargs: Any,
 ) -> APIRouter:
     """Create a FastAPI APIRouter from a UseCaseAppConfig.
 
@@ -231,6 +235,24 @@ def create_router(
         url_mapper: Optional callable to customize per-service URL segment.
             Receives the service class, returns a string.
             Defaults to snake_case of the class name.
+        dependencies: Router-level dependencies applied to **all** routes
+            (e.g. ``[Depends(require_auth)]``). Passed directly to
+            ``APIRouter(dependencies=...)``.
+        route_options: Per-route overrides keyed by
+            ``"ServiceName.method_name"``. Values are merged into
+            ``add_api_route()`` kwargs, so you can set ``status_code``,
+            ``dependencies``, ``response_model``, ``responses``, etc.
+            Example::
+
+                {
+                    "UserService.create_user": {
+                        "status_code": 201,
+                        "dependencies": [Depends(require_admin)],
+                    },
+                }
+        **router_kwargs: Additional keyword arguments forwarded to the
+            ``APIRouter()`` constructor (e.g. ``default_response_class``,
+            ``responses``, ``deprecated``).
 
     Returns:
         A ``fastapi.APIRouter`` ready to be included in a FastAPI app.
@@ -245,7 +267,7 @@ def create_router(
         )
         app.include_router(router)
     """
-    router = APIRouter()
+    router = APIRouter(dependencies=dependencies, **router_kwargs)
 
     for service_cls in config.services:
         tag = service_cls.get_tag_name()
@@ -306,18 +328,24 @@ def create_router(
             path = f"{prefix}/{service_url}/{method_name}"
 
             # Register route
-            router_kwargs: dict[str, Any] = {
+            route_kwargs: dict[str, Any] = {
                 "path": path,
                 "tags": [tag],
                 "summary": description or method_name,
             }
             if return_type is not None:
-                router_kwargs["response_model"] = return_type
+                route_kwargs["response_model"] = return_type
+
+            # Merge per-route overrides from route_options
+            route_key = f"{service_cls.__name__}.{method_name}"
+            overrides = (route_options or {}).get(route_key)
+            if overrides:
+                route_kwargs.update(overrides)
 
             router.add_api_route(
                 endpoint=handler,
                 methods=["POST"],
-                **router_kwargs,
+                **route_kwargs,
             )
 
     return router

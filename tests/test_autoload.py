@@ -378,11 +378,13 @@ class TestAutoLoadSubsetFields:
 
         assert "owner_id" in TaskDTO.__subset_fields__
 
-    def test_subset_fields_excludes_non_selected(self):
-        """__subset_fields__ should only include selected fields."""
+    def test_subset_fields_includes_auto_fks(self):
+        """__subset_fields__ should include auto-included PK and FK fields."""
 
         class TaskDTO(DefineSubset):
             __subset__ = (FixtureTask, ("id", "title"))
 
-        assert "owner_id" not in TaskDTO.__subset_fields__
-        assert TaskDTO.__subset_fields__ == ["id", "title"]
+        assert "owner_id" in TaskDTO.__subset_fields__
+        assert "sprint_id" in TaskDTO.__subset_fields__
+        # Auto-included FK fields are tracked in __subset_auto_excluded__
+        assert "owner_id" in TaskDTO.__subset_auto_excluded__
