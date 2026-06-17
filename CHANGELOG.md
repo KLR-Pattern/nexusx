@@ -1,5 +1,61 @@
 # Changelog
 
+## 2.11.0
+
+### Refactoring: Resolver 两阶段迭代重构（issue #77）
+
+将 Resolver 遍历引擎从单阶段递归 BFS 改为两阶段迭代结构，一次性消化四个相关问题：
+
+- **A1 — 同层 `post_*` 并发执行**：原实现 `_execute_posts` 对同层 `post_*` 串行 await，DataLoader / async IO 调用延迟被成倍放大。新结构在 Phase B 把同层所有 `post_*` 收集到一次 `asyncio.gather`，async post 并发跑。
+- **A2 — resolve_* 结果立即 setattr**：原实现把 `resolve_*` 结果延迟到递归回来后才写回字段，迫使 `_collect_existing_children` 靠"字段仍为 None"做隐性去重。新结构在 `_do_resolve` 内立即 `object.__setattr__`，并用显式 `loaded_field_keys: set[tuple[int, str]]` 跳过已加载字段。
+- **B3 — 命名误导**：`_bfs_post_and_set` 名字带 "bfs" 但实际是递归 DFS。已删除，inline 到 Phase B 的 gather 收集阶段（改名 `_execute_post_field` 对齐 pydantic-resolve）。
+- **C1 — 深树 RecursionError**：BFS 用递归实现，物料 BOM / 组织树等深树场景在 ~100 层就抛 `RecursionError`。新结构用 `levels: list[list[_LevelNode]]` 显式持有每层节点，Phase A 用 `while True`、Phase B 用 `for depth in reversed(range(len(levels)))`，2000 层深树不再爆栈。
+
+**结构：**
+- `_traverse(root)` 调用三个阶段：
+  - `_phase_a_resolve(levels)` — 顶向下迭代，每层：collect jobs → `asyncio.gather(_do_resolve)` 立即 setattr → `_batch_auto_load` → `_collect_next_level`
+  - `_phase_b_prepare_collectors(levels)` — 顶向下实例化 Collector 并链接 ancestor collector snapshot
+  - `_phase_b_execute_posts(levels)` — 底向上迭代，每层：gather post_* → 串行 `post_default_handler` → SendTo 收集 → cleanup `_node_collectors`
+- `_LevelState` 4-tuple → `_LevelNode` 仍是 tuple（perf 测量显示 dataclass 构造比 tuple 慢 2.4×，在 1k+ 节点层上影响显著），但语义和文档清晰化
+
+**正确性前提：** 用户不应依赖同节点多个 `post_*` 之间的执行顺序 — `meta.post_methods` 来自 `dir()`，字母序，本来就不是契约。
+
+**Benchmark 对照（refactor vs v2.10.1）：**
+
+| 场景 | v2.10.1 | 2.11.0 | Δ |
+|---|---|---|---|
+| Medium L1–L4 | 641us–5.99ms | 527us–5.40ms | **-9.8% 到 -17.8%** |
+| Large L1–L4 | 392us–22.92ms | 384us–22.48ms | -1.9% 到 -10.4%（L4 +9.8% 噪声） |
+| L5 post_* concurrency（新）| — | 7.12ms / 12.52ms / 29.12ms | **6.9× / 12.7× / 11.3× 加速**（vs Pydantic DTO） |
+| Deep tree 2000 层（新）| RecursionError ~100 层 | 14.74ms | 通过 |
+
+完整对照数据见 `benchmarks/baseline_v2.10.1.txt`。
+
+**Changes：**
+- `src/nexusx/resolver.py`: 删除 `_process_level` / `_bfs_post_and_set` / `_prepare_level` / `_collect_existing_children`；新增 `_traverse` / `_phase_a_resolve` / `_phase_b_prepare_collectors` / `_phase_b_execute_posts` / `_do_resolve` / `_collect_level_jobs` / `_collect_next_level`；`_LevelState` → `_LevelNode`。约 +150/-120 行
+- `tests/test_resolver.py`: 新增 `TestResolverTwoPhase`（post_* 并发执行、resolve_* 立即 setattr、`post_default_handler` 在所有 post_* 完成后跑、`post_marker` 子节点不重复入队）
+- `tests/test_resolver_deep.py`: 新文件，200 层自引用链不抛 `RecursionError`
+- `benchmarks/bench_resolver.py`: 新增 L5（post_* 含 `asyncio.sleep` 并发场景）+ Deep tree（50/100/200/500/1000/1500/2000 层）场景
+
+### Bug Fix: Optional / Annotated / `list[X] | None` 子节点 traversal
+
+修复 `_get_traversable_fields()` 只识别 bare `list[X]` 和 bare `X`，对 `X | None`、`Optional[X]`、`list[X] | None`、`Annotated[X, ...]` 形态的可遍历子节点静默跳过的问题。这意味着用 `child: ChildDTO | None` 这种最自然的 nullable 关系写法时，子节点的 `resolve_*` / `post_*` 根本不会执行 — 一个没有任何错误信号的埋雷场景。
+
+**根因：** `_get_traversable_fields()` 自己写了一套只看 `origin is list` 和 `issubclass(anno, BaseModel)` 的 inline 检查，没复用 `_do_extract_dto_cls()` 已经做好的 Annotated / Optional / Union 解包逻辑，两套 typing 语义出现 drift。auto-load 路径走的是 `_do_extract_dto_cls` 所以没事，traversal 路径就漏了。
+
+**Changes：**
+- `src/nexusx/resolver.py`: 新增 `_extract_dto_cls_and_cardinality()` 静态方法返回 `(dto_cls, is_list)` 元组，处理 Annotated / Optional / PEP 604 union / list 包装；`_do_extract_dto_cls()` 改为委托给它；`_get_traversable_fields()` 改为复用它，消除 dual-semantics drift
+- `tests/test_resolver.py`: 新增 `TestTypingShapeTraversal`（6 个测试覆盖 PEP 604 / `typing.Optional` / `Annotated` / `list[X] | None` / None 子节点不崩溃 / helper 单元测试）
+
+### Chore: ruff UP007 修复 + bench 基线文档化
+
+- `src/nexusx/subset.py:612`: `Union[_anno, type(None)]` → `_anno | None`（ruff UP007）。该问题在 v2.10.1 commit 911f3a2 引入，CI 在 Python 3.10/3.11/3.12 上失败
+- `benchmarks/baseline_v2.10.1.txt`: 重命名自 `baseline_pre_refactor.txt`（版本锚定），刷新为 v2.10.1 master 的最新数据，并加入 refactor vs master 的完整对照（L1–L5 + Deep tree）
+
+**版本同步：**
+- `pyproject.toml`: 2.10.1 → 2.11.0
+- `uv.lock`: 同步 nexusx 包版本
+
 ## 2.10.1
 
 ### Bug Fix: scalar-list 自定义关系字段支持隐式 auto-load
