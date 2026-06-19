@@ -111,27 +111,6 @@ class IntrospectionGenerator:
 
         return {"data": data}
 
-    def is_introspection_query(self, query: str) -> bool:
-        """Check if the query is an introspection query."""
-        document = parse(query)
-
-        for definition in document.definitions:
-            if not isinstance(definition, OperationDefinitionNode):
-                continue
-
-            field_names = [
-                selection.name.value
-                for selection in definition.selection_set.selections
-                if isinstance(selection, FieldNode)
-            ]
-            if not field_names:
-                continue
-            if any(field_name not in {"__schema", "__type"} for field_name in field_names):
-                return False
-            return True
-
-        return False
-
     def execute_field(
         self,
         field: FieldNode,

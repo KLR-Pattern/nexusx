@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from graphql import DocumentNode, parse
 from sqlmodel import SQLModel, select
 
 from nexusx.decorator import mutation, query
@@ -45,6 +46,12 @@ def _get_bound_method(entity_cls, method_name: str):
     return getattr(entity_cls, method_name)
 
 
+def _parse(query_str: str) -> tuple[DocumentNode, dict[str, FieldSelection]]:
+    """Parse query string once; return (document, selections) for executor."""
+    document = parse(query_str)
+    return document, QueryParser().parse_document(document)
+
+
 # ──────────────────────────────────────────────────────────
 # Tests
 # ──────────────────────────────────────────────────────────
@@ -65,10 +72,10 @@ class TestQueryExecutorBasic:
 
         method = _get_bound_method(UserQuery, "get_all")
         query_methods = {"users": (FixtureUser, method)}
-        parsed = QueryParser().parse("{ users { id name } }")
+        document, parsed = _parse("{ users { id name } }")
 
         result = await executor.execute_query(
-            "{ users { id name } }",
+            document,
             None,
             None,
             parsed,
@@ -101,10 +108,10 @@ class TestQueryExecutorBasic:
 
         method = _get_bound_method(UserMutation, "create")
         mutation_methods = {"createUser": (FixtureUser, method)}
-        parsed = QueryParser().parse('mutation { createUser(name: "Eve") { id name } }')
+        document, parsed = _parse('mutation { createUser(name: "Eve") { id name } }')
 
         result = await executor.execute_query(
-            'mutation { createUser(name: "Eve") { id name } }',
+            document,
             None,
             None,
             parsed,
@@ -119,9 +126,10 @@ class TestQueryExecutorBasic:
     async def test_execute_returns_error_on_unknown_field(self):
         """Querying an unknown field should produce an error entry."""
         executor = _make_executor()
+        document = parse("{ nonexistent { id } }")
 
         result = await executor.execute_query(
-            "{ nonexistent { id } }",
+            document,
             None,
             None,
             {},
@@ -144,10 +152,10 @@ class TestQueryExecutorBasic:
 
         method = _get_bound_method(FailQuery, "boom")
         query_methods = {"fail": (FixtureUser, method)}
-        parsed = QueryParser().parse("{ fail { id } }")
+        document, parsed = _parse("{ fail { id } }")
 
         result = await executor.execute_query(
-            "{ fail { id } }",
+            document,
             None,
             None,
             parsed,
@@ -162,9 +170,10 @@ class TestQueryExecutorBasic:
     async def test_execute_query_with_no_data_returns_empty(self):
         """Query with no matching methods should return empty data."""
         executor = _make_executor()
+        document = parse("{ users { id } }")
 
         result = await executor.execute_query(
-            "{ users { id } }",
+            document,
             None,
             None,
             {},
@@ -192,15 +201,15 @@ class TestQueryExecutorBasic:
 
         method = _get_bound_method(TaskQuery, "get_all")
         query_methods = {"tasks": (FixtureTask, method)}
-        parsed = QueryParser().parse("{ tasks { id title } }")
+        document, parsed = _parse("{ tasks { id title } }")
 
         entities = [FixtureTask, FixtureUser, FixtureSprint]
         await executor.execute_query(
-            "{ tasks { id title } }", None, None,
+            document, None, None,
             parsed, query_methods, {}, entities,
         )
         await executor.execute_query(
-            "{ tasks { id title } }", None, None,
+            document, None, None,
             parsed, query_methods, {}, entities,
         )
 
@@ -219,10 +228,10 @@ class TestQueryExecutorSerialization:
 
         method = _get_bound_method(NoneQuery, "get_one")
         query_methods = {"user": (FixtureUser, method)}
-        parsed = QueryParser().parse("{ user { id } }")
+        document, parsed = _parse("{ user { id } }")
 
         result = await executor.execute_query(
-            "{ user { id } }", None, None, parsed, query_methods, {}, [FixtureUser]
+            document, None, None, parsed, query_methods, {}, [FixtureUser]
         )
 
         assert result["data"]["user"] is None
@@ -241,11 +250,11 @@ class TestQueryExecutorSerialization:
 
         method = _get_bound_method(UserQuery, "get_all")
         query_methods = {"users": (FixtureUser, method)}
-        parsed = QueryParser().parse("{ users { id name } }")
+        document, parsed = _parse("{ users { id name } }")
 
         entities = [FixtureUser, FixtureSprint, FixtureTask]
         result = await executor.execute_query(
-            "{ users { id name } }", None, None,
+            document, None, None,
             parsed, query_methods, {}, entities,
         )
 
@@ -268,10 +277,10 @@ class TestQueryExecutorSerialization:
 
         method = _get_bound_method(TaskQuery, "get_all")
         query_methods = {"tasks": (FixtureTask, method)}
-        parsed = QueryParser().parse("{ tasks { id title owner { id name } } }")
+        document, parsed = _parse("{ tasks { id title owner { id name } } }")
 
         result = await executor.execute_query(
-            "{ tasks { id title owner { id name } } }",
+            document,
             None,
             None,
             parsed,
@@ -372,10 +381,10 @@ class TestQueryExecutorSplitMode:
 
         method = _get_bound_method(TaskQuery, "get_all")
         query_methods = {"tasks": (FixtureTask, method)}
-        parsed = QueryParser().parse("{ tasks { id title owner { id name } } }")
+        document, parsed = _parse("{ tasks { id title owner { id name } } }")
 
         result = await executor.execute_query(
-            "{ tasks { id title owner { id name } } }",
+            document,
             None, None, parsed, query_methods, {},
             [FixtureTask, FixtureUser, FixtureSprint],
         )
@@ -408,10 +417,10 @@ class TestQueryExecutorSplitMode:
             "otherTasks": (FixtureTask, method),
         }
         gql = "{ tasks { owner { id name } } otherTasks { owner { id email } } }"
-        parsed = QueryParser().parse(gql)
+        document, parsed = _parse(gql)
 
         result = await executor.execute_query(
-            gql, None, None, parsed, query_methods, {},
+            document, None, None, parsed, query_methods, {},
             [FixtureTask, FixtureUser, FixtureSprint],
         )
 
@@ -453,12 +462,12 @@ class TestQueryExecutorSplitMode:
 
         method = _get_bound_method(SprintQuery, "get_all")
         query_methods = {"sprints": (FixtureSprint, method)}
-        parsed = QueryParser().parse(
+        document, parsed = _parse(
             "{ sprints { id name tasks { id title owner { id name } } } }"
         )
 
         result = await executor.execute_query(
-            "{ sprints { id name tasks { id title owner { id name } } } }",
+            document,
             None, None, parsed, query_methods, {},
             [FixtureTask, FixtureUser, FixtureSprint],
         )
@@ -491,10 +500,10 @@ class TestQueryExecutorSplitMode:
 
         method = _get_bound_method(TaskQuery, "get_all")
         query_methods = {"tasks": (FixtureTask, method)}
-        parsed = QueryParser().parse("{ tasks { owner { id name } } }")
+        document, parsed = _parse("{ tasks { owner { id name } } }")
 
         await executor.execute_query(
-            "{ tasks { owner { id name } } }",
+            document,
             None, None, parsed, query_methods, {},
             [FixtureTask, FixtureUser, FixtureSprint],
         )
@@ -585,10 +594,10 @@ class TestQueryExecutorPagination:
         method = _get_bound_method(SprintQuery, "get_all")
         query_methods = {"sprints": (FixtureSprint, method)}
         gql = "{ sprints { id name tasks { items { id title } pagination { total_count has_more } } } }"
-        parsed = QueryParser().parse(gql)
+        document, parsed = _parse(gql)
 
         result = await executor.execute_query(
-            gql, None, None, parsed, query_methods, {},
+            document, None, None, parsed, query_methods, {},
             [FixtureTask, FixtureUser, FixtureSprint],
         )
 
@@ -616,10 +625,10 @@ class TestQueryExecutorPagination:
         method = _get_bound_method(SprintQuery, "get_all")
         query_methods = {"sprints": (FixtureSprint, method)}
         gql = "{ sprints { id name tasks(limit: 1) { items { id title } pagination { total_count has_more } } } }"
-        parsed = QueryParser().parse(gql)
+        document, parsed = _parse(gql)
 
         result = await executor.execute_query(
-            gql, None, None, parsed, query_methods, {},
+            document, None, None, parsed, query_methods, {},
             [FixtureTask, FixtureUser, FixtureSprint],
         )
 
@@ -677,10 +686,10 @@ class TestQueryExecutorPagination:
             query_methods = {"sprints": (FixtureSprint, method)}
             # Custom relationship field — no pagination wrapper, just a plain list
             gql = "{ sprints { id name custom_tasks { id title } } }"
-            parsed = QueryParser().parse(gql)
+            document, parsed = _parse(gql)
 
             result = await executor.execute_query(
-                gql, None, None, parsed, query_methods, {},
+                document, None, None, parsed, query_methods, {},
                 [FixtureSprint, FixtureTask],
             )
 

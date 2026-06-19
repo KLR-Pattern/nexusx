@@ -6,6 +6,8 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from graphql import parse
+
 from nexusx.discovery import EntityDiscovery
 from nexusx.execution.query_executor import QueryExecutor
 from nexusx.graphiql import GRAPHIQL_HTML
@@ -162,12 +164,13 @@ class GraphQLHandler:
         try:
             self._query_parser.validate_no_aliases(query)
 
-            # Parse the query to get field selections
-            parsed_selections = self._query_parser.parse(query)
+            # Parse once; share the AST between parser and executor
+            document = parse(query)
+            parsed_selections = self._query_parser.parse_document(document)
 
             # Execute via DataLoader-based executor
             return await self._executor.execute_query(
-                query=query,
+                document=document,
                 variables=variables,
                 operation_name=operation_name,
                 parsed_selections=parsed_selections,
@@ -179,13 +182,3 @@ class GraphQLHandler:
         except Exception as e:
             logger.exception("GraphQL execution error")
             return {"errors": [{"message": str(e)}]}
-
-    def _is_introspection_query(self, query: str) -> bool:
-        """Check if the query is an introspection query."""
-        return self._introspection_generator.is_introspection_query(query)
-
-    def _execute_introspection(
-        self, query: str, variables: dict[str, Any] | None
-    ) -> dict[str, Any]:
-        """Execute an introspection query."""
-        return self._introspection_generator.execute(query, variables)

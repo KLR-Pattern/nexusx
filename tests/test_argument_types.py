@@ -169,10 +169,11 @@ class TestArgumentTypeInE2EQuery:
 
         method = UserQuery.get_filtered
         query_methods = {"userGetFiltered": (FixtureUser, method)}
-        parsed = QueryParser().parse("{ userGetFiltered(limit: 1) { id name } }")
+        document = parse("{ userGetFiltered(limit: 1) { id name } }")
+        parsed = QueryParser().parse_document(document)
 
         result = await executor.execute_query(
-            "{ userGetFiltered(limit: 1) { id name } }",
+            document,
             None, None, parsed, query_methods, {}, entities,
         )
 

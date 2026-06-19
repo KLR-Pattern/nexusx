@@ -6,14 +6,7 @@ import inspect
 from datetime import datetime, timezone
 from typing import Any, get_type_hints
 
-from graphql import (
-    BooleanValueNode,
-    EnumValueNode,
-    FloatValueNode,
-    IntValueNode,
-    NullValueNode,
-    StringValueNode,
-)
+from graphql.utilities import value_from_ast_untyped
 from pydantic import AwareDatetime, TypeAdapter, ValidationError
 
 from nexusx.type_converter import TypeConverter
@@ -28,49 +21,14 @@ class ArgumentBuilder:
         """Initialize the argument builder."""
         self._converter = TypeConverter(set())
 
-    def _extract_value(self, node: Any) -> Any:
+    def _extract_value(self, node: Any, variables: dict[str, Any] | None = None) -> Any:
         """Extract Python value from a GraphQL AST value node.
 
-        Args:
-            node: A GraphQL ValueNode (StringValueNode, IntValueNode,
-                  ListValueNode, ObjectValueNode, etc.)
-
-        Returns:
-            The corresponding Python value.
+        Delegates to graphql-core's ``value_from_ast_untyped``. When
+        ``variables`` is provided, variable references (``$foo``) are resolved
+        against it; otherwise variable nodes resolve to ``None``.
         """
-        # Handle list values (ListValueNode)
-        if hasattr(node, "values") and node.__class__.__name__ == "ListValueNode":
-            return [self._extract_value(v) for v in node.values]
-
-        # Handle object values (ObjectValueNode)
-        if hasattr(node, "fields") and node.__class__.__name__ == "ObjectValueNode":
-            return {field.name.value: self._extract_value(field.value) for field in node.fields}
-
-        # Handle variable references (VariableNode)
-        if hasattr(node, "name") and node.__class__.__name__ == "VariableNode":
-            # Variable reference - caller should resolve using variables dict
-            return node  # Return the node itself, will be resolved later
-
-        # Handle null value (NullValueNode)
-        if node.__class__.__name__ == "NullValueNode":
-            return None
-
-        # Handle scalar values with proper type conversion
-        if isinstance(node, IntValueNode):
-            return int(node.value)
-        elif isinstance(node, FloatValueNode):
-            return float(node.value)
-        elif isinstance(node, StringValueNode):
-            return node.value
-        elif isinstance(node, BooleanValueNode):
-            return node.value
-        elif isinstance(node, NullValueNode):
-            return None
-        elif isinstance(node, EnumValueNode):
-            return node.value
-
-        # Fallback - return the node itself
-        return node
+        return value_from_ast_untyped(node, variables)
 
     def _is_input_type(self, python_type: type, entity_names: set[str]) -> bool:
         """Check if a type should be treated as a GraphQL Input type."""
@@ -170,13 +128,8 @@ class ArgumentBuilder:
         for arg in selection.arguments:
             arg_name = arg.name.value
 
-            # Extract the value using helper method
-            value = self._extract_value(arg.value)
-
-            # Handle variable references
-            if value.__class__.__name__ == "VariableNode":
-                var_name = value.name.value
-                value = variables.get(var_name)
+            # value_from_ast_untyped resolves variables against the dict directly
+            value = self._extract_value(arg.value, variables)
 
             # Use argument name directly
             param_name = arg_name

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from graphql import FieldNode, OperationDefinitionNode, parse
+from graphql import DocumentNode, FieldNode, OperationDefinitionNode, parse
 
 
 @dataclass
@@ -46,7 +46,14 @@ class QueryParser:
         Returns:
             Dictionary mapping operation name to FieldSelection.
         """
-        document = parse(query)
+        return self.parse_document(parse(query))
+
+    def parse_document(self, document: DocumentNode) -> dict[str, FieldSelection]:
+        """Extract FieldSelection tree from an already-parsed DocumentNode.
+
+        Use this when the caller has already parsed the query string (e.g. to
+        share the AST with the executor) to avoid a second ``parse()`` pass.
+        """
         result: dict[str, FieldSelection] = {}
 
         for definition in document.definitions:
@@ -116,35 +123,13 @@ class QueryParser:
         return args
 
     def _value_node_to_python(self, value_node: Any) -> Any:
-        """Convert a GraphQL ValueNode to a Python value."""
-        from graphql import (
-            BooleanValueNode,
-            EnumValueNode,
-            FloatValueNode,
-            IntValueNode,
-            ListValueNode,
-            NullValueNode,
-            ObjectValueNode,
-            StringValueNode,
-        )
+        """Convert a GraphQL ValueNode to a Python value.
 
-        if isinstance(value_node, IntValueNode):
-            return int(value_node.value)
-        elif isinstance(value_node, FloatValueNode):
-            return float(value_node.value)
-        elif isinstance(value_node, StringValueNode):
-            return value_node.value
-        elif isinstance(value_node, BooleanValueNode):
-            return value_node.value
-        elif isinstance(value_node, NullValueNode):
-            return None
-        elif isinstance(value_node, EnumValueNode):
-            return value_node.value
-        elif isinstance(value_node, ListValueNode):
-            return [self._value_node_to_python(v) for v in value_node.values]
-        elif isinstance(value_node, ObjectValueNode):
-            return {
-                f.name.value: self._value_node_to_python(f.value)
-                for f in value_node.fields
-            }
-        return str(value_node.value) if hasattr(value_node, "value") else None
+        Delegates to graphql-core's ``value_from_ast_untyped`` so we share one
+        implementation with the rest of the codebase. Variables are unresolved
+        here (no variables dict is passed); the executor resolves them later
+        via ``ArgumentBuilder``.
+        """
+        from graphql.utilities import value_from_ast_untyped
+
+        return value_from_ast_untyped(value_node, None)

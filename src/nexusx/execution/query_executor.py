@@ -7,7 +7,7 @@ import inspect
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from graphql import FieldNode, OperationDefinitionNode, parse
+from graphql import DocumentNode, FieldNode, OperationDefinitionNode
 from sqlmodel import SQLModel
 
 from nexusx.execution.argument_builder import ArgumentBuilder
@@ -65,7 +65,7 @@ class QueryExecutor:
 
     async def execute_query(
         self,
-        query: str,
+        document: DocumentNode,
         variables: dict[str, Any] | None,
         operation_name: str | None,
         parsed_selections: dict[str, FieldSelection],
@@ -74,7 +74,6 @@ class QueryExecutor:
         entities: list[type[SQLModel]],
     ) -> dict[str, Any]:
         """Execute a GraphQL query or mutation."""
-        document = parse(query)
         data: dict[str, Any] = {}
         errors: list[dict[str, Any]] = []
         entity_names = {e.__name__ for e in entities}

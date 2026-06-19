@@ -277,14 +277,6 @@ class TestIntrospectionGenerator:
         assert result["data"]["__type"]["name"] == "IntrospectionUser"
         assert result["data"]["__type"]["kind"] == "OBJECT"
 
-    def test_is_introspection_query(self, generator: IntrospectionGenerator):
-        """Test is_introspection_query() method."""
-        assert generator.is_introspection_query("{ __schema { types { name } } }")
-        assert generator.is_introspection_query("{ __type(name: \"User\") { name } }")
-        mixed = "{ users { id } __schema { queryType { name } } }"
-        assert not generator.is_introspection_query(mixed)
-        assert not generator.is_introspection_query("{ users { id } }")
-
 
 class TestIntrospectionIntegration:
     """Integration tests for introspection via GraphQLHandler."""
