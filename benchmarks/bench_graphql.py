@@ -27,6 +27,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, Relationship, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from graphql import parse
+
 from nexusx.execution.query_executor import QueryExecutor
 from nexusx.loader.registry import ErManager
 from nexusx.query_parser import QueryParser
@@ -215,9 +217,16 @@ def _make_executor(entities, session_factory) -> QueryExecutor:
 
 
 def _run_query(executor, gql, parsed, query_methods, entities):
-    """Run a single query through the executor."""
+    """Run a single query through the executor.
+
+    Parse happens here (inside the timed region) so timings reflect the full
+    request path: parse + execute. Master bench did 2 parses (one here via
+    QueryParser, one inside executor); this branch does 1 (executor takes
+    document directly).
+    """
+    document = parse(gql)
     return executor.execute_query(
-        gql, None, None, parsed, query_methods, {}, entities,
+        document, None, None, parsed, query_methods, {}, entities,
     )
 
 
