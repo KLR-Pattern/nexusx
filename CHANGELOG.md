@@ -1,5 +1,71 @@
 # Changelog
 
+## 3.0.0
+
+### BREAKING: 移除老的直接调用式 UseCase MCP 入口
+
+引入由 `UseCaseService` 自动生成**真正的 GraphQL schema**、并基于此构建 MCP 服务的新执行链（参考 `pydantic-resolve` 的 compose 实现）。配套**硬移除**两个老的直接调用式 use_case MCP 入口（调用 Python 方法 + JSON 参数的范式）。与 GraphQL/MCP 正交的 `create_use_case_router`（FastAPI REST）与 `create_use_case_voyager`（Voyager 可视化）**保持不变**。
+
+**移除：**
+
+| 入口 | 替代 |
+|------|------|
+| `create_use_case_mcp_server`（4 层渐进披露 MCP，Layer 3 是 `call_use_case` 直接方法调用） | `create_use_case_graphql_mcp_server`（4 层渐进披露，Layer 3 是 `compose_query` 接收 GraphQL 字符串） |
+| `create_use_case_flat_server`（一方法一 tool 的扁平 MCP） | `create_use_case_graphql_mcp_server`（同上；如需扁平 tool-per-method 范式可基于 `build_compose_schema` 自建） |
+| `ServiceIntrospector`（内部类，仅生成 SDL 风格字符串） | `ComposeSchema`（生成真正的 GraphQL schema：introspection JSON + SDL） |
+
+迁移指南：[`docs/migrations/3.0-use-case-graphql.md`](./docs/migrations/3.0-use-case-graphql.md)
+
+### New Feature: UseCase GraphQL + 4 层 MCP
+
+**新增公共 API：**
+
+| 函数 / 类 | 用途 |
+|----------|------|
+| `create_use_case_graphql_mcp_server(apps, name)` | 4 层渐进披露 MCP server：`list_apps` → `describe_compose_schema` → `describe_compose_method` → `compose_query` |
+| `build_compose_schema(app) -> ComposeSchema` | 直接访问生成的 schema（可用于自建 GraphiQL / 嵌入其它入口） |
+| `ComposeSchema` | 产物类，提供 `render_introspection()` / `render_sdl()` / `render_method_sdl(service, method)` |
+| `compose_introspect(schema, query)` | 处理 GraphiQL 风格的 introspection 查询（`__schema` / `__type` / `__typename`），返回 `{data, errors}` 信封。与 MCP Layer 3（拒绝内省）成对：MCP 走渐进披露，HTTP GraphiQL 走完整内省 |
+| `ComposeSchemaError` 及子类 | schema 生成期错误：`DuplicateServiceError` / `DuplicateMethodError` / `DuplicateTypeError` / `UnsupportedTypeError` / `SQLModelInDtoFieldError` / `MissingReturnAnnotationError` |
+
+**Schema 结构（固定三层）：**
+
+```graphql
+type Query {
+  TaskService: TaskServiceQuery!
+  UserService: UserServiceQuery!
+}
+type TaskServiceQuery {
+  list_tasks: [TaskSummary!]!
+  get_task(task_id: Int!): TaskSummary
+}
+```
+
+**4 层 MCP 工具响应 shape：**
+
+| Layer | 工具 | 响应信封 |
+|-------|------|---------|
+| 0 | `list_apps` | `{success, data}` |
+| 1 | `describe_compose_schema` | `{success, data}` |
+| 2 | `describe_compose_method` | `{success, data}` |
+| 3 | `compose_query` | `{data, errors}`（GraphQL 标准） |
+
+Layer 3 接收标准 GraphQL 字符串；**拒绝内省查询**（`__schema` / `__type` / `__typename`），返回 `{data: null, errors: [...]}` 引导用 Layer 1/2 探索 schema。
+
+**执行边界（关键）：** GraphQL 执行层**不**在 service 方法返回值外再套一层 `Resolver`。service 方法内部已经显式 `Resolver().resolve(dtos)`，外层只做：调方法 → 字段投影（基于 `subset.build_subset_model`） → 序列化。
+
+**版本号策略：** 严格 semver —— 公共 API 移除 = major bump（2.10.1 → 3.0.0）。
+
+### Preserved (Unchanged)
+
+以下公共 API 签名与行为均保持不变：
+
+- `UseCaseService` / `BusinessMeta` / `@query` / `@mutation` / `FromContext` / `UseCaseAppConfig`
+- `create_use_case_router`（FastAPI REST 自动路由）
+- `create_jsonrpc_router`（JSON-RPC over HTTP）
+- `create_use_case_voyager`（Voyager 可视化）
+- GraphQL 模式全部能力（`GraphQLHandler` / `SDLGenerator` / 既有 `mcp/` 模块）
+
 ## 2.10.1
 
 ### Bug Fix: scalar-list 自定义关系字段支持隐式 auto-load

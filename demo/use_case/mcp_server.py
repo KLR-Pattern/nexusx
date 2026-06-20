@@ -1,10 +1,14 @@
-"""UseCase MCP Server Demo — expose Core API services via MCP.
+"""UseCase GraphQL MCP Server Demo — expose Core API services via GraphQL MCP.
 
-Demonstrates how UseCaseService classes can be exposed to AI agents
-via four-layer progressive disclosure MCP tools.
+Demonstrates how UseCaseService classes can be exposed to AI agents via the
+4-layer progressive-disclosure GraphQL MCP (3.0+):
+- list_apps
+- describe_compose_schema
+- describe_compose_method
+- compose_query  (executes standard GraphQL queries)
 
-Uses the Core API demo's models/database, providing Sprint and Task
-business services with DefineSubset DTOs and Resolver.
+Uses the Core API demo's models/database, providing Sprint and Task business
+services with DefineSubset DTOs and Resolver.
 
 Usage:
     # stdio mode (for Claude Desktop, etc.)
@@ -15,14 +19,14 @@ Usage:
 """
 
 from demo.core_api.database import async_session, init_db
-from demo.core_api.dtos import SprintDetail, SprintSummary, TaskSummary
+from demo.core_api.dtos import SprintDetail, SprintSummary, TaskSummary, UserSummary
 from demo.core_api.models import Sprint, Task, User
 from nexusx import (
     ErManager,
     UseCaseAppConfig,
     UseCaseService,
     build_dto_select,
-    create_use_case_mcp_server,
+    create_use_case_graphql_mcp_server,
     query,
 )
 
@@ -46,13 +50,13 @@ class UserService(UseCaseService):
     """User management — query users."""
 
     @query
-    async def list_users(cls) -> list[dict]:
-        """Get all users as simple dicts."""
+    async def list_users(cls) -> list[UserSummary]:
+        """Get all users."""
         from sqlmodel import select
 
         async with async_session() as session:
             users = (await session.exec(select(User))).all()
-        return [{"id": u.id, "name": u.name} for u in users]
+        return [UserSummary(id=u.id, name=u.name) for u in users]
 
 
 class TaskService(UseCaseService):
@@ -146,7 +150,7 @@ def main() -> None:
 
     asyncio.run(init_db())
 
-    mcp = create_use_case_mcp_server(
+    mcp = create_use_case_graphql_mcp_server(
         apps=[
             UseCaseAppConfig(
                 name="project",

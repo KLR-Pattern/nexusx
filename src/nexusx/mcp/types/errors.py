@@ -27,6 +27,10 @@ class MCPErrors(str, Enum):
     APP_NAME_REQUIRED = "app_name_required"
     INVALID_APP_MODE = "invalid_app_mode"
 
+    # UseCase compose MCP — service/method lookup within an app
+    SERVICE_NOT_FOUND = "service_not_found"
+    METHOD_NOT_FOUND = "method_not_found"
+
     # General errors
     INTERNAL_ERROR = "internal_error"
     VALIDATION_ERROR = "validation_error"

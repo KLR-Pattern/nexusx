@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from nexusx import (  # noqa: E402
     GraphQLHandler,
     UseCaseAppConfig,
-    create_use_case_mcp_server,
+    create_use_case_graphql_mcp_server,
 )
 from nexusx.mcp import create_mcp_server  # noqa: E402
 from src.database import init_db
@@ -54,7 +54,7 @@ use_case_config = UseCaseAppConfig(
     description="Task & Sprint business services",
 )
 
-use_case_mcp = create_use_case_mcp_server(
+use_case_mcp = create_use_case_graphql_mcp_server(
     apps=[use_case_config],
     name="Template UseCase MCP",
 )

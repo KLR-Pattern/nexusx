@@ -47,12 +47,12 @@ class SprintService(UseCaseService):
 
 ## 暴露到 MCP
 
-四层渐进式发现：应用发现 → 服务列表 → 方法详情 → 执行。
+3.0+ 的入口是 `create_use_case_graphql_mcp_server` —— 从 `UseCaseService` 签名自动生成真正的 GraphQL schema，再通过四层渐进披露 MCP 暴露：应用发现 → schema 总览 → 方法详情 → GraphQL 执行。
 
 ```python
-from nexusx.use_case import UseCaseAppConfig, create_use_case_mcp_server
+from nexusx.use_case import UseCaseAppConfig, create_use_case_graphql_mcp_server
 
-mcp = create_use_case_mcp_server(
+mcp = create_use_case_graphql_mcp_server(
     apps=[
         UseCaseAppConfig(
             name="project",
@@ -67,32 +67,45 @@ mcp.run()  # stdio 模式
 
 ### MCP 工具
 
-| 工具 | 用途 |
-|------|------|
-| `list_apps()` | 发现可用应用 |
-| `list_services(app_name)` | 列出应用中的服务和方法数量 |
-| `describe_service(app_name, service_name)` | 方法签名（SDL 格式）+ DTO 类型定义 |
-| `call_use_case(app_name, service_name, method_name, params)` | 执行方法 |
+| 工具 | 用途 | 响应信封 |
+|------|------|---------|
+| `list_apps()` | 发现可用应用 | `{success, data}` |
+| `describe_compose_schema(app_name)` | 应用下 service + 方法紧凑列表（不含参数和返回类型） | `{success, data}` |
+| `describe_compose_method(app_name, service_name, method_name)` | 参数表 + 返回类型 + SDL 片段（含返回类型传递闭包） | `{success, data}` |
+| `compose_query(app_name, query)` | 执行 GraphQL 查询字符串 | `{data, errors}`（GraphQL 标准） |
 
-### describe_service 输出
+### compose_query 示例
 
-```json
+Layer 3（`compose_query`）接收标准 GraphQL 查询字符串，agent 可以在一个 round-trip 里组合多 service 查询 + 字段选择：
+
+```graphql
 {
-  "name": "SprintService",
-  "methods": [
-    {"name": "list_sprints", "signature_sdl": "list_sprints(): [SprintSummary!]!"},
-    {"name": "get_sprint", "signature_sdl": "get_sprint(sprint_id: Int!): SprintSummary"}
-  ],
-  "types": "type SprintSummary {\n  id: Int\n  name: String!\n  tasks: [TaskSummary!]!\n}"
+  SprintService {
+    list_sprints {
+      id
+      name
+      tasks { id title owner { id name } }
+    }
+  }
+  TaskService {
+    list_tasks { id title }
+  }
+}
 ```
 
-四层设计让 AI 代理渐进式地探索你的 API——先看全貌，再根据需要深入具体的服务和方法。
+返回是 GraphQL 标准的 `{data, errors}`。字段投影意味着只返回请求的字段——agent 可以通过少选字段来压缩响应。
+
+**内省查询（`__schema` / `__type` / `__typename`）在 Layer 3 被拒绝**，以保持 MCP 响应紧凑——agent 应该用 Layer 1/2 发现 schema。如果需要一个处理内省的 GraphQL HTTP endpoint（GraphiQL 友好），直接用 `compose_introspect`；完整示例见 `demo/use_case/graphql_server.py`。
+
+### 从 2.x 迁移
+
+3.0 移除了 2.x 的直接调用式 MCP 入口（`create_use_case_mcp_server`、`create_use_case_flat_server`）。完整 before/after 映射见 [`docs/migrations/3.0-use-case-graphql.md`](../migrations/3.0-use-case-graphql.md)。
 
 ## 回顾
 
 - `UseCaseService` 子类将业务逻辑定义为 `async classmethod` 方法
 - 元类自动发现公共方法——以下划线 `_` 开头的私有方法会被排除
-- `create_use_case_mcp_server` 创建四层渐进式发现的 MCP 服务
+- `create_use_case_graphql_mcp_server` 创建四层渐进披露的 GraphQL MCP 服务
 - 方法的 docstring 成为 AI 代理看到的 MCP 工具描述
 
 ## 下一步

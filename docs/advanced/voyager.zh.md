@@ -85,7 +85,7 @@ class TaskDTO(DefineSubset):
 Voyager 展示的服务结构同时服务于 MCP 模式——AI 代理可以通过 MCP 工具发现和调用相同的服务：
 
 ```python
-from nexusx.use_case import UseCaseAppConfig, create_use_case_mcp_server
+from nexusx.use_case import UseCaseAppConfig, create_use_case_graphql_mcp_server
 from nexusx.voyager import create_use_case_voyager
 
 # 同一批应用配置
@@ -97,7 +97,7 @@ apps = [
 ]
 
 # MCP 服务（AI 代理）
-mcp = create_use_case_mcp_server(apps=apps, name="API")
+mcp = create_use_case_graphql_mcp_server(apps=apps, name="API")
 
 # Voyager 可视化（开发者）
 voyager = create_use_case_voyager(apps=apps, er_manager=er)

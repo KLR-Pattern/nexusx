@@ -53,7 +53,7 @@ UseCaseService 子类 ──┬── MCP server（AI 代理）
 
 ```python
 from fastapi import FastAPI
-from nexusx.use_case import UseCaseService, UseCaseAppConfig, create_use_case_mcp_server
+from nexusx.use_case import UseCaseService, UseCaseAppConfig, create_use_case_graphql_mcp_server
 
 # 服务定义
 class SprintService(UseCaseService):
@@ -66,7 +66,7 @@ class SprintService(UseCaseService):
         ...
 
 # MCP 模式（AI 代理）
-mcp = create_use_case_mcp_server(
+mcp = create_use_case_graphql_mcp_server(
     apps=[
         UseCaseAppConfig(name="project", services=[SprintService]),
     ],

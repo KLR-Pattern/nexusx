@@ -51,7 +51,7 @@ Voyager displays the `TaskDTO` → `Task` subset relationship along with the sel
 Voyager and MCP use the same `UseCaseAppConfig` — one configuration, two presentations:
 
 ```python
-from nexusx.use_case import UseCaseAppConfig, create_use_case_mcp_server
+from nexusx.use_case import UseCaseAppConfig, create_use_case_graphql_mcp_server
 from nexusx.voyager import create_use_case_voyager
 
 apps = [
@@ -62,7 +62,7 @@ apps = [
 ]
 
 # MCP service (AI agents)
-mcp = create_use_case_mcp_server(apps=apps, name="API")
+mcp = create_use_case_graphql_mcp_server(apps=apps, name="API")
 
 # Voyager visualization (developers)
 voyager = create_use_case_voyager(apps=apps, er_manager=er)

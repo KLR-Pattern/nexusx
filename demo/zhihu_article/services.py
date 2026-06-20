@@ -1,7 +1,7 @@
 """UseCaseService business services for the order system demo.
 
 These services define business operations that become MCP-callable tools
-via create_use_case_mcp_server. The same code also powers FastAPI routes.
+via create_use_case_graphql_mcp_server. The same code also powers FastAPI routes.
 
 Each method:
 1. Uses build_dto_select() for optimized SQL (only needed columns)

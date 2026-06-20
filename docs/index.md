@@ -72,4 +72,4 @@ erDiagram
 - [Cross-layer Data Flow](./api/api_cross_layer.md) — ExposeAs / SendTo / Collector
 - [Relationships & ER Diagram](./api/api_relationship.md) — Relationship / ErDiagram
 - [MCP API](./api/api_mcp.md) — MCP service configuration
-- [UseCase API](./api/api_use_case.md) — UseCaseService / create_use_case_mcp_server
+- [UseCase API](./api/api_use_case.md) — UseCaseService / create_use_case_graphql_mcp_server

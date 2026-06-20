@@ -64,14 +64,17 @@ from nexusx.resolver import Loader
 from nexusx.standard_queries import AutoQueryConfig, add_standard_queries
 from nexusx.subset import DefineSubset, SubsetConfig, build_dto_select
 from nexusx.use_case import (
+    ComposeSchema,
+    ComposeSchemaError,
     FromContext,
     SelectionError,
     UseCaseAppConfig,
     UseCaseService,
+    build_compose_schema,
+    compose_introspect,
     create_jsonrpc_router,
     create_use_case_cli,
-    create_use_case_flat_server,
-    create_use_case_mcp_server,
+    create_use_case_graphql_mcp_server,
 )
 from nexusx.use_case import (
     create_router as create_use_case_router,
@@ -102,13 +105,18 @@ __all__ = [
     "ErDiagram",
     # Query builder
     "build_dto_select",
-    # UseCase MCP mode
+    # UseCase mode — service / config / annotations
     "UseCaseService",
     "UseCaseAppConfig",
     "FromContext",
     "SelectionError",
-    "create_use_case_mcp_server",
-    "create_use_case_flat_server",
+    # UseCase GraphQL MCP (3.0+)
+    "create_use_case_graphql_mcp_server",
+    "build_compose_schema",
+    "ComposeSchema",
+    "ComposeSchemaError",
+    "compose_introspect",
+    # Orthogonal UseCase surfaces (unchanged in 3.0)
     "create_use_case_cli",
     "create_jsonrpc_router",
     "create_use_case_router",

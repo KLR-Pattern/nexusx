@@ -2,6 +2,13 @@
 
 Manages multiple UseCase applications, each containing a group of UseCaseService
 subclasses. Follows the same pattern as GraphQL MCP's MultiAppManager.
+
+Note: The new GraphQL MCP (3.0+) at ``compose_mcp_server.py`` does NOT use
+this manager — it builds its own internal app registry so legacy services
+with types not yet supported by ``ComposeTypeMapper`` keep working through
+the old MCP path. This manager is the home of the legacy direct-call MCP
+resources; once the legacy MCP entries are removed (spec FR-010), the
+``introspector`` field will go away.
 """
 
 from __future__ import annotations
