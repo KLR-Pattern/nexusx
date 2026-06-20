@@ -1,6 +1,6 @@
 # UseCase API Reference
 
-Create UseCase services and MCP servers with four-layer progressive discovery.
+Define business services with `UseCaseService`, expose them via the 3.0+ GraphQL MCP (`create_use_case_graphql_mcp_server`), FastAPI REST (`create_use_case_router`), JSON-RPC (`create_jsonrpc_router`), CLI (`create_use_case_cli`), or a plain GraphQL HTTP endpoint (`build_compose_schema` + `compose_introspect`).
 
 ## UseCaseService
 
@@ -69,14 +69,14 @@ config = UseCaseAppConfig(
 | `description` | `str \| None` | No | Application description |
 | `context_extractor` | `Callable \| None` | No | MCP context extraction function |
 
-## create_use_case_mcp_server
+## create_use_case_graphql_mcp_server
 
-Create an MCP server for UseCase services with multi-app support and four-layer progressive discovery.
+Create an MCP server for UseCase services with multi-app support and four-layer progressive disclosure. Generates a real GraphQL schema (introspection-compatible, GraphiQL-friendly) from `UseCaseService` signatures; Layer 3 accepts standard GraphQL query strings.
 
 ```python
-from nexusx.use_case import create_use_case_mcp_server, UseCaseAppConfig
+from nexusx.use_case import create_use_case_graphql_mcp_server, UseCaseAppConfig
 
-mcp = create_use_case_mcp_server(
+mcp = create_use_case_graphql_mcp_server(
     apps=[
         UseCaseAppConfig(
             name="project",
@@ -97,63 +97,62 @@ mcp = create_use_case_mcp_server(
 
 ### Generated MCP Tools
 
-| Tool | Description |
-|------|-------------|
-| `list_apps()` | List all available apps |
-| `list_services(app_name)` | List services and method counts in an app |
-| `describe_service(app_name, service_name)` | Return method signatures (SDL format) and type definitions |
-| `call_use_case(app_name, service_name, method_name, params)` | Execute method |
+| Tool | Description | Response envelope |
+|------|-------------|-------------------|
+| `list_apps()` | List all available apps | `{success, data}` |
+| `describe_compose_schema(app_name)` | Compact service+method listing (no args/return types) | `{success, data}` |
+| `describe_compose_method(app_name, service_name, method_name)` | Args + return type + SDL fragment (transitive closure of return type) | `{success, data}` |
+| `compose_query(app_name, query)` | Execute GraphQL query string | `{data, errors}` (GraphQL standard) |
 
-## create_flat_mcp_server
+### Schema structure (fixed three layers)
 
-Create a flat MCP server that exposes each UseCase method as a separate tool without progressive disclosure.
-
-```python
-from nexusx.use_case import create_flat_mcp_server, UseCaseAppConfig
-
-mcp = create_flat_mcp_server(
-    apps=[
-        UseCaseAppConfig(
-            name="project",
-            services=[SprintService, TaskService],
-        ),
-    ],
-    name="Project API",
-)
+```graphql
+type Query {
+  SprintService: SprintServiceQuery!
+  TaskService: TaskServiceQuery!
+}
+type SprintServiceQuery {
+  list_sprints: [SprintSummary!]!
+  get_sprint(sprint_id: Int!): SprintSummary
+}
+type Mutation {  # only when @mutation methods exist
+  SprintService: SprintServiceMutation!
+}
 ```
 
-### Parameters
+### Layer 3 execution contract
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `apps` | `list[UseCaseAppConfig]` | Yes | Application configuration list |
-| `name` | `str` | No | Server name |
+- Accepts standard GraphQL query strings (e.g. `{ SprintService { list_sprints { id title owner { name } } } }`)
+- Field projection: only requested fields are returned (via `subset.build_subset_model`)
+- **Rejects introspection** (`__schema` / `__type` / `__typename`) — use Layers 1/2 for schema discovery. This keeps MCP responses compact.
+- **Does NOT wrap results in `Resolver()`** — service methods own Resolver invocation (call `Resolver().resolve(dtos)` inside the method body when needed)
+- Concurrent `@query` methods via `asyncio.gather`; serial `@mutation` methods in query order
 
-!!! tip
-    Choose the flat server when you have a small API with few methods and want direct access without navigating the discovery layers. Choose the progressive (4-layer) server for large APIs with many services where structured discovery helps agents explore capabilities systematically.
+### Migrating from 2.x
 
-### Generated MCP Tools
+The 2.x direct-call MCP entries (`create_use_case_mcp_server`, `create_use_case_flat_server`) were removed in 3.0. See [`docs/migrations/3.0-use-case-graphql.md`](../migrations/3.0-use-case-graphql.md) for the before/after mapping.
 
-Each `@query`/`@mutation` method becomes an independent tool named `{ServiceName}_{method_name}`. Method parameters are mapped directly from the Python signature (excluding `cls` and `FromContext` params). An optional `selection` parameter is added for field projection.
+## build_compose_schema / ComposeSchema / compose_introspect
 
-| Example Tool | Source |
-|-------------|--------|
-| `SprintService_list_sprints()` | `SprintService.list_sprints` |
-| `TaskService_get_task(task_id)` | `TaskService.get_task` |
-| `TaskService_delete_task(task_id)` | `TaskService.delete_task` (mutation) |
+Direct schema access for non-MCP use cases (e.g. building a GraphQL HTTP endpoint with GraphiQL).
 
-### Generated MCP Resources
+```python
+from nexusx import build_compose_schema, compose_introspect, UseCaseAppConfig
 
-One resource per app: `nexusx://{app_name}` — contains all services' method signatures, descriptions, and SDL type definitions.
+app_config = UseCaseAppConfig(name="project", services=[SprintService, TaskService])
+schema = build_compose_schema(app_config)
 
-### Comparison
+# Three render views over the same registry:
+schema.render_sdl()                          # full SDL string
+schema.render_introspection()                # graphql __schema payload (GraphiQL-compatible)
+schema.render_method_sdl("SprintService", "list_sprints")  # single-method SDL fragment
 
-| Feature | Progressive (4-layer) | Flat |
-|---------|----------------------|------|
-| Tool count | 4 fixed tools | 1 tool per method |
-| Discovery | list_apps → list_services → describe_service → call | Direct call |
-| Type definitions | describe_service response | MCP resource |
-| Best for | Large APIs, many services | Small APIs, direct access |
+# Services real introspection queries (for GraphiQL HTTP endpoints):
+compose_introspect(schema, "{ __schema { types { name } } }")
+# → {"data": {"__schema": {...}}, "errors": None}
+```
+
+See [`demo/use_case/graphql_server.py`](https://github.com/KLR-Pattern/nexusx/blob/master/demo/use_case/graphql_server.py) for a complete FastAPI `/graphql` endpoint example.
 
 ## create_use_case_voyager
 

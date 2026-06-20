@@ -45,12 +45,12 @@ class SprintService(UseCaseService):
 
 ## Step 2: Expose to MCP
 
-Wrap your services in an MCP server with four-layer progressive discovery:
+Wrap your services in an MCP server. The 3.0+ entry point is `create_use_case_graphql_mcp_server` — it generates a real GraphQL schema from your `UseCaseService` signatures and exposes it through a four-layer progressive-disclosure MCP:
 
 ```python
-from nexusx.use_case import UseCaseAppConfig, create_use_case_mcp_server
+from nexusx.use_case import UseCaseAppConfig, create_use_case_graphql_mcp_server
 
-mcp = create_use_case_mcp_server(
+mcp = create_use_case_graphql_mcp_server(
     apps=[
         UseCaseAppConfig(
             name="project",
@@ -67,26 +67,39 @@ mcp.run()  # stdio mode
 
 AI agents explore your API progressively — they start broad, then drill into specifics:
 
-| Tool | Layer | What the agent learns |
-|------|-------|----------------------|
-| `list_apps()` | App discovery | "What domains are available?" |
-| `list_services(app_name)` | Service listing | "What services does this app have?" |
-| `describe_service(app_name, service_name)` | Method details | Signatures + DTO type definitions |
-| `call_use_case(app_name, service_name, method_name, params)` | Execution | Run the method, get results |
+| Tool | Layer | What the agent learns | Response envelope |
+|------|-------|----------------------|-------------------|
+| `list_apps()` | App discovery | "What domains are available?" | `{success, data}` |
+| `describe_compose_schema(app_name)` | Service listing | "What services/methods does this app have?" (compact: no args or return types) | `{success, data}` |
+| `describe_compose_method(app_name, service_name, method_name)` | Method details | Args + return type + an SDL fragment covering the method's transitive closure | `{success, data}` |
+| `compose_query(app_name, query)` | Execution | Run a GraphQL query string, get `{data, errors}` back | `{data, errors}` |
 
-### describe_service output example
+### compose_query example
 
-```json
+Layer 3 (`compose_query`) takes standard GraphQL query strings — agents compose multi-service queries with field selection in a single round-trip:
+
+```graphql
 {
-  "name": "SprintService",
-  "methods": [
-    {"name": "list_sprints", "signature_sdl": "list_sprints(): [SprintSummary!]!"},
-    {"name": "get_sprint", "signature_sdl": "get_sprint(sprint_id: Int!): SprintSummary"}
-  ],
-  "types": "type SprintSummary {\n  id: Int\n  name: String!\n  tasks: [TaskSummary!]!\n}"
+  SprintService {
+    list_sprints {
+      id
+      name
+      tasks { id title owner { id name } }
+    }
+  }
+  TaskService {
+    list_tasks { id title }
+  }
+}
 ```
 
-The agent sees method signatures and full DTO type definitions before making a call — no guesswork.
+The response is GraphQL-standard `{data, errors}`. Field projection means only requested fields come back — agents can shave response size by selecting fewer fields.
+
+**Introspection queries (`__schema` / `__type` / `__typename`) are rejected in Layer 3** to keep MCP responses compact — agents use Layers 1 and 2 for schema discovery instead. For a GraphQL HTTP endpoint that services introspection (GraphiQL), use `compose_introspect` directly; see the `demo/use_case/graphql_server.py` example.
+
+### Migration from 2.x
+
+3.0 removed the legacy direct-call MCP entries (`create_use_case_mcp_server`, `create_use_case_flat_server`). See [`docs/migrations/3.0-use-case-graphql.md`](../migrations/3.0-use-case-graphql.md) for the before/after mapping.
 
 ## Step 3: Generate FastAPI Routes
 
@@ -167,7 +180,7 @@ OpenAPI documentation is generated automatically — visit `/docs` to see the in
 
 - `UseCaseService` subclasses define business logic as `async classmethod` methods
 - Method docstrings become MCP tool descriptions — write them clearly
-- `create_use_case_mcp_server` creates a four-layer progressive discovery MCP service
+- `create_use_case_graphql_mcp_server` creates a four-layer progressive-discovery GraphQL MCP service
 - `create_use_case_router` generates FastAPI POST routes from the same service class
 - Body parameters become request body; `FromContext` parameters are injected via `context_extractor`
 

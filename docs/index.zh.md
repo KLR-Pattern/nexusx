@@ -72,4 +72,4 @@ erDiagram
 - [跨层数据流](./api/api_cross_layer.zh.md) — ExposeAs / SendTo / Collector
 - [关系与 ER 图](./api/api_relationship.zh.md) — Relationship / ErDiagram
 - [MCP API](./api/api_mcp.zh.md) — MCP 服务配置
-- [UseCase API](./api/api_use_case.zh.md) — UseCaseService / create_use_case_mcp_server
+- [UseCase API](./api/api_use_case.zh.md) — UseCaseService / create_use_case_graphql_mcp_server
