@@ -73,9 +73,7 @@ from nexusx.use_case import (
     build_compose_schema,
     create_jsonrpc_router,
     create_use_case_cli,
-    create_use_case_flat_server,
     create_use_case_graphql_mcp_server,
-    create_use_case_mcp_server,
 )
 from nexusx.use_case import (
     create_router as create_use_case_router,
@@ -116,9 +114,6 @@ __all__ = [
     "build_compose_schema",
     "ComposeSchema",
     "ComposeSchemaError",
-    # UseCase legacy direct-call MCP (scheduled for removal — see spec FR-010)
-    "create_use_case_mcp_server",
-    "create_use_case_flat_server",
     # Orthogonal UseCase surfaces (unchanged in 3.0)
     "create_use_case_cli",
     "create_jsonrpc_router",

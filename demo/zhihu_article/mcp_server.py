@@ -11,7 +11,7 @@ Usage:
     uv run --with fastmcp python -m demo.zhihu_article.mcp_server --http
 """
 
-from nexusx import ErManager, UseCaseAppConfig, create_use_case_mcp_server
+from nexusx import ErManager, UseCaseAppConfig, create_use_case_graphql_mcp_server
 
 from demo.zhihu_article.database import async_session, init_db
 from demo.zhihu_article.models import Customer, Order, OrderItem, Product, Review
@@ -36,7 +36,7 @@ set_resolver(er.create_resolver())
 # MCP Server (created at module level for import by sample_output.py)
 # ──────────────────────────────────────────────────
 
-mcp = create_use_case_mcp_server(
+mcp = create_use_case_graphql_mcp_server(
     apps=[
         UseCaseAppConfig(
             name="order_system",

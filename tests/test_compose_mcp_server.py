@@ -9,7 +9,7 @@ covered in ``test_compose_executor.py``).
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any
 
 import pytest
 from pydantic import BaseModel
@@ -19,7 +19,6 @@ from nexusx.use_case.business import UseCaseService
 from nexusx.use_case.compose_mcp_server import create_use_case_graphql_mcp_server
 from nexusx.use_case.context import FromContext
 from nexusx.use_case.types import UseCaseAppConfig
-
 
 # ──────────────────────────────────────────────────────────────────────
 # Fixtures
@@ -34,7 +33,7 @@ class UserSummary(BaseModel):
 class TaskSummary(BaseModel):
     id: int
     title: str
-    owner: Optional[UserSummary] = None
+    owner: UserSummary | None = None
 
 
 class UserService(UseCaseService):
@@ -45,7 +44,7 @@ class UserService(UseCaseService):
         return [UserSummary(id=1, name="Alice"), UserSummary(id=2, name="Bob")]
 
     @query
-    async def get_user(cls, user_id: int) -> Optional[UserSummary]:
+    async def get_user(cls, user_id: int) -> UserSummary | None:
         return UserSummary(id=user_id, name=f"User {user_id}")
 
 

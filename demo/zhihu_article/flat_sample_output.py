@@ -9,7 +9,7 @@ import json
 
 from fastmcp import Client
 
-from nexusx import ErManager, UseCaseAppConfig, create_use_case_flat_server
+from nexusx import ErManager, UseCaseAppConfig, create_use_case_graphql_mcp_server
 
 from demo.zhihu_article.database import async_session, init_db
 from demo.zhihu_article.models import Customer, Order, OrderItem, Product, Review
@@ -23,7 +23,7 @@ er = ErManager(
 set_resolver(er.create_resolver())
 
 # Flat MCP server
-flat_mcp = create_use_case_flat_server(
+flat_mcp = create_use_case_graphql_mcp_server(
     apps=[
         UseCaseAppConfig(
             name="order_system",

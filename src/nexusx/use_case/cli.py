@@ -35,7 +35,7 @@ except ImportError as exc:
     ) from exc
 
 from nexusx.use_case.business import USE_CASE_METHODS_ATTR
-from nexusx.use_case.server import _serialize_result
+from nexusx.use_case.serialization import serialize_result as _serialize_result
 
 _CAMEL_TO_SNAKE_RE = re.compile(r"(?<!^)(?=[A-Z])")
 

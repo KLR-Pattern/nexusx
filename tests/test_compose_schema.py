@@ -16,7 +16,7 @@ from __future__ import annotations
 import datetime
 import enum
 import uuid
-from typing import Annotated, Optional
+from typing import Annotated
 
 import pytest
 from pydantic import BaseModel, Field
@@ -26,13 +26,10 @@ from sqlmodel import SQLModel
 from nexusx.decorator import mutation, query
 from nexusx.use_case.business import UseCaseService
 from nexusx.use_case.compose_schema import (
-    ComposeSchema,
     ComposeSchemaError,
-    DuplicateServiceError,
     DuplicateTypeError,
     MissingReturnAnnotationError,
     SQLModelInDtoFieldError,
-    TypeInfo,
     TypeRef,
     UnsupportedTypeError,
     build_compose_schema,
@@ -40,7 +37,6 @@ from nexusx.use_case.compose_schema import (
 from nexusx.use_case.compose_type_mapper import ComposeTypeMapper
 from nexusx.use_case.context import FromContext
 from nexusx.use_case.types import UseCaseAppConfig
-
 
 # ──────────────────────────────────────────────────────────────────────
 # Test fixtures (DTOs + services)
@@ -67,8 +63,8 @@ class TaskSummary(BaseModel):
     id: int
     title: str
     status: TaskStatus
-    owner: Optional[UserSummary] = None
-    due: Optional[datetime.date] = None
+    owner: UserSummary | None = None
+    due: datetime.date | None = None
 
 
 class SprintSummary(BaseModel):
@@ -88,7 +84,7 @@ class UserService(UseCaseService):
         ...
 
     @query
-    async def get_user(cls, user_id: int) -> Optional[UserSummary]:
+    async def get_user(cls, user_id: int) -> UserSummary | None:
         """Get a single user by id."""
         ...
 
@@ -128,7 +124,7 @@ class ContextAwareService(UseCaseService):
     async def current_user(
         cls,
         request_user_id: Annotated[int, FromContext()],
-    ) -> Optional[UserSummary]:
+    ) -> UserSummary | None:
         """Return current user based on injected context."""
         ...
 
@@ -169,7 +165,7 @@ class TestTypeMapping:
 
     def test_optional_int_maps_to_nullable_int(self) -> None:
         m = ComposeTypeMapper()
-        ref = m.map_python_type(Optional[int])
+        ref = m.map_python_type(int | None)
         assert ref == TypeRef(kind="SCALAR", name="Int")
 
     def test_pep604_union_maps_to_nullable(self) -> None:
@@ -189,13 +185,13 @@ class TestTypeMapping:
 
     def test_optional_list_maps_to_nullable_list(self) -> None:
         m = ComposeTypeMapper()
-        ref = m.map_python_type(Optional[list[int]])
+        ref = m.map_python_type(list[int] | None)
         # [Int!]  (list nullable, elements non-null)
         assert ref.kind == "LIST"
 
     def test_list_of_optional_maps_to_non_null_list_of_nullable(self) -> None:
         m = ComposeTypeMapper()
-        ref = m.map_python_type(list[Optional[int]])
+        ref = m.map_python_type(list[int | None])
         # [Int]! (list non-null, elements nullable)
         assert ref.kind == "NON_NULL"
         assert ref.of_type is not None and ref.of_type.kind == "LIST"
@@ -244,12 +240,6 @@ class TestTypeMapping:
             m.map_python_type(Any)
 
     def test_field_description_extracted_from_pydantic_field(self) -> None:
-        m = ComposeTypeMapper()
-        m.map_python_type(TaskSummary)
-        task_info = m.registry["TaskSummary"]
-        # title has no description; verify Field(default_factory=...) on tasks
-        # doesn't crash and that explicit Field(description=...) on SprintSummary
-        # surfaces.
         m2 = ComposeTypeMapper()
         m2.map_python_type(SprintSummary)
         sprint_info = m2.registry["SprintSummary"]
@@ -294,7 +284,7 @@ class TestDedup:
     def test_dto_referenced_from_multiple_services_registers_once(self) -> None:
         # TaskSummary is referenced from TaskService.list_tasks / get_task /
         # create_task AND from SprintService.list_sprints (via SprintSummary.tasks)
-        schema = build_compose_schema(app_with_all_services := UseCaseAppConfig(
+        schema = build_compose_schema(UseCaseAppConfig(
             name="project",
             services=[UserService, TaskService, SprintService],
         ))
@@ -510,7 +500,6 @@ class TestSQLModelInDtoField:
 
 class TestIntrospectionRoundTrip:
     def test_introspection_round_trips_through_graphql_build_schema(self) -> None:
-        from graphql import build_schema
 
         schema = build_compose_schema(UseCaseAppConfig(
             name="rt",

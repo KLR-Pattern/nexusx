@@ -10,7 +10,7 @@ These tests exercise ``execute_compose_query`` directly (no MCP layer).
 
 from __future__ import annotations
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 import pytest
 from pydantic import BaseModel
@@ -25,7 +25,6 @@ from nexusx.use_case.compose_schema import build_compose_schema
 from nexusx.use_case.context import FromContext
 from nexusx.use_case.types import UseCaseAppConfig
 
-
 # ──────────────────────────────────────────────────────────────────────
 # Fixtures
 # ──────────────────────────────────────────────────────────────────────
@@ -39,7 +38,7 @@ class UserSummary(BaseModel):
 class TaskSummary(BaseModel):
     id: int
     title: str
-    owner: Optional[UserSummary] = None
+    owner: UserSummary | None = None
 
 
 class _Counter:
@@ -57,7 +56,7 @@ class UserService(UseCaseService):
         return [UserSummary(id=1, name="Alice"), UserSummary(id=2, name="Bob")]
 
     @query
-    async def get_user(cls, user_id: int) -> Optional[UserSummary]:
+    async def get_user(cls, user_id: int) -> UserSummary | None:
         if user_id == 1:
             return UserSummary(id=1, name="Alice")
         return None

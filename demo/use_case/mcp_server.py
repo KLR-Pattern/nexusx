@@ -1,10 +1,14 @@
-"""UseCase MCP Server Demo — expose Core API services via MCP.
+"""UseCase GraphQL MCP Server Demo — expose Core API services via GraphQL MCP.
 
-Demonstrates how UseCaseService classes can be exposed to AI agents
-via four-layer progressive disclosure MCP tools.
+Demonstrates how UseCaseService classes can be exposed to AI agents via the
+4-layer progressive-disclosure GraphQL MCP (3.0+):
+- list_apps
+- describe_compose_schema
+- describe_compose_method
+- compose_query  (executes standard GraphQL queries)
 
-Uses the Core API demo's models/database, providing Sprint and Task
-business services with DefineSubset DTOs and Resolver.
+Uses the Core API demo's models/database, providing Sprint and Task business
+services with DefineSubset DTOs and Resolver.
 
 Usage:
     # stdio mode (for Claude Desktop, etc.)
@@ -22,7 +26,7 @@ from nexusx import (
     UseCaseAppConfig,
     UseCaseService,
     build_dto_select,
-    create_use_case_mcp_server,
+    create_use_case_graphql_mcp_server,
     query,
 )
 
@@ -146,7 +150,7 @@ def main() -> None:
 
     asyncio.run(init_db())
 
-    mcp = create_use_case_mcp_server(
+    mcp = create_use_case_graphql_mcp_server(
         apps=[
             UseCaseAppConfig(
                 name="project",

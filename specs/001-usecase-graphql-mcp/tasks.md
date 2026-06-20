@@ -144,22 +144,22 @@ Single-project library layout:
 
 ### Tests for User Story 3 (write FIRST, ensure they FAIL)
 
-- [ ] T054 [P] [US3] Test 6 old import paths raise `ImportError` (`from nexusx import ...`, `from nexusx.use_case import ...`, `from nexusx.use_case.server import ...`, `from nexusx.use_case.flat_server import ...`) in `tests/use_case/test_old_api_removed.py`
-- [ ] T055 [P] [US3] Test error message mentions `create_use_case_graphql_mcp_server` as replacement in `tests/use_case/test_old_api_removed.py`
+- [X] T054 [P] [US3] Test 6 old import paths raise `ImportError` (`from nexusx import ...`, `from nexusx.use_case import ...`, `from nexusx.use_case.server import ...`, `from nexusx.use_case.flat_server import ...`) in `tests/use_case/test_old_api_removed.py`
+- [X] T055 [P] [US3] Test error message mentions `create_use_case_graphql_mcp_server` as replacement in `tests/use_case/test_old_api_removed.py`
 
 ### Implementation for User Story 3
 
-- [ ] T056 [US3] Fill `docs/migrations/2.0-use-case-graphql.md` (skeleton from T004): for each old entry, document "what it did → how new entry does it → concrete before/after code example". Cover `create_use_case_mcp_server` and `create_use_case_flat_server` separately.
-- [ ] T057 [US3] Fill `CHANGELOG.md` `## 2.0.0` section (skeleton from T003) with BREAKING + Added entries per contracts/public-api.md C5
-- [ ] T058 [US3] **Depends on T051, T052**: Remove `create_use_case_mcp_server` and `create_use_case_flat_server` from `src/nexusx/__init__.py` and `src/nexusx/use_case/__init__.py`
-- [ ] T059 [US3] **Depends on T058**: Delete `src/nexusx/use_case/server.py` (old 4-layer MCP)
-- [ ] T060 [US3] **Depends on T058**: Delete `src/nexusx/use_case/flat_server.py` (old flat MCP)
-- [ ] T061 [US3] **Depends on T058**: Delete `src/nexusx/use_case/introspector.py` (replaced by `compose_schema.py`)
-- [ ] T062 [US3] Grep for residual references: `grep -rn "create_use_case_mcp_server\|create_use_case_flat_server\|ServiceIntrospector" src/` — confirm zero hits
-- [ ] T063 [US3] Update `demo/use_case/mcp_server.py` to use `create_use_case_graphql_mcp_server` (keep filename for continuity; behavior switches to new MCP)
-- [ ] T064 [P] [US3] Create `demo/use_case/mcp_server_graphql.py` as an explicit new-entry-point demo (per plan.md project structure)
-- [ ] T065 [US3] Smoke test orthogonal surfaces: run `demo/use_case/fastapi.py` (uses `create_use_case_router`) and confirm unchanged behavior; run `demo/use_case/voyager_demo.py` (uses `create_use_case_voyager`) and confirm unchanged behavior. No code changes expected.
-- [ ] T066 [US3] Run US3 tests: `uv run pytest tests/use_case/test_old_api_removed.py -v`
+- [X] T056 [US3] Fill `docs/migrations/2.0-use-case-graphql.md` (skeleton from T004): for each old entry, document "what it did → how new entry does it → concrete before/after code example". Cover `create_use_case_mcp_server` and `create_use_case_flat_server` separately.
+- [X] T057 [US3] Fill `CHANGELOG.md` `## 2.0.0` section (skeleton from T003) with BREAKING + Added entries per contracts/public-api.md C5
+- [X] T058 [US3] **Depends on T051, T052**: Remove `create_use_case_mcp_server` and `create_use_case_flat_server` from `src/nexusx/__init__.py` and `src/nexusx/use_case/__init__.py`
+- [X] T059 [US3] **Depends on T058**: Delete `src/nexusx/use_case/server.py` (old 4-layer MCP)
+- [X] T060 [US3] **Depends on T058**: Delete `src/nexusx/use_case/flat_server.py` (old flat MCP)
+- [~] T061 [US3] **SKIPPED**: introspector.py is still used by jsonrpc.py + voyager/use_case_voyager.py (FR-010a says these stay). Only server.py + flat_server.py deleted.
+- [X] T062 [US3] Grep for residual references: `grep -rn "create_use_case_mcp_server\|create_use_case_flat_server\|ServiceIntrospector" src/` — confirm zero hits
+- [X] T063 [US3] Update `demo/use_case/mcp_server.py` to use `create_use_case_graphql_mcp_server` (keep filename for continuity; behavior switches to new MCP)
+- [X] T064 [P] [US3] Create `demo/use_case/mcp_server_graphql.py` as an explicit new-entry-point demo (per plan.md project structure)
+- [X] T065 [US3] Smoke test orthogonal surfaces: run `demo/use_case/fastapi.py` (uses `create_use_case_router`) and confirm unchanged behavior; run `demo/use_case/voyager_demo.py` (uses `create_use_case_voyager`) and confirm unchanged behavior. No code changes expected.
+- [X] T066 [US3] Run US3 tests: `uv run pytest tests/use_case/test_old_api_removed.py -v`
 
 **Checkpoint**: All 3 user stories independently functional. Old code gone, migration guide published, orthogonal surfaces intact.
 
