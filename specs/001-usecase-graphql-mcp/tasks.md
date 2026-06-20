@@ -48,10 +48,10 @@ Single-project library layout:
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T005 [P] Implement `TypeInfo` / `FieldInfo` / `TypeRef` / `ArgumentInfo` dataclasses in `src/nexusx/use_case/compose_schema.py` (per data-model.md D1–D4)
-- [ ] T006 [P] Implement `ComposeSchemaError` exception hierarchy (`DuplicateServiceError`, `DuplicateMethodError`, `DuplicateTypeError`, `UnsupportedTypeError`, `SQLModelInDtoFieldError`, `MissingReturnAnnotationError`) in `src/nexusx/use_case/compose_schema.py`
-- [ ] T007 Implement `ComposeTypeMapper` class in `src/nexusx/use_case/compose_type_mapper.py` with mapping rules per contracts/schema-builder.md B3 (scalars, containers, Pydantic, enum; reject bytes/Decimal/SQLModel/Any). Document fork rationale vs `type_converter.py` in module docstring (per FR-011, research.md R2)
-- [ ] T008 Implement `is_from_context_annotation(annotation)` helper in `src/nexusx/use_case/compose_type_mapper.py` (migrated from old `server.py:462-466`, no behavior change)
+- [X] T005 [P] Implement `TypeInfo` / `FieldInfo` / `TypeRef` / `ArgumentInfo` dataclasses in `src/nexusx/use_case/compose_schema.py` (per data-model.md D1–D4)
+- [X] T006 [P] Implement `ComposeSchemaError` exception hierarchy (`DuplicateServiceError`, `DuplicateMethodError`, `DuplicateTypeError`, `UnsupportedTypeError`, `SQLModelInDtoFieldError`, `MissingReturnAnnotationError`) in `src/nexusx/use_case/compose_schema.py`
+- [X] T007 Implement `ComposeTypeMapper` class in `src/nexusx/use_case/compose_type_mapper.py` with mapping rules per contracts/schema-builder.md B3 (scalars, containers, Pydantic, enum; reject bytes/Decimal/SQLModel/Any). Document fork rationale vs `type_converter.py` in module docstring (per FR-011, research.md R2)
+- [X] T008 Implement `is_from_context_annotation(annotation)` helper in `src/nexusx/use_case/compose_type_mapper.py` (migrated from old `server.py:462-466`, no behavior change)
 
 **Checkpoint**: Foundation ready — schema builder can consume these primitives.
 
