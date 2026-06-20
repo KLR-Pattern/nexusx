@@ -83,7 +83,7 @@ dtos = await Resolver().resolve(posts)
 **Step 3 — MCP + REST from business logic**
 
 ```python
-from nexusx import UseCaseService, UseCaseAppConfig, create_use_case_mcp_server, create_use_case_router
+from nexusx import UseCaseService, UseCaseAppConfig, create_use_case_graphql_mcp_server, create_use_case_router
 
 class SprintService(UseCaseService):
     @query
@@ -94,7 +94,7 @@ class SprintService(UseCaseService):
 config = UseCaseAppConfig(name="project", services=[SprintService])
 
 # MCP for AI agents
-mcp = create_use_case_mcp_server(apps=[config])
+mcp = create_use_case_graphql_mcp_server(apps=[config])
 mcp.run()
 
 # REST for frontend

@@ -44,13 +44,13 @@
   cli()  # python -m myapp user-service list-users
   ```
 - `create_use_case_voyager()` 可视化服务结构
-- `create_use_case_mcp_server()` + `UseCaseAppConfig` 暴露给 AI agent（四层渐进式披露：list_apps → list_services → describe_service → call_use_case）
-- `create_use_case_flat_server()` + `UseCaseAppConfig` 扁平化 MCP 暴露（每个方法一个 tool，类型定义通过 MCP resource 提供）。适用于方法少（<20 个 tool）、LLM context 充足、需要直接调用的场景
+- `create_use_case_graphql_mcp_server()` + `UseCaseAppConfig` 暴露给 AI agent（四层渐进式披露：list_apps → list_services → describe_service → call_use_case）
+- `create_use_case_graphql_mcp_server()` + `UseCaseAppConfig` 扁平化 MCP 暴露（每个方法一个 tool，类型定义通过 MCP resource 提供）。适用于方法少（<20 个 tool）、LLM context 充足、需要直接调用的场景
 - MCP http_app 必须使用 `transport="streamable-http", stateless_http=True`
 - MCP http_app 的 lifespan 必须在 FastAPI lifespan 中通过 `async with mcp_http.lifespan(mcp_http)` 嵌套启动
 - MCP http_app 对象必须在 lifespan 函数定义之前创建，以便引用
 - **MCP 模式必须在实现时由用户选择** — 向用户展示两种模式的对比，由用户决定：
-  | 特性 | `create_use_case_mcp_server`（渐进式） | `create_use_case_flat_server`（扁平化） |
+  | 特性 | `create_use_case_graphql_mcp_server`（渐进式） | `create_use_case_graphql_mcp_server`（扁平化） |
   |------|---------------------------------------|-----------------------------------|
   | 工具数量 | 4 个固定 tool | 每个方法一个 tool |
   | 发现流程 | list_apps → list_services → describe_service → call | 直接调用 tool |
@@ -61,7 +61,7 @@
   ```python
   from nexusx import (
       UseCaseAppConfig, create_use_case_router, create_jsonrpc_router,
-      create_use_case_mcp_server, create_use_case_flat_server,
+      create_use_case_graphql_mcp_server, create_use_case_graphql_mcp_server,
       create_use_case_voyager, GraphQLHandler, create_use_case_cli,
   )
 
@@ -84,9 +84,9 @@
 
   # MCP（选一种 — 由用户决定）
   # 渐进式：
-  mcp = create_use_case_mcp_server(apps=[app_config], name="API")
+  mcp = create_use_case_graphql_mcp_server(apps=[app_config], name="API")
   # 扁平化：
-  mcp = create_use_case_flat_server(apps=[app_config], name="API")
+  mcp = create_use_case_graphql_mcp_server(apps=[app_config], name="API")
 
   # Voyager 可视化
   voyager = create_use_case_voyager(apps=[app_config], er_manager=er)
@@ -127,6 +127,6 @@
 8. **Use `create_use_case_router()` 而非手写路由** — 手写路由无法声明 `response_model`，导致 OpenAPI spec 中响应类型为空（`unknown`），TS SDK 无法生成有效类型。`create_use_case_router()` 从 UseCaseService 方法的返回类型注解（如 `-> list[ChatSummary]`）自动提取 `response_model`，使 FastAPI 在 OpenAPI spec 中正确描述响应结构
 9. **UseCaseService 方法必须声明返回类型注解** — `create_use_case_router()` 通过 `get_type_hints(method).get("return")` 提取返回类型作为 `response_model`。缺少返回注解的方法，其响应类型在 OpenAPI spec 中为空
 10. **methods.py 返回 Model，service.py 负责 DTO 转换** — methods.py 是纯业务逻辑层，所有方法（query + mutation）返回 ORM Model 实体。service.py 统一调用 methods.py，DTO 转换在 service.py 中进行：(1) list 方法调 methods 拿 `list[Model]` → `[DtoType.model_validate(m) for m in models]` → `Resolver().resolve(dtos)`；(2) 单条 get 方法调 methods 拿 `Model | None` → `DtoType.model_validate(entity)` → `Resolver().resolve(dto)`；(3) mutation 方法同单条 get。service.py 不直接操作数据库
-11. **`create_use_case_flat_server()` 返回 FastMCP 实例，可直接添加 `@mcp.prompt()`** — 如果项目需要 MCP prompt 功能，flat server 和渐进式 server 都提供了方便的挂载点，两者返回的都是标准 FastMCP 对象
+11. **`create_use_case_graphql_mcp_server()` 返回 FastMCP 实例，可直接添加 `@mcp.prompt()`** — 如果项目需要 MCP prompt 功能，flat server 和渐进式 server 都提供了方便的挂载点，两者返回的都是标准 FastMCP 对象
 12. **`create_jsonrpc_router()` 提供轻量 RPC 协议** — 方法命名为 `ServiceName.method_name`，适合不需要 REST 语义的场景。与 `create_use_case_router()` 二选一
 13. **`create_use_case_cli()` 生成 Typer CLI 命令行工具** — 每个 service 成为一个命令组，每个方法成为子命令。适合需要本地调试脚本的场景。需要额外依赖 `typer`

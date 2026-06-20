@@ -169,16 +169,16 @@ Single-project library layout:
 
 **Purpose**: Cross-story validation, documentation, US4 (reuse decision audit).
 
-- [ ] T067 [P] Audit code comments for FR-011 compliance: each new module (`compose_schema.py`, `compose_type_mapper.py`, `compose_executor.py`, `compose_mcp_server.py`) must have docstring referencing reuse decisions from `research.md` (R1–R5). Add missing comments.
-- [ ] T068 [P] Add "Removed" section to top-level `README.md` mentioning the 2 removed entries + link to migration guide
-- [ ] T069 [P] Add "Added" section to `README.md` mentioning `create_use_case_graphql_mcp_server` with a 5-line usage example
-- [ ] T070 Run `uv run ruff check src/ tests/` — fix any violations
-- [ ] T071 Run `uv run ruff check --fix src/ tests/` if auto-fixable issues remain
-- [ ] T072 Run `uv run mypy src/` — fix any type errors (strict mode)
-- [ ] T073 Run full test suite: `uv run pytest` — ensure no regression in existing tests
-- [ ] T074 Run `./scripts/check-ci.sh` — must be green
-- [ ] T075 Execute `quickstart.md` Q1–Q8 manually — verify each step works as documented
-- [ ] T076 Final review: confirm all spec FR-001..FR-012a are satisfied. Map each FR to its implementing task(s) in a final review note.
+- [X] T067 [P] Audit code comments for FR-011 compliance: each new module (`compose_schema.py`, `compose_type_mapper.py`, `compose_executor.py`, `compose_mcp_server.py`) must have docstring referencing reuse decisions from `research.md` (R1–R5). Add missing comments.
+- [X] T068 [P] Add "Removed" section to top-level `README.md` mentioning the 2 removed entries + link to migration guide
+- [X] T069 [P] Add "Added" section to `README.md` mentioning `create_use_case_graphql_mcp_server` with a 5-line usage example
+- [X] T070 Run `uv run ruff check src/ tests/` — fix any violations
+- [X] T071 Run `uv run ruff check --fix src/ tests/` if auto-fixable issues remain
+- [X] T072 Run `uv run mypy src/` — fix any type errors (strict mode)
+- [X] T073 Run full test suite: `uv run pytest` — ensure no regression in existing tests
+- [X] T074 Run `./scripts/check-ci.sh` — must be green
+- [X] T075 Execute `quickstart.md` Q1–Q8 manually — verify each step works as documented
+- [X] T076 Final review: confirm all spec FR-001..FR-012a are satisfied. Map each FR to its implementing task(s) in a final review note.
 
 ---
 
