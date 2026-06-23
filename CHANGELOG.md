@@ -1,5 +1,64 @@
 # Changelog
 
+## 3.1.0
+
+### New Feature: Resolver `loader_instances` 参数
+
+移植 pydantic-resolve 的 `Resolver(loader_instances=...)` API 到 nexusx。调用方可传入预创建（通常已 prime）的 DataLoader 实例，按 class 匹配，用于跳过已知 key 的冗余 batch 调用。
+
+**行为：**
+- `Resolver(loader_registry=..., context=..., loader_instances={LoaderClass: instance})` 接受预创建的 DataLoader 实例字典
+- 当 `resolve_*` 方法声明 `loader=Loader(Cls)` 且 `Cls` 在字典中时，Resolver 返回调用方提供的实例；否则按原逻辑创建新实例（行为不变）
+- 构造期校验：key 必须是 `aiodataloader.DataLoader` 子类，value 必须是 key 的实例。不合规输入在构造期抛 `TypeError`，绝不进入 traversal
+- 提供的实例按引用使用（不复制），`Resolver.resolve()` 不会清理它们——caller 拥有生命周期，需要 per-request 隔离的场景请每次构造新实例
+- `ErManager.create_resolver()` 工厂将 `loader_instances` 透传到底层 Resolver
+
+**范围限定（关键）：** 仅影响显式 `Loader(Cls)` Depends 路径。auto-load 路径——无论是 `__relationships__` 自定义关系还是 ORM 原生 SQLModel 关系——一律不变，因为他们走 ErManager 的按名字查找，根本不查询 `_loader_instances`。决策记录在 `specs/002-resolver-loader-instances/spec.md`（Clarifications 2026-06-23）。
+
+**与 pydantic-resolve 的差异：** 无——严格等价移植，class-keyed API；唯一区别是错误类型选用更地道的 `TypeError`（pydantic-resolve 用 `AttributeError`）。
+
+**示例：**
+
+```python
+from aiodataloader import DataLoader
+from nexusx import ErManager
+
+class UserLoader(DataLoader):
+    async def batch_load_fn(self, keys):
+        return [await fetch_user(k) for k in keys]
+
+# 已知当前用户，跳过 DB 往返
+loader = UserLoader()
+loader.prime(current_user.id, current_user_dto)
+
+er = ErManager(base=SQLModel, session_factory=async_session)
+Resolver = er.create_resolver()
+resolver = Resolver(
+    context={"user_id": current_user.id},
+    loader_instances={UserLoader: loader},
+)
+result = await resolver.resolve(dtos)
+```
+
+**Changes：**
+- `src/nexusx/resolver.py`: `Resolver.__init__` 新增 `loader_instances` 参数；新增 `_validate_loader_instances` 静态方法（构造期 `TypeError`）；`_get_or_create_loader` 先查 `_loader_instances` 再 fallback 到 `_loader_cache`；类 docstring 更新参数说明与生命周期语义
+- `src/nexusx/loader/registry.py`: `ErManager.create_resolver()` 返回的 `BoundResolver.__init__` 透传 `loader_instances`
+- `tests/test_resolver.py`: 新增 `TestLoaderInstances`（3 个测试覆盖 US1 pre-prime、US2 by-reference、US3 校验失败）
+- `tests/test_loader_registry.py`: 新增 `test_create_resolver_forwards_loader_instances`（FR-005 工厂透传）
+- `specs/002-resolver-loader-instances/`: 完整 speckit 工件（spec / plan / research / data-model / contracts / quickstart / tasks）
+
+### Chore: 全树 ruff --fix + uv.lock 同步
+
+PR #82 顺手做的代码树清理：
+
+- `ruff check --fix` 清理 49 个 lint issue，主要是 `benchmarks/`、`demo/`、`tests/` 中冗余的 inline `from typing import Annotated`（顶层已 import）
+- `uv.lock`: nexusx 3.0.0 → 3.0.1 同步（`face1aa` 把 `pyproject.toml` bump 到 3.0.1 时 lock 文件漏同步；本次 PR 的 `uv run` 顺手补上。**无镜像源引入**，仍指向 `pypi.org`，符合 CLAUDE.md 约定）
+- `tests/` 中仍有 16 个 `Optional[X] → X | None` 的 ruff 提示（需要 `--unsafe-fixes`），本次未处理
+
+**版本同步：**
+- `pyproject.toml`: 3.0.1 → 3.1.0
+- `uv.lock`: nexusx 3.0.1 → 3.1.0
+
 ## 3.0.1
 
 ### Bug Fix: `use_case.cli` 不再在 import 时强制要求 `typer`
