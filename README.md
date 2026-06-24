@@ -33,6 +33,8 @@ Requires Python ≥ 3.10.
 
 **Step 1 — Entities + GraphQL**
 
+Define SQLModel entities and decorate entry-point methods with `@query`. `GraphQLHandler` walks the entity graph, generates SDL, and resolves relationships through DataLoader — one batched SQL per relationship level instead of N+1.
+
 ```python
 from sqlmodel import SQLModel, Field, Relationship, select
 from nexusx import query, mutation, GraphQLHandler
@@ -56,13 +58,13 @@ class Post(SQLModel, table=True):
 handler = GraphQLHandler(base=SQLModel, session_factory=async_session)
 ```
 
-Relationships resolve automatically — DataLoader batches queries, one SQL per level:
+`User.get_users` becomes a GraphQL query field. Querying `{ userGetUsers(limit: 5) { name posts { title } } }` triggers exactly two SQL round-trips — one for the users, one batched `SELECT ... WHERE author_id IN (...)` for all their posts. The handler is executor-only: mount it on any ASGI app via a POST route that calls `handler.execute(query=...)` (see [`demo/blog/app.py`](demo/blog/app.py) for a complete FastAPI example with GraphiQL). `handler.get_sdl()` returns the schema for codegen or external clients.
 
-```graphql
-{ userGetUsers(limit: 5) { name posts { title } } }
-```
+The [GraphQL mode guide](docs/guide/graphql_mode.md) covers filters, pagination (`enable_pagination=True` wraps lists in `Result { items, pagination }`), and `AutoQueryConfig` for auto-generated `by_id` / `by_filter` queries across every entity.
 
 **Step 2 — Typed REST with DTOs**
+
+GraphQL exposes entities directly. For REST handlers or service-layer code you usually want a smaller, intentional shape per endpoint — that's `DefineSubset`. Declare which fields to keep; relationship fields auto-load when their name matches an ORM relationship, so `author: UserDTO | None = None` populates itself from the underlying `author_id` FK without any loader boilerplate.
 
 ```python
 from nexusx import DefineSubset, ErManager
@@ -78,9 +80,11 @@ Resolver = ErManager(base=SQLModel, session_factory=async_session).create_resolv
 dtos = await Resolver().resolve(posts)
 ```
 
-`DefineSubset` is GraphQL field selection in Python — declare which fields you want, get a typed DTO. Relationship fields auto-load when the name matches. Add `resolve_*` for custom loading, `post_*` for derived fields.
+`posts` is whatever list of ORM instances you fetched — your query, your filter, your permissions. The Resolver traverses the DTO tree level-by-level, batching each level's loads the same way GraphQL does, and returns typed `PostDTO` instances with relationships filled in. Add `resolve_*` methods to override the auto-loader for a field, `post_*` methods for derived/computed fields. See the [Core API guide](docs/guide/core_api.md).
 
 **Step 3 — MCP + REST from business logic**
+
+For operations that compose multiple entities, apply permissions, or go beyond single-table CRUD, write a `UseCaseService` — a plain class whose `@query` / `@mutation` methods hold your business logic. One service class generates both an MCP server (4-layer progressive disclosure for AI agents) and FastAPI routes (one POST per method, types derived from signatures, OpenAPI docs included).
 
 ```python
 from nexusx import UseCaseService, UseCaseAppConfig, create_use_case_graphql_mcp_server, create_use_case_router
@@ -101,7 +105,7 @@ mcp.run()
 app.include_router(create_use_case_router(config))
 ```
 
-Same service class, two protocols. Methods can internally use `Resolver().resolve(dtos)` — the modes compose.
+Methods are regular async functions — they can call `Resolver().resolve(...)` from Step 2 internally, so business logic and DTO assembly compose freely. Same Python class, three surfaces (MCP / REST / GraphQL-via-MCP). See [feature highlights](docs/feature-highlights.md) for the full picture.
 
 ## How It Compares
 
