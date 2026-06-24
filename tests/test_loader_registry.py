@@ -1,12 +1,12 @@
 """Tests for ErManager — relationship discovery and DataLoader management."""
 
-from __future__ import annotations
+from typing import Optional
 
 import pytest
 from sqlmodel import Field, Relationship, SQLModel
 
 from nexusx.loader.registry import ErManager
-from nexusx.relationship import Relationship
+from nexusx.relationship import Relationship as NxRelationship
 from tests.conftest import FixtureSprint, FixtureTask, FixtureUser, get_test_session_factory
 
 # ──────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ class RegPost(SQLModel, table=True):
     title: str
 
     __relationships__ = [
-        Relationship(
+        NxRelationship(
             fk="id",
             target=list[RegTag],
             name="tags",
@@ -48,9 +48,35 @@ class ConflictPost(SQLModel, table=True):
     title: str
 
     __relationships__ = [
-        Relationship(fk="id", target=list[RegTag], name="tags", loader=_dummy_loader),
-        Relationship(fk="id", target=list[RegTag], name="tags", loader=_dummy_loader),
+        NxRelationship(fk="id", target=list[RegTag], name="tags", loader=_dummy_loader),
+        NxRelationship(fk="id", target=list[RegTag], name="tags", loader=_dummy_loader),
     ]
+
+
+# ──────────────────────────────────────────────────────────
+# Entities for pagination warn-skip (no order_by on the list side)
+# ──────────────────────────────────────────────────────────
+
+
+class _PagBase(SQLModel):
+    pass
+
+
+class _PagChild(_PagBase, table=True):
+    __tablename__ = "reg_test_pag_child"
+
+    id: int | None = Field(default=None, primary_key=True)
+    parent_id: int = Field(foreign_key="reg_test_pag_parent.id")
+    parent: Optional["_PagParent"] = Relationship(back_populates="children")
+
+
+class _PagParent(_PagBase, table=True):
+    __tablename__ = "reg_test_pag_parent"
+
+    id: int | None = Field(default=None, primary_key=True)
+    # Deliberately no order_by — stands in for audit logs / append-only /
+    # config tables that have no natural sort key.
+    children: list["_PagChild"] = Relationship(back_populates="parent")
 
 
 # ──────────────────────────────────────────────────────────
@@ -144,23 +170,48 @@ class TestErManagerCache:
 
 
 class TestErManagerPagination:
-    def test_pagination_validation_raises_on_missing_order_by(self):
-        """enable_pagination without order_by should raise ValueError."""
-        # FixtureUser has a relationship to FixtureTask (tasks)
-        # that DOES have order_by in conftest, so this should work.
-        # But if we create a registry with ONLY FixtureTask which has
-        # sprint/tasks relationships with order_by, it should pass.
-        # Let's test with an entity that has no order_by.
+    def test_warn_skip_when_list_relationship_lacks_order_by(self, caplog):
+        """enable_pagination with a no-order_by list should warn, not raise.
 
-        # Actually, let's just verify the validation works with
-        # entities from conftest that DO have order_by
-        registry = ErManager(
-            entities=[FixtureUser, FixtureSprint, FixtureTask],
-            session_factory=get_test_session_factory(),
-            enable_pagination=True,
-        )
-        # Should not raise because FixtureSprint.tasks has order_by
-        assert registry is not None
+        Regression for issue #83: all-or-nothing startup check blocked apps
+        whose audit-log / append-only / config list relationships have no
+        natural sort key. The relationship must still register a regular
+        loader so it resolves as ``[T]!``; only the page_loader is omitted.
+        """
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="nexusx.loader.registry"):
+            registry = ErManager(
+                entities=[_PagParent, _PagChild],
+                session_factory=get_test_session_factory(),
+                enable_pagination=True,
+            )
+
+        # Did not raise, and the no-order_by list falls back to regular loader.
+        children_rel = registry.get_relationship(_PagParent, "children")
+        assert children_rel is not None
+        assert children_rel.page_loader is None
+        assert children_rel.loader is not None
+
+        # A single WARNING was emitted naming the skipped relationship.
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "_PagParent.children" in warnings[0].getMessage()
+        assert "order_by" in warnings[0].getMessage()
+
+    def test_no_warning_when_all_list_relationships_have_order_by(self, caplog):
+        """Sanity: when every list relationship has order_by, no WARNING."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="nexusx.loader.registry"):
+            ErManager(
+                entities=[FixtureUser, FixtureSprint, FixtureTask],
+                session_factory=get_test_session_factory(),
+                enable_pagination=True,
+            )
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert warnings == []
 
 
 class TestErManagerCustomRelationships:
@@ -317,10 +368,13 @@ class TestPaginationValidation:
         with pytest.raises(ValueError, match="Only single-column"):
             _extract_sort_field([FixtureUser.id, FixtureUser.name])
 
-    def test_pagination_without_order_by_on_relationship(self):
-        """enable_pagination should raise when relationship lacks order_by."""
-        # Verify the validation path by testing _validate_pagination directly
-        # with a mock registry that has a list relationship without page_loader
+    def test_pagination_without_order_by_on_relationship(self, caplog):
+        """enable_pagination warns (does not raise) when a list rel lacks order_by.
+
+        Issue #83: warn-skip replaces the all-or-nothing startup check so apps
+        with audit-log / append-only list relationships aren't blocked.
+        """
+        import logging
         from unittest.mock import MagicMock
 
         from nexusx.loader.registry import RelationshipInfo
@@ -342,11 +396,18 @@ class TestPaginationValidation:
         mock_entity.__name__ = "TestEntity"
         registry._registry = {mock_entity: {"items": rel_info}}
 
-        with pytest.raises(ValueError, match="no order_by configured"):
-            registry._validate_pagination()
+        with caplog.at_level(logging.WARNING, logger="nexusx.loader.registry"):
+            registry._validate_pagination()  # must not raise
 
-    def test_pagination_skips_custom_relationships(self):
-        """Custom relationships should be skipped in pagination validation."""
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        msg = warnings[0].getMessage()
+        assert "TestEntity.items" in msg
+        assert "order_by" in msg
+
+    def test_pagination_skips_custom_relationships(self, caplog):
+        """CUSTOM relationships neither raise nor emit a warning."""
+        import logging
         from unittest.mock import MagicMock
 
         from nexusx.loader.registry import RelationshipInfo
@@ -367,5 +428,8 @@ class TestPaginationValidation:
         mock_entity.__name__ = "TestEntity"
         registry._registry = {mock_entity: {"custom_items": rel_info}}
 
-        # Should not raise — custom relationships are skipped
-        registry._validate_pagination()
+        with caplog.at_level(logging.WARNING, logger="nexusx.loader.registry"):
+            registry._validate_pagination()  # must not raise
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert warnings == []

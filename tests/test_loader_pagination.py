@@ -212,16 +212,15 @@ class TestPageOneToManyLoader:
             session_factory=get_test_session_factory(),
         )
         loader = LoaderCls()
-        # limit=1, offset=0 → end=2, total=2 → has_more=False
-        # limit=1 but total is 2, so we get 1 item
+        # limit=1, offset=0, total=2 → 1 item returned, 1 item remains → has_more=True.
+        # SQL peeks effective_limit+1 rows; len(rows) > limit signals a next page.
         cmd = PageLoadCommand(fk_value=1, page_args=PageArgs(limit=1))
         results = await loader.load_many([cmd])
 
         assert len(results) == 1
         assert len(results[0]["items"]) == 1
         assert results[0]["pagination"].total_count == 2
-        # end = offset(0) + 1 + 1 = 2, total=2 → has_more = 2 > 2 = False
-        assert results[0]["pagination"].has_more is False
+        assert results[0]["pagination"].has_more is True
 
     @pytest.mark.usefixtures("test_db")
     async def test_offset_pagination(self):
@@ -360,8 +359,8 @@ class TestPageManyToManyLoader:
         assert len(results) == 1
         assert len(results[0]["items"]) == 1
         assert results[0]["pagination"].total_count == 2
-        # end = 0 + 1 + 1 = 2, total=2 → has_more = 2 > 2 = False
-        assert results[0]["pagination"].has_more is False
+        # limit=1, offset=0, total=2 → 1 item remains → has_more=True.
+        assert results[0]["pagination"].has_more is True
 
     @pytest.mark.usefixtures("test_db_m2m")
     async def test_offset_beyond_total(self):

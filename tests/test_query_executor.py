@@ -702,8 +702,8 @@ class TestQueryExecutorPagination:
             page = sprint["tasks"]
             assert len(page["items"]) == 1
             assert page["pagination"]["total_count"] == 2
-            # end = offset(0) + 1 + 1 = 2, total = 2 → has_more = 2 > 2 = False
-            assert page["pagination"]["has_more"] is False
+            # limit=1, offset=0, total=2 → 1 item remains → has_more=True.
+            assert page["pagination"]["has_more"] is True
 
     @pytest.mark.usefixtures("test_db")
     async def test_custom_relationship_with_pagination_enabled(self):

@@ -361,12 +361,16 @@ class ErManager:
             self._validate_pagination()
 
     def _validate_pagination(self) -> None:
-        """Validate all list relationships have page_loader (order_by configured).
+        """Warn about list relationships that lack order_by (no page_loader).
 
-        Custom relationships are skipped — they work with the regular loader
-        and are not paginated even when global pagination is enabled.
+        Relationships without ``order_by`` fall back to the regular (non-
+        paginated) loader at runtime — downstream SDL/introspection/executor
+        already treat ``page_loader is None`` per-relationship, so skipping
+        is safe. We log a WARNING once at startup so the omission is visible
+        without blocking app startup. Custom relationships are skipped — they
+        always use the regular loader.
         """
-        errors = []
+        skipped = []
         for entity_kls, rels in self._registry.items():
             for rel in rels.values():
                 if not rel.is_list:
@@ -375,15 +379,14 @@ class ErManager:
                     continue
                 if rel.direction == "CUSTOM":
                     continue
-                errors.append(
-                    f"  {entity_kls.__name__}.{rel.name} — no order_by configured"
-                )
-        if errors:
-            raise ValueError(
-                "enable_pagination is True but the following list "
-                "relationships lack order_by:\n"
-                + "\n".join(errors)
-                + "\n\nSet order_by on the SQLModel Relationship to enable pagination."
+                skipped.append(f"  {entity_kls.__name__}.{rel.name}")
+        if skipped:
+            logger.warning(
+                "enable_pagination=True but the following list relationships "
+                "have no order_by — they will fall back to non-paginated "
+                "loaders:\n%s\nSet order_by on the SQLModel Relationship to "
+                "enable pagination for these lists.",
+                "\n".join(skipped),
             )
 
     def get_relationships(self, entity: type[SQLModel]) -> dict[str, RelationshipInfo]:

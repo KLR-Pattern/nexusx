@@ -1,5 +1,49 @@
 # Changelog
 
+## 3.1.3
+
+### Bug Fix: 分页 `has_more` off-by-one（#86）
+
+分页 loader 在"当前页之后**恰好**还剩 1 行"时报告 `has_more=False`，导致客户端误以为没有下一页而停止翻页，最后一行被静默吞掉。
+
+**根因：** `factories.py` M2O/M2M 两条路径都用 `has_next_page = total_count > offset + 1 + effective_limit`，把 SQL peek-by-1 多 fetch 的那一行算进了"已返回"。标准分页语义应该是 `total_count > offset + effective_limit`（"剩余 ≥ 1 行就 True"）。
+
+实测 `total=5, offset=0`：
+
+| limit | 修复前 has_more | 修复后 has_more |
+|---|---|---|
+| 1 | True  | True |
+| 2 | True  | True |
+| 3 | True  | True |
+| 4 | **False** ❌ | True |
+| 5 | False | False |
+
+**修法：** 直接利用 SQL 已经 fetch 出来的 peek 行——`has_next_page = len(grouped[fk]) > effective_limit`。peek-by-1 设计本就是为了回答这个问题，原来绕了一圈用 total_count 反推反而引入了 off-by-one。`total_count` 现在只用于响应 payload，不参与 boolean 决策。
+
+**Changes：**
+- `src/nexusx/loader/factories.py`: M2O (`:432`) 和 M2M (`:559`) 的 `has_next_page` 都改成 `len(grouped.get(cmd.fk_value, [])) > effective_limit`
+- `tests/test_loader_pagination.py`: `test_basic_pagination`（M2O + M2M 两个版本）原本断言 `has_more is False` —— 那是 bug 行为，翻成 `True`，注释同步更新。其他三个 `has_more is False` 测试（offset=1 / offset 超出 total）的数学在新旧公式下都给 False，保持不变
+- `tests/test_pagination_mixed.py::TestExecutionMixedPagination`: 把单一 `limit=1` 断言扩展成 `limit ∈ {1, 2, 3}` 的循环，锁定 `total=3` 边界：limit=1/2 → True，limit=3 → False
+
+---
+
+### Behavior Change: `enable_pagination` 改为 warn-skip，不再 all-or-nothing 阻塞启动（#83）
+
+之前 `ErManager(enable_pagination=True)` 要求**所有** ORM list 关系都配置 `order_by`，否则 startup 抛 `ValueError`。审计日志、append-only 事件流、配置字典这类没有自然排序键的 list 被迫加 `order_by="id"` 占位，或干脆放弃全局分页。
+
+**新行为：** startup 改成对每个缺 `order_by` 的 list 关系打一条 WARNING，列出被跳过的 `Entity.field`，然后正常启动。被跳过的关系走 regular loader，SDL/introspection 自动把它们渲染成 `[T]!` 而非 `Result<T>`——这些路径本来就是 per-relationship 看 `page_loader is not None` 判断的，零下游改动。
+
+**为什么是 warning 而不是 silent：** issue 作者列的场景是"主动不想分页"，但仍然希望 startup 能看到"哪些 list 被跳过了"，避免"以为开了分页实际某些 list 没"的错觉。WARNING 既不阻塞启动，又能用 logging filter 主动静音。
+
+**未做（YAGNI）：** 没加 `strict_pagination=True` opt-in，也没加显式 opt-out 入口（`__nexusx_no_paginate__` / SQLAlchemy `info` dict）。等真有人抱怨 warning 噪音再叠加。
+
+**Changes：**
+- `src/nexusx/loader/registry.py`: `_validate_pagination` 从 `raise ValueError` 改成 `logger.warning`；docstring 同步
+- `tests/test_loader_registry.py`: 删除原本名实不符的 `test_pagination_validation_raises_on_missing_order_by`（fixture 都有 `order_by`，根本没测到 fail path），换成真正验证 warn-skip 行为的 `_PagParent/_PagChild` 集成测试；`TestPaginationValidation` 里两个 mock 测试同步翻转断言；新增 `test_no_warning_when_all_list_relationships_have_order_by` sanity test
+- `tests/test_pagination_mixed.py`: 新增端到端测试，用一个 parent 同时挂"有 order_by"和"无 order_by"两条 list 关系，分别验证 SDL 渲染（`Result<T>` vs `[T!]!`、`Result` 类型只对分页目标生成）、introspection 字段形状（args 只挂在分页字段上）、execution（page_loader 返回 Result dict，regular loader 返回 `list[T]`）
+
+---
+
 ## 3.1.2
 
 Port of pydantic-resolve v5.10.2 (`commit 184886d`) — three INPUT_OBJECT correctness fixes for the UseCase compose surface. Before this release, nexusx registered every Pydantic `BaseModel` as a GraphQL `OBJECT` regardless of whether it appeared as a method return or a method argument. That violated the GraphQL spec (input types must be `INPUT_OBJECT`) and crashed with `DuplicateTypeError` when the same class was used as both return and arg.

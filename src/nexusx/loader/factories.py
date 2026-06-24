@@ -429,9 +429,11 @@ def create_page_one_to_many_loader(
                         rows=[r for r, _ in grouped.get(cmd.fk_value, [])],
                         page_args=page_args,
                         total_count=total_counts.get(cmd.fk_value, 0),
-                        has_next_page=total_counts.get(cmd.fk_value, 0) > end
-                        if cmd.fk_value in total_counts
-                        else False,
+                        # The peek-by-1 SQL fetches effective_limit+1 rows (rn
+                        # BETWEEN start AND end is inclusive). If we got more
+                        # than effective_limit back, there's a next page.
+                        has_next_page=len(grouped.get(cmd.fk_value, []))
+                        > effective_limit,
                         entity_kls=target_kls,
                     )
                     for cmd in keys
@@ -556,9 +558,11 @@ def create_page_many_to_many_loader(
                         rows=[r for r, _ in grouped.get(cmd.fk_value, [])],
                         page_args=page_args,
                         total_count=total_counts.get(cmd.fk_value, 0),
-                        has_next_page=total_counts.get(cmd.fk_value, 0) > end
-                        if cmd.fk_value in total_counts
-                        else False,
+                        # The peek-by-1 SQL fetches effective_limit+1 rows (rn
+                        # BETWEEN start AND end is inclusive). If we got more
+                        # than effective_limit back, there's a next page.
+                        has_next_page=len(grouped.get(cmd.fk_value, []))
+                        > effective_limit,
                         entity_kls=target_kls,
                     )
                     for cmd in keys
