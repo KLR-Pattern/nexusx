@@ -26,12 +26,28 @@ if [[ ! -f "$EXT_CONFIG" ]]; then
   exit 0
 fi
 
-# Locate a suitable Python interpreter (python3, then python).
+# Locate a suitable Python interpreter.
+# Prefer the project's own virtualenv (where deps like PyYAML actually live —
+# the system python3 on this host has no PyYAML, so falling through to it makes
+# the YAML parse below fail). Then fall back to system python3 / python.
 _python=""
-if command -v python3 >/dev/null 2>&1; then
-  _python="python3"
-elif command -v python >/dev/null 2>&1 && python --version 2>&1 | grep -q "^Python 3"; then
-  _python="python"
+for _candidate in \
+  "$PROJECT_ROOT/.venv/bin/python3" \
+  "$PROJECT_ROOT/.venv/bin/python" \
+  "$PROJECT_ROOT/venv/bin/python3" \
+  "$PROJECT_ROOT/venv/bin/python"; do
+  if [[ -x "$_candidate" ]]; then
+    _python="$_candidate"
+    break
+  fi
+done
+
+if [[ -z "$_python" ]]; then
+  if command -v python3 >/dev/null 2>&1; then
+    _python="python3"
+  elif command -v python >/dev/null 2>&1 && python --version 2>&1 | grep -q "^Python 3"; then
+    _python="python"
+  fi
 fi
 
 if [[ -z "$_python" ]]; then
