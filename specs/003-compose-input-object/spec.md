@@ -4,7 +4,7 @@
 
 **Created**: 2026-06-24
 
-**Status**: Draft
+**Status**: Implemented (2026-06-24, PR #84)
 
 **Input**: User description: "Port the three INPUT_OBJECT introspection fixes from pydantic-resolve v5.10.2 into nexusx's own compose_schema surface."
 
