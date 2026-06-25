@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from aiodataloader import DataLoader
+from pydantic import BaseModel
 from sqlmodel import SQLModel
 
 from nexusx.loader.factories import (
@@ -333,12 +334,19 @@ class ErManager:
         self._session_factory = session_factory
         self._enable_pagination = enable_pagination
         self._split_mode = split_loader_by_type
-        # entity -> {rel_name -> RelationshipInfo}
-        self._registry: dict[type[SQLModel], dict[str, RelationshipInfo]] = {}
+        # entity -> {rel_name -> RelationshipInfo}. Keys may be SQLModel
+        # classes (registered via __init__) OR plain BaseModel classes
+        # (registered via add_virtual_entities). The dict shape is uniform;
+        # downstream code is source-type-agnostic.
+        self._registry: dict[type, dict[str, RelationshipInfo]] = {}
         # Cache of instantiated loaders.
         # Default mode: {loader_cls: instance}
         # Split mode: {loader_cls: {type_key: instance}}
         self._loader_instances: dict = {}
+        # Frozen flag: set True on first create_resolver(). After that,
+        # add_virtual_entities() raises RuntimeError — the registry and
+        # loader wiring cannot be safely mutated once a Resolver exists.
+        self._frozen: bool = False
 
         all_entities = set(entities)
         for entity in entities:
@@ -359,6 +367,78 @@ class ErManager:
 
         if enable_pagination:
             self._validate_pagination()
+
+    def add_virtual_entities(self, entities: list[type[BaseModel]]) -> None:
+        """Register plain ``BaseModel`` subclasses as non-SQLModel virtual entities.
+
+        Each entry becomes a first-class member of the ER graph: a valid
+        Resolver root, a participant in custom relationships (declared via
+        ``__relationships__``), and a virtual node in ER diagrams / Voyager.
+
+        Must be called **before** the first ``create_resolver()`` — the
+        registry is frozen at that point and subsequent calls raise
+        ``RuntimeError``.
+
+        Args:
+            entities: A list of BaseModel subclasses. Each MUST NOT be a
+                SQLModel subclass (those go in ``__init__``'s ``entities=``
+                or via ``base=``).
+
+        Raises:
+            RuntimeError: If called after ``create_resolver()``.
+            TypeError: If an entry is not a class, not a BaseModel subclass,
+                or is a SQLModel subclass.
+            ValueError: If an entry is already registered.
+        """
+        if self._frozen:
+            raise RuntimeError(
+                "ErManager registry is frozen after first create_resolver() "
+                "call. Call add_virtual_entities() before any "
+                "create_resolver()."
+            )
+
+        seen_in_this_call: set[type] = set()
+        for entity in entities:
+            if not isinstance(entity, type):
+                raise TypeError(
+                    f"add_virtual_entities entries must be classes; got "
+                    f"{type(entity).__name__} value {entity!r}."
+                )
+            if issubclass(entity, SQLModel):
+                raise TypeError(
+                    f"{entity.__name__} is a SQLModel subclass; SQLModel "
+                    f"entities must be passed to ErManager.__init__'s "
+                    f"entities= or base=, not add_virtual_entities()."
+                )
+            if not issubclass(entity, BaseModel):
+                raise TypeError(
+                    f"{entity.__name__} must be a subclass of "
+                    f"pydantic.BaseModel."
+                )
+            if entity in self._registry or entity in seen_in_this_call:
+                raise ValueError(
+                    f"{entity.__name__} is already registered."
+                )
+            seen_in_this_call.add(entity)
+
+            # Wire relationships from __relationships__ (no _inspect_relationships
+            # call — virtual entities have no SQLAlchemy mapper to inspect).
+            custom_rels = get_custom_relationships(entity)
+            entity_rels: dict[str, RelationshipInfo] = {}
+            for rel in custom_rels:
+                if rel.name in entity_rels:
+                    raise ValueError(
+                        f"Custom relationship '{rel.name}' on "
+                        f"{entity.__name__} conflicts with another "
+                        f"relationship name on the same class."
+                    )
+                entity_rels[rel.name] = _build_custom_relationship_info(rel)
+            self._registry[entity] = entity_rels
+
+    @property
+    def frozen(self) -> bool:
+        """True after the first ``create_resolver()`` call."""
+        return self._frozen
 
     def _validate_pagination(self) -> None:
         """Warn about list relationships that lack order_by (no page_loader).
@@ -392,6 +472,17 @@ class ErManager:
     def get_relationships(self, entity: type[SQLModel]) -> dict[str, RelationshipInfo]:
         """Get all registered relationships for an entity."""
         return self._registry.get(entity, {})
+
+    def has_entity(self, entity: type) -> bool:
+        """Return True if ``entity`` is registered in this ErManager.
+
+        Covers both SQLModel entities (registered via ``__init__``'s
+        ``base=`` / ``entities=``) and plain BaseModel virtual entities
+        (registered via ``add_virtual_entities()``). Used by the Resolver's
+        unified source-resolution fallback to decide whether a plain
+        BaseModel root should be treated as its own source.
+        """
+        return entity in self._registry
 
     def get_all_entities(self) -> list[type[SQLModel]]:
         """Get all registered entity classes."""
@@ -504,9 +595,16 @@ class ErManager:
         Each instance holds its own DataLoader cache and contextvar state,
         so concurrent requests are isolated.
 
+        The first call to ``create_resolver()`` **freezes** the registry —
+        subsequent ``add_virtual_entities()`` calls raise ``RuntimeError``.
+        This keeps loader wiring and relationship registry immutable at
+        runtime, so all Resolvers built from this ErManager see a
+        consistent entity set.
+
         Returns:
             A Resolver subclass bound to this ErManager.
         """
+        self._frozen = True
         from nexusx.resolver import Resolver as _Resolver
 
         er_manager = self

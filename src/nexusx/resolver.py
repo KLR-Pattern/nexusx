@@ -474,7 +474,12 @@ class Resolver:
 
         source_entity = None
         if isinstance(node, BaseModel):
-            source_entity = get_subset_source(type(node))
+            node_type = type(node)
+            source_entity = get_subset_source(node_type)
+            # FR-017 unified resolution: if the node is a plain BaseModel
+            # registered as a virtual entity, it is its own source.
+            if source_entity is None and self._registry.has_entity(node_type):
+                source_entity = node_type
         if source_entity is not None:
             loader = self._registry.get_loader_for_entity(
                 source_entity, loader_name, type_key=type_key,
@@ -544,7 +549,17 @@ class Resolver:
         from nexusx.subset import get_subset_source
         from nexusx.utils.type_compat import is_compatible_type
 
+        # Unified source resolution (FR-017): find the source class for this
+        # node_type, then look up its relationships. Source type (SQLModel
+        # vs BaseModel) is irrelevant to the lookup. Two strategies:
+        #   1. DefineSubset DTO → get_subset_source returns its source
+        #   2. Plain BaseModel root registered via add_virtual_entities →
+        #      fallback: the node_type itself is in _registry as its own
+        #      source.
         source_entity = get_subset_source(node_type)
+        if source_entity is None and self._registry is not None:
+            if self._registry.has_entity(node_type):
+                source_entity = node_type
         if source_entity is None:
             self._auto_load_cache[node_type] = []
             return []

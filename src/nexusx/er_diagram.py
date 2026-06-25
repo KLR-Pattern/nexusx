@@ -73,13 +73,69 @@ class ErDiagram:
         Returns:
             ErDiagram with entity and relationship information.
         """
+        return cls._build([e for e in entities], sqlmodel_only=True)
+
+    @classmethod
+    def from_er_manager(cls, er_manager: Any) -> ErDiagram:
+        """Build an ErDiagram from an ErManager's registry.
+
+        Includes both SQLModel entities (registered via ``__init__``'s
+        ``base=`` / ``entities=``) and plain BaseModel virtual entities
+        (registered via ``add_virtual_entities()``). Virtual entities
+        appear with their ``model_fields`` schema but no table name and
+        no foreign keys.
+
+        Args:
+            er_manager: An ErManager instance.
+
+        Returns:
+            ErDiagram with both SQLModel and virtual entity information.
+        """
+        all_entities = er_manager.get_all_entities()
+        all_relationships = er_manager.get_all_relationships()
+        return cls._build(
+            all_entities,
+            sqlmodel_only=False,
+            registry_relationships=all_relationships,
+        )
+
+    @classmethod
+    def _build(
+        cls,
+        entities: list[type],
+        *,
+        sqlmodel_only: bool,
+        registry_relationships: dict[type, dict[str, Any]] | None = None,
+    ) -> ErDiagram:
+        """Shared build path for from_sqlmodel / from_er_manager.
+
+        Args:
+            entities: Entity classes (SQLModel and optionally BaseModel).
+            sqlmodel_only: If True, every entity must be SQLModel and the
+                SQLAlchemy-inspection path is used for relationships. If
+                False, BaseModel entities are handled via __relationships__
+                only (no sa_inspect on them).
+            registry_relationships: When provided (from_er_manager path),
+                use these pre-computed RelationshipInfo entries instead of
+                re-discovering them. This is the source of truth for both
+                SQLModel and virtual entities in the registry.
+        """
+        from nexusx.relationship import get_custom_relationships
+
         entity_map: dict[type, EntityInfo] = {}
         entity_set = set(entities)
 
         # First pass: collect entity info
         for entity in entities:
-            mapper = sa_inspect(entity)
-            table_name = getattr(entity, "__tablename__", entity.__name__.lower())
+            is_sqlmodel = isinstance(entity, type) and issubclass(entity, SQLModel)
+            if is_sqlmodel:
+                mapper = sa_inspect(entity)
+                table_name = getattr(entity, "__tablename__", entity.__name__.lower())
+            else:
+                mapper = None
+                # Virtual entity — no table. Use the class name as the
+                # label; table_name stays empty to signal "no table".
+                table_name = ""
 
             # Collect field names, separating FK fields
             all_fields = []
@@ -89,10 +145,13 @@ class ErDiagram:
                 if _is_fk_field(finfo):
                     fk_fields.append(fname)
 
-            # Remove relationship names from field list
-            rel_names = set()
+            # Remove relationship names from field list (SQLModel ORM rels only)
+            rel_names: set[str] = set()
             if mapper and hasattr(mapper, "relationships"):
                 rel_names = {r.key for r in mapper.relationships}
+            # Also exclude __relationships__ field names from the scalar list
+            for crel in get_custom_relationships(entity):
+                rel_names.add(crel.name)
 
             scalar_fields = [f for f in all_fields if f not in rel_names]
 
@@ -104,58 +163,79 @@ class ErDiagram:
             )
             entity_map[entity] = entity_info
 
-        # Second pass: discover relationships
-        for entity in entities:
-            mapper = sa_inspect(entity)
-            if not mapper or not hasattr(mapper, "relationships"):
-                continue
-
-            for rel in mapper.relationships:
-                # Only include relationships to entities in our set
-                target_entity = rel.mapper.class_
-                if target_entity not in entity_set:
+        # Second pass: SQLModel ORM relationships (only for SQLModel entities).
+        # Skip entirely in the from_er_manager path — registry_relationships
+        # is the source of truth there.
+        if registry_relationships is None:
+            for entity in entities:
+                if not (isinstance(entity, type) and issubclass(entity, SQLModel)):
+                    continue
+                mapper = sa_inspect(entity)
+                if not mapper or not hasattr(mapper, "relationships"):
                     continue
 
-                direction = _get_relation_direction(rel)
+                for rel in mapper.relationships:
+                    target_entity = rel.mapper.class_
+                    if target_entity not in entity_set:
+                        continue
 
-                # Get FK field name
-                fk_field = ""
-                if rel.local_columns:
-                    fk_field = list(rel.local_columns)[0].name
+                    direction = _get_relation_direction(rel)
+                    fk_field = ""
+                    if rel.local_columns:
+                        fk_field = list(rel.local_columns)[0].name
 
-                entity_map[entity].relationships.append(
-                    RelationInfo(
-                        name=rel.key,
-                        source=entity.__name__,
-                        target=target_entity.__name__,
-                        fk_field=fk_field,
-                        relation_type=direction,
+                    entity_map[entity].relationships.append(
+                        RelationInfo(
+                            name=rel.key,
+                            source=entity.__name__,
+                            target=target_entity.__name__,
+                            fk_field=fk_field,
+                            relation_type=direction,
+                        )
                     )
-                )
 
-        # Third pass: discover custom relationships from __relationships__
-        from nexusx.relationship import get_custom_relationships
-
-        for entity in entities:
-            custom_rels = get_custom_relationships(entity)
-            for crel in custom_rels:
-                # Only include relationships to entities in our set
-                if crel.target_entity not in entity_set:
+        # Third pass: custom relationships from __relationships__.
+        # Used directly when registry_relationships is None (from_sqlmodel
+        # path). For from_er_manager, registry_relationships provides
+        # RelationshipInfo entries uniformly across SQLModel + BaseModel.
+        if registry_relationships is None:
+            for entity in entities:
+                for crel in get_custom_relationships(entity):
+                    if crel.target_entity not in entity_set:
+                        continue
+                    direction = (
+                        RelationType.ONETOMANY if crel.is_list else RelationType.MANYTOONE
+                    )
+                    entity_map[entity].relationships.append(
+                        RelationInfo(
+                            name=crel.name,
+                            source=entity.__name__,
+                            target=crel.target_entity.__name__,
+                            fk_field=crel.fk,
+                            relation_type=direction,
+                        )
+                    )
+        else:
+            # from_er_manager path — registry is the source of truth.
+            for entity, rels in registry_relationships.items():
+                if entity not in entity_map:
                     continue
-
-                direction = (
-                    RelationType.ONETOMANY if crel.is_list else RelationType.MANYTOONE
-                )
-
-                entity_map[entity].relationships.append(
-                    RelationInfo(
-                        name=crel.name,
-                        source=entity.__name__,
-                        target=crel.target_entity.__name__,
-                        fk_field=crel.fk,
-                        relation_type=direction,
+                for rel_name, rel_info in rels.items():
+                    target = rel_info.target_entity
+                    if target not in entity_set:
+                        continue
+                    direction = (
+                        RelationType.ONETOMANY if rel_info.is_list else RelationType.MANYTOONE
                     )
-                )
+                    entity_map[entity].relationships.append(
+                        RelationInfo(
+                            name=rel_name,
+                            source=entity.__name__,
+                            target=target.__name__,
+                            fk_field=rel_info.fk_field,
+                            relation_type=direction,
+                        )
+                    )
 
         return cls(entities=list(entity_map.values()))
 

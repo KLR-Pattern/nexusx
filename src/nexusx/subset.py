@@ -49,8 +49,10 @@ SUBSET_REFERENCE = "__nexusx_subset_source__"
 # DTO ↔ Entity mapping registry
 # ──────────────────────────────────────────────────────────
 
-# Maps DTO class → source SQLModel entity class
-_subset_registry: dict[type[BaseModel], type[SQLModel]] = {}
+# Maps DTO class → source class. Source may be SQLModel (ORM-provisioned) or
+# plain BaseModel (data from other channels). Both have well-defined
+# `model_fields` schemas that can be subsetted.
+_subset_registry: dict[type[BaseModel], type[BaseModel]] = {}
 
 
 def get_subset_source(dto_class: type[BaseModel]) -> type[SQLModel] | None:
@@ -541,9 +543,10 @@ class SubsetMeta(type):
                 )
             entity_kls, subset_fields = subset_info
 
-        if not (isinstance(entity_kls, type) and issubclass(entity_kls, SQLModel)):
+        if not (isinstance(entity_kls, type) and issubclass(entity_kls, BaseModel)):
             raise TypeError(
-                f"Source entity must be a SQLModel class, got {entity_kls}"
+                f"Source entity must be a BaseModel class (SQLModel or plain "
+                f"BaseModel both accepted), got {entity_kls}"
             )
 
         _validate_subset_fields(subset_fields)
