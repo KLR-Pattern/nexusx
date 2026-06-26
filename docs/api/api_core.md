@@ -25,6 +25,44 @@ er = ErManager(
 |--------|-------------|
 | `create_resolver()` | Returns a Resolver class bound to the entity graph |
 | `get_diagram()` | Returns an ErDiagram instance |
+| `add_virtual_entities(entities)` | Registers plain BaseModel subclasses as virtual entities (see below) |
+
+### add_virtual_entities
+
+Register plain `pydantic.BaseModel` subclasses as **virtual entities** — non-SQLModel roots that participate in resolution, custom relationships, and ER visualization alongside SQLModel entities. Typical use cases: `CurrentUser` assembled from OIDC claims, page wrappers aggregating multiple services, third-party SDK DTOs.
+
+```python
+from pydantic import BaseModel
+from nexusx import ErManager, Relationship
+
+class CurrentUserRoot(BaseModel):
+    oid: str
+    name: str
+    agents: list[AgentDTO] = []
+
+    __relationships__ = [
+        Relationship(fk="oid", target=list[AgentDTO],
+                     name="agents", loader=load_agents_by_oid),
+    ]
+
+er = ErManager(entities=[Agent], session_factory=async_session)
+er.add_virtual_entities([CurrentUserRoot])          # ← must be before create_resolver()
+Resolver = er.create_resolver()
+```
+
+Must be called **before** the first `create_resolver()` — the registry freezes at that point.
+
+| Input | Result |
+|-------|--------|
+| `[A, B]` (plain BaseModel, not yet registered) | Both registered |
+| `[]` (empty list) | No-op |
+| `[42]` or `[int]` (non-class) | `TypeError` |
+| `[SomeRandomClass]` (not a BaseModel) | `TypeError` |
+| `[User]` where `User(SQLModel, table=True)` | `TypeError` — SQLModel goes in `__init__`'s `entities=` / `base=` |
+| `[A, A]` (duplicate within or across calls) | `ValueError` |
+| Called after `create_resolver()` | `RuntimeError` ("registry is frozen") |
+
+See the [Virtual Entities guide](../guide/virtual_entities.md) for usage patterns, ER visualization rules, and migration from the `_subset_registry` hack.
 
 ## Resolver
 
@@ -89,6 +127,9 @@ Accepts either a tuple `(Entity, ('field1', 'field2'))` or a `SubsetConfig` obje
 
 !!! warning
     You cannot use SQLModel entities as field types in your DTOs. Always use DTO types for relationships — declaring `author: User | None` will raise a TypeError. Instead, use `author: UserDTO | None`.
+
+!!! tip
+    The `__subset__` source can be any `BaseModel` subclass, not just `SQLModel`. This lets you subset external schemas (OAuth claims, third-party SDK classes) without an ORM table behind them. When the source is a plain BaseModel, no `_orm_to_dto` conversion runs — the user constructs DTO instances directly. See the [Virtual Entities guide](../guide/virtual_entities.md) for details.
 
 ## SubsetConfig
 
