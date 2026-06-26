@@ -59,26 +59,28 @@ def coerce_kwargs(func: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
 def serialize_result(result: Any) -> Any:
     """Serialize a method result to a JSON-friendly structure.
 
-    Pydantic models → ``model_dump()``; lists/tuples → recursively serialized;
-    scalars and dicts pass through; anything else with ``model_dump`` falls
-    back to that.
+    All paths use Pydantic JSON mode so non-JSON-native scalars (UUID,
+    datetime, Decimal, ...) become strings instead of leaking through as
+    Python objects that break ``json.dumps`` downstream. Dicts recurse so
+    nested UUIDs / BaseModels inside ``dict`` payloads are also covered.
+    Mirrors the pydantic-resolve v5.10.4 fix for compose JSON serialization.
     """
     if result is None:
         return None
 
     if isinstance(result, BaseModel):
-        return result.model_dump()
+        return result.model_dump(mode="json")
 
     if isinstance(result, list):
         return [serialize_result(item) for item in result]
 
     if isinstance(result, dict):
-        return result
+        return {key: serialize_result(value) for key, value in result.items()}
 
     if isinstance(result, (str, int, float, bool)):
         return result
 
     if hasattr(result, "model_dump"):
-        return result.model_dump()
+        return result.model_dump(mode="json")
 
-    return result
+    return TypeAdapter(type(result)).dump_python(result, mode="json")
