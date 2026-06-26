@@ -39,7 +39,7 @@ export default defineConfig({
 ```json
 {
   "scripts": { "generate-client": "openapi-ts" },
-  "devDependencies": { "@hey-api/openapi-ts": "^0.97" }
+  "devDependencies": { "@hey-api/openapi-ts": "^0.98" }
 }
 ```
 
@@ -61,4 +61,4 @@ cd fe && npm install && npm run generate-client
 
 ## 踩坑经验
 
-1. **`@hey-api/sdk` 的 `asClass` 已废弃** — v0.97+ 使用 `operations: { strategy: 'byTags' }` 替代 `asClass: true`，按 OpenAPI tags 分组生成 SDK class
+1. **`@hey-api/sdk` 的 `asClass` 已废弃** — v0.97+ 使用 `operations: { strategy: 'byTags' }` 替代 `asClass: true`，按 OpenAPI tags 分组生成 SDK class。注意 0.98.0 引入了 breaking change，升级时务必看 release notes

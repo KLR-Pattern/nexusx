@@ -10,7 +10,12 @@
 
 **关键模式**:
 - `DefineSubset` + `SubsetConfig` 定义响应 DTO（字段选择、FK 隐藏）
+- **3.2+ `DefineSubset.__subset__` 源可以是任意 `pydantic.BaseModel`**（不限于 SQLModel）—— 如果 Phase 0 Step 0-3 选了虚拟实体根（`CurrentUser`、`Page[T]`、第三方 SDK DTO 等），用同一语法从 BaseModel 源字段中选子集。SQLModel 源走 ORM 自动投递（`_orm_to_dto`），BaseModel 源由用户直接构造 DTO 实例，框架不参与数据获取（详见 `docs/guide/virtual_entities.md`）
 - `AutoLoad` 标记 DTO 关系字段为自动加载（配合 Resolver implicit auto-load 使用，显式声明自动加载意图）
+- **跨层数据流（3.x 新增）**：当 DTO 字段需要从请求上下文（用户身份、trace ID）、父层传值、子层收集结果中拿数据，而非从 ORM 实体——用 `nexusx` 的三个 helper（详见 `docs/api/api_cross_layer.md`）：
+  - `ExposeAs(field_name, source=...)` — 从 `FromContext` 暴露的字段取值
+  - `SendTo(field_name)` — 父层向子层下发值
+  - `Collector(field_name)` — 子层结果聚合回父层
 - `ErManager` + `Resolver` 自动加载关系（implicit auto-load）
 - `UseCaseService` 统一业务逻辑入口（同时服务 MCP、REST、GraphQL、CLI、JSON-RPC）
 - `@query` / `@mutation` 装饰器标记服务方法
@@ -53,7 +58,19 @@
   from nexusx import create_use_case_graphql_mcp_server, UseCaseAppConfig
   mcp = create_use_case_graphql_mcp_server(apps=[app_config], name="API")
   ```
-- **可选：GraphQL HTTP endpoint（GraphiQL 友好）** — 当需要直接对外暴露 GraphQL（浏览器/curl/Apollo 客户端，非 MCP 协议）时，用 `build_compose_schema` + `compose_introspect` + `execute_compose_query` 自建一个 FastAPI `/graphql` 路由。`compose_introspect` 处理 `__schema` 等 GraphiQL 启动查询，`execute_compose_query` 处理数据查询。参考 `demo/use_case/graphql_server.py`
+- **可选：GraphQL HTTP endpoint（GraphiQL 友好）** — 当需要直接对外暴露 GraphQL（浏览器/curl/Apollo 客户端，非 MCP 协议）时，用 `build_compose_schema` + `compose_introspect` + `execute_compose_query` 自建一个 FastAPI `/graphql` 路由。`compose_introspect` 处理 `__schema` 等 GraphiQL 启动查询，`execute_compose_query` 处理数据查询。注意 import 路径——这三个函数中只有 `build_compose_schema` 和 `compose_introspect` 在顶层 `nexusx` 导出，`execute_compose_query` 和 `is_introspection_query` 需要从子模块拿：
+
+  ```python
+  from nexusx import UseCaseAppConfig, build_compose_schema
+  from nexusx.graphiql import GRAPHIQL_HTML
+  from nexusx.use_case.compose_executor import (
+      compose_introspect,
+      execute_compose_query,
+      is_introspection_query,
+  )
+  ```
+
+  GraphiQL 启动页 HTML 直接用 `nexusx.graphiql.GRAPHIQL_HTML`（不必自己手写）。参考 `demo/use_case/graphql_server.py`
 - MCP http_app 必须使用 `transport="streamable-http", stateless_http=True`
 - MCP http_app 的 lifespan 必须在 FastAPI lifespan 中通过 `async with mcp_http.lifespan(mcp_http)` 嵌套启动
 - MCP http_app 对象必须在 lifespan 函数定义之前创建，以便引用
@@ -94,8 +111,12 @@
   # MCP（UseCase GraphQL MCP — 4 层渐进披露，Layer 3 接收 GraphQL 字符串）
   mcp = create_use_case_graphql_mcp_server(apps=[app_config], name="API")
 
-  # Voyager 可视化
-  voyager = create_use_case_voyager(apps=[app_config], er_manager=er)
+  # Voyager 可视化（注意：services 是 UseCaseService 子类列表，不是 apps/UseCaseAppConfig）
+  voyager = create_use_case_voyager(
+      services=app_config.services,
+      er_manager=er,
+  )
+  app.mount("/voyager", voyager)
   ```
 
 **V 降 — 定义验收标准:**

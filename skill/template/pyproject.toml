@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "nexusx 四阶段开发模板"
 requires-python = ">=3.12"
 dependencies = [
-    "nexusx>=2.0.0",
+    "nexusx>=3.2",
     "fastapi",
     "uvicorn",
     "sqlmodel",

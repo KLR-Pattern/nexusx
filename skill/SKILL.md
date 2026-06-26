@@ -100,6 +100,19 @@ Conversation ──1:N──→ Message
 - @query / @mutation 挂在哪些实体上
 - Phase 3 的 service 划分依据
 
+#### 根类型选择（3.2+）
+
+每个聚合根必须明确是 **SQLModel 实体**还是 **虚拟实体（普通 `pydantic.BaseModel`）**：
+
+| 类型 | 何时选 | 数据持久化 | 例子 |
+|------|--------|-----------|------|
+| **SQLModel 实体** | 数据需要落库、参与 alembic 迁移、是 GraphQL 实体入口 | ✅ 表 | `User` / `Sprint` / `Conversation` |
+| **虚拟实体（BaseModel）** | 响应根不对应ORM表：组装自外部 claims、聚合视图、第三方 SDK DTO | ❌ 不建表 | `CurrentUser`（OIDC claims）、`Page[T]`（分页 wrapper）、第三方 SDK 镜像 |
+
+虚拟实体通过 `ErManager.add_virtual_entities([...])` 在 Phase 1 注册，与 SQLModel 实体在 Resolver / ER / Voyager 中同等对待（详见 `docs/guide/virtual_entities.md`）。
+
+**判断依据**：如果根字段全部来自数据库表 → SQLModel；如果字段来自请求上下文（JWT、headers）或聚合多个源 → 虚拟实体。混合场景（如 `Page[TaskDTO]` 包含真实 task 数据）由 Phase 3 DTO 组合，根本身仍是虚拟实体。
+
 ### Step 0-4: 业务域划分 + 用例方法
 
 **⚠️ 禁止自行决定 Service 切分方案。必须提出候选方案与用户讨论，由用户最终确认。**
@@ -251,6 +264,7 @@ init_db() 策略：[create_all+seed / no-op+alembic / 其他]
 - [ ] 所有实体和字段是否完整，约束是否清晰？
 - [ ] 实体关系方向和基数是否正确？
 - [ ] 聚合根是否明确？
+- [ ] **每个聚合根的类型是否确认：SQLModel（落表）还是虚拟实体（BaseModel，不落表）？**
 - [ ] **Service 切分方案是否由用户确认（不是模型自行决定）？**
 - [ ] 核心用例是否覆盖主要业务场景，逻辑是否自洽？
 - [ ] 第三方库选型是否确认，维护状态是否已调查？

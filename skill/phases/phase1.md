@@ -16,6 +16,7 @@
 - mock seed data 用于讨论数据样本是否合理（数量、关联关系、边界值）。持久化场景下 seed 数据写到 `var/seed_data.json`，由 `scripts/load_seed.py` 灌入
 - Voyager 通过 `create_use_case_voyager(services=[], er_manager=er)` 展示 ER diagram
 - Phase 1 无 GraphiQL（无方法可查询），GraphQL 在 Phase 2 方法挂载后可用
+- **如果 Phase 0 Step 0-3 选了虚拟实体根**（普通 `pydantic.BaseModel`，不落表）：在 `ErManager(entities=[...])` 创建后、`create_resolver()` 调用**之前**，调用 `er.add_virtual_entities([CurrentUser, Page, ...])` 注册。虚拟实体通过类属性 `__relationships__` 声明关系（不是 SQLAlchemy `Relationship`）。注册后再调 `er.create_resolver()`，否则注册表已冻结会抛 `RuntimeError`。详见 `docs/guide/virtual_entities.md`
 
 **V 降 — 定义验收标准:**
 进入 Phase 1 实现之前，在 `spec/phase1.md` 中记录以下验收标准：
