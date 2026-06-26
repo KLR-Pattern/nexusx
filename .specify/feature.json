@@ -1,3 +1,3 @@
 {
-  "feature_directory": "specs/003-compose-input-object"
+  "feature_directory": "specs/004-non-sqlmodel-roots"
 }

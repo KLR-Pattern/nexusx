@@ -54,6 +54,7 @@ erDiagram
 | [Core API 模式](./guide/core_api.zh.md) | 用 `DefineSubset` + 隐式自动加载构建 REST 响应 |
 | [Core API 进阶](./guide/core_api_advanced.zh.md) | 使用 `resolve_*` / `post_*` / 跨层数据流 |
 | [自定义关系](./guide/custom_relationship.zh.md) | 声明和使用非 ORM 关系 |
+| [虚拟实体](./guide/virtual_entities.zh.md) | 通过 `add_virtual_entities()` 使用普通 `BaseModel` 根（`CurrentUser`、页面 wrapper、第三方 DTO） |
 | [ER 图可视化](./guide/er_diagram_visual.zh.md) | 生成和嵌入 Mermaid ER 图 |
 
 ### 进阶指南

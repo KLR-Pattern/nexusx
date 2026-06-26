@@ -29,9 +29,23 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, get_args, get_origin
 
+from pydantic import BaseModel
 from sqlmodel import SQLModel
 
 RELATIONSHIPS_ATTR = "__relationships__"
+
+
+def is_virtual_entity(cls: Any) -> bool:
+    """True if ``cls`` is a plain ``pydantic.BaseModel`` subclass that is NOT
+    a SQLModel.
+
+    Used by ER diagram builders and the DOT renderer to decide which nodes
+    receive the Contract 3 visual-distinction treatment (yellow fill,
+    ``«virtual»`` stereotype, ``cluster_virtual`` grouping). A single
+    canonical definition here avoids drift between ``er_diagram.py`` and
+    ``voyager/er_diagram_dot.py``.
+    """
+    return isinstance(cls, type) and issubclass(cls, BaseModel) and not issubclass(cls, SQLModel)
 
 
 @dataclass
@@ -66,7 +80,7 @@ class Relationship:
         return get_origin(self.target) is list
 
     @property
-    def target_entity(self) -> type[SQLModel]:
+    def target_entity(self) -> type:
         """Extract the bare entity class, stripping ``list[...]`` wrapper."""
         if self.is_list:
             args = get_args(self.target)
@@ -75,11 +89,15 @@ class Relationship:
         return self.target
 
 
-def get_custom_relationships(entity: type[SQLModel]) -> list[Relationship]:
-    """Read __relationships__ from a SQLModel entity class.
+def get_custom_relationships(entity: type) -> list[Relationship]:
+    """Read __relationships__ from an entity class.
+
+    Accepts any class — SQLModel entities today, plain BaseModel classes
+    registered via ``ErManager.add_virtual_entities()`` tomorrow. The
+    function body is shape-agnostic: it just reads the ``__relationships__``
+    attribute and validates each entry is a Relationship instance.
 
     Returns an empty list if __relationships__ is not defined.
-    Validates each entry is a Relationship instance.
     """
     raw = getattr(entity, RELATIONSHIPS_ATTR, None)
     if raw is None:

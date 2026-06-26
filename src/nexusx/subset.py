@@ -49,8 +49,10 @@ SUBSET_REFERENCE = "__nexusx_subset_source__"
 # DTO ↔ Entity mapping registry
 # ──────────────────────────────────────────────────────────
 
-# Maps DTO class → source SQLModel entity class
-_subset_registry: dict[type[BaseModel], type[SQLModel]] = {}
+# Maps DTO class → source class. Source may be SQLModel (ORM-provisioned) or
+# plain BaseModel (data from other channels). Both have well-defined
+# `model_fields` schemas that can be subsetted.
+_subset_registry: dict[type[BaseModel], type[BaseModel]] = {}
 
 
 def get_subset_source(dto_class: type[BaseModel]) -> type[SQLModel] | None:
@@ -101,6 +103,29 @@ def _get_fk_field_names(entity: type[SQLModel]) -> list[str]:
         if _is_fk_field(field_info):
             fk_names.append(field_name)
     return fk_names
+
+
+def _get_relationship_fk_field_names(entity: type) -> list[str]:
+    """Get fk field names declared via ``__relationships__`` on the source.
+
+    Plain BaseModel sources have no SQLAlchemy metadata, so the only signal
+    that a field is used as a DataLoader key is the user writing
+    ``Relationship(fk="<field-name>", ...)`` on the source class. This reads
+    those declarations — works uniformly for SQLModel and BaseModel sources.
+
+    De-duplicates; order matches first declaration on the class.
+    """
+    from nexusx.relationship import get_custom_relationships
+
+    seen: set[str] = set()
+    names: list[str] = []
+    for rel in get_custom_relationships(entity):
+        fk = getattr(rel, "fk", None)
+        if not fk or fk in seen:
+            continue
+        seen.add(fk)
+        names.append(fk)
+    return names
 
 
 def _get_sqlmodel_scalar_fields(entity: type[SQLModel]) -> dict[str, FieldInfo]:
@@ -541,9 +566,10 @@ class SubsetMeta(type):
                 )
             entity_kls, subset_fields = subset_info
 
-        if not (isinstance(entity_kls, type) and issubclass(entity_kls, SQLModel)):
+        if not (isinstance(entity_kls, type) and issubclass(entity_kls, BaseModel)):
             raise TypeError(
-                f"Source entity must be a SQLModel class, got {entity_kls}"
+                f"Source entity must be a BaseModel class (SQLModel or plain "
+                f"BaseModel both accepted), got {entity_kls}"
             )
 
         _validate_subset_fields(subset_fields)
@@ -568,6 +594,23 @@ class SubsetMeta(type):
         # FK fields in user_omit are skipped — validation later checks for conflicts.
         fk_fields = _get_fk_field_names(entity_kls)
         for fk in fk_fields:
+            if fk in user_omit:
+                continue
+            if fk not in existing_set:
+                subset_fields.append(fk)
+                existing_set.add(fk)
+                auto_excluded.add(fk)
+
+        # Auto-include fk fields declared via __relationships__ on the source.
+        # This is the BaseModel-source equivalent of the SQLModel FK auto-include
+        # above: plain BaseModel classes have no SQLAlchemy metadata, so the only
+        # signal that "field X is used as a DataLoader key" is the user writing
+        # ``Relationship(fk="X", ...)`` on the source. Without this auto-include,
+        # a DTO that excludes ``X`` silently breaks the relationship load — the
+        # resolver reads ``getattr(dto, "X", None)`` → None → loader never runs.
+        # See tests/test_definesubset_basemodel.py::TestBaseModelSourceFkAutoInclude.
+        rel_fk_fields = _get_relationship_fk_field_names(entity_kls)
+        for fk in rel_fk_fields:
             if fk in user_omit:
                 continue
             if fk not in existing_set:

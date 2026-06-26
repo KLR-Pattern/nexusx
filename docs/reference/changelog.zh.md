@@ -1,5 +1,18 @@
 # 变更记录
 
+## Unreleased
+
+### 新增
+
+- **非 SQLModel 根对象（虚拟实体）**——普通 `pydantic.BaseModel` 子类现在可以作为 NexusX 解析和 ER 可视化的一等公民，不需要继承 SQLModel，也不需要底层表。三项能力同步落地：
+  - `ErManager.add_virtual_entities([...])` 将普通 BaseModel 类注册到 ER 图。必须在 `create_resolver()` 之前调用；之后注册表冻结。SQLModel 类在此处会被拒绝，仍通过 `__init__` 的 `entities=` / `base=` 传入。
+  - **`DefineSubset.__subset__` 源拓宽**——源现在可以是任意 `BaseModel`（SQLModel 或普通 BaseModel 均可）。适合对外部 schema（OAuth claims、SDK 响应类）做子集化，无需 ORM 表。
+  - **ER / Voyager 虚拟节点渲染**——虚拟实体以黄底（`#FFF9C4`）、`«virtual»` UML 衍型、虚线 `cluster_virtual` 子图渲染，视觉上与真正的 DB 实体明确区分。使用 `ErDiagram.from_er_manager(er)`（数据 API）或 `ErDiagramDotBuilder(er).render_dot()`（DOT 路径）。
+
+- **Resolver 统一源解析**——`_resolve_source()` 为 `_get_loader` 和 `_scan_auto_load_fields` 提供单一辅助函数。当类声明了 `__relationships__` 但未通过 `add_virtual_entities()` 注册时，会抛出明确的 `RuntimeError`，而不是静默跳过自动加载。
+
+- **迁移路径**——使用 `_subset_registry[X] = Y` hack 的项目可以机械式迁移。详见 [迁移指南](./migration.zh.md) 和 [虚拟实体指南](../guide/virtual_entities.zh.md)。
+
 ## 1.4.0
 
 !!! warning "Breaking Change: rpc → use_case 重构"

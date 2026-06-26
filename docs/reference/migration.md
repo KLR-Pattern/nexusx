@@ -1,5 +1,31 @@
 # Migration Guide
 
+## `_subset_registry` hack → `add_virtual_entities()` (Non-SQLModel Roots)
+
+Before non-SQLModel root support landed, projects that needed a non-SQLModel root
+(e.g. `CurrentUser` assembled from OIDC claims, page wrappers, third-party SDK DTOs)
+worked around the limitation by mutating NexusX internals directly:
+
+```python
+# ❌ Old hack — fragile, undocumented, breaks on version bumps
+from nexusx.subset import _subset_registry
+_subset_registry[CurrentUserRootDTO] = CurrentUserRoot
+```
+
+Replace with the official API. See [Virtual Entities guide](../guide/virtual_entities.md)
+for the full contract. Quick mapping:
+
+| Hack shape | Official replacement |
+|------------|---------------------|
+| `_subset_registry[X] = Y` where `Y` has `__relationships__` or should be ER-visible | `er.add_virtual_entities([Y])` after `ErManager(...)` |
+| `_subset_registry[X] = Y` where `X` is a subset of `Y`'s schema | `class X(DefineSubset): __subset__ = (Y, ("fields",))` (Y may now be a BaseModel) |
+| `_subset_registry[X] = Y` where `X` *is* `Y` (root is its own schema) | Make `X` a plain `BaseModel` and `er.add_virtual_entities([X])` |
+
+The migration is mechanical (search-and-replaceable). `ErManager.__init__` signature is
+unchanged; existing DTO hierarchies don't need to be rewritten.
+
+---
+
 ## 1.6.0 → 1.7.0: Voyager ER Diagram Relationship Field Refactor
 
 The Voyager ER diagram changed from FK-field-based to relationship-name-based display.

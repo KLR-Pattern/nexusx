@@ -58,6 +58,7 @@ class SchemaNode(NodeBase):
     module: str
     fields: list[FieldInfo] = field(default_factory=list)
     is_entity: bool = False
+    is_virtual: bool = False
     queries: list[MethodInfo] = field(default_factory=list)
     mutations: list[MethodInfo] = field(default_factory=list)
 

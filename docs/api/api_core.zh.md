@@ -25,6 +25,44 @@ er = ErManager(
 |------|------|
 | `create_resolver()` | 返回绑定了实体图的 Resolver 类 |
 | `get_diagram()` | 返回 ErDiagram 实例 |
+| `add_virtual_entities(entities)` | 将普通 BaseModel 子类注册为虚拟实体（见下文） |
+
+### add_virtual_entities
+
+将普通 `pydantic.BaseModel` 子类注册为**虚拟实体**——非 SQLModel 根，可与 SQLModel 实体一起参与解析、自定义关系和 ER 可视化。典型场景：从 OIDC claims 组装的 `CurrentUser`、聚合多服务的页面 wrapper、第三方 SDK DTO。
+
+```python
+from pydantic import BaseModel
+from nexusx import ErManager, Relationship
+
+class CurrentUserRoot(BaseModel):
+    oid: str
+    name: str
+    agents: list[AgentDTO] = []
+
+    __relationships__ = [
+        Relationship(fk="oid", target=list[AgentDTO],
+                     name="agents", loader=load_agents_by_oid),
+    ]
+
+er = ErManager(entities=[Agent], session_factory=async_session)
+er.add_virtual_entities([CurrentUserRoot])          # ← 必须在 create_resolver() 之前
+Resolver = er.create_resolver()
+```
+
+必须在第一次 `create_resolver()` **之前**调用——之后注册表会冻结。
+
+| 输入 | 结果 |
+|------|------|
+| `[A, B]`（普通 BaseModel，未注册过） | 两者都注册 |
+| `[]`（空列表） | 无操作 |
+| `[42]` 或 `[int]`（非类） | `TypeError` |
+| `[SomeRandomClass]`（不是 BaseModel） | `TypeError` |
+| `[User]`（其中 `User(SQLModel, table=True)`） | `TypeError`——SQLModel 必须通过 `__init__` 的 `entities=` / `base=` 传入 |
+| `[A, A]`（同次或跨次重复） | `ValueError` |
+| 在 `create_resolver()` 之后调用 | `RuntimeError`（"registry is frozen"） |
+
+使用模式、ER 可视化规则、以及从 `_subset_registry` hack 的迁移，详见 [虚拟实体指南](../guide/virtual_entities.zh.md)。
 
 ## Resolver
 
@@ -84,6 +122,9 @@ class UserDTO(DefineSubset):
 
 !!! warning
     禁止直接使用 SQLModel 实体作为字段类型。例如 `author: User | None` 会导致 TypeError。必须使用 DTO 类型：`author: UserDTO | None`。
+
+!!! tip
+    `__subset__` 的源可以是任意 `BaseModel` 子类，不只是 `SQLModel`。这让你可以直接对外部 schema（OAuth claims、第三方 SDK 类）做子集化，背后不需要 ORM 表。源是普通 BaseModel 时不会触发 `_orm_to_dto` 转换——用户直接构造 DTO 实例。详见 [虚拟实体指南](../guide/virtual_entities.zh.md)。
 
 ## SubsetConfig
 

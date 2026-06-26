@@ -1,5 +1,27 @@
 # 迁移指南
 
+## `_subset_registry` hack → `add_virtual_entities()`（非 SQLModel 根）
+
+在非 SQLModel 根支持落地之前，需要非 SQLModel 根的项目（如由 OIDC claims 组装的 `CurrentUser`、页面级 wrapper、第三方 SDK DTO）通过直接改 NexusX 内部状态绕过限制：
+
+```python
+# ❌ 旧 hack——脆弱、未文档化、版本升级容易崩
+from nexusx.subset import _subset_registry
+_subset_registry[CurrentUserRootDTO] = CurrentUserRoot
+```
+
+请用官方 API 替换。完整契约见 [虚拟实体指南](../guide/virtual_entities.zh.md)。速查表：
+
+| Hack 形态 | 官方替代 |
+|-----------|----------|
+| `_subset_registry[X] = Y`，其中 `Y` 有 `__relationships__` 或需要在 ER 图可见 | 在 `ErManager(...)` 之后调用 `er.add_virtual_entities([Y])` |
+| `_subset_registry[X] = Y`，其中 `X` 是 `Y` schema 的子集 | `class X(DefineSubset): __subset__ = (Y, ("fields",))`（Y 现在可以是 BaseModel） |
+| `_subset_registry[X] = Y`，其中 `X` *就是* `Y`（根本身就是 schema） | 把 `X` 改成普通 `BaseModel`，然后 `er.add_virtual_entities([X])` |
+
+迁移是机械的（可搜索替换）。`ErManager.__init__` 签名不变；现有 DTO 层级不需要重写。
+
+---
+
 ## rpc → use_case 重构（当前版本）
 
 RPC 模块已全面重构为 UseCase 模式。

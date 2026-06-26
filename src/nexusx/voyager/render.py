@@ -241,11 +241,22 @@ class Renderer:
 
         default_color = self.theme_color if color is None else color
         header_color = self.colors.highlight if node.id == self.schema else default_color
+        header_text = node.name
+        text_color = 'white'
+
+        # Contract 3 visual distinction for non-SQLModel (virtual) roots:
+        # yellow fill, «virtual» UML stereotype prefix, dark text (yellow is
+        # too light for white text to remain legible).
+        if getattr(node, 'is_virtual', False):
+            header_color = self.colors.virtual_fill
+            header_text = f'«virtual»\\n{node.name}'
+            text_color = '#000'
 
         header = self.template_renderer.render_template(
             'html/schema_header.j2',
-            text=node.name,
+            text=header_text,
             bg_color=header_color,
+            text_color=text_color,
             port=PK,
             is_entity=node.is_entity
         )
@@ -565,8 +576,24 @@ class DiagramRenderer(Renderer):
         self, nodes: list[SchemaNode], links: list[Link],
         spline_line: bool = False,
     ) -> str:
-        """Render ER diagram as DOT format."""
-        module_schemas_str = self.render_module_schema_content(nodes)
+        """Render ER diagram as DOT format.
+
+        Virtual nodes (``SchemaNode.is_virtual=True``, set by
+        ``ErDiagramDotBuilder`` for plain BaseModel classes registered via
+        ``ErManager.add_virtual_entities()``) are grouped into a separate
+        ``cluster_virtual`` subgraph with a dashed border and yellow fill,
+        per Contract 3 of specs/004-non-sqlmodel-roots.
+        """
+        real_nodes = [n for n in nodes if not getattr(n, 'is_virtual', False)]
+        virtual_nodes = [n for n in nodes if getattr(n, 'is_virtual', False)]
+
+        module_schemas_str = self.render_module_schema_content(real_nodes)
+        virtual_cluster_str = self._render_virtual_cluster(virtual_nodes)
+
+        er_cluster = module_schemas_str
+        if virtual_cluster_str:
+            er_cluster = f'{module_schemas_str}\n{virtual_cluster_str}'
+
         link_str = '\n'.join(self.render_link(link) for link in links)
 
         return self.template_renderer.render_template(
@@ -576,6 +603,26 @@ class DiagramRenderer(Renderer):
             font=self.style.font,
             node_fontsize=self.style.node_fontsize,
             spline='line' if spline_line else None,
-            er_cluster=module_schemas_str,
+            er_cluster=er_cluster,
             links=link_str
+        )
+
+    def _render_virtual_cluster(self, virtual_nodes: list[SchemaNode]) -> str:
+        """Render virtual-entity nodes inside a dashed ``cluster_virtual``.
+
+        Returns an empty string when there are no virtual nodes — so the
+        zero-virtual-entities case is byte-identical to pre-feature output.
+        """
+        if not virtual_nodes:
+            return ''
+
+        inner = self.render_module_schema_content(virtual_nodes)
+        return self.template_renderer.render_template(
+            'dot/cluster_container.j2',
+            name='virtual',
+            label='Virtual Entities',
+            content=inner,
+            border_color=self.colors.virtual_cluster,
+            margin=self.style.cluster_margin,
+            fontsize=self.style.cluster_fontsize,
         )

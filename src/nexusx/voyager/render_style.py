@@ -38,6 +38,11 @@ class ColorScheme:
     # Text colors
     text_gray: str = '#999'
 
+    # Virtual entity (non-SQLModel root) styling — Contract 3 visual distinction.
+    # Used for plain BaseModel classes registered via ErManager.add_virtual_entities().
+    virtual_fill: str = '#FFF9C4'      # light yellow header fill
+    virtual_cluster: str = '#E0E0E0'   # dashed cluster border for cluster_virtual
+
 
 @dataclass
 class GraphvizStyle:

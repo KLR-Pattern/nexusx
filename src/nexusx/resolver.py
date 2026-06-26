@@ -455,6 +455,41 @@ class Resolver:
                     f"{cls.__name__}, got {type(instance).__name__}"
                 )
 
+    def _resolve_source(self, node_type: type) -> Any:
+        """FR-017 unified source-resolution.
+
+        Find the source class for a ``node_type``, then let the caller look
+        up its relationships / loaders. Source type (SQLModel vs BaseModel)
+        is irrelevant to that goal. Two strategies:
+
+        1. DefineSubset DTO → ``get_subset_source`` returns its source.
+        2. Plain BaseModel root registered via ``add_virtual_entities`` →
+           fallback: the ``node_type`` itself is in ``_registry`` as its
+           own source.
+
+        Returns ``None`` when neither strategy matches AND ``node_type``
+        declares no ``__relationships__`` (no auto-load expected, no error).
+        Raises ``RuntimeError`` when ``node_type`` declares
+        ``__relationships__`` but is not registered in any ErManager —
+        spec Edge Case B requires a clear error pointing at the
+        registration API rather than silent skip.
+        """
+        from nexusx.relationship import get_custom_relationships
+        from nexusx.subset import get_subset_source
+
+        source = get_subset_source(node_type)
+        if source is None and self._registry is not None:
+            if self._registry.has_entity(node_type):
+                source = node_type
+            elif get_custom_relationships(node_type):
+                raise RuntimeError(
+                    f"{node_type.__name__} declares __relationships__ but is "
+                    f"not registered with ErManager. Call "
+                    f"er.add_virtual_entities([{node_type.__name__}]) before "
+                    f"er.create_resolver()."
+                )
+        return source
+
     def _get_loader(
         self,
         node: Any,
@@ -470,11 +505,9 @@ class Resolver:
         if self._registry is None:
             return None
 
-        from nexusx.subset import get_subset_source
-
         source_entity = None
         if isinstance(node, BaseModel):
-            source_entity = get_subset_source(type(node))
+            source_entity = self._resolve_source(type(node))
         if source_entity is not None:
             loader = self._registry.get_loader_for_entity(
                 source_entity, loader_name, type_key=type_key,
@@ -541,10 +574,11 @@ class Resolver:
         if cached is not None:
             return cached
 
-        from nexusx.subset import get_subset_source
         from nexusx.utils.type_compat import is_compatible_type
 
-        source_entity = get_subset_source(node_type)
+        # Unified source resolution (FR-017) — single helper used by both
+        # _get_loader and _scan_auto_load_fields. See _resolve_source.
+        source_entity = self._resolve_source(node_type)
         if source_entity is None:
             self._auto_load_cache[node_type] = []
             return []
@@ -685,7 +719,21 @@ class Resolver:
 
     @classmethod
     def _orm_to_dto(cls, orm_instance: Any, dto_cls: type[BaseModel]) -> BaseModel:
-        """Convert a SQLModel ORM instance to a DefineSubset DTO."""
+        """Project an arbitrary instance onto a DefineSubset DTO.
+
+        Called from ``_batch_auto_load`` when a relationship loader returns
+        something that is NOT already an instance of the field's declared
+        DTO type — typically a SQLModel row, but the function is type-
+        agnostic (``getattr`` over ``__subset_fields__``) and handles any
+        source whose attributes line up with the DTO's subset fields. When
+        the loader already returns ``dto_cls`` instances, the caller skips
+        this function via the ``isinstance(r, dto_cls)`` short-circuit in
+        ``_batch_auto_load``.
+
+        The historical ``_orm_to_dto`` name comes from the SQLModel-row use
+        case; a rename to ``_source_to_dto`` is tracked as optional polish
+        in research.md R8 and is intentionally NOT done here.
+        """
         subset_fields = cls._dto_fields_cache.get(dto_cls)
         if subset_fields is None and dto_cls not in cls._dto_fields_cache:
             subset_fields = getattr(dto_cls, "__subset_fields__", None)
@@ -1337,10 +1385,17 @@ class Resolver:
                     items_list = result if result is not None else []
                     if dto_cls and items_list:
                         if is_custom:
-                            # CUSTOM rels may already yield BaseModels
-                            # (skip ORM→DTO for those, convert the rest)
+                            # CUSTOM rels may already yield the right DTO
+                            # type — trust the loader only when it actually
+                            # returned ``dto_cls`` instances (or subclasses).
+                            # The looser ``isinstance(r, BaseModel)`` check
+                            # we used before treated SQLModel source rows as
+                            # "already converted" (SQLModel IS a BaseModel),
+                            # silently skipping projection. See
+                            # tests/test_definesubset_basemodel.py::
+                            #   TestCustomRelationshipAutoConversion.
                             items_list = [
-                                r if isinstance(r, BaseModel)
+                                r if isinstance(r, dto_cls)
                                 else self._orm_to_dto(r, dto_cls)
                                 for r in items_list
                             ]
@@ -1359,7 +1414,7 @@ class Resolver:
                 else:
                     if result is None:
                         continue
-                    if dto_cls and not (is_custom and isinstance(result, BaseModel)):
+                    if dto_cls and not (is_custom and isinstance(result, dto_cls)):
                         result = self._orm_to_dto(result, dto_cls)
                     object.__setattr__(node, field_name, result)
                     auto_loaded.add((id(node), field_name))
