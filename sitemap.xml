@@ -1,0 +1,367 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+    <url>
+        <loc>https://allmonday.github.io/nexusx/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/clean-architecture-comparison/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/clean-architecture-comparison/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/clean-architecture-comparison/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/feature-highlights/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/feature-highlights/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/feature-highlights/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/advanced/mcp_service/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/advanced/mcp_service/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/advanced/mcp_service/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/advanced/use_case_fastapi/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/advanced/use_case_fastapi/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/advanced/use_case_fastapi/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/advanced/use_case_service/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/advanced/use_case_service/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/advanced/use_case_service/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/advanced/voyager/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/advanced/voyager/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/advanced/voyager/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/api/api_core/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/api/api_core/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/api/api_core/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/api/api_cross_layer/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/api/api_cross_layer/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/api/api_cross_layer/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/api/api_graphql_handler/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/api/api_graphql_handler/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/api/api_graphql_handler/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/api/api_mcp/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/api/api_mcp/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/api/api_mcp/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/api/api_relationship/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/api/api_relationship/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/api/api_relationship/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/api/api_use_case/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/api/api_use_case/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/api/api_use_case/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/guide/core_api/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/core_api/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/core_api/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/guide/core_api_advanced/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/core_api_advanced/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/core_api_advanced/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/guide/custom_relationship/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/custom_relationship/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/custom_relationship/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/guide/er_diagram/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/er_diagram/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/er_diagram/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/guide/er_diagram_visual/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/er_diagram_visual/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/er_diagram_visual/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/guide/graphql_auto_query/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/graphql_auto_query/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/graphql_auto_query/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/guide/graphql_mode/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/graphql_mode/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/graphql_mode/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/guide/graphql_pagination/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/graphql_pagination/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/graphql_pagination/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/guide/quick_start/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/quick_start/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/quick_start/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/guide/virtual_entities/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/virtual_entities/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/virtual_entities/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/migrations/3.0-use-case-graphql/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/migrations/3.0-use-case-graphql/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/migrations/3.0-use-case-graphql/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/reference/changelog/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/reference/changelog/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/reference/changelog/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/reference/migration/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/reference/migration/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/reference/migration/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/clean-architecture-comparison/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/clean-architecture-comparison/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/clean-architecture-comparison/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/feature-highlights/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/feature-highlights/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/feature-highlights/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/advanced/mcp_service/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/advanced/mcp_service/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/advanced/mcp_service/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/advanced/use_case_fastapi/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/advanced/use_case_fastapi/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/advanced/use_case_fastapi/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/advanced/use_case_service/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/advanced/use_case_service/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/advanced/use_case_service/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/advanced/voyager/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/advanced/voyager/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/advanced/voyager/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/api/api_core/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/api/api_core/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/api/api_core/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/api/api_cross_layer/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/api/api_cross_layer/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/api/api_cross_layer/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/api/api_graphql_handler/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/api/api_graphql_handler/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/api/api_graphql_handler/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/api/api_mcp/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/api/api_mcp/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/api/api_mcp/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/api/api_relationship/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/api/api_relationship/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/api/api_relationship/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/api/api_use_case/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/api/api_use_case/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/api/api_use_case/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/guide/core_api/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/core_api/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/core_api/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/guide/core_api_advanced/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/core_api_advanced/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/core_api_advanced/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/guide/custom_relationship/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/custom_relationship/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/custom_relationship/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/guide/er_diagram/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/er_diagram/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/er_diagram/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/guide/er_diagram_visual/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/er_diagram_visual/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/er_diagram_visual/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/guide/graphql_auto_query/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/graphql_auto_query/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/graphql_auto_query/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/guide/graphql_mode/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/graphql_mode/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/graphql_mode/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/guide/graphql_pagination/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/graphql_pagination/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/graphql_pagination/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/guide/quick_start/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/quick_start/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/quick_start/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/guide/virtual_entities/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/guide/virtual_entities/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/guide/virtual_entities/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/migrations/3.0-use-case-graphql/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/migrations/3.0-use-case-graphql/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/migrations/3.0-use-case-graphql/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/reference/changelog/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/reference/changelog/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/reference/changelog/"/>
+    </url>
+    <url>
+        <loc>https://allmonday.github.io/nexusx/zh/reference/migration/</loc>
+        <lastmod>2026-06-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://allmonday.github.io/nexusx/zh/reference/migration/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://allmonday.github.io/nexusx/reference/migration/"/>
+    </url>
+</urlset>

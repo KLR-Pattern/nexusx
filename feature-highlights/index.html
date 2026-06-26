@@ -1,0 +1,2649 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Progressive SQLModel extension — from ER diagrams to GraphQL API and beyond.">
+      
+      
+        <meta name="author" content="tangkikodo">
+      
+      
+        <link rel="canonical" href="https://allmonday.github.io/nexusx/feature-highlights/">
+      
+      
+        <link rel="prev" href="../advanced/voyager/">
+      
+      
+        <link rel="next" href="../clean-architecture-comparison/">
+      
+      
+        
+          <link rel="alternate" href="./" hreflang="en">
+        
+          <link rel="alternate" href="../zh/feature-highlights/" hreflang="zh">
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Design Highlights - nexusx</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#nexusx-design-highlights-12-differentiated-decisions-excavated-from-the-code" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="nexusx" class="md-header__button md-logo" aria-label="nexusx" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            nexusx
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Design Highlights
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="light-blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="light-blue"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+      <div class="md-header__option">
+  <div class="md-select">
+    
+    <button class="md-header__button md-icon" aria-label="Select language">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12.87 15.07-2.54-2.51.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2zm-2.62 7 1.62-4.33L19.12 17z"/></svg>
+    </button>
+    <div class="md-select__inner">
+      <ul class="md-select__list">
+        
+          <li class="md-select__item">
+            <a href="./" hreflang="en" class="md-select__link">
+              English
+            </a>
+          </li>
+        
+          <li class="md-select__item">
+            <a href="../zh/feature-highlights/" hreflang="zh" class="md-select__link">
+              中文
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</div>
+    
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/allmonday/nexusx" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    allmonday/nexusx
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href=".." class="md-tabs__link">
+          
+  
+  
+    
+  
+  Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../advanced/mcp_service/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Advanced
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Articles
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api/api_graphql_handler/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../reference/changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="nexusx" class="md-nav__button md-logo" aria-label="nexusx" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    nexusx
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/allmonday/nexusx" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    allmonday/nexusx
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href=".." class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/quick_start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/er_diagram/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ER Diagram & Non-ORM Relationships
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/graphql_mode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GraphQL Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/graphql_pagination/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GraphQL Pagination
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/graphql_auto_query/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Generated Queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/core_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core API Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/core_api_advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core API Advanced
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/custom_relationship/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Relationships
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/er_diagram_visual/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ER Diagram Visualization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/mcp_service/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/use_case_service/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UseCase Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/use_case_fastapi/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UseCase + FastAPI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/voyager/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Voyager Visualization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Articles
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Articles
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Highlights
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Highlights
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#tldr-three-threads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TL;DR — Three Threads
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#thread-1-field-selection-as-a-first-class-citizen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Thread 1: Field Selection as a First-Class Citizen
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Thread 1: Field Selection as a First-Class Citizen">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-definesubset-moving-graphql-field-selection-into-the-python-type-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. DefineSubset — Moving GraphQL Field Selection Into the Python Type System
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-exposeas-sendto-collector-bidirectional-context-flow-inside-the-dto-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. ExposeAs / SendTo / Collector — Bidirectional Context Flow Inside the DTO Tree
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-selection-projection-reusing-graphql-field-syntax-on-arbitrary-python-function-returns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. selection Projection — Reusing GraphQL Field Syntax on Arbitrary Python Function Returns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-column-pruning-_query_meta-load_only-selection-sinks-all-the-way-to-sql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Column Pruning (_query_meta + load_only) — Selection Sinks All the Way to SQL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-pagination-type-shrinks-with-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Pagination Type Shrinks with Selection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#thread-2-relationships-beyond-orm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Thread 2: Relationships Beyond ORM
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Thread 2: Relationships Beyond ORM">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#6-auto-generating-dataloaders-from-sqlalchemy-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Auto-Generating DataLoaders from SQLAlchemy Metadata
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-non-orm-custom-relationship-the-escape-hatch-that-doesnt-tie-you-to-sqlalchemy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Non-ORM Custom Relationship — The Escape Hatch That Doesn't Tie You to SQLAlchemy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-row_number-over-partition-by-batch-pagination" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. ROW_NUMBER() OVER (PARTITION BY ...) Batch Pagination
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9-auto-generated-standard-queries-entities-sprout-by_id-by_filter-for-free" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Auto-Generated Standard Queries — Entities Sprout by_id / by_filter for Free
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#thread-3-transports-are-layered-on-top" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Thread 3: Transports Are Layered On Top
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Thread 3: Transports Are Layered On Top">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#10-one-usecaseservice-simultaneously-generates-graphql-rest-mcp-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. One UseCaseService Simultaneously Generates GraphQL / REST / MCP / CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#11-fromcontext-same-signature-cross-transport-parameter-injection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. FromContext — Same Signature, Cross-Transport Parameter Injection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-usecase-path-explicitly-rejects-graphql-introspection-ai-agent-first-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. UseCase Path Explicitly Rejects GraphQL Introspection — AI-Agent-First Design
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supporting-engineering-less-visible-but-critical-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supporting Engineering: Less Visible but Critical Decisions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Supporting Engineering: Less Visible but Critical Decisions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#13-custom-schema-registry-not-using-graphql-cores-graphqlschema-directly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Custom Schema Registry — Not Using graphql-core's GraphQLSchema Directly
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#14-split_loader_by_type-precise-isolation-for-multi-consumer-column-conflicts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. split_loader_by_type — Precise Isolation for Multi-Consumer Column Conflicts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#15-forward-reference-pep-563-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. Forward Reference / PEP 563 Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-highlights-relate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the Highlights Relate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-with-other-frameworks-selected-dimensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison With Other Frameworks (Selected Dimensions)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#for-contributors-where-to-invest-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        For Contributors: Where to Invest Next
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#closing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Closing
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../clean-architecture-comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clean Architecture Comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_graphql_handler/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GraphQLHandler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_cross_layer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cross-Layer Data Flow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_relationship/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Relationships & ER Diagram
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_use_case/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UseCase API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migration Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#tldr-three-threads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TL;DR — Three Threads
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#thread-1-field-selection-as-a-first-class-citizen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Thread 1: Field Selection as a First-Class Citizen
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Thread 1: Field Selection as a First-Class Citizen">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-definesubset-moving-graphql-field-selection-into-the-python-type-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. DefineSubset — Moving GraphQL Field Selection Into the Python Type System
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-exposeas-sendto-collector-bidirectional-context-flow-inside-the-dto-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. ExposeAs / SendTo / Collector — Bidirectional Context Flow Inside the DTO Tree
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-selection-projection-reusing-graphql-field-syntax-on-arbitrary-python-function-returns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. selection Projection — Reusing GraphQL Field Syntax on Arbitrary Python Function Returns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-column-pruning-_query_meta-load_only-selection-sinks-all-the-way-to-sql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Column Pruning (_query_meta + load_only) — Selection Sinks All the Way to SQL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-pagination-type-shrinks-with-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Pagination Type Shrinks with Selection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#thread-2-relationships-beyond-orm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Thread 2: Relationships Beyond ORM
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Thread 2: Relationships Beyond ORM">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#6-auto-generating-dataloaders-from-sqlalchemy-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Auto-Generating DataLoaders from SQLAlchemy Metadata
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-non-orm-custom-relationship-the-escape-hatch-that-doesnt-tie-you-to-sqlalchemy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Non-ORM Custom Relationship — The Escape Hatch That Doesn't Tie You to SQLAlchemy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-row_number-over-partition-by-batch-pagination" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. ROW_NUMBER() OVER (PARTITION BY ...) Batch Pagination
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9-auto-generated-standard-queries-entities-sprout-by_id-by_filter-for-free" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Auto-Generated Standard Queries — Entities Sprout by_id / by_filter for Free
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#thread-3-transports-are-layered-on-top" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Thread 3: Transports Are Layered On Top
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Thread 3: Transports Are Layered On Top">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#10-one-usecaseservice-simultaneously-generates-graphql-rest-mcp-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. One UseCaseService Simultaneously Generates GraphQL / REST / MCP / CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#11-fromcontext-same-signature-cross-transport-parameter-injection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. FromContext — Same Signature, Cross-Transport Parameter Injection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-usecase-path-explicitly-rejects-graphql-introspection-ai-agent-first-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. UseCase Path Explicitly Rejects GraphQL Introspection — AI-Agent-First Design
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supporting-engineering-less-visible-but-critical-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supporting Engineering: Less Visible but Critical Decisions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Supporting Engineering: Less Visible but Critical Decisions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#13-custom-schema-registry-not-using-graphql-cores-graphqlschema-directly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Custom Schema Registry — Not Using graphql-core's GraphQLSchema Directly
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#14-split_loader_by_type-precise-isolation-for-multi-consumer-column-conflicts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. split_loader_by_type — Precise Isolation for Multi-Consumer Column Conflicts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#15-forward-reference-pep-563-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. Forward Reference / PEP 563 Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-highlights-relate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the Highlights Relate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-with-other-frameworks-selected-dimensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison With Other Frameworks (Selected Dimensions)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#for-contributors-where-to-invest-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        For Contributors: Where to Invest Next
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#closing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Closing
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="nexusx-design-highlights-12-differentiated-decisions-excavated-from-the-code">nexusx Design Highlights: 12 Differentiated Decisions Excavated From the Code</h1>
+<blockquote>
+<p>This article is not a tutorial. It's a vertical audit of the nexusx codebase: pulling out the design decisions that actually let it stand on its own next to Strawberry / FastAPI / FastMCP, and explaining for each one what problem it solves, how it works under the hood, why it's hard, and how nexusx resolves it.</p>
+<p>Audience: backend architects evaluating framework choices, contributors who want to understand the codebase, and engineers interested in "field selection as a general-purpose idea."</p>
+</blockquote>
+<h2 id="tldr-three-threads">TL;DR — Three Threads</h2>
+<p>Collapsing the 12 highlights in this article, nexusx's differentiation comes down to three sentences:</p>
+<ol>
+<li><strong>"Field selection" is a first-class citizen</strong> — from GraphQL selection to DefineSubset, to SQL column pruning and pagination type shrinkage, the same concept runs through four layers. Other frameworks treat "select fields on demand" as a GraphQL protocol feature; nexusx promotes it to a design principle that runs through the entire data flow.</li>
+<li><strong>Relationships are not just ORM relationships</strong> — <code>sqlalchemy.inspect</code> auto-discovery + <code>Relationship(...)</code> custom escape hatch + DataLoader batching + <code>ROW_NUMBER()</code> window-function pagination cover the full spectrum from pure ORM to external data sources. Your data-access layer no longer has to split into two worlds just because you encounter a Redis cache or search engine.</li>
+<li><strong>Transports are layered on top, not baked in</strong> — one <code>UseCaseService</code> + one method signature → GraphQL / REST / MCP / CLI, glued together by a metaclass + <code>FromContext</code> + selection triplet. Write the business method once; adding a transport is a configuration problem, not a code problem.</li>
+</ol>
+<p>Below is the concrete support.</p>
+<hr />
+<h2 id="thread-1-field-selection-as-a-first-class-citizen">Thread 1: Field Selection as a First-Class Citizen</h2>
+<h3 id="1-definesubset-moving-graphql-field-selection-into-the-python-type-system">1. <code>DefineSubset</code> — Moving GraphQL Field Selection Into the Python Type System</h3>
+<p><strong>Problem</strong>: In traditional web frameworks, there are a few paths from ORM entity to API response, each with costs:</p>
+<ul>
+<li>Returning ORM entities directly → serialization exposes every column, leaking internal fields and providing no way to do derived computation;</li>
+<li>Hand-writing Pydantic DTOs → every API endpoint requires duplicating field definitions, ORM schema changes drift out of sync with DTOs;</li>
+<li>Inheriting from ORM entities for response variants → SQLModel / Pydantic inheritance semantics get murky around "which fields are table columns vs. serialization fields," and you can't express "I only want <code>name</code>, not <code>email</code>" type of on-demand shrinking.</li>
+</ul>
+<p>GraphQL solves this with selection sets, but only inside the GraphQL path. REST handlers, background tasks, CLI commands — none benefit.</p>
+<p><strong>How it works</strong>: <code>DefineSubset</code> at <code>src/nexusx/subset.py:739</code> uses a metaclass (<code>SubsetMeta</code>) to perform a compile-time transformation when the class is created:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">PostDTO</span><span class="p">(</span><span class="n">DefineSubset</span><span class="p">):</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">__subset__</span> <span class="o">=</span> <span class="p">(</span><span class="n">Post</span><span class="p">,</span> <span class="p">(</span><span class="s2">&quot;id&quot;</span><span class="p">,</span> <span class="s2">&quot;title&quot;</span><span class="p">,</span> <span class="s2">&quot;author_id&quot;</span><span class="p">))</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">author</span><span class="p">:</span> <span class="n">UserDTO</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>     <span class="c1"># field name matches relationship → auto-load</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">full_title</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">post_full_title</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ancestor_context</span><span class="p">):</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ancestor_context</span><span class="p">[</span><span class="s1">&#39;sprint_name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> / </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">title</span><span class="si">}</span><span class="s2">&quot;</span>
+</code></pre></div>
+<p>The metaclass does three things:</p>
+<ol>
+<li><strong>Reads the source entity and requested scalar columns from <code>__subset__ = (Entity, fields)</code></strong>, converting them to Pydantic field definitions. This step also validates: all column names must exist on the entity, and FK columns must be either in the allowlist or unused by relationship fields.</li>
+<li><strong>Scans the class body for additional fields</strong> (e.g. <code>author: UserDTO | None</code>). If the field name matches a relationship on the source entity, the resolver wires it to the corresponding DataLoader at execution time; if it's a new field (e.g. <code>full_title</code>), it becomes a "derived field" that must be populated by a <code>post_*</code> method.</li>
+<li><strong>Extracts <code>resolve_*</code> and <code>post_*</code> methods</strong> as lifecycle hooks. <code>resolve_*</code> runs before loader dispatch (can override default loading); <code>post_*</code> runs after nested data is ready (used for derived computation or aggregation).</li>
+</ol>
+<p>The resulting <code>PostDTO</code> is a standard Pydantic BaseModel — it can be <code>model_dump()</code>-ed, validated by <code>TypeAdapter</code>, attached to a FastAPI endpoint as <code>response_model</code>. In other words, <strong>it doesn't invent a new type system — it leans on Pydantic</strong> — which is the key reason it stays compatible with the entire Python web ecosystem.</p>
+<p><strong>Why it matters</strong>: GraphQL is not the exclusive province of GraphQL frameworks. Strawberry's resolver machinery only serves GraphQL endpoints; if a REST handler wants "field selection + auto-loading," it has to fall back to hand-written DTOs. <code>DefineSubset</code> elevates this to a general posture of business code: the field declarations you write in <code>DefineSubset</code> are a "response contract" shared by REST / GraphQL / MCP. When a project needs both GraphQL's flexibility and REST's stability, the value is order-of-magnitude — it eliminates the entire workflow of "maintaining three field definitions for the same business entity across three protocols."</p>
+<h3 id="2-exposeas-sendto-collector-bidirectional-context-flow-inside-the-dto-tree">2. <code>ExposeAs</code> / <code>SendTo</code> / <code>Collector</code> — Bidirectional Context Flow Inside the DTO Tree</h3>
+<p><strong>Problem</strong>: Consider a real requirement — "list the deduplicated owners of all tasks under a sprint as contributors." The three conventional approaches each have problems:</p>
+<ol>
+<li><strong>Hand-written SQL subquery</strong>: performant, but cross-database dialect issues (<code>DISTINCT ON</code> exists in Postgres but not MySQL), and tightly coupled to ORM session;</li>
+<li><strong>Hang a method on <code>SprintDTO</code> that walks <code>self.tasks</code> collecting owners</strong>: triggers lazy-loading of every task's owner → N+1;</li>
+<li><strong>Pre-query contributors in the sprint business method</strong>: works, but contributors logic is scattered between the business layer and the DTO assembly layer, and as soon as you need "contributors should also show per-contributor task count" you're recursing.</li>
+</ol>
+<p>Fundamentally this is a <strong>cross-layer data flow within a DTO tree</strong> problem: information needs to flow both parent→child and child→parent, and it has to cooperate with DataLoader's batching (to avoid N+1).</p>
+<p><strong>How it works</strong>: <code>src/nexusx/context.py</code> provides three primitives:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">SprintDTO</span><span class="p">(</span><span class="n">DefineSubset</span><span class="p">):</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">__subset__</span> <span class="o">=</span> <span class="p">(</span><span class="n">Sprint</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="s1">&#39;name&#39;</span><span class="p">))</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">name</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExposeAs</span><span class="p">(</span><span class="s1">&#39;sprint_name&#39;</span><span class="p">)]</span>   <span class="c1"># broadcast downward</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">tasks</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">TaskDTO</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">contributors</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UserDTO</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>                 <span class="c1"># container for upward aggregation</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">post_contributors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">collector</span><span class="o">=</span><span class="n">Collector</span><span class="p">(</span><span class="s1">&#39;contributors&#39;</span><span class="p">)):</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        <span class="k">return</span> <span class="n">collector</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="k">class</span><span class="w"> </span><span class="nc">TaskDTO</span><span class="p">(</span><span class="n">DefineSubset</span><span class="p">):</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">__subset__</span> <span class="o">=</span> <span class="p">(</span><span class="n">Task</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">))</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">owner</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">UserDTO</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">SendTo</span><span class="p">(</span><span class="s1">&#39;contributors&#39;</span><span class="p">)]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># push upward</span>
+</code></pre></div>
+<p>The resolver walks the tree twice:</p>
+<ul>
+<li><strong>First pass (downward)</strong>: once <code>SprintDTO.name</code> is loaded, its value is placed into an <code>ancestor_context</code> dict (keyed by the <code>ExposeAs</code> alias) and propagated to all descendant nodes. <code>TaskDTO.post_full_title(self, ancestor_context)</code> can then read <code>ancestor_context['sprint_name']</code>. This context is <strong>read-only broadcast</strong> — children cannot mutate parent values, avoiding side effects.</li>
+<li><strong>Second pass (upward)</strong>: once <code>TaskDTO.owner</code> is loaded, the resolver checks whether it carries a <code>SendTo('contributors')</code> annotation, and if so, pushes the value into the nearest ancestor's <code>'contributors'</code> <code>Collector</code>. <code>Collector.add</code> defaults to append; <code>flat=True</code> switches to extend (for list fields). <code>SprintDTO.post_contributors</code> is invoked after the entire subtree has run, pulling the pre-dedup list from <code>collector.values()</code> (dedup itself happens at the loader layer — the same <code>User</code> only gets queried once).</li>
+</ul>
+<p><code>scan_expose_fields</code> and <code>scan_send_to_fields</code> use class-level caches (<code>_expose_cache</code> / <code>_send_to_cache</code>) to avoid re-scanning annotations on every request. <code>SendTo</code> accepts a tuple (<code>SendTo(('a', 'b'))</code>) so a single value can fan out to multiple collectors — useful when the same data feeds multiple aggregations.</p>
+<p><strong>Why it matters</strong>: This pattern has essentially no equivalent in other Python GraphQL / DTO frameworks. GraphQL itself has <code>@parent</code> and context mechanisms, but they live inside GraphQL execution and don't escape to other layers; Pydantic's <code>model_validator</code> can only run inside a single model. The true value of <code>ExposeAs</code> / <code>SendTo</code> / <code>Collector</code> is <strong>treating the DTO tree as a directed acyclic graph supporting limited data flow between parent and child</strong> — neither unrestricted shared state (hard to debug) nor complete isolation (which forces you back to hand-written SQL). This "controlled bidirectional flow" is nexusx's core abstraction for tree-shaped response assembly; almost any "derived from subtree" field can be expressed elegantly with it. Code that used to take 30-50 lines of hand-rolled aggregation + dedup + batch loading now collapses to 3 lines of annotation.</p>
+<h3 id="3-selection-projection-reusing-graphql-field-syntax-on-arbitrary-python-function-returns">3. <code>selection</code> Projection — Reusing GraphQL Field Syntax on Arbitrary Python Function Returns</h3>
+<p><strong>Problem</strong>: GraphQL solved "the client tells the server which fields it wants," but that capability is locked inside the GraphQL protocol. A normal Python function (say, the return value of a UseCase method) has no such "trim on demand" capability — either the method returns the full object (bandwidth and serialization cost), or you write a variant per caller (method explosion).</p>
+<p>MCP sharpens this problem: when an LLM calls a tool, it often only needs 10% of the return value (e.g. "list the sprint names and ids, no task details"), but the tool signature is fixed — the LLM has to take the full payload and trim it itself, wasting tokens and inflating prompt complexity.</p>
+<p><strong>How it works</strong>: <code>apply_selection</code> in <code>src/nexusx/use_case/selection.py</code> brings GraphQL-style field projection to any Python function return:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">SprintService</span><span class="o">.</span><span class="n">list_sprints</span><span class="p">()</span>  <span class="c1"># returns list[SprintDTO] with full fields</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># Caller passes a GraphQL-style selection string</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">pruned</span> <span class="o">=</span> <span class="n">apply_selection</span><span class="p">(</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">result</span><span class="p">,</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">return_annotation</span><span class="o">=</span><span class="nb">list</span><span class="p">[</span><span class="n">SprintDTO</span><span class="p">],</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">selection</span><span class="o">=</span><span class="s2">&quot;id name tasks { title }&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="p">)</span>
+</code></pre></div>
+<p>Four steps:</p>
+<ol>
+<li><strong>Parse selection</strong>: <code>QueryParser</code> wraps <code>"id name tasks { title }"</code> as <code>{ __result: ... }</code> and parses it into a <code>FieldSelection</code> tree — <strong>exactly the same code path</strong> as GraphQL query parsing. Nothing is reinvented.</li>
+<li><strong>Extract root model from return type annotation</strong>: <code>_extract_root_model</code> handles container types like <code>list[X]</code> / <code>X | None</code> / <code>dict[K, V]</code>, ultimately returning a Pydantic BaseModel subclass.</li>
+<li><strong>Build subset model dynamically</strong>: <code>build_subset_model</code> recursively <code>pydantic.create_model</code>s a brand-new type containing only the requested fields, based on <code>FieldSelection</code>. Nested relationship fields recurse. Arguments (like GraphQL <code>limit</code>/<code>offset</code>) are explicitly rejected (<code>_reject_arguments</code>) — this is the semantic difference between UseCase and GraphQL paths: the former only projects, never re-queries.</li>
+<li><strong>TypeAdapter projection</strong>: the new model's <code>TypeAdapter.validate_python(result)</code> runs a Pydantic validation pass; the result is the trimmed subset.</li>
+</ol>
+<p><strong>Why it matters</strong>: This is the most direct expression of nexusx's internal coherence. <strong>The same field-selection syntax</strong> is reused across three execution paths: the GraphQL protocol layer (client → server), the DefineSubset declarative layer (developer writing code), and the selection runtime projection layer (caller dynamically trimming). This means a developer who has learned to write GraphQL selections automatically knows how to write DefineSubset and how to use MCP <code>selection</code> — zero extra mental cost. Architecturally, this "same concept reused across layers" is the fundamental feature that distinguishes nexusx from "a pile of loosely coupled features stitched into a framework." For MCP, it directly solves the "LLM wastes tokens on fields it doesn't care about" pain point — the LLM just adds a <code>selection</code> parameter to a tool call and controls the response precisely, like writing GraphQL.</p>
+<h3 id="4-column-pruning-_query_meta-load_only-selection-sinks-all-the-way-to-sql">4. Column Pruning (<code>_query_meta</code> + <code>load_only</code>) — Selection Sinks All the Way to SQL</h3>
+<p><strong>Problem</strong>: DataLoader solves N+1 (batch-fetching children of N parents in one query), but by default each batch is <code>SELECT *</code> — even if the caller only cares about 3 columns. On wide tables (e.g. a 50-column entity) under high concurrency, the I/O and deserialization overhead of redundant columns is significant.</p>
+<p>The harder part: the same loader instance may be reused by multiple consumers within a request. For example, <code>User.posts</code> may be requested by both <code>PostSummary</code> (only wants <code>title</code>) and <code>PostDetail</code> (wants <code>title + content + author_id + created_at</code>). If you prune to the minimum set per consumer, the other consumer hits AttributeError; if you <code>SELECT *</code>, you're back to square one.</p>
+<p><strong>How it works</strong>: <code>src/nexusx/loader/query_meta.py</code> + <code>factories.py:_apply_load_only</code> sink field selection all the way to SQL:</p>
+<ol>
+<li><strong>Generate <code>_query_meta</code></strong>: <code>generate_query_meta_from_dto(dto_class)</code> scans response-model fields and lists every field name corresponding to a SQL column; <code>generate_query_meta_from_selection</code> does the same from a GraphQL FieldSelection, <strong>preserving FK columns</strong> — even if the caller didn't explicitly select the FK, the next-level relationship still needs it as a batch key.</li>
+<li><strong>Attach to loader instance</strong>: <code>merge_query_meta(loader, meta)</code> merges metadata into the loader's <code>_query_meta</code> attribute. The merge is a <strong>field union</strong>, ensuring every consumer's needed columns are present.</li>
+<li><strong>Translate inside <code>batch_load_fn</code></strong>: <code>_get_effective_query_fields</code> reads <code>_query_meta</code>, and <code>_apply_load_only</code> translates the field list into SQLAlchemy's <code>load_only(*cols)</code>:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">SELECT</span> <span class="n">post</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">post</span><span class="o">.</span><span class="n">title</span><span class="p">,</span> <span class="n">post</span><span class="o">.</span><span class="n">author_id</span> <span class="n">FROM</span> <span class="n">post</span> <span class="n">WHERE</span> <span class="n">post</span><span class="o">.</span><span class="n">author_id</span> <span class="n">IN</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="c1"># instead of SELECT * FROM post WHERE post.author_id IN (1, 2, 3)</span>
+</code></pre></div>
+<p><strong>Why it matters</strong>: Most "ORM + GraphQL" frameworks either <code>SELECT *</code> (Strawberry's default behavior) or force you to hand-write <code>load_only</code> per resolver (and risk conflicts with other resolvers). nexusx makes pruning completely transparent through reverse inference + union merging — you only declare the fields you want in <code>DefineSubset</code>, and SQL only queries those columns; when multiple DTOs share a loader, the union prevents over-pruning. Performance-wise, fetching 5 of 50 columns typically saves 90% bandwidth; more importantly, the database buffer-pool hit rate improves significantly (smaller rows → more rows in buffer), a multiplier effect that applies to every query. This "selection shrinks throughout" design is the key thing distinguishing nexusx from other Python GraphQL frameworks on the performance axis.</p>
+<h3 id="5-pagination-type-shrinks-with-selection">5. Pagination Type Shrinks with Selection</h3>
+<p><strong>Problem</strong>: A GraphQL pagination response usually looks like:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">type</span><span class="w"> </span><span class="err">PostResult</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nl">items</span><span class="p">:</span><span class="w"> </span><span class="err">[</span><span class="n">Post</span><span class="err">!]!</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nl">pagination</span><span class="p">:</span><span class="w"> </span><span class="n">Pagination</span><span class="err">!</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="p">}</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="k">type</span><span class="w"> </span><span class="err">Pagination</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="nl">has_more</span><span class="p">:</span><span class="w"> </span><span class="n">Boolean</span><span class="err">!</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nl">total_count</span><span class="p">:</span><span class="w"> </span><span class="n">Int</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="p">}</span>
+</code></pre></div>
+<p>But <code>total_count</code> requires <code>COUNT(*)</code>, which on a million-row table can be an order of magnitude slower than the LIMIT query itself. If the caller never asked for <code>total_count</code>, computing it is pure waste.</p>
+<p><strong>How it works</strong>: <code>create_result_type</code> in <code>src/nexusx/loader/pagination.py</code> doesn't generate a fixed full <code>Pagination</code> type — it shrinks dynamically based on selection:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">create_result_type</span><span class="p">(</span><span class="n">item_type</span><span class="p">,</span> <span class="n">pagination_selection</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">fields</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;items&quot;</span><span class="p">:</span> <span class="p">(</span><span class="nb">list</span><span class="p">[</span><span class="n">item_type</span><span class="p">],</span> <span class="o">...</span><span class="p">)}</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="k">if</span> <span class="n">pagination_selection</span><span class="p">:</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>        <span class="n">pag_model</span> <span class="o">=</span> <span class="n">_build_pagination_model</span><span class="p">(</span><span class="n">pagination_selection</span><span class="p">)</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>        <span class="n">fields</span><span class="p">[</span><span class="s2">&quot;pagination&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">pag_model</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="k">return</span> <span class="n">create_model</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+</code></pre></div>
+<p><code>_build_pagination_model</code> only includes fields that actually appear in the selection (<code>has_more</code> / <code>total_count</code>) in the dynamically generated Pydantic model. Downstream, <code>create_page_one_to_many_loader</code> reads this shrunk schema when running SQL: if <code>total_count</code> isn't in the response model, <code>COUNT(*)</code> is skipped entirely — only <code>has_more</code> is computed (via the <code>LIMIT + 1</code> trick).</p>
+<p><strong>Why it matters</strong>: This is the pagination-specific case of item 4's "selection shrinks throughout," but called out separately because pagination is a high-sensitivity area for GraphQL performance. Standard GraphQL Relay pagination defaults to computing cursor + total_count + has_previous_page + has_next_page — each potentially a separate SQL. Many frameworks, by not distinguishing "what the caller asked" from "what the protocol mandates," end up with pagination metadata overhead exceeding the actual data. nexusx makes metadata computation follow selection too — this is "field selection as first-class citizen" fully implemented in engineering: any field not requested should not appear, from Pydantic model down to SQL.</p>
+<hr />
+<h2 id="thread-2-relationships-beyond-orm">Thread 2: Relationships Beyond ORM</h2>
+<h3 id="6-auto-generating-dataloaders-from-sqlalchemy-metadata">6. Auto-Generating DataLoaders from SQLAlchemy Metadata</h3>
+<p><strong>Problem</strong>: DataLoader is GraphQL's standard weapon against N+1. But DataLoader is tedious to use:</p>
+<ul>
+<li>Every relationship requires a hand-written loader class (subclass <code>aiodataloader.DataLoader</code>, implement <code>batch_load_fn</code>);</li>
+<li>Every resolver must manually fetch the corresponding loader from <code>context</code>, call <code>.load(key)</code>;</li>
+<li>Batch-key design, SQL construction, the <code>IN (...)</code> clause — repeated for every loader;</li>
+<li>Many-to-many requires handling the association table, much more complex than one-to-many.</li>
+</ul>
+<p>Strawberry's documentation devotes considerable space to this, and every relationship is a chunk of boilerplate.</p>
+<p><strong>How it works</strong>: <code>ErManager</code> in <code>src/nexusx/loader/registry.py</code> does three things at startup:</p>
+<ol>
+<li><strong><code>_inspect_relationships(entity, all_entities, session_factory)</code></strong> uses <code>sqlalchemy.inspect(entity)</code> to read all relationships from the ORM mapper, classifying direction into <code>MANYTOONE</code> / <code>ONETOMANY</code> / <code>MANYTOMANY</code>, extracting FK column, target entity, and list-ness.</li>
+<li><strong>Invoke the matching factory</strong> (<code>factories.py</code>) per direction:</li>
+<li><code>create_many_to_one_loader</code>: batch key is the child entity's FK column values; SQL is <code>SELECT * FROM child WHERE child.fk IN (...)</code>; results grouped by FK and returned per key.</li>
+<li><code>create_one_to_many_loader</code>: batch key is parent PKs; SQL is <code>SELECT * FROM child WHERE child.parent_id IN (...)</code>; results grouped by parent_id.</li>
+<li><code>create_many_to_many_loader</code>: an additional association-table step — first <code>SELECT * FROM association WHERE ... IN (...)</code> to get pairs, then batch-fetch target entities.</li>
+<li><strong>Register in <code>self._registry</code></strong>: a <code>dict[type[SQLModel], dict[str, RelationshipInfo]]</code>. At runtime, lookup via <code>entity → rel_name → loader_cls</code>; each loader instance is cached per request scope (<code>get_loader</code> creates <code>loader_cls()</code> on first call and reuses it for the rest of the request).</li>
+</ol>
+<p>The user participates in none of this. Once entities are defined, relationships are queryable — <code>Sprint.tasks</code>, <code>Task.owner</code>, <code>User.posts</code> require zero resolver lines.</p>
+<p><strong>Why it matters</strong>: This is the fulfillment of the "write SQLModel classes, done" promise. Compare Strawberry's typical usage — every relationship needs <code>@strawberry.field(resolver=lambda ...) → context.loader.load(...)</code>; a 10-entity project might need 30-50 resolvers, each a similar boilerplate chunk. nexusx dissolves all this via ORM metadata reflection. Code volume drops from "entity-count × relationship-count × several lines" to "0." More importantly, <strong>reflection accuracy</strong> — SQLAlchemy's relationship metadata is well-considered (supporting <code>back_populates</code>, <code>secondary</code>, <code>viewonly</code>, <code>cascade</code>, etc.), and nexusx reuses its semantics rather than reinventing them, meaning all SQLAlchemy user knowledge and intuition transfers directly. This is engineering discipline of "don't reinvent the wheel."</p>
+<h3 id="7-non-orm-custom-relationship-the-escape-hatch-that-doesnt-tie-you-to-sqlalchemy">7. Non-ORM Custom <code>Relationship</code> — The Escape Hatch That Doesn't Tie You to SQLAlchemy</h3>
+<p><strong>Problem</strong>: No matter how good reflection gets in item 6, it can only cover relationships expressible as SQLAlchemy <code>Relationship(...)</code>. Real-world business has many relationships outside this scope:</p>
+<ul>
+<li><strong>Cross-store</strong>: "User's recently viewed articles" lives in Redis, not a database table;</li>
+<li><strong>Derived</strong>: "Articles relevant to me" may require querying Elasticsearch;</li>
+<li><strong>Aggregated</strong>: "Sprint contributors" requires joining task + user and deduplicating, but you want to express it as a database view or materialized view;</li>
+<li><strong>External API</strong>: pulling data from third-party services.</li>
+</ul>
+<p>In these scenarios, the conventional approach is to hand-write "query entity first, then augment fields" in the business layer, splitting code into "ORM data + manual stitching." Result: these fields miss out on DataLoader, can't use DefineSubset, get no representation in ER diagrams.</p>
+<p><strong>How it works</strong>: <code>Relationship</code> at <code>src/nexusx/relationship.py:38</code> is a first-class construct that abstracts "relationship" from "ORM metadata" into "an async batch function":</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">tags_by_post_id_loader</span><span class="p">(</span><span class="n">post_ids</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Tag</span><span class="p">]]:</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="c1"># Redis / ES / external API — anything, as long as it&#39;s a batch interface</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">redis_keys</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;post:</span><span class="si">{</span><span class="n">pid</span><span class="si">}</span><span class="s2">:tags&quot;</span> <span class="k">for</span> <span class="n">pid</span> <span class="ow">in</span> <span class="n">post_ids</span><span class="p">]</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">redis</span><span class="o">.</span><span class="n">mget</span><span class="p">(</span><span class="n">redis_keys</span><span class="p">)</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="k">return</span> <span class="p">[</span><span class="n">parse_tags</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">results</span><span class="p">]</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="k">class</span><span class="w"> </span><span class="nc">Post</span><span class="p">(</span><span class="n">SQLModel</span><span class="p">,</span> <span class="n">table</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">__tablename__</span> <span class="o">=</span> <span class="s2">&quot;post&quot;</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="n">__relationships__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>        <span class="n">Relationship</span><span class="p">(</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>            <span class="n">fk</span><span class="o">=</span><span class="s1">&#39;id&#39;</span><span class="p">,</span>                    <span class="c1"># use post.id as batch key</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>            <span class="n">target</span><span class="o">=</span><span class="nb">list</span><span class="p">[</span><span class="n">Tag</span><span class="p">],</span>           <span class="c1"># one-to-many</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>            <span class="n">name</span><span class="o">=</span><span class="s1">&#39;tags&#39;</span><span class="p">,</span>                <span class="c1"># relationship name</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>            <span class="n">loader</span><span class="o">=</span><span class="n">tags_by_post_id_loader</span><span class="p">,</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>        <span class="p">),</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>    <span class="p">]</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>    <span class="nb">id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>    <span class="n">title</span><span class="p">:</span> <span class="nb">str</span>
+</code></pre></div>
+<p><code>ErManager.__init__</code>, after reflecting ORM relationships, calls <code>get_custom_relationships(entity)</code> to read the <code>__relationships__</code> list, wraps each <code>Relationship</code> into a <code>RelationshipInfo</code> (with <code>direction='CUSTOM'</code>), and inserts it into the same registry. <strong>Note the registry doesn't distinguish ORM from custom relationships</strong> — downstream loader / resolver / DefineSubset / ER diagram all treat it as a first-class relationship.</p>
+<p>The <code>Relationship</code> contract is determined by the <code>target</code> type:</p>
+<ul>
+<li>Scalar target (<code>target=User</code>): loader signature <code>async def fn(keys: list[K]) -&gt; list[V | None]</code>, one-to-one return per key;</li>
+<li>List target (<code>target=list[Tag]</code>): loader signature <code>async def fn(keys: list[K]) -&gt; list[list[V]]</code>, returns sub-list per key.</li>
+</ul>
+<p>At startup <code>ErManager</code> validates name uniqueness (<code>rel.name in entity_rels → raise</code>), preventing a custom relationship from silently overriding an ORM relationship.</p>
+<p><strong>Why it matters</strong>: This is one of nexusx's most underappreciated designs. It resolves a fundamental framework dilemma: <strong>a framework either leans hard on ORM (gaining reflection convenience but becoming tied down) or stays ORM-agnostic (flexible but requiring hand-written everything)</strong>. By abstracting "relationship" from "ORM relationship metadata" into "a batch function," nexusx lets both sides share the same infrastructure — DefineSubset can select custom fields, DataLoader can batch-load them, ER diagrams visualize them, selection projects them. The elegance of this abstraction: batch loading is fundamentally a function <code>list[K] → list[V]</code>; ORM is just one implementation of that function. Strawberry / FastAPI in this scenario can only bypass the framework and hand-write — effectively excommunicating this code from the framework's jurisdiction.</p>
+<h3 id="8-row_number-over-partition-by-batch-pagination">8. <code>ROW_NUMBER() OVER (PARTITION BY ...)</code> Batch Pagination</h3>
+<p><strong>Problem</strong>: One-to-many relationships with pagination, naively, become N independent <code>LIMIT</code> queries:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">post</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">author_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="mi">3</span><span class="p">;</span><span class="w">   </span><span class="c1">-- parent 1</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">post</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">author_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="mi">3</span><span class="p">;</span><span class="w">   </span><span class="c1">-- parent 2</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">post</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">author_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="mi">3</span><span class="p">;</span><span class="w">   </span><span class="c1">-- parent 3</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1">-- ... N parents → N round-trips</span>
+</code></pre></div>
+<p>This is nearly catastrophic in nested GraphQL pagination — a 5-level-deep query tree with 10 parents per level means N+1 at every level. Some frameworks do application-level batching (one <code>IN</code> query for everything, then in-memory grouping + trimming), but that pulls all data into the app layer, defeating pagination's purpose; and <code>has_more</code> / <code>total_count</code> still need separate queries.</p>
+<p><strong>How it works</strong>: <code>create_page_one_to_many_loader</code> in <code>src/nexusx/loader/factories.py</code> uses a window function to achieve "N items per parent in one SQL":</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="n">ROW_NUMBER</span><span class="p">()</span><span class="w"> </span><span class="n">OVER</span><span class="w"> </span><span class="p">(</span><span class="n">PARTITION</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">author_id</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">_rn</span><span class="p">,</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span><span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="n">OVER</span><span class="w"> </span><span class="p">(</span><span class="n">PARTITION</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">author_id</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">_total</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span><span class="k">FROM</span><span class="w"> </span><span class="n">post</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="k">WHERE</span><span class="w"> </span><span class="n">author_id</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="p">...)</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">t</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="k">WHERE</span><span class="w"> </span><span class="n">_rn</span><span class="w"> </span><span class="k">BETWEEN</span><span class="w"> </span><span class="p">:</span><span class="k">offset</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="p">:</span><span class="k">offset</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">:</span><span class="k">limit</span>
+</code></pre></div>
+<p>One round-trip yields:</p>
+<ul>
+<li>Each parent's current-page items (<code>_rn BETWEEN ...</code> filter);</li>
+<li><code>total_count</code> (<code>COUNT(*) OVER (PARTITION BY ...)</code> computed);</li>
+<li><code>has_more</code> (true when <code>_rn &lt;= _offset + _limit</code> but <code>_total &gt; _offset + _limit</code>).</li>
+</ul>
+<p>Many-to-many (<code>create_page_many_to_many_loader</code>) adds a layer: first batch-query the association table for <code>(parent_id, child_id)</code> pairs, then window-function pagination, then batch-fetch child details. The entire flow happens in SQL; the application layer only assembles.</p>
+<p><code>PageArgs</code> (<code>pagination.py:24</code>) validates arguments in <code>__post_init__</code> (<code>limit &gt;= 0</code>, <code>offset &gt;= 0</code>, <code>max_page_size</code> cap); <code>effective_limit</code> uses <code>min(limit, max_page_size)</code> to defend against malicious large pages.</p>
+<p><strong>Why it matters</strong>: This is the production-grade GraphQL pagination pattern (cf. Shopify's / GitHub's Relay cursor mode internals), but in the Python ecosystem, few frameworks auto-wire it from ORM metadata and share the same abstraction with regular loaders. Its value scales exponentially in nested pagination scenarios: 3-level nesting, 20 parents per level, 5 items per page — naive N+1 is 20×20×20 = 8000 queries; the window-function approach is 3 (one per level). Even ignoring query count, single round-trip means more stable tail latency — which often matters more to SLOs than average latency. Combined with item 5's Pagination type shrinking, nexusx's pagination hits production-grade on all three dimensions of "response correctness + performance + protocol conformance."</p>
+<h3 id="9-auto-generated-standard-queries-entities-sprout-by_id-by_filter-for-free">9. Auto-Generated Standard Queries — Entities Sprout <code>by_id</code> / <code>by_filter</code> for Free</h3>
+<p><strong>Problem</strong>: CRUD is 80% of backend work, yet every entity needs the same boilerplate hand-written: "query by PK, filter by field, sort, paginate." In a typical FastAPI + SQLModel project, every entity has a router file, every endpoint a chunk of <code>select(Entity).where(...)</code> — high cost to write and maintain. Django DRF solves part of this with ModelViewSet + FilterSet, but ties you to Django; other frameworks either don't solve it, or use code generators (heavy).</p>
+<p><strong>How it works</strong>: <code>src/nexusx/standard_queries.py</code> uses <code>AutoQueryConfig</code> to auto-generate two query types per entity:</p>
+<ol>
+<li><strong><code>&lt;entity&gt;by_id</code></strong> (<code>_create_by_id_query</code>): reads PK columns from the entity (<code>_get_primary_key_fields</code> handles single PK, composite PK), generates a GraphQL query field with signature <code>(id: ID!)</code> returning a single entity.</li>
+<li><strong><code>&lt;entity&gt;by_filter</code></strong> (<code>_create_by_filter_query</code>): dynamically <code>pydantic.create_model</code>s a filter input type, each scalar column becoming an optional filter field supporting <code>=</code> comparison; returns <code>list[Entity]</code> with <code>limit</code> / <code>offset</code>.</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">AutoQueryConfig</span><span class="p">:</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>        <span class="bp">self</span><span class="p">,</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>        <span class="n">session_factory</span><span class="p">,</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>        <span class="n">default_limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>        <span class="n">generate_by_id</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>        <span class="n">generate_by_filter</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>    <span class="p">):</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>        <span class="o">...</span>
+</code></pre></div>
+<p><code>add_standard_queries</code> registers the generated methods on the entity at schema-build time, with the <code>@query</code> decorator — downstream SDL generation treats them like any other <code>@query</code> method. The generated queries also go through the DataLoader path — only scalar columns loaded, relationship fields lazy-loaded per selection, enjoying all the benefits of column pruning and batch pagination.</p>
+<p><strong>Why it matters</strong>: Eliminates the "hand-write get_by_id for every table" boilerplate. A 20-entity project that used to need 20×3 = 60 endpoints (by_id, by_filter, list) now needs 0 lines of code. But more importantly, <strong>it doesn't over-complicate simple problems</strong>: when the auto-generated query doesn't fit (e.g. needs join, permission filter, complex sort), just write a <code>@query</code> method — auto queries and hand-written queries coexist. <code>generate_by_id=False</code> turns off one direction to avoid exposing unwanted schema entries. This "default-on + can-disable + doesn't block hand-written" design is more sustainable than "generate everything; modifying means modifying the generator."</p>
+<hr />
+<h2 id="thread-3-transports-are-layered-on-top">Thread 3: Transports Are Layered On Top</h2>
+<h3 id="10-one-usecaseservice-simultaneously-generates-graphql-rest-mcp-cli">10. One <code>UseCaseService</code> Simultaneously Generates GraphQL / REST / MCP / CLI</h3>
+<p><strong>Problem</strong>: Modern backend services often serve multiple client types simultaneously:</p>
+<ul>
+<li><strong>Web frontend</strong>: REST + OpenAPI (mature toolchain, cache-friendly);</li>
+<li><strong>Mobile</strong>: REST or GraphQL (team preference);</li>
+<li><strong>Third-party integrations</strong>: GraphQL (flexible) or REST (standard);</li>
+<li><strong>AI agents</strong>: MCP (Anthropic's tool protocol);</li>
+<li><strong>Ops</strong>: CLI (scripting).</li>
+</ul>
+<p>The conventional approach is one codebase per protocol: FastAPI for REST, Strawberry for GraphQL, FastMCP for MCP tools, Click for CLI. The same business method ("list the current user's sprints") is implemented 4 times, with auth, validation, and error handling scattered across 4 codebases; changing business logic means synchronizing 4 places.</p>
+<p><strong>How it works</strong>: <code>UseCaseService</code> at <code>src/nexusx/use_case/business.py:122</code> + the <code>BusinessMeta</code> metaclass decouple business-method definition from protocol translation:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">SprintService</span><span class="p">(</span><span class="n">UseCaseService</span><span class="p">):</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>    <span class="nd">@query</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">list_sprints</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">SprintSummary</span><span class="p">]:</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Get all sprints with task counts.&quot;&quot;&quot;</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>        <span class="o">...</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="nd">@mutation</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">create_sprint</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SprintSummary</span><span class="p">:</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Create a new sprint.&quot;&quot;&quot;</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>        <span class="o">...</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="n">config</span> <span class="o">=</span> <span class="n">UseCaseAppConfig</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;project&quot;</span><span class="p">,</span> <span class="n">services</span><span class="o">=</span><span class="p">[</span><span class="n">SprintService</span><span class="p">])</span>
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="c1"># Same config → four transports</span>
+<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="n">mcp</span> <span class="o">=</span> <span class="n">create_use_case_graphql_mcp_server</span><span class="p">(</span><span class="n">apps</span><span class="o">=</span><span class="p">[</span><span class="n">config</span><span class="p">])</span>
+<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="n">app</span><span class="o">.</span><span class="n">include_router</span><span class="p">(</span><span class="n">create_use_case_router</span><span class="p">(</span><span class="n">config</span><span class="p">))</span>
+<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="n">graphql_handler</span> <span class="o">=</span> <span class="n">create_use_case_graphql_handler</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="n">cli</span> <span class="o">=</span> <span class="n">build_cli</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+</code></pre></div>
+<p>Underlying mechanism:</p>
+<ol>
+<li><strong><code>BusinessMeta</code> metaclass</strong> (<code>business.py:60</code>) scans the class body at class creation, collecting all <code>@query</code> / <code>@mutation</code>-decorated classmethods into <code>_business_methods</code>. This step is discovery only — the metaclass is unaware of and indifferent to protocols.</li>
+<li><strong>One builder per protocol</strong>:</li>
+<li><code>compose_schema.py</code>: scans <code>_business_methods</code>, combining method signature (<code>inspect.signature</code>) + return-type annotation (<code>get_type_hints</code>) into a GraphQL schema (<code>dict[str, TypeInfo]</code>, see item 13);</li>
+<li><code>router.py:create_router</code>: scans methods the same way, translating to a FastAPI router where each method becomes a POST endpoint;</li>
+<li><code>compose_mcp_server.py</code>: translates into MCP tool definitions where each method becomes a callable tool;</li>
+<li><code>cli.py:build_cli</code>: translates into Click/Typer-style CLI commands.</li>
+<li><strong>Protocol-shared parts</strong>: argument resolution (<code>FromContext</code>), response projection (selection), error model (<code>errors.py</code>), type mapping (<code>compose_type_mapper.py</code>) are all protocol-agnostic and reused by all four builders.</li>
+</ol>
+<p>A comment in <code>compose_executor.py</code> makes a key design explicit: <strong>"The executor does NOT wrap results in Resolver()"</strong>. The GraphQL execution path doesn't auto-apply DTO assembly — if a method wants DefineSubset / Collector capabilities, it calls <code>Resolver().resolve(dtos)</code> in its own body. This is single responsibility: the executor only schedules methods + projects selection; DTO assembly is the business method's job.</p>
+<p><strong>Why it matters</strong>: Write the business method once; adding a transport is a configuration problem. This is an order-of-magnitude improvement to a project's evolution capability:</p>
+<ul>
+<li>Adding a new protocol (e.g. gRPC): write a new builder, zero business-code changes;</li>
+<li>Cross-protocol consistency: argument schemas, error codes, and documentation are inherently in sync because they all generate from the same method signature;</li>
+<li>Test tiering: business methods are independently unit-testable (no protocol dependency); protocol layers only test translation correctness.</li>
+</ul>
+<p>Compare to a typical FastAPI project — one codebase per protocol, changes require synchronizing multiple files, behavior drifts across protocols — nexusx's "single source of truth" advantage scales linearly with the number of transports and entities. This is Clean Architecture's "delivery-independence" actually implemented in engineering, not停留在 PPT 的口号.</p>
+<h3 id="11-fromcontext-same-signature-cross-transport-parameter-injection">11. <code>FromContext</code> — Same Signature, Cross-Transport Parameter Injection</h3>
+<p><strong>Problem</strong>: Business methods often need parameters that are "not in the protocol, but needed at execution time":</p>
+<ul>
+<li><code>user_id</code> (decoded from JWT, the client cannot forge it);</li>
+<li><code>tenant_id</code> (multi-tenant system);</li>
+<li><code>request_id</code> (tracing);</li>
+<li><code>db_session</code> (transaction boundary).</li>
+</ul>
+<p>The trouble with these parameters:</p>
+<ul>
+<li><strong>GraphQL path</strong>: should not appear in schema (otherwise clients could pass arbitrary user_id);</li>
+<li><strong>REST path</strong>: must be decoded from header / cookie / token — every endpoint repeats <code>Depends(get_current_user)</code>;</li>
+<li><strong>MCP path</strong>: must be decoded from MCP context (headers / session metadata);</li>
+<li><strong>CLI path</strong>: from <code>--user-id</code> arguments or environment variables.</li>
+</ul>
+<p>The conventional approach is to rewrite extraction logic per endpoint, or stuff a <code>request</code> parameter into the business method (leaking protocol details into the business layer).</p>
+<p><strong>How it works</strong>: <code>FromContext</code> in <code>src/nexusx/use_case/context.py</code> marks a parameter as "cross-transport injected":</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Annotated</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">nexusx.use_case</span><span class="w"> </span><span class="kn">import</span> <span class="n">UseCaseService</span><span class="p">,</span> <span class="n">FromContext</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="k">class</span><span class="w"> </span><span class="nc">TaskService</span><span class="p">(</span><span class="n">UseCaseService</span><span class="p">):</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    <span class="nd">@query</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">my_tasks</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>                      <span class="n">user_id</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">FromContext</span><span class="p">()],</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>                      <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">TaskDTO</span><span class="p">]:</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>        <span class="k">return</span> <span class="k">await</span> <span class="n">Resolver</span><span class="p">()</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>            <span class="k">await</span> <span class="n">get_tasks_by_user</span><span class="p">(</span><span class="n">user_id</span><span class="p">,</span> <span class="n">limit</span><span class="p">)</span>
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>        <span class="p">)</span>
+</code></pre></div>
+<p>Each transport injects in its own way:</p>
+<ul>
+<li><strong>GraphQL / MCP</strong>: upon detecting <code>FromContext</code> via <code>is_from_context_annotation</code>, the parameter is <strong>not exposed in schema</strong> (<code>is_from_context=True</code> in <code>compose_type_mapper.py</code>); at execution, the value comes from <code>context_extractor(request) -&gt; {"user_id": ...}</code> (<code>_build_kwargs</code> in <code>compose_executor.py</code>);</li>
+<li><strong>FastAPI</strong>: <code>_make_context_extractor_dep</code> in <code>router.py</code> wraps <code>context_extractor</code> as a FastAPI Depends, decoding the context dict from the <code>Request</code> object, then dispatching to corresponding parameters;</li>
+<li><strong>CLI</strong>: <code>cli.py</code> maps <code>FromContext</code> parameters to <code>--user-id</code> command-line options or environment variables.</li>
+</ul>
+<p><code>context_extractor</code> is a user-supplied callback with signature <code>(request) -&gt; dict | Awaitable[dict]</code>, attached at config level:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">UseCaseAppConfig</span><span class="p">(</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;project&quot;</span><span class="p">,</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="n">services</span><span class="o">=</span><span class="p">[</span><span class="n">TaskService</span><span class="p">],</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    <span class="n">context_extractor</span><span class="o">=</span><span class="k">lambda</span> <span class="n">req</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="n">decode_jwt</span><span class="p">(</span><span class="n">req</span><span class="o">.</span><span class="n">headers</span><span class="p">[</span><span class="s2">&quot;Authorization&quot;</span><span class="p">])},</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="p">)</span>
+</code></pre></div>
+<p><strong>Why it matters</strong>: The signature is a single source of truth. Cross-cutting concerns like auth, tenant context, and tracing used to require rewriting extraction logic per endpoint — a 30-endpoint project might write <code>Depends(get_current_user)</code> 30 times, each handling token parsing, error responses, user-object loading. <code>FromContext</code> reduces this to one annotation on the method signature + one callback at config level. More importantly, it <strong>preserves business-method purity</strong>: the business method sees only <code>user_id: int</code>, unaware whether the value came from JWT, cookie, API key, or CLI argument — this is the precise implementation of Clean Architecture's "business logic doesn't depend on delivery details." When a project migrates from single-tenant to multi-tenant, from session auth to JWT, from HTTP to gRPC, the business methods change zero lines.</p>
+<h3 id="12-usecase-path-explicitly-rejects-graphql-introspection-ai-agent-first-design">12. UseCase Path Explicitly Rejects GraphQL Introspection — AI-Agent-First Design</h3>
+<p><strong>Problem</strong>: One of GraphQL's signature capabilities is introspection — clients query <code>__schema</code> to get the entire schema; tools (GraphiQL, Apollo Studio) depend on it for autocomplete and docs. But for LLM agents, introspection is a disaster:</p>
+<ul>
+<li><strong>Token cost</strong>: a project with 30 services × 5 methods per service may have a <code>__schema</code> JSON output exceeding 50K tokens, carried on every conversation;</li>
+<li><strong>Cognitive load</strong>: LLM accuracy finding "which method should I call" inside a giant schema is far lower than calling a structured discovery tool;</li>
+<li><strong>Cache friendliness</strong>: introspection response is constant but transmitted every time, wasting the "hot" portion of the context window.</li>
+</ul>
+<p>MCP's design philosophy is "tool interfaces specifically optimized for LLMs," but many GraphQL-via-MCP solutions just forward the GraphQL endpoint, letting the LLM run introspection queries — inheriting GraphQL's problems wholesale.</p>
+<p><strong>How it works</strong>: <code>src/nexusx/use_case/compose_executor.py</code> actively rejects introspection and provides dedicated discovery tools:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">_INTROSPECTION_REJECTION_HINT</span> <span class="o">=</span> <span class="p">(</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>    <span class="s2">&quot;GraphQL introspection is not available via compose_query. &quot;</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>    <span class="s2">&quot;Use describe_compose_schema(app_name=...) and &quot;</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>    <span class="s2">&quot;describe_compose_method(app_name=..., service_name=..., method_name=...) &quot;</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>    <span class="s2">&quot;to discover the schema.&quot;</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="p">)</span>
+</code></pre></div>
+<p>Implementation in two steps:</p>
+<ol>
+<li><strong>AST-level detection</strong>: <code>_document_uses_introspection</code> walks the GraphQL AST before execution; any <code>__schema</code> / <code>__type</code> / <code>__typename</code> field triggers rejection <strong>before method dispatch</strong>. This avoids "dispatch first, fail later" side effects.</li>
+<li><strong>Dedicated discovery tools</strong>: <code>describe_compose_schema(app_name)</code> returns a compact service/method list (one line per method: description + parameter schema + return type); <code>describe_compose_method(...)</code> returns detailed schema for a single method. LLMs can discover in stages: <code>describe_compose_schema</code> for the overview, then <code>describe_compose_method</code> for methods of interest.</li>
+</ol>
+<p><code>describe_compose_schema</code>'s output is 5-10x more compact than GraphQL introspection — stripping type-system meta-info (kind, of_type nesting, etc.) and keeping only what's actually useful to the LLM: "what's this method called, what parameters, what return."</p>
+<p><strong>Why it matters</strong>: This is anti-GraphQL-textbook but consistent with MCP philosophy. In the "human developer using an IDE to write queries" scenario, introspection + GraphiQL is irreplaceable DX; in the "LLM agent using tools to complete tasks" scenario, a giant schema is a burden. nexusx separates the two: the GraphQL path (<code>GraphQLHandler</code>) preserves full introspection for humans; the UseCase / MCP path (<code>compose_query</code>) rejects introspection for agents. This "same framework, different protocols, different optimization targets"精细化设计 is the genuine expression of nexusx treating AI agents as first-class citizens, rather than "wrapping GraphQL in a layer of MCP and calling it MCP support." For teams actually building agents with nexusx, this decision translates directly to lower token costs and higher LLM call accuracy — both core KPIs in production agent systems.</p>
+<hr />
+<h2 id="supporting-engineering-less-visible-but-critical-decisions">Supporting Engineering: Less Visible but Critical Decisions</h2>
+<h3 id="13-custom-schema-registry-not-using-graphql-cores-graphqlschema-directly">13. Custom Schema Registry — Not Using graphql-core's <code>GraphQLSchema</code> Directly</h3>
+<p><strong>How it works</strong>: The GraphQL schema is modeled as <code>dict[str, TypeInfo]</code> (<code>compose_schema.py</code>); each <code>TypeInfo</code> is a frozen + slotted dataclass whose structure is isomorphic to the graphql introspection <code>__schema</code> payload. <code>render_introspection()</code> converts this internal representation to introspection JSON; the result round-trips through <code>graphql.utilities.build_client_schema(...)</code> and feeds GraphiQL. <code>IntrospectionGenerator</code> (<code>introspection.py:24</code>) follows a similar path, generating introspection JSON directly from entities + methods, <strong>without going through graphql-core's <code>GraphQLSchema</code></strong>.</p>
+<p><strong>Why it matters</strong>: Three benefits: (1) avoids being tied to graphql-core's internal APIs — smaller migration surface when graphql-core upgrades (graphql-core 5.0 changed a number of internal interfaces); (2) UseCase / GraphQL / MCP share the same schema description, no triple conversion layer; (3) slotted dataclasses have smaller memory footprint and faster construction than graphql-core's <code>GraphQLObjectType</code> etc., helping both startup time and concurrency. This is a "we thought it through" architectural decision — usually invisible but every path benefits.</p>
+<h3 id="14-split_loader_by_type-precise-isolation-for-multi-consumer-column-conflicts">14. <code>split_loader_by_type</code> — Precise Isolation for Multi-Consumer Column Conflicts</h3>
+<p><strong>How it works</strong>: By default, the same loader shares one global instance (<code>loader_cls → instance</code> in <code>get_loader</code>); when multiple consumers reuse it, <code>_query_meta</code> fields union (see item 4). But occasionally the same relationship in a tree is consumed by <strong>different DTO types</strong> with wildly different column needs — say <code>PostCardDTO</code> wants only <code>title</code> and <code>cover_url</code>, <code>PostDetailDTO</code> wants 12 columns — the union grows until SELECT is effectively back to <code>SELECT *</code>. <code>split_loader_by_type=True</code> switches to split mode, keying loader instances by <code>frozenset[fields]</code> as a second-level cache:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Default: {loader_cls: instance}</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="c1"># Split:   {loader_cls: {frozenset[fields]: instance}}</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_loader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">loader_cls</span><span class="p">,</span> <span class="n">type_key</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_split_mode</span> <span class="ow">or</span> <span class="n">type_key</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_loader_instances</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">loader_cls</span><span class="p">,</span> <span class="n">loader_cls</span><span class="p">())</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>    <span class="n">inner</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_loader_instances</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">loader_cls</span><span class="p">,</span> <span class="p">{})</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>    <span class="k">return</span> <span class="n">inner</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">type_key</span><span class="p">,</span> <span class="n">loader_cls</span><span class="p">())</span>
+</code></pre></div>
+<p><strong>Why it matters</strong>: This is the precise solution to a niche but real scenario. Most projects don't need this switch (the default union mode is fine), but when "the same relationship appears in a response as multiple DTO variants" hits, split mode makes column pruning actually work rather than getting diluted by unions. The default-off embodies "don't pay complexity for non-existent needs," but it's there when needed.</p>
+<h3 id="15-forward-reference-pep-563-handling">15. Forward Reference / PEP 563 Handling</h3>
+<p><strong>How it works</strong>: Correctly resolving types under <code>from __future__ import annotations</code> + SQLModel + Pydantic + <code>list["Post"]</code> + <code>int | None</code> mix is unglamorous work — invisible when present, breaking everything when absent. <code>_resolve_forward_reference</code> in <code>response_builder.py</code> handles string-form forward references; <code>_extract_entity_from_annotation</code> extracts entity types from complex annotations (<code>Optional[list[X]]</code> etc.). <code>_get_namespace_annotations</code> in <code>subset.py</code> even handles Python 3.14's behavior change — 3.14 in some cases sets <code>__annotations__</code> to None inside class body, requiring direct namespace reads.</p>
+<p><strong>Why it matters</strong>: Python type-annotation behavior is inconsistent across 3.10 / 3.11 / 3.12 / 3.13 / 3.14 — each version has its own edge cases. The quality of this "glue code beneath the framework skeleton" directly determines "does it run out of the box" — a project running fine on 3.10 may break on 3.12 due to runtime representation changes of <code>X | Y</code>. nexusx invests considerable code in this part (see <code>subset.py</code>'s multiple <code>_unwrap_*</code> / <code>_get_namespace_annotations</code> / <code>_extract_*</code> functions). This code isn't glamorous, but without it the framework wouldn't stand. It's a hidden indicator of engineering maturity.</p>
+<hr />
+<h2 id="how-the-highlights-relate">How the Highlights Relate</h2>
+<pre class="mermaid"><code>flowchart TB
+    subgraph Main1["Thread 1: Field selection as first-class citizen"]
+        DS["DefineSubset&lt;br/&gt;declarative DTO"]
+        SEL["selection projection&lt;br/&gt;runtime field selection"]
+        QM["_query_meta + load_only&lt;br/&gt;SQL column pruning"]
+        PAG["Pagination type shrinkage"]
+        ESC["ExposeAs/SendTo/Collector&lt;br/&gt;in-tree context flow"]
+    end
+
+    subgraph Main2["Thread 2: Relationships beyond ORM"]
+        AUTO["inspect → DataLoader&lt;br/&gt;ORM auto-discovery"]
+        CUST["Custom Relationship&lt;br/&gt;non-ORM escape hatch"]
+        ROWNUM["ROW_NUMBER batch pagination"]
+    end
+
+    subgraph Main3["Thread 3: Transports are layered on top"]
+        UC["UseCaseService&lt;br/&gt;one signature, many transports"]
+        FC["FromContext&lt;br/&gt;cross-transport injection"]
+        NOINTRO["Reject introspection&lt;br/&gt;AI-agent-first"]
+    end
+
+    DS --&gt; QM
+    SEL --&gt; QM
+    QM --&gt; PAG
+    DS --&gt; ESC
+
+    AUTO --&gt; DS
+    CUST --&gt; AUTO
+    AUTO --&gt; ROWNUM
+    ROWNUM --&gt; PAG
+
+    UC --&gt; DS
+    UC --&gt; SEL
+    FC --&gt; UC
+    NOINTRO --&gt; UC</code></pre>
+<p>The three threads aren't independent: DefineSubset's <code>post_*</code> hooks reuse DataLoader (Threads 1 + 2); selection projection triggers column pruning on the UseCase path (Threads 1 + 3); custom Relationship also flows into DefineSubset (Threads 2 + 1). This "layers feeding each other" property is the fundamental reason nexusx-the-whole is greater than the sum of its parts.</p>
+<hr />
+<h2 id="comparison-with-other-frameworks-selected-dimensions">Comparison With Other Frameworks (Selected Dimensions)</h2>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th style="text-align: center;">nexusx</th>
+<th style="text-align: center;">Strawberry</th>
+<th style="text-align: center;">FastAPI + SQLModel</th>
+<th style="text-align: center;">FastMCP</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GraphQL field selection ←→ Python DTO</td>
+<td style="text-align: center;">Consistent via <code>DefineSubset</code></td>
+<td style="text-align: center;">GraphQL-only</td>
+<td style="text-align: center;">Hand-written</td>
+<td style="text-align: center;">N/A</td>
+</tr>
+<tr>
+<td>Auto relationship loading (no resolver)</td>
+<td style="text-align: center;">✓ inspect + custom</td>
+<td style="text-align: center;">Hand-written resolver</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>N+1 prevention</td>
+<td style="text-align: center;">✓ DataLoader auto</td>
+<td style="text-align: center;">Manual DataLoader wiring</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>SQL column pruning follows selection</td>
+<td style="text-align: center;">✓ <code>_query_meta</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Cross-layer context in DTO tree</td>
+<td style="text-align: center;">✓ ExposeAs/SendTo</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Non-ORM relationships</td>
+<td style="text-align: center;">✓ <code>Relationship(...)</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Same signature → GraphQL+REST+MCP</td>
+<td style="text-align: center;">✓ UseCaseService</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>AI-agent-friendly schema discovery</td>
+<td style="text-align: center;">✓ Rejects introspection + discovery tools</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">Partial</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="for-contributors-where-to-invest-next">For Contributors: Where to Invest Next</h2>
+<p>Several potential improvement directions I noticed during this audit (not "highlights" yet, but "next-to-shine"):</p>
+<ul>
+<li><strong>Item 4 (<code>_query_meta</code>) is currently a runtime union</strong>: if selection → column-pruning inference were hoisted to schema-build time (for known selection sets), per-request merge overhead could be eliminated.</li>
+<li><strong>Item 7 (custom <code>Relationship</code>) integration with GraphQL schema generation</strong>: how custom relationships get first-class representation in SDL / ER diagrams is currently under-documented.</li>
+<li><strong>Item 12 (introspection rejection) agent discovery tools</strong>: could <code>describe_compose_method</code> further generate few-shot examples to help LLMs learn to call methods — an open problem in the MCP ecosystem.</li>
+<li><strong>Item 14 (<code>split_loader_by_type</code>) observability</strong>: enabling split mode causes loader-instance count to explode with type_key combinations; monitoring metrics are needed.</li>
+</ul>
+<hr />
+<h2 id="closing">Closing</h2>
+<p>nexusx's true selling point isn't "yet another GraphQL library" or "yet another MCP framework," but <strong>unifying three things that are usually separate — field selection, relational batch loading, and transport translation — into one programming model</strong>. DefineSubset is the syntactic expression of this unity; <code>ExposeAs</code> / <code>SendTo</code> / <code>Collector</code> is its extension over tree structures; <code>UseCaseService</code> is its extension across transports.</p>
+<p>If you're building a project that needs GraphQL's flexibility + REST's delivery + AI agent integration, the "don't rewrite" savings along these three dimensions is order-of-magnitude.</p>
+<blockquote>
+<p><strong>Related docs</strong>
+- <a href="../clean-architecture-comparison/">Clean Architecture Comparison</a> — nexusx vs. Litestar / Django / Strawberry et al.
+- <a href="../api/api_cross_layer/">Cross-Layer Data Flow API</a> — <code>ExposeAs</code> / <code>SendTo</code> / <code>Collector</code> API reference
+- <a href="https://github.com/allmonday/nexusx/blob/master/how_it_works.md">How it works</a> — full conversion logic and module deep-dive (in-repo)</p>
+</blockquote>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../advanced/voyager/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Voyager Visualization">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Voyager Visualization
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../clean-architecture-comparison/" class="md-footer__link md-footer__link--next" aria-label="Next: Clean Architecture Comparison">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Clean Architecture Comparison
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.tracking", "navigation.top", "navigation.footer", "toc.follow", "header.autohide", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.tabs.link", "content.links.target_blank"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
