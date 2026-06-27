@@ -22,6 +22,7 @@ Public surface:
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import enum
 import types
@@ -335,19 +336,26 @@ class ComposeTypeMapper:
                 f"Two distinct Pydantic classes share the GraphQL name '{name}'. "
                 "Rename one of them so each GraphQL type maps to one Python class."
             )
+        # Pre-register a stub so self-references (``parent: Self | None``) and
+        # mutual references (``A.b: B`` / ``B.a: A``) short-circuit at the
+        # ``_by_python_id`` memo above instead of recursing forever. Fields are
+        # filled in after the walk via ``dataclasses.replace`` — TypeInfo is frozen.
+        stub = TypeInfo(
+            name=name,
+            kind="OBJECT",
+            description=_clean_docstring(cls.__doc__),
+            fields=(),
+            python_class=cls,
+        )
+        self._registry[name] = stub
+        self._by_python_id[id(cls)] = stub
         fields = tuple(
             self._build_field_info(fname, ftype, cls)
             for fname, ftype in _iter_field_types(cls)
         )
-        info = TypeInfo(
-            name=name,
-            kind="OBJECT",
-            description=_clean_docstring(cls.__doc__),
-            fields=fields,
-            python_class=cls,
-        )
-        self._registry[name] = info
-        self._by_python_id[id(cls)] = info
+        finalized = dataclasses.replace(stub, fields=fields)
+        self._registry[name] = finalized
+        self._by_python_id[id(cls)] = finalized
         return name
 
     def _register_input_object(self, cls: type[BaseModel]) -> str:
@@ -400,18 +408,23 @@ class ComposeTypeMapper:
                     f"type maps to one Python class."
                 )
 
+        # Pre-register a stub so self/mutual references on the input side
+        # (e.g. a tree-filter INPUT_OBJECT with a ``children: Self`` field)
+        # short-circuit at the idempotency scan at the top of this method.
+        stub = TypeInfo(
+            name=name,
+            kind="INPUT_OBJECT",
+            description=_clean_docstring(cls.__doc__),
+            input_fields=(),
+            python_class=cls,
+        )
+        self._registry[name] = stub
         input_fields = tuple(
             self._build_input_field_info(fname, ftype, cls)
             for fname, ftype in _iter_field_types(cls)
         )
-        info = TypeInfo(
-            name=name,
-            kind="INPUT_OBJECT",
-            description=_clean_docstring(cls.__doc__),
-            input_fields=input_fields,
-            python_class=cls,
-        )
-        self._registry[name] = info
+        finalized = dataclasses.replace(stub, input_fields=input_fields)
+        self._registry[name] = finalized
         # Intentionally NOT updating _by_python_id — it tracks OBJECT only.
         return name
 
