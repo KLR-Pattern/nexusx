@@ -19,8 +19,8 @@ test = ["pytest", "pytest-asyncio"]
 persist = [
     "alembic>=1.13",
 ]
-persist-pg = ["persist", "asyncpg"]
-persist-mysql = ["persist", "aiomysql"]
+persist-pg = ["nexusx-template[persist]", "asyncpg"]
+persist-mysql = ["nexusx-template[persist]", "aiomysql"]
 
 [build-system]
 requires = ["hatchling"]
