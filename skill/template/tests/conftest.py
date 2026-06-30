@@ -37,6 +37,13 @@ async def session_factory():
     task_methods.async_session = factory
     sprint_methods.async_session = factory
 
+    # ⚠️ 未 patch 的绑定（methods 层测试够用，服务层测试需要扩展）：
+    #   - src.models.er._session_factory（ErManager 在 import 时按值捕获）
+    #   - src.models.Resolver（通过 er 间接持有 factory）
+    #   - main.graphql_handler.session_factory、main.mcp*.apps[*].session_factory
+    # 当测试触达 Resolver().resolve() 或 main.app 的 /graphql / /api/* 端点时，
+    # 上述绑定会让请求落到生产 engine 而非测试 engine，届时需要在此追加 patch。
+
     yield factory
 
     await engine.dispose()

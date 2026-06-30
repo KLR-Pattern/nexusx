@@ -139,6 +139,46 @@ ecbb227  feat(skill/template): 补齐 user service / 测试位置统一 / main.p
 
 ---
 
+## Code Review 结果（2026-07-01，medium effort）
+
+走 `/code-review` skill：3 angles × 6 candidates → 1-vote verify → 2 actionable findings。
+
+### Finding #1 — CONFIRMED（已修复）
+
+- **位置**：`skill/template/pyproject.toml:22-23`
+- **问题**：`persist-pg = ["persist", "asyncpg"]` 与 `persist-mysql = ["persist", "aiomysql"]` 中的 `"persist"` 被解析为 PyPI 包（zope-interface 持久化库），而非本地 `persist` extra
+- **触发场景**：用户按 phase1.md Step 0-7 选 PostgreSQL 持久化，`uv sync --extra persist-pg` 装到 PyPI persist + asyncpg + six + zope-interface + pluggy，**跳过 alembic**；首次 `alembic upgrade head` 直接 ModuleNotFoundError
+- **修复**：改为 self-reference `["nexusx-template[persist]", "asyncpg"]` / `["nexusx-template[persist]", "aiomysql"]`
+- **验证**：verifier 实测复现 + 修复后装到 `alembic==1.18.5 + asyncpg==0.31.0`；pytest 10/10 回归通过
+- **commit**：`86520ca`
+
+### Finding #2 — PLAUSIBLE（接受为技术债）
+
+- **位置**：`skill/template/tests/conftest.py:36-44`
+- **问题**：`session_factory` fixture patch 了 `src.db.async_session` + 3 个 methods 模块，**未 patch** `models.er._session_factory` / `Resolver` / `main.graphql_handler.session_factory` / `mcp` apps——它们在 import 时已绑定生产 session
+- **触发场景**：当前 10 个测试只调 methods 函数（走 patched 局部绑定），全过。但下一个想测 `UserService.list_users`（走 `Resolver().resolve()`）或 `main.app` 的 `/graphql` 端点的测试会落到生产 engine，污染开发数据库或 schema 不匹配
+- **决策**：**接受为已知技术债**，本轮不修。理由：当前测试覆盖范围（methods 层）不需要这些 patch；conftest 已有注释说明 patch 范围。未来扩展到服务层测试时再补
+- **缓解**：在 `tests/conftest.py` 加一条注释，列出"未 patch 的绑定 + 何时需要扩展"
+
+### 5 项 REFUTED（记录防止重复发现）
+
+| # | 原 candidate | REFUTE 依据 |
+|---|---|---|
+| 2 | conftest 全局污染跨测试 | 所有 10 个测试都请求 fixture；function-scoped + 每测试重赋值，"未请求的 test B" 场景不存在 |
+| 4 | UserService 注册让 Voyager 启动失败 | `create_voyager` 构造时不做 introspection；实测 `/voyager/` HTTP 200 |
+| 5 | Resolver().resolve(dto) 模式错误 | `resolver.py:1432` docstring 明确接受 BaseModel 实例；`SprintService` 同模式跑通 |
+| 6 | SprintSummary.post_contributor_names lazy=noload 触发 DetachedInstanceError | sprint/dtos.py 本 PR 未改；现有 sprint 测试不创建 task，post_contributor_names 走空集短路 |
+| 7 | service 顺序变影响 OpenAPI tag | 无 snapshot 测试 / tag 顺序 pin；OpenAPI 200 实测通过 |
+
+### 关键代码定位（供未来 review 复用）
+
+- `skill/template/src/models.py:101-103` — `er` 与 `Resolver` 在 import 时捕获 `async_session`
+- `src/nexusx/loader/registry.py:336` — `ErManager._session_factory = session_factory`（按值捕获）
+- `src/nexusx/voyager/create_voyager.py:137` — 懒构造 VoyagerContext（无启动期 introspection）
+- `src/nexusx/resolver.py:1428-1436` — `resolve()` 接受 BaseModel 实例
+
+---
+
 ## 下一步选项
 
 | 选项 | 含义 | 工作量 |
