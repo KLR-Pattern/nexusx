@@ -174,6 +174,7 @@ class ErDiagramDotBuilder:
                 from_base=False,
                 type_name=get_type_name(anno),
                 is_exclude=bool(v.exclude),
+                desc=getattr(v, 'description', None) or '',
             ))
 
         # 2. Add relationship fields (name + target type)
@@ -188,6 +189,7 @@ class ErDiagramDotBuilder:
                 from_base=False,
                 type_name=type_name,
                 is_exclude=False,
+                desc=getattr(rel_info, 'description', None) or '',
             ))
 
         return fields

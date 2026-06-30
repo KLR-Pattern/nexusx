@@ -42,6 +42,7 @@ class RelationshipInfo:
     sort_field: str | None = None  # sort column for pagination
     default_page_size: int = 20
     max_page_size: int = 100
+    description: str | None = None  # documentation string surfaced in voyager/ER diagram
 
 
 def _expect_single_pair(pairs: Any, message: str) -> tuple[Any, Any]:
@@ -298,6 +299,7 @@ def _build_custom_relationship_info(rel: Relationship) -> RelationshipInfo:
         target_entity=rel.target_entity,
         is_list=rel.is_list,
         loader=_CustomLoader,
+        description=rel.description,
     )
 
 
