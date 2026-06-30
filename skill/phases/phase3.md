@@ -12,10 +12,12 @@
 - `DefineSubset` + `SubsetConfig` 定义响应 DTO（字段选择、FK 隐藏）
 - **`DefineSubset.__subset__` 源可以是任意 `pydantic.BaseModel`**（不限于 SQLModel）—— 如果 Phase 0 Step 0-3 选了虚拟实体根（`CurrentUser`、`Page[T]`、第三方 SDK DTO 等），用同一语法从 BaseModel 源字段中选子集。SQLModel 源走 ORM 自动投递（`_orm_to_dto`），BaseModel 源由用户直接构造 DTO 实例，框架不参与数据获取（详见 `docs/guide/virtual_entities.md`）
 - `AutoLoad` 标记 DTO 关系字段为自动加载（配合 Resolver implicit auto-load 使用，显式声明自动加载意图）
-- **跨层数据流（3.x 新增）**：当 DTO 字段需要从请求上下文（用户身份、trace ID）、父层传值、子层收集结果中拿数据，而非从 ORM 实体——用 `nexusx` 的三个 helper（详见 `docs/api/api_cross_layer.md`）：
-  - `ExposeAs(field_name, source=...)` — 从 `FromContext` 暴露的字段取值
-  - `SendTo(field_name)` — 父层向子层下发值
-  - `Collector(field_name)` — 子层结果聚合回父层
+- **跨层数据流（核心概念内联）**：当 DTO 字段需要从**请求上下文**（用户身份、trace ID）、**父层传值**、**子层收集结果**中拿数据，而非从 ORM 实体——用 `nexusx` 的三个 helper。延伸阅读：`docs/api/api_cross_layer.md`。
+  - **`ExposeAs(field_name, source=...)`** — 在子层 DTO 上声明：该字段值由父层通过 `FromContext` 暴露的字段提供。**典型场景**：子层 `MessageDTO.author_name` 直接从父层注入的 `current_user.name` 取值，无需 JOIN 用户表。
+  - **`SendTo(field_name)`** — 在父层 DTO 字段上声明：该字段值会下发给所有子层匹配的 `ExposeAs` 同名字段。**典型场景**：父层 `ConversationDTO` 持有 `current_user_id`，下发给所有子层 `MessageDTO` 复用，避免每条 message 重复查 user。
+  - **`Collector(field_name)`** — 在父层 DTO 字段上声明：该字段值由子层结果聚合而成。**典型场景**：父层 `ConversationDTO.last_message` 收集子层 `MessageDTO` 列表后取最新一条；`reply_count` 收集子层计数。
+  - **与 ORM 关系的区别**：`Relationship` 从当前实体的 FK 加载关联实体（数据源 = DB）；`ExposeAs` 等从上下文 / 父子传值（数据源 = 请求上下文或父层 DTO，**无 DB 访问**）。
+  - **何时用**：响应字段无法从单一实体表派生时——如混合外部 claims + DB 数据的视图 DTO，或父层聚合子层统计的报表类响应。
 - `ErManager` + `Resolver` 自动加载关系（implicit auto-load）
 - `UseCaseService` 统一业务逻辑入口（同时服务 MCP、REST、GraphQL、CLI、JSON-RPC）
 - `@query` / `@mutation` 装饰器标记服务方法
@@ -58,6 +60,15 @@
   from nexusx import create_use_case_graphql_mcp_server, UseCaseAppConfig
   mcp = create_use_case_graphql_mcp_server(apps=[app_config], name="API")
   ```
+- **UseCase MCP 版本演进（核心概念内联）**：
+  - **当前唯一推荐**：`create_use_case_graphql_mcp_server` — 4 层渐进披露 + Layer 3 接收 GraphQL 字符串。
+  - **已移除（不要再用）**：老的 `create_use_case_mcp_server`（4 层 + JSON 参数表）和 `create_use_case_flat_server`（扁平），3.0 起从 nexusx 删除。
+  - **从 2.x 迁移到 3.0+ 的三步**：
+    1. 入口替换：`create_use_case_mcp_server(app_config)` → `create_use_case_graphql_mcp_server(apps=[app_config])`（注意 `apps=` 是列表）
+    2. Layer 3 接口：从「按方法名逐个调 + JSON 参数」改为 `compose_query(app_name, query)` 接 GraphQL 字符串，支持字段投影 / 嵌套查询 / 参数透传
+    3. 客户端探索顺序：Layer 1 (`list_apps`) → Layer 2 (`describe_compose_method`) 拿 SDL 片段 → Layer 3 直接发 GraphQL，**不再**逐方法拼参数
+  - **拒绝内省**：Layer 3 不响应 `__schema` / `__type` / `__typename`，引导用 Layer 1/2 替代，保持 MCP 响应紧凑。
+  - 完整迁移指南参见 `docs/migrations/3.0-use-case-graphql.md`（延伸阅读）。
 - **可选：GraphQL HTTP endpoint（GraphiQL 友好）** — 当需要直接对外暴露 GraphQL（浏览器/curl/Apollo 客户端，非 MCP 协议）时，用 `build_compose_schema` + `compose_introspect` + `execute_compose_query` 自建一个 FastAPI `/graphql` 路由。`compose_introspect` 处理 `__schema` 等 GraphiQL 启动查询，`execute_compose_query` 处理数据查询。注意 import 路径——这三个函数中只有 `build_compose_schema` 和 `compose_introspect` 在顶层 `nexusx` 导出，`execute_compose_query` 和 `is_introspection_query` 需要从子模块拿：
 
   ```python
@@ -74,15 +85,30 @@
 - MCP http_app 必须使用 `transport="streamable-http", stateless_http=True`
 - MCP http_app 的 lifespan 必须在 FastAPI lifespan 中通过 `async with mcp_http.lifespan(mcp_http)` 嵌套启动
 - MCP http_app 对象必须在 lifespan 函数定义之前创建，以便引用
-- **UseCase 出口形态**（由用户在 Phase 3 决定取舍，按需启用；版本门槛参见 SKILL.md `## 适用版本`）：
-  | 出口 | 入口 | 适用场景 |
-  |------|------|---------|
+- **UseCase 出口形态**（由用户在 Phase 3 决定取舍；版本门槛参见 SKILL.md `## 适用版本`）：
+
+  **推荐默认组合**（模板 `main.py` 默认启用，覆盖 AI agent / 传统 HTTP / 可视化三类主流场景）：
+
+  | 出口 | 入口 API | 适用场景 |
+  |------|---------|---------|
   | MCP（AI agent） | `create_use_case_graphql_mcp_server` | Claude Desktop / Cursor 等 MCP client；4 层渐进披露控制 token |
-  | GraphQL HTTP | 自建 `/graphql` + `compose_introspect` | 标准 GraphQL 生态（GraphiQL、Apollo、curl）；需要 schema 内省 |
-  | REST | `create_use_case_router` | OpenAPI 友好的传统 HTTP 客户端；自动生成文档 |
-  | JSON-RPC | `create_jsonrpc_router` | 轻量 RPC（与 REST 二选一） |
-  | CLI | `create_use_case_cli` | 本地调试 / 脚本化任务 |
-  | 可视化 | `create_use_case_voyager` | 开发期 ER / 服务结构可视化 |
+  | REST | `create_use_case_router` | OpenAPI 友好的传统 HTTP 客户端；自动生成文档；Phase 4 TS SDK 链路必经 |
+  | Voyager 可视化 | `create_use_case_voyager` | 开发期 ER / 服务结构可视化 |
+  | GraphQL HTTP（GraphiQL） | 自建 `/graphql` + `GraphQLHandler` | 标准 GraphQL 生态；开发期辅助测试 |
+
+  **可选扩展**（按需启用，模板中以注释形式保留）：
+
+  | 出口 | 入口 API | 何时启用 |
+  |------|---------|---------|
+  | JSON-RPC | `create_jsonrpc_router` | 需要轻量 RPC（与 REST 二选一）；不需要 OpenAPI 文档时 |
+  | CLI | `create_use_case_cli` | 本地调试 / 脚本化任务；需要 typer 依赖 |
+
+  **决策引导**（一分钟选定出口组合）：
+  - 给 AI agent 用（Claude Desktop / Cursor）→ **MCP** 必选
+  - 给传统 HTTP 客户端用 → **REST**（或 JSON-RPC 替代）
+  - 浏览器开发期探索 → **Voyager** + **GraphQL HTTP**
+  - 命令行脚本化 → **CLI**
+  - 不确定？默认启用「推荐组合」即可覆盖 90% 场景
 - **main.py 典型模式 — REST + MCP + Voyager**（按需扩展 GraphQL HTTP / JSON-RPC / CLI）：
   ```python
   from nexusx import (
