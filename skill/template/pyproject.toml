@@ -14,6 +14,13 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-asyncio"]
+# 持久化场景（file sqlite / docker pg / docker mysql / external）按需启用，
+# 详见 phases/phase1.md Step 0-7 决策树
+persist = [
+    "alembic>=1.13",
+]
+persist-pg = ["persist", "asyncpg"]
+persist-mysql = ["persist", "aiomysql"]
 
 [build-system]
 requires = ["hatchling"]
