@@ -1,10 +1,29 @@
 ---
 name: nexusx-4phase
 description: 基于 nexusx 的四阶段开发模式，从 Schema 建模到 API 响应组装再到 TS SDK 的完整项目构建流程。
-argument-hint: "[项目路径] 创建四阶段项目的目标目录"
 ---
 
 # nexusx 四阶段开发模式
+
+## 适用版本
+
+本 skill 假设 **nexusx >= 3.2**。特性-版本对照：
+
+| 特性 | 起始版本 |
+|---|---|
+| UseCase GraphQL MCP（`create_use_case_graphql_mcp_server`） | 3.0+ |
+| 虚拟实体（`ErManager.add_virtual_entities`） | 3.2+ |
+| 跨层数据流（`ExposeAs` / `SendTo` / `Collector`） | 3.0+ |
+
+正文中如提到具体 API 的版本门槛，均以此表为准；不再在各 phase 文档中散落声明。
+
+## 调用约定
+
+```
+/nexusx-4phase [项目目录路径]
+```
+
+参数为目标目录路径（可选）。未提供时，skill 引导用户在当前位置或指定路径下创建项目。
 
 基于 nexusx 的渐进式开发方法论。项目在一个 `src/` 目录下逐步演进，每个阶段在上一阶段基础上新增代码。
 
@@ -100,7 +119,7 @@ Conversation ──1:N──→ Message
 - @query / @mutation 挂在哪些实体上
 - Phase 3 的 service 划分依据
 
-#### 根类型选择（3.2+）
+#### 根类型选择
 
 每个聚合根必须明确是 **SQLModel 实体**还是 **虚拟实体（普通 `pydantic.BaseModel`）**：
 
@@ -244,7 +263,7 @@ service/<domain>/methods.py  ← 独立定义业务逻辑（核心）
   - 生成 baseline：`alembic revision --autogenerate -m "init schema"` → 检查 → `alembic upgrade head`
   - `.gitignore` 加 `var/`（file sqlite 场景）
 
-#### 用户必须输出的明确结论（写入 `spec/phase0.md`）
+#### 用户必须输出的明确结论（写入 `specs/<编号>-<需求简述>/phase0.md`）
 
 ```
 DB 选型：[in-memory sqlite / file sqlite / docker pg / docker mysql / external ___]

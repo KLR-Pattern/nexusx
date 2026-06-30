@@ -2,10 +2,10 @@
 
 **目标**: 从 FastAPI OpenAPI spec 生成 TypeScript SDK（callable classes + types）。
 
-**前提**: Phase 3 必须使用 `create_use_case_router()` 生成 REST 路由（而非手写 router），才能在 OpenAPI spec 中正确暴露 `response_model`。
+**前提**: Phase 3 必须使用 `create_use_case_router()` 生成 REST 路由（而非手写 router），才能在 OpenAPI spec 中正确暴露 `response_model`。**版本门槛**（`@hey-api/openapi-ts` 等 TS 工具链）参见 SKILL.md `## 适用版本`；本阶段不修改 nexusx 框架代码，仅消费 Phase 3 的 OpenAPI 产物。
 
 **V 降 — 定义验收标准:**
-确认后写入 `spec/phase4.md`：
+确认后写入 `specs/<编号>-<需求简述>/phase4.md`：
 
 | # | 验收项 | 验证方式 |
 |---|--------|----------|
@@ -58,6 +58,7 @@ cd fe && npm install && npm run generate-client
 - [ ] 1. TS 类型覆盖：所有 UseCaseService 的返回类型都有对应定义
 - [ ] 2. 字段名一致：snake_case 字段名与后端一致
 - [ ] 3. 嵌套结构：DTO 的关系字段推导为正确的嵌套 TS 类型
+- [ ] 4. OpenAPI 端点实测：`curl http://localhost:8000/openapi.json` 返回 200，且包含所有 UseCaseService 的 path（运行时验证，对应 quickstart.md 检查 3）
 
 ## 踩坑经验
 
