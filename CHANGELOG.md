@@ -1,5 +1,44 @@
 # Changelog
 
+## 3.3.0
+
+### New Feature: Voyager ER 图新增 "Related Entities" 聚焦子图 tab（#93）
+
+`demo/enterprise_voyager` 这类 30+ 实体的大 schema 里，"单击高亮一层邻居"虽然有用，但相关节点被图布局散布到画布各处，肉眼很难一眼看全某个实体的直接关联。本次在双击打开的侧边栏里新增第三个 tab **Related Entities**，渲染一张**只读的迷你 ER 子图**——只包含所选实体 + 直接邻居 + 它们之间的边——作为主图高亮邻域在侧边栏内的聚焦视图。
+
+**行为：**
+- 子图复用主图当前的渲染配置（show module cluster / show methods / edge length 的 Small / Middle / Large），随主图配置或所选实体的变化自动重新渲染；子图本身**不暴露任何配置项**。
+- 视觉管线与主图同构：后端返回 DOT，前端用独立 d3-graphviz 实例渲染成 SVG。独立实例保证主图与子图的缩放/平移/布局状态互不干扰。
+- 只读：不在子图内绑定实体 click/dblclick（不会把主图选区切走），但保留 pan/zoom 这些纯视图操作。
+- 孤立实体（无任何关系）：子图渲染该实体自身一个孤立节点 + 居中提示"该实体没有直接关联实体"，与"加载中" / "出错"视觉可区分。
+
+**Changes：**
+- `src/nexusx/voyager/er_diagram_dot.py`: `ErDiagramDotBuilder` 新增 `filter_to_neighborhood(schema_name)` —— 在 `analysis()` 之后把 nodes / links 收窄到一层邻域；保留自引用与平行边
+- `src/nexusx/voyager/voyager_context.py`: 新增 `get_er_diagram_subgraph(payload)`，响应结构与 `get_er_diagram_data` 完全一致；未知 schema 短路为空
+- `src/nexusx/voyager/create_voyager.py`: 新增 `ErDiagramSubgraphPayload` + `POST /er-diagram-subgraph` 端点
+- `src/nexusx/voyager/web/component/related-entities-display.js`（新）: `RelatedEntitiesDisplay` Vue 组件，独立 d3-graphviz 实例 + 四态（加载 / 正常 / 孤立节点 + 文案 / 错误）+ 只读 pan/zoom + schemaName / filter 响应式 refetch
+- `src/nexusx/voyager/web/component/schema-code-display.js`: 模板追加第三个 `<q-tab name="related">`（由 `showRelatedEntities` prop 门控，仅 ER-diagram 模式显示）
+- `src/nexusx/voyager/web/store.js`: 新增 `relatedEntities` 状态 + `fetchRelatedEntities` / `clearRelatedEntities` actions + `buildErDiagramSubgraphPayload` helper
+- `tests/test_voyager_subgraph.py`（新）: 11 个测试覆盖邻域精确性、孤立实体、自引用 / 平行边、配置透传、端点契约、边方向一致性
+
+---
+
+### Bug Fix: 侧边栏跟随画布选择 + 空白点击与拖拽手势分离（#93）
+
+做 Related Entities tab 的过程中发现一组侧边栏响应性问题：(1) 双击打开侧边栏后，画布上**单击**其他 entity 侧边栏内容不跟随更新（只有双击才更新，违反直觉）；(2) 画布空白处点击会关侧边栏，但**拖拽平移视图**也会误关。本次顺手修掉，并把已注释但无保护的 tab 跨实体保留行为加上防回归注释。
+
+**修法：**
+- 单击路径在 `nodes.on("click")` 末尾，当侧边栏已打开（新增 `isSidebarOpen` getter 从 store 同步）时额外触发 `onSchemaClick` —— 与现有双击路径幂等
+- 空白点击关闭逻辑加 mousedown/mouseup 位移阈值（5px）：纯点击关闭侧边栏，拖拽（平移 / 框选）保持不变；复用画布现有的 mousedown/mouseup 事件，不引入新的手势判定机制
+- `schema-code-display.js` 的 `resetState()` 中 `tab.value = "fields"` 保持注释状态，加 protective comment 说明"切换实体时不得重置 tab"
+
+**Changes：**
+- `src/nexusx/voyager/web/graph-ui.js`: `GraphUI` 加 `_bgMouseDownPos` mousedown 追踪；node click 末尾按 `sidebarOpen` 条件触发 `onSchemaClick`；document-level click handler 加 5px drag 阈值
+- `src/nexusx/voyager/web/vue-main.js`: `GraphUI` 构造时传 `isSidebarOpen` getter
+- `src/nexusx/voyager/web/component/schema-code-display.js`: `resetState()` 加 FR-012 protective comment
+
+---
+
 ## 3.2.3
 
 ### Bug Fix: Voyager 源码定位支持非 service module 的全限定类名
