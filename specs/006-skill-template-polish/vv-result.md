@@ -105,15 +105,49 @@ uv run pytest tests/ -v
 
 ---
 
+## Polish 阶段全量验证（T029-T035，2026-07-01）
+
+### 已 commit 的 3 个 commit（分支 `006-skill-template-polish`）
+
+```
+ecbb227  feat(skill/template): 补齐 user service / 测试位置统一 / main.py 出口分级
+9ea4578  docs(skill): 校准路径 / frontmatter / 版本门槛 / 中文化与迁移指引
+40ef7a8  docs(specs): 006-skill-template-polish 全套 spec-kit 产物
+```
+
+### 全 6 组检查结果
+
+| # | 检查 | 状态 | 说明 |
+|---|---|---|---|
+| 1 | 自洽性 | ✅ PASS | 5/5 子项全过；唯一保留为迁移表"旧路径"列 |
+| 2 | 入口总览可读性 | ⚠️ PARTIAL | 2.1 含 `## 适用版本` + `## 调用约定` 总览开端；2.2 Phase 0 外置延迟到 T016；2.3 版本集中 PASS（散落门槛 phaseN=0） |
+| 3 | 模板可运行性 | ✅ PASS | 4/4 端点 HTTP 200；模板 seed 3 用户 |
+| 4 | 测试位置与运行 | ✅ PASS | 10/10 pytest 通过；tests/ 下三文件；原 service/test.py 已删 |
+| 5 | 核心概念自包含 | ⚠️ PARTIAL | phase3.md 已提跨层数据流（line 15-17）和 3.0 MCP（line 52）；FR-011 完整 10~20 行内联摘要延迟到 T018/T027/T028 |
+| 6 | spec-management 完整性 | ✅ PASS | 含 `## 语言要求` + `## 从旧结构迁移` |
+
+**总评**：3 项完全 PASS、2 项 PARTIAL（依赖 US2/US4 后续落实）、1 项需人工（T035 SC-001/SC-004）。
+
+### 人工评测（T035）— 待执行
+
+| SC | 测评对象 | 方法 | 当前状态 |
+|---|---|---|---|
+| SC-001 | 独立开发者首次使用 skill | 计时从读到产出 Phase 1 项目 ≤30 分钟 | ⏳ 待招志愿者 |
+| SC-004 | phase 文档独立阅读理解度 | 抽 phase2.md，5 题答对 ≥4 | ⏳ 待招志愿者 |
+
+未执行原因：自动化无法评测。建议下次有合适 reviewer 时执行。
+
+---
+
 ## 下一步选项
 
 | 选项 | 含义 | 工作量 |
 |---|---|---|
-| **A**：继续 US2 + US4 + Polish | 完成剩余 16 任务（T016-T018, T026-T028, T036-T038） | 中 |
-| **B**：暂停，提交当前状态作为可发布内部预览 | commit + 推送（不 merge master） | 小 |
-| **C**：先 commit 当前状态，再继续 US2/US4 | 兼具——保留检查点 + 继续推进 | 小+中 |
+| **A**：继续 US2 + US4（剩余 9 任务 T016-T018, T026-T028, T038） | 完成所有 P1/P2/P3 user story | 中 |
+| **B**：暂停，分支作为内部预览 | 已 commit，可 push（待用户指令） | — |
+| **C**：跑 PR 自检（code-review / security-review） | 准备 merge master 前的自检 | 小 |
 
 剩余任务依赖：
-- US2（T016-T018）独立，可与 Polish 中除 T038 外的任务并行
+- US2（T016-T018）独立，可与 T038 并行
 - US4（T026-T028）依赖 US2 完成（phase3.md 重组需要 SKILL 总览稳定）
 - T038（FR-012 双向引用）依赖 T016 完成（phase0.md 需先存在）
