@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.3.1
+
+### Bug Fix: Voyager ER-diagram 侧边栏补回字段描述
+
+`ErDiagramDotBuilder._get_entity_fields` 构造 `FieldInfo` 时**两类字段都漏传 `desc`**：普通 `model_fields` 字段没读 `v.description`，关系字段（`CustomRelationship`）的 `description` 又因为在转换成 `RelationshipInfo` 时被丢弃而无从透出。结果是 ER-diagram 模式下双击 entity 打开的侧边栏 Fields 表格，Description 列**永远是空的**——即使 schema 上明确写了 `Field(description=...)` 或 `__relationships__=[CustomRelationship(description=...)]`。同类的 DTO 路径（`get_pydantic_fields`）一直是对的，所以非 ER-diagram 视图不受影响，这也让 bug 更隐蔽。
+
+**修法：**
+- 普通字段：`er_diagram_dot.py` 构造 `FieldInfo` 时补 `desc=getattr(v, 'description', None) or ''`，和 `type_helper.py:223` 的写法对齐
+- 关系字段：给 `RelationshipInfo` 加 `description: str | None = None` 字段；`_build_custom_relationship_info` 把 `Relationship.description` 透传过来；`er_diagram_dot.py` 构造关系 `FieldInfo` 时同样补 `desc=rel_info.description or ''`
+
+ORM 自动发现的普通关系（MANYTOONE / ONETOMANY / MANYTOMANY）没有 description 来源，仍为空——这是预期行为；只有用户显式写了 description 的字段/关系才会进入表格。
+
+**Changes：**
+- `src/nexusx/voyager/er_diagram_dot.py`: `_get_entity_fields` 的两处 `FieldInfo(...)` 各补一个 `desc=` 参数
+- `src/nexusx/loader/registry.py`: `RelationshipInfo` 新增 `description` 字段；`_build_custom_relationship_info` 透传 `Relationship.description`
+
+---
+
 ## 3.3.0
 
 ### New Feature: Voyager ER 图新增 "Related Entities" 聚焦子图 tab（#93）
