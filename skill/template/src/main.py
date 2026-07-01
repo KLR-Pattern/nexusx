@@ -24,6 +24,7 @@ from src.db import async_session
 from src.models import BaseEntity, er, mount_method  # noqa: E402
 from src.service.sprint.service import SprintService  # noqa: E402
 from src.service.task.service import TaskService  # noqa: E402
+from src.service.user.service import UserService  # noqa: E402
 
 # ── Mount methods onto entities (must be called before GraphQL handler) ──
 
@@ -36,6 +37,12 @@ graphql_handler = GraphQLHandler(
     session_factory=async_session,
 )
 
+# ── base 实体层 MCP（与下方 UseCase 层 MCP 不同）──────────────────────
+# 此处 `create_mcp_server` 暴露 BaseEntity 子类的 @query/@mutation（Phase 2 挂载的方法）。
+# 与 UseCase 层 MCP（`create_use_case_graphql_mcp_server`）的区别：
+#   - base 层：直接对应 SQLModel 实体的 GraphQL，开发期辅助测试用
+#   - UseCase 层：经 DTO 组装的 GraphQL，含 4 层渐进披露，对 AI agent 友好
+# 两者共存演示层级差异；生产可只保留 UseCase 层。
 mcp = create_mcp_server(
     apps=[{
         "name": "template",
@@ -50,8 +57,8 @@ mcp_http = mcp.http_app(path="/", transport="streamable-http", stateless_http=Tr
 
 use_case_config = UseCaseAppConfig(
     name="template",
-    services=[TaskService, SprintService],
-    description="Task & Sprint business services",
+    services=[UserService, TaskService, SprintService],
+    description="User, Task & Sprint business services",
 )
 
 use_case_mcp = create_use_case_graphql_mcp_server(
@@ -96,7 +103,7 @@ app.add_middleware(
 from nexusx import create_use_case_voyager  # noqa: E402
 
 voyager_app = create_use_case_voyager(
-    services=[TaskService, SprintService],
+    services=[UserService, TaskService, SprintService],
     er_manager=er,
     name="Template API",
 )
@@ -131,14 +138,25 @@ async def graphql_schema():
     return graphql_handler.get_sdl()
 
 
-# ── REST router (Phase 3) ────────────────────────────────────────────
+# ── REST router（默认推荐出口 — OpenAPI / TS SDK 链路必经）─────────────
 
 from nexusx import create_use_case_router  # noqa: E402
 
 app.include_router(create_use_case_router(use_case_config))
 
 
-# ── MCP mounts ───────────────────────────────────────────────────────
+# ── MCP mounts（默认推荐出口 — Voyager 见上方，UseCase 见下方）────────
 
-app.mount("/mcp", mcp_http)
-app.mount("/mcp-usecase", use_case_mcp_http)
+app.mount("/mcp", mcp_http)              # base 实体层 MCP（可选，演示层级）
+app.mount("/mcp-usecase", use_case_mcp_http)  # UseCase 层 MCP（默认推荐）
+
+
+# ── 可选扩展（按需启用，默认不挂载）──────────────────────────────────
+# JSON-RPC 2.0（替代 REST 的轻量 RPC）：
+#     from nexusx import create_jsonrpc_router
+#     app.include_router(create_jsonrpc_router(use_case_config))
+# CLI（Typer 命令行工具，本地调试 / 脚本化任务）：
+#     from nexusx import create_use_case_cli
+#     cli = create_use_case_cli(use_case_config)
+#     # 在 if __name__ == "__main__": cli() 中调用
+# 决策引导参见 phases/phase3.md 的"推荐默认组合"与"可选扩展"两段

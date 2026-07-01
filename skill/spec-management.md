@@ -1,5 +1,15 @@
 # Spec 管理与工作流
 
+## 语言要求
+
+所有 spec-kit 产物 MUST 使用中文撰写，与项目 `CLAUDE.md` 的中文化要求保持一致。适用范围：
+
+- 用户故事、需求条目、验收场景、假设说明等叙述性内容 → MUST 中文
+- 框架名、API 名、代码标识符（如 `create_use_case_router`、`SQLModel`）→ 保留原文
+- 章节标题、表格表头 → MUST 中文
+
+包括但不限于：`story.md`、`phaseN.md`、`spec.md`、`plan.md`、`tasks.md`、`checklists/*.md`、`contracts/*`、`research.md`、`data-model.md`、`quickstart.md`。
+
 ## 目录命名
 
 ```
@@ -91,3 +101,30 @@ Phase 0 全部确认后、进入 Phase 1 之前，在 `story.md` 中补充 `## O
 ## 交付前校验
 
 - **交付前必须校验 spec 文件完整性** — 在告诉用户"任务完成"之前，检查 `specs/<编号>-*/` 下所有 .md 文件是否有内容（非空文件）。合并 Phase 实现时尤其容易遗漏 spec 写入。可用 `wc -l` 快速检查。空文件 = 未完成
+
+## 从旧结构迁移
+
+老项目如果使用了 skill 早期的结构约定，按以下规则迁移到当前结构。**迁移时 MUST 保留 spec 编号**（只允许改描述部分），保证 git 历史连续与外部引用不断裂。
+
+### 路径迁移
+
+| 旧路径 | 新路径 | 说明 |
+|---|---|---|
+| `spec/phase0.md` 等单数形式 | `specs/<编号>-<需求简述>/phaseN.md` | 与 `## 目录命名` 一致 |
+| Phase 0 内联在 SKILL.md | `phases/phase0.md` 外置 | skill 文档侧的迁移，项目侧无影响 |
+| `service/<domain>/test.py` | `tests/test_<domain>_methods.py` | 模板代码侧的迁移，规避循环导入 |
+
+### 操作步骤
+
+1. **重命名而非复制**：`git mv specs/<旧编号>-<旧描述>/ specs/<旧编号>-<新描述>/`，保留编号
+2. **路径引用全量替换**：在 `story.md` / `phaseN.md` 中 grep 旧路径，逐处替换
+3. **跑完整性校验**：交付前校验（见上一节）
+
+### 跳过 Phase 0 的判定标准
+
+老用户做增量迭代时，可跳过 Phase 0 的完整重过，但仅限以下场景：
+
+- ✅ 仅新增字段 / 方法 / 关系 → 跳过 Step 0-1~0-3 的完整重过，只确认 delta
+- ❌ 聚合根变更、新业务域、DB 选型切换 → MUST 重做 Phase 0 对应 Step
+
+详见 `phases/phase0.md` 的"老用户迭代"章节（双向引用）。
