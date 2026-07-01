@@ -1,0 +1,90 @@
+schema_version: "1.0"
+
+preset:
+  id: "nexusx-4phase"
+  name: "nexusx 4-Phase Workflow"
+  version: "0.1.0"
+  description: "V-model 4-phase workflow (Schema → Loader → UseCase+MCP → SDK) layered on top of spec-kit."
+  author: "nexusx"
+  repository: "https://github.com/tangkikodo/nexusx"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.11.0"
+
+provides:
+  templates:
+    # --- Document templates ---
+
+    # Phase 0: append 8-step requirements confirmation to the spec template
+    - type: "template"
+      name: "spec-template"
+      file: "templates/spec-addendum.md"
+      description: "Append nexusx Phase 0 (entities / relationships / aggregate roots / service split / 3rd-party libs / DB strategy) to spec.md"
+      strategy: "append"
+
+    # Phase 1: append schema/ER/DB selection decisions to the plan template
+    - type: "template"
+      name: "plan-template"
+      file: "templates/plan-addendum.md"
+      description: "Append nexusx Phase 1 (SQLModel entities / Relationship / Voyager / alembic) to plan.md"
+      strategy: "append"
+
+    # NEW template: per-phase V-model spec (V降 → impl → V升)
+    - type: "template"
+      name: "phase-template"
+      file: "templates/phase-template.md"
+      description: "Per-phase V-model spec: acceptance criteria (V降), implementation log, verification (V升)"
+      replaces: "phase-template"
+
+    # Checklist: replace with V-model + spec completeness checklist
+    - type: "template"
+      name: "checklist-template"
+      file: "templates/checklist-template.md"
+      description: "V-model acceptance checklist + spec/ directory completeness check (from spec-management.md)"
+      replaces: "checklist-template"
+
+    # --- Command templates (agent workflow prompts) ---
+
+    # Wrap core commands with nexusx phase semantics
+    - type: "command"
+      name: "speckit.specify"
+      file: "commands/speckit.specify.md"
+      description: "Inject Phase 0 8-step requirements confirmation into /speckit-specify"
+      replaces: "speckit.specify"
+      strategy: "wrap"
+
+    - type: "command"
+      name: "speckit.plan"
+      file: "commands/speckit.plan.md"
+      description: "Inject Phase 1 schema/ER/DB decisions into /speckit-plan"
+      replaces: "speckit.plan"
+      strategy: "wrap"
+
+    - type: "command"
+      name: "speckit.tasks"
+      file: "commands/speckit.tasks.md"
+      description: "Partition tasks by Phase 2/3/4 (methods → DTO/Service/MCP → TS SDK)"
+      replaces: "speckit.tasks"
+      strategy: "wrap"
+
+    - type: "command"
+      name: "speckit.implement"
+      file: "commands/speckit.implement.md"
+      description: "Run implementation as V-model loop per Phase (acceptance → impl → verify)"
+      replaces: "speckit.implement"
+      strategy: "wrap"
+
+    # NEW command: enter a specific phase explicitly
+    - type: "command"
+      name: "speckit.nexusx.phase"
+      file: "commands/speckit.nexusx.phase.md"
+      description: "Enter a specific nexusx phase (0/1/2/3/4): load phase instructions, run V-model cycle"
+      replaces: "speckit.nexusx.phase"
+
+tags:
+  - "nexusx"
+  - "graphql"
+  - "v-model"
+  - "workflow"
+  - "fastapi"
