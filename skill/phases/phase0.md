@@ -2,6 +2,8 @@
 
 **目标**: 与用户逐项确认业务实体、关系、聚合根、用例方法、第三方库选型、DB 持久化策略；产出 `specs/<编号>-<需求简述>/phase0.md`，作为后续 Phase 1~4 的输入。
 
+**环境前提**: 进入实现阶段前，必须确认项目运行环境使用 **Python >= 3.12**。如用户当前环境低于 3.12，必须在 Phase 1 前先升级或创建新的 3.12 虚拟环境。
+
 **新增/修改文件**:
 - `specs/<编号>-<需求简述>/phase0.md` — Phase 0 确认记录（按 spec-management.md 的"写入时机"在 Phase 0 全部确认后写入）
 - `specs/<编号>-<需求简述>/story.md` — 用户原始需求 + Overview Design（Phase 0 确认后补 Overview Design 段）

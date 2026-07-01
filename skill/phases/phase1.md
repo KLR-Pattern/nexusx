@@ -2,6 +2,8 @@
 
 **目标**: 定义纯实体模型（字段 + 关系声明）、mock seed data，用 ER diagram 可视化供团队讨论。**不含任何业务方法**。
 
+**硬性前提**: Phase 1 必须在 **Python >= 3.12** 的环境中执行。若使用更低版本 Python，`SQLModel + SQLAlchemy + nexusx ErManager` 在 `Relationship(...)`、自引用关系、虚拟实体注册与 Alembic 自动迁移上可能出现兼容问题。
+
 **新增/修改文件**:
 - `db.py` — engine + session_factory（不导入 models，避免循环依赖）。**engine URL 由 Phase 0 Step 0-7 的 DB 选型决定**（in-memory sqlite / file sqlite / docker pg / docker mysql / external）
 - `models.py` — 纯 SQLModel 实体 + Relationship（仅字段和关系，不含方法，不导入 `nexusx`）。所有 Relationship 必须加 `sa_relationship_kwargs={"lazy": "noload"}`
@@ -11,6 +13,7 @@
 - `main.py` — FastAPI + Voyager（ER diagram 可视化）
 
 **关键模式**:
+- Python 解释器必须为 `>= 3.12`，建议在项目目录显式创建 `.venv` 并固定该版本
 - SQLModel 实体 + Relationship 声明关系方向，**不包含任何 @query/@mutation 方法**
 - 每个 Model 必须有 docstring 说明业务含义，每个 Field 必须有 `description` 说明字段语义
 - mock seed data 用于讨论数据样本是否合理（数量、关联关系、边界值）。持久化场景下 seed 数据写到 `var/seed_data.json`，由 `scripts/load_seed.py` 灌入
