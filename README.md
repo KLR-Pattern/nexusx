@@ -5,7 +5,7 @@ Write SQLModel classes. Get a complete API.
 [![pypi](https://img.shields.io/pypi/v/nexusx.svg)](https://pypi.python.org/pypi/nexusx)
 [![PyPI Downloads](https://static.pepy.tech/badge/nexusx/month)](https://pepy.tech/projects/nexusx)
 
-Define your entities once in SQLModel, and you get GraphQL, REST, and MCP — no repeated data models.
+Most Python backends split one domain across five files — SQLModel table, Pydantic DTO, GraphQL resolver with hand-wired DataLoader, REST handler, MCP tool definition. Change a field, sync five files. nexusx collapses them: declare entities once, get back GraphQL with auto-batched relations, typed REST + OpenAPI, and a 4-layer MCP server — all from the same SQLModel classes.
 
 ```mermaid
 flowchart LR
@@ -28,6 +28,14 @@ pip install nexusx[fastmcp]  # with MCP support
 ```
 
 Requires Python ≥ 3.10.
+
+## Features
+
+- **N+1-proof by default** — DataLoaders are auto-generated from SQLAlchemy metadata. Querying `users { posts { comments } }` is three SQL round-trips total, not thousands.
+- **Selection runs through the stack** — GraphQL field sets → `DefineSubset` DTO → SQL `load_only`. A 50-column table queried for 3 columns reads 3 columns from disk.
+- **Relationships beyond ORM** — `Relationship(...)` is a first-class escape hatch: Redis caches, Elasticsearch, or external APIs flow through the same DataLoader / DTO / ER-diagram plumbing as native SQLAlchemy relations.
+- **One service, many transports** — a `UseCaseService` method generates GraphQL / FastAPI routes / MCP tools / CLI commands, with types and docs derived from the Python signature.
+- **AI-agent-first MCP** — the UseCase path rejects GraphQL introspection (often 50K+ tokens on real schemas) and exposes compact `describe_*` discovery tools instead.
 
 ## Quick Start
 
@@ -58,7 +66,7 @@ class Post(SQLModel, table=True):
 handler = GraphQLHandler(base=SQLModel, session_factory=async_session)
 ```
 
-`User.get_users` becomes a GraphQL query field. Querying `{ userGetUsers(limit: 5) { name posts { title } } }` triggers exactly two SQL round-trips — one for the users, one batched `SELECT ... WHERE author_id IN (...)` for all their posts. The handler is executor-only: mount it on any ASGI app via a POST route that calls `handler.execute(query=...)` (see [`demo/blog/app.py`](demo/blog/app.py) for a complete FastAPI example with GraphiQL). `handler.get_sdl()` returns the schema for codegen or external clients.
+`User.get_users` becomes a GraphQL query field. Querying `{ userGetUsers(limit: 5) { name posts { title } } }` triggers exactly two SQL round-trips — one for the users, one batched `SELECT ... WHERE author_id IN (...)` for all their posts. Scale to 100 users with 10 posts each and the answer is still two queries, not 101 — the same shape extends to arbitrary nesting depth. The handler is executor-only: mount it on any ASGI app via a POST route that calls `handler.execute(query=...)` (see [`demo/blog/app.py`](demo/blog/app.py) for a complete FastAPI example with GraphiQL). `handler.get_sdl()` returns the schema for codegen or external clients.
 
 The [GraphQL mode guide](docs/guide/graphql_mode.md) covers filters, pagination (`enable_pagination=True` wraps lists in `Result { items, pagination }`), and `AutoQueryConfig` for auto-generated `by_id` / `by_filter` queries across every entity.
 
@@ -112,10 +120,18 @@ Methods are regular async functions — they can call `Resolver().resolve(...)` 
 | | nexusx | Strawberry | FastAPI + SQLModel | FastMCP |
 |---|:---:|:---:|:---:|:---:|
 | GraphQL auto-gen | ✓ | ✓ | — | — |
-| REST + OpenAPI | ✓ | — | ✓ (manual) | — |
+| REST + OpenAPI | ✓ | — | ✓ (one handler per endpoint) | — |
 | MCP | ✓ | — | — | ✓ |
-| N+1 prevention | ✓ DataLoader | manual | — | — |
-| Relationship auto-loading | ✓ implicit | manual | — | — |
+| N+1 prevention | ✓ auto from metadata | manual `DataLoader` per relation | — | — |
+| Relationship auto-loading | ✓ via SQLAlchemy inspect | hand-written resolver per relation | — | — |
+| SQL column pruning follows selection | ✓ | — | — | — |
+| Same code → GraphQL + REST + MCP | ✓ | — | — | — |
+
+Strawberry and FastMCP are excellent at what they do — Strawberry gives you fine-grained resolver control for complex GraphQL APIs, and FastMCP is the cleanest way to expose a single Python function as an MCP tool. nexusx trades per-endpoint control for cross-protocol consistency: the tradeoff pays off when one codebase needs to serve several transports at once.
+
+## Status
+
+**Alpha** — actively developed, APIs may change between minor versions. Not yet battle-tested in production. Bug reports and PRs welcome.
 
 ## Demos
 
