@@ -271,7 +271,7 @@ export default defineComponent({
     }
   },
   template: `
-  <div class="about-display" style="height:100%; overflow:auto; background:#fff;">
+  <div class="about-display" style="height:100%; overflow:hidden; background:#fff;">
     <div v-show="loading" style="position:absolute; top:0; left:0; right:0; z-index:10;">
       <q-linear-progress indeterminate color="primary" size="2px" />
     </div>
@@ -281,7 +281,7 @@ export default defineComponent({
     <div v-else-if="computeEmpty()" class="text-grey-7" style="padding:12px 16px;">
       该实体暂无 docstring。
     </div>
-    <div ref="contentRef" class="markdown-body" style="padding:8px 16px;"></div>
+    <div ref="contentRef" class="markdown-body about-markdown-body" style="height:100%; overflow:auto; padding:8px 16px 16px 16px;"></div>
   </div>
   `,
 })

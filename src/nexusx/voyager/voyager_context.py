@@ -5,6 +5,7 @@ detection and pydantic-resolve dependencies.
 """
 from __future__ import annotations
 
+import inspect
 import sys
 from pathlib import Path
 
@@ -354,7 +355,7 @@ class VoyagerContext:
             obj = self._resolve_object(schema_name)
             if obj is None:
                 return {"error": "Invalid schema name format."}
-            return {"docstring": (obj.__doc__ or "")}
+            return {"docstring": inspect.cleandoc(obj.__doc__ or "")}
         except ImportError as e:
             return {"error": f"Module not found: {e}"}
         except AttributeError as e:

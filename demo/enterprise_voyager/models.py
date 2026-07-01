@@ -6,6 +6,29 @@ from nexusx import Relationship as CustomRelationship
 
 
 class Organization(SQLModel, table=True):
+    """组织实体。
+
+    表示企业租户及其顶层业务边界，是 `Workspace`、`Department`、`Office`
+    和 `Vendor` 的共同归属节点。
+
+    ## 关键关系
+
+    - 拥有多个 `Workspace`
+    - 拥有多个 `Department`
+    - 拥有多个 `Office`
+    - 管理多个 `Vendor`
+
+    ## 结构概览
+
+    ```mermaid
+    flowchart TD
+        Organization --> Workspace
+        Organization --> Department
+        Organization --> Office
+        Organization --> Vendor
+    ```
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     name: str
     workspaces: list["Workspace"] = Relationship(back_populates="organization")
@@ -15,6 +38,18 @@ class Organization(SQLModel, table=True):
 
 
 class Workspace(SQLModel, table=True):
+    """工作区实体。
+
+    用于承载团队、项目、仪表盘与自动化规则，是组织内协作活动的主要容器。
+
+    ## 关键关系
+
+    - 从属于一个 `Organization`
+    - 管理多个 `Team`
+    - 管理多个 `Project`
+    - 承载多个 `Dashboard` 与 `AutomationRule`
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     name: str
     organization_id: int = Field(foreign_key="organization.id")
@@ -26,6 +61,17 @@ class Workspace(SQLModel, table=True):
 
 
 class Department(SQLModel, table=True):
+    """部门实体。
+
+    表示组织内的人力归属与管理单元，为员工与团队提供行政维度的挂靠关系。
+
+    ## 关键关系
+
+    - 从属于一个 `Organization`
+    - 关联多个 `Team`
+    - 关联多个 `Employee`
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     name: str
     organization_id: int = Field(foreign_key="organization.id")
@@ -35,6 +81,17 @@ class Department(SQLModel, table=True):
 
 
 class Office(SQLModel, table=True):
+    """办公点实体。
+
+    表示组织在某个城市或国家的物理办公地点，承载员工与会议室等线下资源。
+
+    ## 关键关系
+
+    - 从属于一个 `Organization`
+    - 容纳多个 `Employee`
+    - 包含多个 `Room`
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     city: str
     country: str
@@ -45,6 +102,18 @@ class Office(SQLModel, table=True):
 
 
 class Team(SQLModel, table=True):
+    """团队实体。
+
+    表示工作区下参与项目交付的协作小组，连接部门维度与项目执行维度。
+
+    ## 关键关系
+
+    - 从属于一个 `Workspace`
+    - 可选关联一个 `Department`
+    - 拥有多个 `Employee` 成员
+    - 参与多个 `Project` 与 `Ceremony`
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     name: str
     workspace_id: int = Field(foreign_key="workspace.id")
@@ -186,6 +255,30 @@ class Employee(SQLModel, table=True):
 
 
 class Project(SQLModel, table=True):
+    """项目实体。
+
+    聚合史诗、迭代、里程碑、文档、发票与风险信息，是业务交付的核心对象。
+
+    ## 关键关系
+
+    - 从属于一个 `Workspace`
+    - 可选归属一个 `Team`
+    - 包含多个 `Epic`、`Sprint`、`Milestone`
+    - 关联 `Document`、`Invoice` 与 `Risk`
+
+    ## 交付分解
+
+    ```mermaid
+    flowchart TD
+        Project --> Epic
+        Epic --> Story
+        Story --> Task
+        Project --> Sprint
+        Sprint --> Task
+        Project --> Milestone
+    ```
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     name: str
     workspace_id: int = Field(foreign_key="workspace.id")
@@ -201,6 +294,11 @@ class Project(SQLModel, table=True):
 
 
 class Epic(SQLModel, table=True):
+    """史诗实体。
+
+    表示项目中的高层需求或目标主题，用于组织一组相关的 `Story`。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     title: str
     project_id: int = Field(foreign_key="project.id")
@@ -209,6 +307,11 @@ class Epic(SQLModel, table=True):
 
 
 class Story(SQLModel, table=True):
+    """用户故事实体。
+
+    表示史诗下可拆分和交付的需求条目，是任务拆解前的业务需求单元。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     title: str
     epic_id: int = Field(foreign_key="epic.id")
@@ -217,6 +320,17 @@ class Story(SQLModel, table=True):
 
 
 class Sprint(SQLModel, table=True):
+    """迭代实体。
+
+    表示项目在一段时间内的计划与执行窗口，用于收拢任务和团队活动。
+
+    ## 关键关系
+
+    - 从属于一个 `Project`
+    - 包含多个 `Task`
+    - 关联多个 `Ceremony`
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     name: str
     project_id: int = Field(foreign_key="project.id")
@@ -226,6 +340,46 @@ class Sprint(SQLModel, table=True):
 
 
 class Task(SQLModel, table=True):
+    """任务实体。
+
+    表示可分配、可跟踪、可依赖的执行项，连接需求、人员、审批、评论与工时。
+
+    ## 关键属性
+
+    - `status` — 当前任务状态
+    - `assignee_id` — 执行人
+    - `creator_id` — 创建人
+    - `parent_task_id` — 父任务，自引用形成子任务树
+
+    ## 关键关系
+
+    - 可归属 `Sprint` 与 `Story`
+    - 可关联 `Comment`、`Checklist`、`Attachment`
+    - 可关联 `Approval`、`Worklog`、`Risk`
+    - 通过 `Dependency` 表示阻塞关系
+
+    ## 生命周期
+
+    1. 创建任务
+    2. 指派执行人
+    3. 进入执行中
+    4. 完成并通过审批
+
+    ## 状态流转
+
+    ```mermaid
+    stateDiagram-v2
+        [*] --> todo
+        todo --> in_progress: 开始处理
+        in_progress --> blocked: 出现阻塞
+        blocked --> in_progress: 解除阻塞
+        in_progress --> review: 提交验收
+        review --> done: 审批通过
+        review --> in_progress: 打回修改
+        done --> [*]
+    ```
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     title: str
     status: str = "todo"
@@ -276,6 +430,11 @@ class Task(SQLModel, table=True):
 
 
 class Comment(SQLModel, table=True):
+    """评论实体。
+
+    记录员工围绕任务产生的讨论内容，用于沉淀协作过程中的上下文信息。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     body: str
     task_id: int = Field(foreign_key="task.id")
@@ -285,6 +444,11 @@ class Comment(SQLModel, table=True):
 
 
 class Checklist(SQLModel, table=True):
+    """清单实体。
+
+    表示任务下的一组可勾选验收或执行项，用于跟踪细粒度完成情况。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     title: str
     task_id: int = Field(foreign_key="task.id")
@@ -293,6 +457,11 @@ class Checklist(SQLModel, table=True):
 
 
 class ChecklistItem(SQLModel, table=True):
+    """清单项实体。
+
+    表示清单中的单个待办或验收步骤，是 `Checklist` 的最小执行单元。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     title: str
     done: bool = False
@@ -301,6 +470,11 @@ class ChecklistItem(SQLModel, table=True):
 
 
 class Attachment(SQLModel, table=True):
+    """附件实体。
+
+    表示关联到任务或文档的文件资源，可用于补充需求、设计或交付材料。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     file_name: str
     task_id: int = Field(foreign_key="task.id")
@@ -310,6 +484,11 @@ class Attachment(SQLModel, table=True):
 
 
 class Label(SQLModel, table=True):
+    """标签实体。
+
+    表示用于任务分类和筛选的命名标记，通常通过颜色与名称提升可视化识别度。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     name: str
     color: str
@@ -317,6 +496,11 @@ class Label(SQLModel, table=True):
 
 
 class TaskLabel(SQLModel, table=True):
+    """任务标签关联实体。
+
+    维护 `Task` 与 `Label` 之间的多对多关系，是任务分类体系的中间表。
+    """
+
     task_id: int = Field(foreign_key="task.id", primary_key=True)
     label_id: int = Field(foreign_key="label.id", primary_key=True)
     task: Optional[Task] = Relationship(back_populates="task_labels")
@@ -324,6 +508,11 @@ class TaskLabel(SQLModel, table=True):
 
 
 class Milestone(SQLModel, table=True):
+    """里程碑实体。
+
+    表示项目中关键时间点或阶段目标，常用于管理计划与对外承诺。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     title: str
     project_id: int = Field(foreign_key="project.id")
@@ -331,6 +520,11 @@ class Milestone(SQLModel, table=True):
 
 
 class Dependency(SQLModel, table=True):
+    """任务依赖实体。
+
+    表示任务之间的阻塞与被阻塞关系，用于识别交付路径中的前置约束。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     blocked_task_id: int = Field(foreign_key="task.id")
     blocking_task_id: int = Field(foreign_key="task.id")
@@ -345,6 +539,11 @@ class Dependency(SQLModel, table=True):
 
 
 class Approval(SQLModel, table=True):
+    """审批实体。
+
+    表示任务在流程节点上的审批结果与责任人，用于控制任务从执行到验收的过渡。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     status: str = "pending"
     task_id: int = Field(foreign_key="task.id")
@@ -354,6 +553,11 @@ class Approval(SQLModel, table=True):
 
 
 class Worklog(SQLModel, table=True):
+    """工时记录实体。
+
+    表示任务上登记的实际投入工时，是时间核算与绩效统计的基础数据。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     hours: float
     task_id: int = Field(foreign_key="task.id")
@@ -363,6 +567,11 @@ class Worklog(SQLModel, table=True):
 
 
 class Timesheet(SQLModel, table=True):
+    """工时表实体。
+
+    按员工与周期汇总多个工时记录，用于周度或月度的人力投入统计。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     week_label: str
     employee_id: int = Field(foreign_key="employee.id")
@@ -371,6 +580,11 @@ class Timesheet(SQLModel, table=True):
 
 
 class Ceremony(SQLModel, table=True):
+    """敏捷会议实体。
+
+    表示团队例会、评审或回顾等活动安排，连接团队、迭代与会议室资源。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     name: str
     team_id: int = Field(foreign_key="team.id")
@@ -382,6 +596,11 @@ class Ceremony(SQLModel, table=True):
 
 
 class Room(SQLModel, table=True):
+    """会议室实体。
+
+    表示办公点下可预约的物理空间，可被 `Ceremony` 与 `Calendar` 使用。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     name: str
     office_id: int = Field(foreign_key="office.id")
@@ -391,6 +610,11 @@ class Room(SQLModel, table=True):
 
 
 class Calendar(SQLModel, table=True):
+    """日历实体。
+
+    表示员工或会议室维度的日程容器，用于组织多个 `CalendarEvent`。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     title: str
     owner_id: int | None = Field(default=None, foreign_key="employee.id")
@@ -401,6 +625,11 @@ class Calendar(SQLModel, table=True):
 
 
 class CalendarEvent(SQLModel, table=True):
+    """日历事件实体。
+
+    表示某个日历中的单次事件安排，是会议、提醒或占用时段的具体记录。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     title: str
     calendar_id: int = Field(foreign_key="calendar.id")
@@ -408,6 +637,17 @@ class CalendarEvent(SQLModel, table=True):
 
 
 class Document(SQLModel, table=True):
+    """文档实体。
+
+    表示项目过程中的知识、方案或交付文档，可附带附件并维护多个版本。
+
+    ## 关键关系
+
+    - 可归属一个 `Project`
+    - 拥有多个 `Attachment`
+    - 拥有多个 `DocumentRevision`
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     title: str
     project_id: int | None = Field(default=None, foreign_key="project.id")
@@ -417,6 +657,11 @@ class Document(SQLModel, table=True):
 
 
 class DocumentRevision(SQLModel, table=True):
+    """文档版本实体。
+
+    表示文档随时间演进的版本快照，用于追踪知识内容的历史变更。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     version: str
     document_id: int = Field(foreign_key="document.id")
@@ -424,6 +669,11 @@ class DocumentRevision(SQLModel, table=True):
 
 
 class Dashboard(SQLModel, table=True):
+    """仪表盘实体。
+
+    表示工作区下聚合展示指标的小面板集合，用于集中观察项目或团队状态。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     title: str
     workspace_id: int = Field(foreign_key="workspace.id")
@@ -432,6 +682,11 @@ class Dashboard(SQLModel, table=True):
 
 
 class Widget(SQLModel, table=True):
+    """组件实体。
+
+    表示仪表盘中的单个可视化卡片，是指标、图表或摘要信息的最小展示单元。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     title: str
     dashboard_id: int = Field(foreign_key="dashboard.id")
@@ -439,6 +694,11 @@ class Widget(SQLModel, table=True):
 
 
 class Notification(SQLModel, table=True):
+    """通知实体。
+
+    表示发送给员工的站内提醒消息，用于同步审批、任务或系统状态变更。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     title: str
     recipient_id: int = Field(foreign_key="employee.id")
@@ -446,6 +706,11 @@ class Notification(SQLModel, table=True):
 
 
 class Vendor(SQLModel, table=True):
+    """供应商实体。
+
+    表示与组织合作的外部服务或设备提供方，可关联合同与资产来源。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     name: str
     organization_id: int = Field(foreign_key="organization.id")
@@ -455,6 +720,11 @@ class Vendor(SQLModel, table=True):
 
 
 class Contract(SQLModel, table=True):
+    """合同实体。
+
+    表示与供应商签署的业务合同记录，是发票和采购关系的上游业务对象。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     code: str
     vendor_id: int = Field(foreign_key="vendor.id")
@@ -463,6 +733,11 @@ class Contract(SQLModel, table=True):
 
 
 class Invoice(SQLModel, table=True):
+    """发票实体。
+
+    表示合同或项目相关的财务结算记录，可同时连接采购与项目交付场景。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     amount: float
     contract_id: int | None = Field(default=None, foreign_key="contract.id")
@@ -472,6 +747,11 @@ class Invoice(SQLModel, table=True):
 
 
 class Asset(SQLModel, table=True):
+    """资产实体。
+
+    表示归属员工或供应商来源的设备资产，用于管理设备分配和来源追踪。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     name: str
     owner_id: int | None = Field(default=None, foreign_key="employee.id")
@@ -481,6 +761,22 @@ class Asset(SQLModel, table=True):
 
 
 class Risk(SQLModel, table=True):
+    """风险实体。
+
+    表示项目或任务上的潜在问题与风险点，用于提前识别影响交付的不确定因素。
+
+    ## 风险升级路径
+
+    ```mermaid
+    flowchart LR
+        Identified[识别] --> Assessed[评估]
+        Assessed --> Mitigated[缓解]
+        Assessed --> Escalated[升级]
+        Escalated --> Closed[关闭]
+        Mitigated --> Closed
+    ```
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     title: str
     project_id: int | None = Field(default=None, foreign_key="project.id")
@@ -490,6 +786,11 @@ class Risk(SQLModel, table=True):
 
 
 class AutomationRule(SQLModel, table=True):
+    """自动化规则实体。
+
+    表示工作区内的流程自动执行配置，用于在特定条件下自动驱动协作流程。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     name: str
     workspace_id: int = Field(foreign_key="workspace.id")
@@ -497,6 +798,11 @@ class AutomationRule(SQLModel, table=True):
 
 
 class KnowledgeArticle(SQLModel, table=True):
+    """知识文章实体。
+
+    表示由员工撰写和维护的内部知识内容，是组织沉淀经验与规范的载体。
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     title: str
     author_id: int | None = Field(default=None, foreign_key="employee.id")
