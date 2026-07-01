@@ -5,6 +5,7 @@ detection and pydantic-resolve dependencies.
 """
 from __future__ import annotations
 
+import inspect
 import sys
 from pathlib import Path
 
@@ -335,6 +336,26 @@ class VoyagerContext:
                 return {"error": "Invalid schema name format."}
             source_code = get_source(obj)
             return {"source_code": source_code}
+        except ImportError as e:
+            return {"error": f"Module not found: {e}"}
+        except AttributeError as e:
+            return {"error": f"Class not found: {e}"}
+        except Exception as e:
+            return {"error": f"Internal error: {str(e)}"}
+
+    def get_docstring(self, schema_name: str) -> dict:
+        """spec 006 — Get the Python ``__doc__`` of a schema class.
+
+        Used by the About tab to render the entity's docstring as Markdown +
+        Mermaid. Returns ``{"docstring": ""}`` (empty string, not null) when
+        ``__doc__`` is missing so the frontend can distinguish "no docstring"
+        from "loading" / "error". Mirrors ``get_source_code`` error shape.
+        """
+        try:
+            obj = self._resolve_object(schema_name)
+            if obj is None:
+                return {"error": "Invalid schema name format."}
+            return {"docstring": inspect.cleandoc(obj.__doc__ or "")}
         except ImportError as e:
             return {"error": f"Module not found: {e}"}
         except AttributeError as e:

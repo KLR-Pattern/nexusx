@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### New Feature: Voyager ER 图新增 "About" tab（docstring + Mermaid 渲染）& 侧边栏宽度放宽
+
+双击 entity 打开的侧边栏原先只有 Fields / Source Code / Related Entities 三个 tab，schema 模型类的 `__doc__` 完全没有入口。本次在最左新增 **About** tab，把类级 docstring 当作 GitHub-Flavored Markdown 渲染——含标题、列表、表格、代码块、引用块、水平线等元素；docstring 中的 ```mermaid 围栏块（`stateDiagram-v2` / `flowchart` / `sequenceDiagram` 等）就地渲染成可视化图表，方便在 docstring 里直接画"实体生命周期 / 状态转移 / 交互流程"。Mermaid 块语法错误时降级为"错误提示 + 默认折叠的原始源码"，方便复制到外部工具调试，且单块失败不影响其它内容。
+
+同时把侧边栏拖拽宽度上限从固定 **800px** 改为 **floor(viewport × 2/3)**，宽屏下也能给宽表格、宽 Mermaid 图、长 Python 行留足空间；视窗缩放时自动 clamp 到新的 2/3 上限，下限 300px 与默认初始宽度不变。
+
+**关键设计：**
+- docstring 走独立端点 `POST /docstring`（与 `/source` / `/vscode-link` 对称），不改 SchemaNode、不改 `/source` 契约——避免 er-diagram 初始 payload 膨胀与 service worker 缓存键失效。
+- 前端依赖 `marked` / `dompurify` / `mermaid` 走 **CDN**（cdn.jsdelivr.net），匹配现有 Vue/d3/jQuery 模式；三个 URL 加入 sw.js 的 `CDN_ASSETS` 预缓存列表以保证离线可用。
+- docstring 经 `DOMPurify.sanitize` 清洗后再注入，所有 `<a>` 强制 `target="_blank" rel="noopener noreferrer"`，且不识别"实体引用"格式——About tab 与 Related Entities 子图一样**只读**。
+- 切换实体保留当前激活 tab（沿用 spec 005 FR-012 的策略，对四个 tab 一视同仁）；About tab 在 tab 栏最左，但侧边栏首次打开默认激活 Fields 不变。
+
+**Changes：**
+- `src/nexusx/voyager/voyager_context.py`: 新增 `get_docstring(schema_name)` 方法，复用 `_resolve_object`、返回 `{"docstring": obj.__doc__ or ""}`
+- `src/nexusx/voyager/create_voyager.py`: 新增 `POST /docstring` 路由，状态码映射与 `/source` 一致
+- `src/nexusx/voyager/web/component/about-display.js`: 新建组件，渲染管线 = marked → DOMPurify → innerHTML → 链接硬化 → mermaid.run（per-block try/catch + 错误降级）
+- `src/nexusx/voyager/web/component/schema-code-display.js`: 加 `showAbout` prop；tab 栏最左加 About；content 区挂载 `<about-display>`
+- `src/nexusx/voyager/web/vue-main.js`: 引入 AboutDisplay 全局组件；`mermaid.initialize({ startOnLoad: false, theme: "default" })`；`startDragDrawer` clamp 改为 `Math.max(300, Math.min(floor(innerWidth × 2/3), ...))`；`onMounted` 注册 `window.resize` 监听器，超出新上限时主动压缩
+- `src/nexusx/voyager/web/index.html`: 引入 marked / dompurify / mermaid 三个 `<script>`；`<schema-code-display>` 加 `:show-about="store.state.mode === 'er-diagram'"`
+- `src/nexusx/voyager/web/sw.js`: `CDN_ASSETS` 预缓存列表追加三个 CDN URL
+- `tests/test_voyager_docstring.py`: 新增 5 条 pytest 用例（happy / 空 docstring / 非法格式 / module 缺失 / class 缺失）
+- `demo/enterprise_voyager/models.py`: 给 `Employee` 加 docstring，覆盖 FR-003 全部 Markdown 元素 + FR-004 三种 Mermaid 类型，便于人工验证
+
+---
+
 ## 3.3.1
 
 ### Bug Fix: Voyager ER-diagram 侧边栏补回字段描述

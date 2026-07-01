@@ -188,6 +188,16 @@ def create_use_case_voyager(
             status_code = 404
         return JSONResponse(content=result, status_code=status_code)
 
+    @router.post("/docstring")
+    def get_docstring_endpoint(payload: SourcePayload) -> JSONResponse:
+        # spec 006 — returns class __doc__ for the About tab. Mirrors /source:
+        # 200 on success, 404 when module/class not found, 400 otherwise.
+        result = ctx.get_docstring(payload.schema_name)
+        status_code = 200 if "error" not in result else 400
+        if "error" in result and "not found" in result["error"]:
+            status_code = 404
+        return JSONResponse(content=result, status_code=status_code)
+
     @router.post("/vscode-link")
     def get_vscode_link_by_module_name(payload: SourcePayload) -> JSONResponse:
         result = ctx.get_vscode_link(payload.schema_name)

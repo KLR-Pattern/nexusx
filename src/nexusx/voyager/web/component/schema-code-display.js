@@ -18,6 +18,8 @@ export default defineComponent({
     modelValue: { type: Boolean, default: true },
     // spec 005 — show the "Related Entities" tab (only meaningful in ER-diagram mode)
     showRelatedEntities: { type: Boolean, default: false },
+    // spec 006 — show the "About" tab (docstring + markdown + mermaid). ER-diagram only.
+    showAbout: { type: Boolean, default: false },
   },
   setup(props, { emit }) {
     const code = ref("")
@@ -152,29 +154,30 @@ export default defineComponent({
       }
     })
 
-    return { link, code, error, fields, tab, loading, showRelatedEntities: props.showRelatedEntities }
+    return { link, code, error, fields, tab, loading, showRelatedEntities: props.showRelatedEntities, showAbout: props.showAbout }
   },
   template: `
-  <div class="frv-code-display" style="border: 1px solid #ccc; border-left: none; position:relative; height:100%; background:#fff;">
+  <div class="frv-code-display" style="border: 1px solid #ccc; border-left: none; position:relative; height:100%; background:#fff; display:flex; flex-direction:column; overflow:hidden;">
       <div v-show="loading" style="position:absolute; top:0; left:0; right:0; z-index:10;">
         <q-linear-progress indeterminate color="primary" size="2px"/>
       </div>
-      <div class="q-ml-lg q-mt-md">
+      <div class="q-ml-lg q-mt-md" style="flex:0 0 auto;">
         <p style="font-size: 16px;"> {{ schemaName }} </p>
         <a :href="link" target="_blank" rel="noopener" style="font-size:12px; color:#3b82f6;">
           Open in VSCode
         </a>
       </div>
 
-      <div style="padding:8px 12px 0 12px; box-sizing:border-box;">
+      <div style="padding:8px 12px 0 12px; box-sizing:border-box; flex:0 0 auto;">
         <q-tabs v-model="tab" align="left" dense active-color="primary" indicator-color="primary" class="text-grey-8">
+          <q-tab v-if="showAbout" name="about" label="About" />
           <q-tab name="fields" label="Fields" />
           <q-tab name="source" label="Source Code" />
           <q-tab v-if="showRelatedEntities" name="related" label="Related Entities" />
         </q-tabs>
       </div>
-      <q-separator />
-      <div style="padding:8px 16px 16px 16px; box-sizing:border-box; overflow:auto;">
+      <q-separator style="flex:0 0 auto;" />
+      <div class="schema-detail-body" style="padding:8px 16px 16px 16px; box-sizing:border-box; flex:1 1 auto; min-height:0; overflow:auto;">
         <div v-if="error" style="color:#c10015; font-family:Menlo, monospace; font-size:12px;">{{ error }}</div>
         <template v-else>
           <div v-show="tab === 'fields'">
@@ -203,11 +206,17 @@ export default defineComponent({
           <div v-show="tab === 'source'">
             <pre style="margin:0;"><code class="language-python">{{ code }}</code></pre>
           </div>
-          <div v-show="tab === 'related'" style="height: calc(100vh - 220px); min-height: 300px;">
+          <div v-show="tab === 'related'" style="height:100%; min-height:300px;">
             <related-entities-display
               :schema-name="schemaName"
               :visible="tab === 'related' && modelValue"
             ></related-entities-display>
+          </div>
+          <div v-show="tab === 'about'" style="height:100%; min-height:0;">
+            <about-display
+              :schema-name="schemaName"
+              :visible="tab === 'about' && modelValue"
+            ></about-display>
           </div>
         </template>
       </div>

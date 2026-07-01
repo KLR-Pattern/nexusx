@@ -21,6 +21,10 @@ const CDN_ASSETS = [
   "https://cdnjs.cloudflare.com/ajax/libs/jquery-color/2.1.2/jquery.color.min.js",
   "https://fonts.googleapis.com/css?family=Roboto:100,300,400,500,700,900|Material+Icons",
   "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css",
+  // spec 006 — About tab: Markdown + sanitize + Mermaid
+  "https://cdn.jsdelivr.net/npm/marked@15/marked.min.js",
+  "https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js",
+  "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js",
 ]
 
 // CDN domains for dynamic matching (catches all resources from these domains)
