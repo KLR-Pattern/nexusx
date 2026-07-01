@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 3.4.0
 
-### New Feature: Voyager ER 图新增 "About" tab（docstring + Mermaid 渲染）& 侧边栏宽度放宽
+### New Feature: Voyager ER 图新增 "About" tab（docstring + Mermaid 渲染）& 侧边栏宽度放宽（#95）
 
 双击 entity 打开的侧边栏原先只有 Fields / Source Code / Related Entities 三个 tab，schema 模型类的 `__doc__` 完全没有入口。本次在最左新增 **About** tab，把类级 docstring 当作 GitHub-Flavored Markdown 渲染——含标题、列表、表格、代码块、引用块、水平线等元素；docstring 中的 ```mermaid 围栏块（`stateDiagram-v2` / `flowchart` / `sequenceDiagram` 等）就地渲染成可视化图表，方便在 docstring 里直接画"实体生命周期 / 状态转移 / 交互流程"。Mermaid 块语法错误时降级为"错误提示 + 默认折叠的原始源码"，方便复制到外部工具调试，且单块失败不影响其它内容。
 
