@@ -57,6 +57,102 @@ class Team(SQLModel, table=True):
 
 
 class Employee(SQLModel, table=True):
+    """员工实体。
+
+    表示系统中的一个**在职**或**离职**员工。一个员工从属于一个 `Department`，
+    并通过 `Team` 关联到具体的协作小组；当员工担任管理职责时，`manager_id`
+    形成自引用，指向另一个 `Employee` 作为上级。
+
+    ## 关键属性
+
+    - `full_name` — 全名（必填）
+    - `email` — 登录邮箱（必填、唯一）
+    - `manager_id` — 直属上级，自引用 `Employee.id`
+    - 部门/办公点/小组通过外键关联，详见下表
+
+    ## 生命周期
+
+    1. HR 创建员工记录（`Onboarding`）
+    2. 完成入职流程，进入 `Active` 状态
+    3. 可能进入 `OnLeave` 请假状态
+    4. 最终走 `Offboarding` 流程注销
+
+    > **审计**：本实体的写入操作由独立的 `AuditLog` 实体记录，不在本类内维护。
+
+    ## 字段速查
+
+    | 字段 | 类型 | 说明 |
+    |------|------|------|
+    | `full_name` | `str` | 全名 |
+    | `email` | `str` | 登录邮箱 |
+    | `department_id` | `int` | 所属部门 |
+    | `office_id` | `int` | 办公地点 |
+    | `team_id` | `int` | 协作小组 |
+    | `manager_id` | `int` | 直属上级（自引用） |
+
+    ### Python 构造
+
+    ```python
+    emp = Employee(
+        full_name="张三",
+        email="zhangsan@example.com",
+        department_id=1,
+        office_id=2,
+        team_id=3,
+    )
+    ```
+
+    #### 字段命名约定
+
+    `_下划线命名_` 的字段表示内部引用（如 `_internal_state`），普通字段用 `lowercase`。
+    命名细节可参考项目的命名规范文档。
+
+    ---
+
+    说明：本字段表用于 demo / 文档展示，实际字段定义以源码为准。可参考
+    [SQLModel 关系文档](https://sqlmodel.tiangolo.com/tutorial/relationships/)。
+
+    ## 状态机（stateDiagram）
+
+    ```mermaid
+    stateDiagram-v2
+        [*] --> Onboarding
+        Onboarding --> Active: 完成入职
+        Active --> OnLeave: 请假
+        OnLeave --> Active: 假期结束
+        Active --> Offboarding: 提交离职
+        Offboarding --> [*]: 完成离职
+        OnLeave --> Offboarding: 假期中离职
+    ```
+
+    ## 入职流程（flowchart）
+
+    ```mermaid
+    flowchart TD
+        A[HR 创建 Employee] --> B{材料齐全?}
+        B -->|是| C[开通邮箱/账号]
+        B -->|否| A
+        C --> D[分配 Department/Office/Team]
+        D --> E[指定 Manager]
+        E --> F[入职培训]
+        F --> G[Active]
+    ```
+
+    ## 离职交互（sequenceDiagram）
+
+    ```mermaid
+    sequenceDiagram
+        participant E as Employee
+        participant M as Manager
+        participant H as HR
+        E->>M: 提交离职申请
+        M->>H: 审批通过
+        H->>E: 离职清单
+        E->>H: 交接完成
+        H->>E: 注销账号
+    ```
+    """
+
     id: int | None = Field(default=None, primary_key=True)
     full_name: str
     email: str

@@ -2,12 +2,20 @@ import SchemaCodeDisplay from "./component/schema-code-display.js"
 import RouteCodeDisplay from "./component/route-code-display.js"
 import LoaderCodeDisplay from "./component/loader-code-display.js"
 import RelatedEntitiesDisplay from "./component/related-entities-display.js"
+import AboutDisplay from "./component/about-display.js"
 import Demo from "./component/demo.js"
 import RenderGraph from "./component/render-graph.js"
 import { GraphUI } from "./graph-ui.js"
 import { store } from "./store.js"
 
 const { createApp, onMounted, onUnmounted, ref, watch } = window.Vue
+
+// spec 006 — Mermaid bootstrap for About tab. startOnLoad:false because
+// about-display.js injects content after async fetch and calls mermaid.run()
+// explicitly; theme:'default' matches voyager's light-only UI.
+if (window.mermaid) {
+  window.mermaid.initialize({ startOnLoad: false, theme: "default" })
+}
 
 // Load toggle states from localStorage
 function loadToggleState(key, defaultValue = false) {
@@ -26,6 +34,22 @@ const app = createApp({
     let graphUI = null
     const erDiagramLoading = ref(false)
     const erDiagramCache = ref("")
+
+    // spec 006 — Right drawer drag clamp. Upper bound is dynamic (2/3 of the
+    // viewport) so wide content like Mermaid diagrams / long Python lines can
+    // claim more horizontal space. Lower bound stays at 300px. See FR-013/014.
+    const RIGHT_DRAWER_MIN = 300
+    const rightDrawerMax = () => Math.floor(window.innerWidth * 2 / 3)
+
+    // FR-015 — when the viewport shrinks below the current sidebar width,
+    // clamp it down to the new max. Only compress, never expand (so dragging
+    // to 600px then maximizing the window does NOT auto-widen the sidebar).
+    function onWindowResize() {
+      const max = rightDrawerMax()
+      if (store.state.rightDrawer.width > max) {
+        store.state.rightDrawer.width = max
+      }
+    }
 
     // Initialize toggle states from localStorage
     store.state.modeControl.pydanticResolveMetaEnabled = loadToggleState(
@@ -266,7 +290,13 @@ const app = createApp({
 
       function onMouseMove(moveEvent) {
         const deltaX = startX - moveEvent.clientX
-        const newWidth = Math.max(300, Math.min(800, startWidth + deltaX))
+        // spec 006 — drag clamp: upper bound = floor(viewport × 2/3) so users
+        // can widen the sidebar up to 2/3 of the window (replaces fixed 800px
+        // cap). Lower bound stays at 300px (RIGHT_DRAWER_MIN). See FR-013.
+        const newWidth = Math.max(
+          RIGHT_DRAWER_MIN,
+          Math.min(rightDrawerMax(), startWidth + deltaX)
+        )
         store.state.rightDrawer.width = newWidth
       }
 
@@ -345,9 +375,13 @@ const app = createApp({
       }
       document.addEventListener("keydown", handleKeyDown)
 
+      // spec 006 — keep sidebar width clamped to viewport × 2/3 on resize.
+      window.addEventListener("resize", onWindowResize)
+
       // Cleanup on unmount
       onUnmounted(() => {
         document.removeEventListener("keydown", handleKeyDown)
+        window.removeEventListener("resize", onWindowResize)
       })
     })
 
@@ -396,6 +430,7 @@ app.component("schema-code-display", SchemaCodeDisplay) // double click to see n
 app.component("route-code-display", RouteCodeDisplay) // double click to see route details
 app.component("loader-code-display", LoaderCodeDisplay) // click edge to see loader code
 app.component("related-entities-display", RelatedEntitiesDisplay) // spec 005: related entities sub-graph tab
+app.component("about-display", AboutDisplay) // spec 006: docstring + markdown + mermaid tab
 app.component("render-graph", RenderGraph) // for debug, render pasted dot content
 app.component("demo-component", Demo)
 

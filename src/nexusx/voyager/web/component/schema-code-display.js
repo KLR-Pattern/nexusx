@@ -18,6 +18,8 @@ export default defineComponent({
     modelValue: { type: Boolean, default: true },
     // spec 005 — show the "Related Entities" tab (only meaningful in ER-diagram mode)
     showRelatedEntities: { type: Boolean, default: false },
+    // spec 006 — show the "About" tab (docstring + markdown + mermaid). ER-diagram only.
+    showAbout: { type: Boolean, default: false },
   },
   setup(props, { emit }) {
     const code = ref("")
@@ -152,7 +154,7 @@ export default defineComponent({
       }
     })
 
-    return { link, code, error, fields, tab, loading, showRelatedEntities: props.showRelatedEntities }
+    return { link, code, error, fields, tab, loading, showRelatedEntities: props.showRelatedEntities, showAbout: props.showAbout }
   },
   template: `
   <div class="frv-code-display" style="border: 1px solid #ccc; border-left: none; position:relative; height:100%; background:#fff;">
@@ -168,6 +170,7 @@ export default defineComponent({
 
       <div style="padding:8px 12px 0 12px; box-sizing:border-box;">
         <q-tabs v-model="tab" align="left" dense active-color="primary" indicator-color="primary" class="text-grey-8">
+          <q-tab v-if="showAbout" name="about" label="About" />
           <q-tab name="fields" label="Fields" />
           <q-tab name="source" label="Source Code" />
           <q-tab v-if="showRelatedEntities" name="related" label="Related Entities" />
@@ -208,6 +211,12 @@ export default defineComponent({
               :schema-name="schemaName"
               :visible="tab === 'related' && modelValue"
             ></related-entities-display>
+          </div>
+          <div v-show="tab === 'about'">
+            <about-display
+              :schema-name="schemaName"
+              :visible="tab === 'about' && modelValue"
+            ></about-display>
           </div>
         </template>
       </div>
