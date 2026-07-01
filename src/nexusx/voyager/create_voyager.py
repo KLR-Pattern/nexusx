@@ -64,6 +64,7 @@ class SchemaSearchPayload(PydanticModel):
 class ErDiagramPayload(PydanticModel):
     show_fields: str = "object"
     show_module: bool = True
+    better_cluster_display: bool = False
     edge_minlen: int = 3
     show_methods: bool = True
 
@@ -79,6 +80,7 @@ class ErDiagramSubgraphPayload(PydanticModel):
     schema_name: str
     show_fields: str = "object"
     show_module: bool = True
+    better_cluster_display: bool = False
     edge_minlen: int = 3
     show_methods: bool = True
 

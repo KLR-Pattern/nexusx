@@ -1,7 +1,10 @@
 digraph world {
     pad="{{ pad }}"
     nodesep={{ nodesep }}
+    ranksep={{ ranksep }}
     {% if spline %}splines={{ spline }}{% endif %}
+    newrank={{ newrank }}
+    compound={{ compound }}
     fontname="{{ font }}"
     node [fontname="{{ font }}"]
     edge [
@@ -17,7 +20,7 @@ digraph world {
 
     subgraph cluster_schema {
         color = "#aaa"
-        margin=18
+        margin={{ cluster_margin }}
         style="dashed"
         label="  ER Diagram"
         labeljust="l"

@@ -587,6 +587,18 @@
                       title="show module cluster"
                     />
                   </div>
+                  <div
+                    class="q-mt-xs q-ml-lg"
+                    v-if="store.state.mode === 'er-diagram' && store.state.filter.showModule"
+                  >
+                    <q-toggle
+                      v-model="store.state.filter.betterClusterDisplay"
+                      @update:model-value="(val) => toggleBetterClusterDisplay(val)"
+                      label="Better Cluster Display"
+                      dense
+                      title="Apply Graphviz cluster-friendly routing tweaks"
+                    />
+                  </div>
                   <!-- Show methods toggle (ER diagram mode) -->
                   <div class="q-mt-sm" v-if="store.state.mode === 'er-diagram'">
                     <q-toggle

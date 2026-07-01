@@ -90,6 +90,7 @@ class ErDiagramDotBuilder:
         *,
         show_fields: FieldType = 'single',
         show_module: bool = False,
+        better_cluster_display: bool = False,
         theme_color: str | None = None,
         edge_minlen: int = 3,
         show_methods: bool = True,
@@ -103,6 +104,7 @@ class ErDiagramDotBuilder:
 
         self.show_field = show_fields
         self.show_module = show_module
+        self.better_cluster_display = better_cluster_display
         self.theme_color = theme_color
         self.edge_minlen = edge_minlen
         self.show_methods = show_methods
@@ -239,6 +241,7 @@ class ErDiagramDotBuilder:
         renderer = DiagramRenderer(
             show_fields=self.show_field,
             show_module=self.show_module,
+            better_cluster_display=self.better_cluster_display,
             theme_color=self.theme_color,
             edge_minlen=self.edge_minlen,
             show_methods=self.show_methods,

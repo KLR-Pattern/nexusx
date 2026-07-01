@@ -58,6 +58,10 @@ class GraphvizStyle:
     pad: str = '0.5'
     node_margin: str = '0.5,0.1'
     cluster_margin: str = '18'
+    er_nodesep: str = '1.0'
+    er_ranksep: str = '1.2'
+    er_pad: str = '0.8'
+    er_cluster_margin: str = '28'
 
     # Link styles configuration
     LINK_STYLES: dict[str, dict] = field(default_factory=lambda: {

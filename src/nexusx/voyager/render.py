@@ -537,6 +537,7 @@ class DiagramRenderer(Renderer):
         *,
         show_fields: FieldType = 'single',
         show_module: bool = True,
+        better_cluster_display: bool = False,
         theme_color: str | None = None,
         edge_minlen: int = 3,
         show_methods: bool = True,
@@ -548,6 +549,7 @@ class DiagramRenderer(Renderer):
             theme_color=theme_color,
             show_methods=show_methods,
         )
+        self.better_cluster_display = better_cluster_display
         self.edge_minlen = edge_minlen
 
     def render_link(self, link: Link) -> str:
@@ -598,11 +600,15 @@ class DiagramRenderer(Renderer):
 
         return self.template_renderer.render_template(
             'dot/er_diagram.j2',
-            pad=self.style.pad,
-            nodesep=self.style.nodesep,
+            pad=self.style.er_pad,
+            nodesep=self.style.er_nodesep,
+            ranksep=self.style.er_ranksep,
             font=self.style.font,
             node_fontsize=self.style.node_fontsize,
-            spline='line' if spline_line else None,
+            spline='line' if spline_line else ('polyline' if self.better_cluster_display else None),
+            newrank='true' if self.better_cluster_display else 'false',
+            compound='true' if self.better_cluster_display else 'false',
+            cluster_margin=self.style.er_cluster_margin,
             er_cluster=er_cluster,
             links=link_str
         )

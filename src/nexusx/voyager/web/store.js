@@ -127,6 +127,7 @@ const state = reactive({
     showFields: "object",
     brief: false,
     showModule: false,
+    betterClusterDisplay: false,
     magnification: 3.0, // Magnifying glass zoom level (2-5)
     edgeMinlen: 3, // ER diagram edge minimum length (3-10)
     showMethods: true, // ER diagram show query/mutation methods
@@ -449,10 +450,28 @@ const actions = {
    */
   toggleShowModule(val, onGenerate) {
     state.filter.showModule = val
+    if (!val) {
+      state.filter.betterClusterDisplay = false
+      try {
+        localStorage.setItem("better_cluster_display", JSON.stringify(false))
+      } catch (e) {
+        console.warn("Failed to save better_cluster_display to localStorage", e)
+      }
+    }
     try {
       localStorage.setItem("show_module_cluster", JSON.stringify(val))
     } catch (e) {
       console.warn("Failed to save show_module_cluster to localStorage", e)
+    }
+    onGenerate()
+  },
+
+  toggleBetterClusterDisplay(val, onGenerate) {
+    state.filter.betterClusterDisplay = val
+    try {
+      localStorage.setItem("better_cluster_display", JSON.stringify(val))
+    } catch (e) {
+      console.warn("Failed to save better_cluster_display to localStorage", e)
     }
     onGenerate()
   },
@@ -590,6 +609,7 @@ const actions = {
     return {
       show_fields: state.filter.showFields,
       show_module: state.filter.showModule,
+      better_cluster_display: state.filter.showModule && state.filter.betterClusterDisplay,
       edge_minlen: state.filter.edgeMinlen,
       show_methods: state.filter.showMethods,
     }
@@ -605,6 +625,7 @@ const actions = {
       schema_name: schemaName,
       show_fields: state.filter.showFields,
       show_module: state.filter.showModule,
+      better_cluster_display: state.filter.showModule && state.filter.betterClusterDisplay,
       edge_minlen: state.filter.edgeMinlen,
       show_methods: state.filter.showMethods,
     }

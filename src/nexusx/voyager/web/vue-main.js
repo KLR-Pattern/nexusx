@@ -401,6 +401,8 @@ const app = createApp({
       toggleShowField: (field) => store.actions.toggleShowField(field, onGenerate),
       startDragDrawer,
       toggleShowModule: (val) => store.actions.toggleShowModule(val, onGenerate),
+      toggleBetterClusterDisplay: (val) =>
+        store.actions.toggleBetterClusterDisplay(val, onGenerate),
       onModeChange,
       renderErDiagram,
       togglePydanticResolveMeta: (val) => store.actions.togglePydanticResolveMeta(val, onGenerate),
