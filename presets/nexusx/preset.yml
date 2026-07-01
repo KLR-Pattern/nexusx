@@ -1,0 +1,64 @@
+schema_version: "1.0"
+
+preset:
+  id: "nexusx"
+  name: "nexusx 4-Phase Workflow"
+  version: "0.1.0"
+  description: "nexusx 4-phase methodology (Schema → Methods → Service → optional SDK) layered on spec-kit SDD"
+  author: "tangkikodo"
+  repository: "https://github.com/KLR-Pattern/nexusx"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.6.0"
+
+provides:
+  templates:
+    - type: "template"
+      name: "constitution-template"
+      file: "templates/constitution-template.md"
+      description: "nexusx 8 条硬规则 + V 型验收治理"
+      replaces: "constitution-template"
+
+    - type: "template"
+      name: "spec-template"
+      file: "templates/spec-template.md"
+      description: "spec-kit 用户故事结构 + nexusx Phase 0 需求确认纪要"
+      replaces: "spec-template"
+
+    - type: "template"
+      name: "plan-template"
+      file: "templates/plan-template.md"
+      description: "nexusx Technical Context（DB 选型 / service 切分 / TS SDK 决策）"
+      replaces: "plan-template"
+
+    - type: "template"
+      name: "tasks-template"
+      file: "templates/tasks-template.md"
+      description: "phase-first 混合：Schema → Methods → Service → 可选 SDK"
+      replaces: "tasks-template"
+
+    - type: "command"
+      name: "speckit.specify"
+      file: "commands/speckit.specify.md"
+      description: "Specify + Phase 0 八步访谈，含 Service 切分强制门"
+      replaces: "speckit.specify"
+
+    - type: "command"
+      name: "speckit.plan"
+      file: "commands/speckit.plan.md"
+      description: "Plan + DB 选型 / alembic / TS SDK 决策访谈"
+      replaces: "speckit.plan"
+
+    - type: "command"
+      name: "speckit.tasks"
+      file: "commands/speckit.tasks.md"
+      description: "Tasks + phase 标签 + reference doc 链接 + Phase 4 条件生成"
+      replaces: "speckit.tasks"
+
+tags:
+  - "nexusx"
+  - "sqlmodel"
+  - "fastapi"
+  - "mcp"
+  - "4phase"
