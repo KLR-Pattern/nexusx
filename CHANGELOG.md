@@ -1,5 +1,29 @@
 # Changelog
 
+## 3.4.1
+
+### New Feature: Voyager ER 图新增 `Better Cluster Display` 开关（module cluster 专用）
+
+为缓解大型 ER 图在开启 `show module cluster` 时出现的边剧烈绕行与 cluster 内显示不稳定问题，新增一个仅在 **ER Diagram 模式** 且 **Show Module Cluster 已开启** 时可见的增强开关：`Better Cluster Display`。
+
+该开关关闭时保持原始 Graphviz 行为；开启时，仅对 ER 图应用一组更适合 cluster 大图的 Graphviz 路由参数：
+
+- `splines=polyline`
+- `newrank=true`
+- `compound=true`
+
+同时，该开关位于 `Show Module Cluster` 下方并保持缩进，状态持久化到浏览器 `localStorage`；当 `Show Module Cluster` 关闭时，`Better Cluster Display` 会自动隐藏并重置为关闭状态。
+
+**Changes：**
+- `src/nexusx/voyager/web/index.html`: 在 `Show Module Cluster` 下方新增缩进显示的 `Better Cluster Display` toggle（仅 ER Diagram + showModule=true 时可见）
+- `src/nexusx/voyager/web/store.js`: 新增 `filter.betterClusterDisplay`、`toggleBetterClusterDisplay()`、`localStorage` 持久化，以及 ER payload / subgraph payload 透传
+- `src/nexusx/voyager/web/vue-main.js`: 暴露 `toggleBetterClusterDisplay` 给页面模板，确保点击后可触发重绘
+- `src/nexusx/voyager/create_voyager.py`: 为 `ErDiagramPayload` / `ErDiagramSubgraphPayload` 新增 `better_cluster_display` 字段
+- `src/nexusx/voyager/voyager_context.py`: 将 `better_cluster_display` 透传给 `ErDiagramDotBuilder`
+- `src/nexusx/voyager/er_diagram_dot.py`: 新增 `better_cluster_display` 构造参数并传递给 `DiagramRenderer`
+- `src/nexusx/voyager/render.py`: 将 `splines=polyline`、`newrank=true`、`compound=true` 改为由 `better_cluster_display` 条件控制，而非全局默认启用
+- `src/nexusx/voyager/templates/dot/er_diagram.j2`: 新增 `newrank` / `compound` 图属性模板输出
+
 ## 3.4.0
 
 ### New Feature: Voyager ER 图新增 "About" tab（docstring + Mermaid 渲染）& 侧边栏宽度放宽（#95）
