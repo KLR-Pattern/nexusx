@@ -358,7 +358,15 @@ class SDLGenerator:
             # Check if it's a relationship (references another entity)
             gql_type = self._type_hint_to_graphql(hint, entity, field_name)
             if gql_type:
-                fields.append(f"  {field_name}: {gql_type}")
+                # Paginated list fields declare limit/offset args to match
+                # the introspection path — without them, SDL-only clients
+                # cannot tell the field is paginated.
+                if self._is_paginated_relationship(entity, field_name):
+                    fields.append(
+                        f"  {field_name}(limit: Int, offset: Int = 0): {gql_type}"
+                    )
+                else:
+                    fields.append(f"  {field_name}: {gql_type}")
 
         # Build type definition with optional description
         type_def = f"type {entity.__name__} {{\n{chr(10).join(fields)}\n}}"
