@@ -87,7 +87,24 @@ class TestSDLMixedPagination:
         assert "items: [SortedKid!]!" in sdl
 
         parent_block = sdl.split("type MixedParent {", 1)[1].split("}", 1)[0]
-        assert "sorted_kids: SortedKidResult!" in parent_block
+        # Field type is SortedKidResult! (non-null). Field may declare args
+        # — that's covered by test_paginated_field_exposes_limit_offset_args.
+        assert ": SortedKidResult!" in parent_block
+
+    def test_paginated_field_exposes_limit_offset_args(self):
+        """Issue #85: paginated list field must declare limit/offset args in SDL.
+
+        SDL and introspection must agree — without args in SDL, any client
+        that reads the schema via SDL (codegen tools, AI agents, GraphiQL
+        alternatives) cannot tell the field is paginated.
+        """
+        registry = _make_registry()
+        sdl = SDLGenerator(MIXED_ENTITIES).generate(
+            enable_pagination=True, loader_registry=registry
+        )
+
+        parent_block = sdl.split("type MixedParent {", 1)[1].split("}", 1)[0]
+        assert "sorted_kids(limit: Int, offset: Int = 0): SortedKidResult!" in parent_block
 
     def test_non_paginated_list_renders_as_plain_list(self):
         """raw_kids (no order_by) → [RawKid!]! with no pagination args."""
