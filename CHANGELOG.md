@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.4.2
+
+### Bug Fix: SDL 给 paginated list 字段补回 limit/offset args（#98）
+
+`enable_pagination=True` 时，introspection 路径会给 paginated list 字段渲染 `limit` / `offset` 参数，但 **SDL generator 输出同一字段时不带 args**——两条路径对同一个 schema 给出不一致的描述。GraphQL 规范要求字段可接受的参数必须在 SDL 里声明，否则客户端不允许传：任何走 SDL 而不是 introspection 接 nexusx 的客户端（AI agent / codegen 工具 / GraphiQL 替代品 / 文档生成器）都看不到这些字段能传分页参数，分页功能对它们**实际不可达**。
+
+修法：`SDLGenerator._generate_entity_type` 渲染关系字段时复用已有的 `_is_paginated_relationship` 判定，对带 `page_loader` 的 list 字段输出 `{field}(limit: Int, offset: Int = 0): {Type}Result!`，其它字段不变。`offset` 默认值 `0` 与 introspection 的 `defaultValue: "0"` 对齐。
+
+**Changes：**
+- `src/nexusx/sdl_generator.py`: `_generate_entity_type` 渲染关系字段时按 `_is_paginated_relationship` 分支，paginated 字段附加 `(limit: Int, offset: Int = 0)`，non-paginated 字段保持 `{name}: {type}` 不变
+- `tests/test_pagination_mixed.py`: 新增 `test_paginated_field_exposes_limit_offset_args` 锁 SDL args 形态；调整 `test_paginated_list_renders_as_result_type` 改为只断言类型后缀（字段名后多出 args 让原断言失效），与 introspection 侧 `test_paginated_field_uses_result_type_with_args` 形成对称覆盖
+
+---
+
 ## 3.4.1
 
 ### New Feature: Voyager ER 图新增 `Better Cluster Display` 开关（module cluster 专用）
