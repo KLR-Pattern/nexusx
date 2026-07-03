@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.5.2
+
+### Bug Fix: Voyager 节点切换后旧节点边框残留橙色描边（#101）
+
+`graph-ui.js::highlightSchemaBanner` 直接用 `setAttribute` 改 outerFrame 与 titleBg 两个 polygon 的 `stroke` / `stroke-width` / `fill`，并通过 `_saveOriginalAttributes` 把原值存到 DOM attribute `data-original-stroke` / `-stroke-width` / `-fill`。但 `clearSchemaBanners` 在清除时只 `removeAttribute` 了这三个数据属性，**没有真正把原值写回 SVG attribute**——它依赖 `graphviz.svg.js::restoreElement` 做还原，而后者的数据源是 jQuery `.data("graphviz.svg.color")`（init 时存的 fill+stroke 快照、不含 stroke-width），与 graph-ui.js 的 DOM attribute 完全独立、互不知道对方的写入。结果：用户双击节点 A、切换到 B 后，A 的标题背景橙色消失（graphviz.svg.js 还原 fill 成功），但**外框残留一条淡淡的橙色描边**——是 stroke-width 被硬编码为 1（不是原值）让原本几乎不可见的描边变粗，加上未被 jQuery data 覆盖的边界情况（如未被 `setupNodesEdges` 处理的元素）留下的橙色 stroke。每次节点切换都触发，长期用户反复感知，是肉眼可见的视觉瑕疵。
+
+**修法：** `clearSchemaBanners` 在调 `gv.highlight()` 之后、`removeAttribute` 之前，对每个 `polygon[data-original-stroke]` 先用 `getAttribute` 读出 `data-original-stroke` / `-stroke-width` / `-fill`、用 `setAttribute` 写回对应 SVG attribute（兜底还原），再删除数据属性。graph-ui.js 成为"最后写入者"，覆盖 graphviz.svg.js 留下的任何不一致。还原语义基于"写回原值"而非"涂改回固定颜色"，未来主题色变更、深色模式都天然兼容。`highlightSchemaBanner` 与 `_saveOriginalAttributes` 的写入路径不动（写入本来就正确，问题在清除路径）；`graphviz.svg.js` 不动（vendored 第三方库，影响面大）；`HIGHLIGHT_COLOR` / `HIGHLIGHT_STROKE_WIDTH` 常量不动（不调色值、不改触发规则）。
+
+**Changes：**
+- `src/nexusx/voyager/web/graph-ui.js`: `clearSchemaBanners` 内 `forEach` 循环在 `removeAttribute` 之前新增 ~12 行兜底还原（含 8 行注释）——`getAttribute` 读三个 `data-original-*` 属性、`setAttribute` 写回 `stroke` / `stroke-width` / `fill`
+
+---
+
 ## 3.5.1
 
 ### Bug Fix: Voyager ER 图切换显示选项后 Related Entities 子图跟随刷新（#100）
