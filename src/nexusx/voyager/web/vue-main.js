@@ -62,6 +62,7 @@ const app = createApp({
     store.state.filter.magnification = loadToggleState("magnification", 3.0)
     store.state.filter.edgeMinlen = loadToggleState("edge_minlen", 3)
     store.state.filter.showMethods = loadToggleState("show_methods", true)
+    store.state.filter.hideReverseRelationships = loadToggleState("hide_reverse_relationships", false)
 
     function initGraphUI() {
       if (graphUI) {
@@ -416,6 +417,8 @@ const app = createApp({
       },
       updateEdgeMinlen: (val) => store.actions.updateEdgeMinlen(val, onGenerate),
       toggleShowMethods: (val) => store.actions.toggleShowMethods(val, onGenerate),
+      toggleHideReverseRelationships: (val) =>
+        store.actions.toggleHideReverseRelationships(val, onGenerate),
     }
   },
 })
