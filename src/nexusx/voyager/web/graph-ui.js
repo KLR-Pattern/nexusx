@@ -149,6 +149,26 @@ export class GraphUI {
 
     const allPolygons = document.querySelectorAll("polygon[data-original-stroke]")
     allPolygons.forEach((polygon) => {
+      // Spec 008 — Restore SVG attributes from data-original-* before clearing.
+      // gv.highlight() above goes through graphviz.svg.js::restoreElement which
+      // uses jQuery .data("graphviz.svg.color") (init-time snapshot of
+      // fill+stroke, missing stroke-width, hardcoded to 1 on restore). That
+      // data source is independent from graph-ui.js's DOM attribute store
+      // (data-original-*). Writing back from data-original-* is the reliable
+      // fallback that guarantees pixel-perfect restoration for elements
+      // highlightSchemaBanner directly modified.
+      const origStroke = polygon.getAttribute("data-original-stroke")
+      const origStrokeWidth = polygon.getAttribute("data-original-stroke-width")
+      const origFill = polygon.getAttribute("data-original-fill")
+      if (origStroke !== null) {
+        polygon.setAttribute("stroke", origStroke)
+      }
+      if (origStrokeWidth !== null) {
+        polygon.setAttribute("stroke-width", origStrokeWidth)
+      }
+      if (origFill !== null) {
+        polygon.setAttribute("fill", origFill)
+      }
       polygon.removeAttribute("data-original-stroke")
       polygon.removeAttribute("data-original-stroke-width")
       polygon.removeAttribute("data-original-fill")
