@@ -1,5 +1,29 @@
 # Changelog
 
+## 3.5.0
+
+### New Feature: Voyager ER 图新增 "Hide Reverse Relationships" 开关（#99）
+
+SQLModel 双向关系普遍通过 `Relationship(back_populates=...)` 配置，SQLAlchemy 在内部把它拆成两条方向相反的 relationship——一条 MANYTOONE（持有 FK 字段的实体 → 被引用实体）+ 一条 ONETOMANY（被引用实体的反向镜像）。Voyager ER 图原先把两条都画出来，任意一对双向关联的实体之间都会出现 2 条方向相反、语义重复的连线，整体画布密集、交叉、难以一眼读懂"数据真正从哪里流向哪里"。本次新增 **Hide Reverse Relationships** 开关，开启后只保留 MANYTOONE 方向（持有 FK 一侧）与 MANYTOMANY 方向（不在反向冗余范围内）的连线、隐藏 ONETOMANY 反向镜像，每对实体之间的连线降到 1 条。
+
+**关键设计：**
+- 过滤发生在后端 `ErDiagramDotBuilder._add_relationship_link` 入口处——基于 `RelationshipInfo.direction` 字段（SQLAlchemy `inspect()` 已自动反射）早退，**不改造连线锚点 / label 生成逻辑**；surviving edges 视觉上与未开启时完全一致，只是数量减少。
+- `self.rel_name_set` 仍记录全部 relationship（包括被过滤掉的 ONETOMANY），Fields tab 字段表内容不受影响——开关只裁剪连线、不裁剪字段展示。
+- 子图（spec 005 引入的 Related Entities tab）天然跟随裁剪：`filter_to_neighborhood` 在 `analysis()` 之后调用、消费已过滤的 `self.links`，无需为子图额外实现裁剪逻辑。
+- 偏好持久化沿用项目内 `better_cluster_display` / `brief_mode` / `pydantic_resolve_meta` 等已有 toggle 模式：localStorage key `hide_reverse_relationships`、默认未勾选（向后兼容老客户端）、与其他显示选项完全正交。
+- Pydantic payload 字段 `hide_reverse_relationships: bool = False` 默认值保证老客户端不传该字段时行为完全一致；响应 shape 不变。
+
+**Changes：**
+- `src/nexusx/voyager/er_diagram_dot.py`: `ErDiagramDotBuilder.__init__` 新增 `hide_reverse_relationships: bool = False` 参数；`_add_relationship_link` 入口处按 `rel_info.direction == 'ONETOMANY'` 早退
+- `src/nexusx/voyager/create_voyager.py`: `ErDiagramPayload` 与 `ErDiagramSubgraphPayload` 各新增 `hide_reverse_relationships: bool = False` 字段
+- `src/nexusx/voyager/voyager_context.py`: 2 处 `ErDiagramDotBuilder(...)` 构造点透传新参数
+- `src/nexusx/voyager/web/store.js`: `state.filter.hideReverseRelationships` 字段；`toggleHideReverseRelationships(val, onGenerate)` action（含 localStorage 持久化 + try/catch 降级）；`buildErDiagramPayload` 与 `buildErDiagramSubgraphPayload` 透传字段
+- `src/nexusx/voyager/web/vue-main.js`: 初始化时 `loadToggleState("hide_reverse_relationships", false)`；注册 `toggleHideReverseRelationships` action
+- `src/nexusx/voyager/web/index.html`: ER-diagram 模式下新增 `<q-toggle>` "Hide Reverse Relationships"（仅在该模式可见，与 Show Methods 同侧）
+- `tests/test_voyager_hide_reverse.py`: 新增 10 条 pytest 用例——过滤开/关、M2M 双向保留、单向 MANYTOONE 保留 / ONETOMANY 隐藏、SchemaNode.fields 不变量（FR-007）、端点契约 + 向后兼容、子图跟随裁剪、自引用双向关系
+
+---
+
 ## 3.4.2
 
 ### Bug Fix: SDL 给 paginated list 字段补回 limit/offset args（#98）
