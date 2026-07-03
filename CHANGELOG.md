@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.5.1
+
+### Bug Fix: Voyager ER 图切换显示选项后 Related Entities 子图跟随刷新（#100）
+
+`renderErDiagram` 重新渲染主图后不会触发 Related Entities 子图 refetch——`onGenerate` 只 dispatch 到主图路径，子图完全不被触碰。`fetchRelatedEntities` 又有 spec 005 FR-011 引入的 dedup（防快速重复点击同一实体），要求 `selectedSchema === schemaName` 且 dot 还在时直接 return。两条合起来：用户在子图打开时切换任何显示选项 toggle（Hide Reverse Relationships / brief mode / Better Cluster Display / Show Methods / 等），主图按新配置渲染、子图保留旧数据。Pure FK toggle（PR #99）让问题最显眼——连线消失是肉眼可见的——但 bug 影响所有 toggle，是 spec 005 遗留的隐藏问题。
+
+**修法：** `renderErDiagram` 主图渲染完成后，检测 `state.relatedEntities.selectedSchema` 是否非空且 dot 还在；若是，清空 `selectedSchema`（绕过 dedup 守卫）并调 `fetchRelatedEntities(openSubSchema)` 重新拉子图。`buildErDiagramSubgraphPayload` 已经把所有显示选项透传到请求体，refetch 后子图自然按新配置渲染。spec 005 FR-011 防快速点击的 dedup 在没有配置变化时仍正常生效（同一实体连续点击两次、配置不变 → 第二次仍走 dedup 跳过）。
+
+**Changes：**
+- `src/nexusx/voyager/web/vue-main.js`: `renderErDiagram` 主图渲染末尾加一段——若 `state.relatedEntities.selectedSchema` 非空且 `dot` 存在，清空 `selectedSchema` 并调 `actions.fetchRelatedEntities(openSubSchema)`
+
+---
+
 ## 3.5.0
 
 ### New Feature: Voyager ER 图新增 "Hide Reverse Relationships" 开关（#99）
