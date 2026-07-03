@@ -94,6 +94,7 @@ class ErDiagramDotBuilder:
         theme_color: str | None = None,
         edge_minlen: int = 3,
         show_methods: bool = True,
+        hide_reverse_relationships: bool = False,
     ):
         self.er_manager = er_manager
         self.nodes: list[SchemaNode] = []
@@ -108,6 +109,7 @@ class ErDiagramDotBuilder:
         self.theme_color = theme_color
         self.edge_minlen = edge_minlen
         self.show_methods = show_methods
+        self.hide_reverse_relationships = hide_reverse_relationships
 
     def _generate_node_head(self, link_name: str) -> str:
         return f'{link_name}::{PK}'
@@ -203,6 +205,12 @@ class ErDiagramDotBuilder:
     ) -> None:
         """Add a Link for a single relationship."""
         if not _is_model_like_target(rel_info.target_entity):
+            return
+
+        # Spec 007 — Hide Reverse Relationships mode: skip ONETOMANY reverse
+        # mirrors. MANYTOONE (FK-holder side) and MANYTOMANY (through table)
+        # are preserved. See specs/007-voyager-er-pure-fk/spec.md FR-005/FR-006.
+        if self.hide_reverse_relationships and rel_info.direction == 'ONETOMANY':
             return
 
         source_name = full_class_name(entity_kls)

@@ -609,6 +609,16 @@
                       title="Show query and mutation methods"
                     />
                   </div>
+                  <!-- Spec 007 — Hide Reverse Relationships toggle (ER diagram mode only) -->
+                  <div class="q-mt-sm" v-if="store.state.mode === 'er-diagram'">
+                    <q-toggle
+                      v-model="store.state.filter.hideReverseRelationships"
+                      @update:model-value="(val) => toggleHideReverseRelationships(val)"
+                      label="Hide Reverse Relationships"
+                      dense
+                      title="Hide ONETOMANY reverse-mirror edges; keep MANYTOONE and MANYTOMANY"
+                    />
+                  </div>
                   <div
                     class="q-mt-sm"
                     v-if="store.state.mode == 'voyager' && store.state.config.enable_pydantic_resolve_meta"

@@ -67,6 +67,7 @@ class ErDiagramPayload(PydanticModel):
     better_cluster_display: bool = False
     edge_minlen: int = 3
     show_methods: bool = True
+    hide_reverse_relationships: bool = False
 
 
 class ErDiagramSubgraphPayload(PydanticModel):
@@ -83,6 +84,7 @@ class ErDiagramSubgraphPayload(PydanticModel):
     better_cluster_display: bool = False
     edge_minlen: int = 3
     show_methods: bool = True
+    hide_reverse_relationships: bool = False
 
 
 class SourcePayload(PydanticModel):

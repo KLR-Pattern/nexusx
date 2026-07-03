@@ -173,6 +173,7 @@ class VoyagerContext:
             theme_color=self.theme_color,
             edge_minlen=edge_minlen,
             show_methods=payload.get("show_methods", True),
+            hide_reverse_relationships=payload.get("hide_reverse_relationships", False),
         )
         builder.analysis()
         dot = builder.render_dot()
@@ -231,6 +232,7 @@ class VoyagerContext:
             theme_color=self.theme_color,
             edge_minlen=edge_minlen,
             show_methods=payload.get("show_methods", True),
+            hide_reverse_relationships=payload.get("hide_reverse_relationships", False),
         )
         builder.analysis()
         # Unknown anchor → observably empty result (contracts/api.md).

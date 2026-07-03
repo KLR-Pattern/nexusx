@@ -131,6 +131,7 @@ const state = reactive({
     magnification: 3.0, // Magnifying glass zoom level (2-5)
     edgeMinlen: 3, // ER diagram edge minimum length (3-10)
     showMethods: true, // ER diagram show query/mutation methods
+    hideReverseRelationships: false, // Spec 007 — Hide Reverse Relationships mode
   },
 })
 
@@ -477,6 +478,24 @@ const actions = {
   },
 
   /**
+   * Spec 007 — Toggle Hide Reverse Relationships mode.
+   * When enabled, only MANYTOONE and MANYTOMANY direction relationship edges
+   * are rendered (FK-holder side preserved); ONETOMANY reverse mirrors hidden.
+   * Persists to localStorage; calls onGenerate to trigger graph re-render.
+   * @param {boolean} val - New value
+   * @param {Function} onGenerate - Callback to regenerate graph
+   */
+  toggleHideReverseRelationships(val, onGenerate) {
+    state.filter.hideReverseRelationships = val
+    try {
+      localStorage.setItem("hide_reverse_relationships", JSON.stringify(val))
+    } catch (e) {
+      console.warn("Failed to save hide_reverse_relationships to localStorage", e)
+    }
+    onGenerate()
+  },
+
+  /**
    * Toggle show fields option
    * @param {string} field - Field display option ("single", "object", "all")
    * @param {Function} onGenerate - Callback to regenerate graph
@@ -612,6 +631,7 @@ const actions = {
       better_cluster_display: state.filter.showModule && state.filter.betterClusterDisplay,
       edge_minlen: state.filter.edgeMinlen,
       show_methods: state.filter.showMethods,
+      hide_reverse_relationships: state.filter.hideReverseRelationships,
     }
   },
 
@@ -628,6 +648,7 @@ const actions = {
       better_cluster_display: state.filter.showModule && state.filter.betterClusterDisplay,
       edge_minlen: state.filter.edgeMinlen,
       show_methods: state.filter.showMethods,
+      hide_reverse_relationships: state.filter.hideReverseRelationships,
     }
   },
 
