@@ -201,6 +201,18 @@ const app = createApp({
         const schemasArr = Array.isArray(data.schemas) ? data.schemas : []
         store.state.erDiagramSchemas = Object.fromEntries(schemasArr.map((s) => [s.id, s]))
         await graphUI.render(data.dot, resetZoom)
+        // Spec 007 fix — when the main graph re-renders because a display
+        // toggle (Hide Reverse Relationships / brief mode / cluster display /
+        // show methods / etc.) changed, the Related Entities sub-graph must
+        // refetch too, otherwise it keeps showing the previous config's data.
+        // fetchRelatedEntities has a dedup guard (spec 005 FR-011) that would
+        // skip the fetch when the same schemaName is open; clearing
+        // selectedSchema forces the next call to actually hit the server.
+        const openSubSchema = store.state.relatedEntities.selectedSchema
+        if (openSubSchema && store.state.relatedEntities.dot) {
+          store.state.relatedEntities.selectedSchema = ""
+          store.actions.fetchRelatedEntities(openSubSchema)
+        }
       } catch (err) {
         console.error(err)
       } finally {
