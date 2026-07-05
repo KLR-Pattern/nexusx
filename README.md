@@ -16,8 +16,9 @@ flowchart LR
 
     sqlmodel --> usecase["UseCaseService"]
     usecase --> rest["REST"]
-    usecase --> mcp2["MCP"]
+    usecase --> graphql2["GraphQL"]
     usecase --> cli["CLI"]
+    graphql2 --> mcp2["MCP"]
 ```
 
 ## Install
