@@ -8,11 +8,14 @@
 
 **Input**: User description: "$ARGUMENTS"
 
-## Phase 0 需求确认纪要 *(nexusx preset mandatory)*
+## Phase 0 需求确认纪要 *(nexusx preset optional, prepend via before_specify hook)*
 
 <!--
-  nexusx preset 强制：specify 阶段必须先与用户完成 Phase 0 八步访谈，把结论记录在此区块。
-  完整访谈流程见 commands/speckit.specify.md。本区块的填写质量是 Constitution Principle IV（Service 切分用户裁定）的验收依据。
+  nexusx preset v0.2.0+ 插拔安全设计：
+  - 本区块可由 before_specify hook 自动调用 /nexusx-phase0 命令填充（详见 .specify/extensions.yml）
+  - hook 被禁用 / 失败 / preset 未安装时，本区块作为占位提示，用户可手动填写或留空
+  - 完整访谈流程见 commands/nexusx-phase0.md（独立可调用命令）
+  - 本区块的填写质量是 Constitution Principle IV（Service 切分用户裁定）的验收依据
 -->
 
 ### Step 0-1 术语与实体定义
