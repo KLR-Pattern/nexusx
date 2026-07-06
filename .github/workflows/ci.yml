@@ -69,10 +69,10 @@ jobs:
         run: uv sync --all-extras
 
       - name: Compile all template sources
-        run: uv run python -m compileall -q skill/template/src
+        run: uv run python -m compileall -q skills/nexusx-4phase/template/src
 
       - name: Import template app against working-copy framework
-        run: uv run python -c "import sys; sys.path.insert(0, 'skill/template'); import src.main"
+        run: uv run python -c "import sys; sys.path.insert(0, 'skills/nexusx-4phase/template'); import src.main"
 
   # Single required-status gate. Branch protection should require this ONE
   # check ("CI All Green") instead of each job (the matrix makes per-job names
