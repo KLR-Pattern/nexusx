@@ -76,6 +76,7 @@ The [GraphQL mode guide](docs/guide/graphql_mode.md) covers filters, pagination 
 GraphQL exposes entities directly. For REST handlers or service-layer code you usually want a smaller, intentional shape per endpoint — that's `DefineSubset`. Declare which fields to keep; relationship fields auto-load when their name matches an ORM relationship, so `author: UserDTO | None = None` populates itself from the underlying `author_id` FK without any loader boilerplate.
 
 ```python
+from sqlmodel import select
 from nexusx import DefineSubset, ErManager
 
 class UserDTO(DefineSubset):
@@ -86,6 +87,10 @@ class PostDTO(DefineSubset):
     author: UserDTO | None = None  # auto-loaded — field name matches relationship
 
 Resolver = ErManager(base=SQLModel, session_factory=async_session).create_resolver()
+
+async with async_session() as session:
+    posts = (await session.exec(select(Post))).all()
+
 dtos = await Resolver().resolve(posts)
 ```
 
@@ -115,6 +120,14 @@ app.include_router(create_use_case_router(config))
 ```
 
 Methods are regular async functions — they can call `Resolver().resolve(...)` from Step 2 internally, so business logic and DTO assembly compose freely. Same Python class, three surfaces (MCP / REST / GraphQL-via-MCP). See [feature highlights](docs/feature-highlights.md) for the full picture.
+
+## AI Agent Skill
+
+A [4-phase skill](./skills/nexusx-4phase/) guides AI coding agents: clarify requirements → build POC → add queries → productize.
+
+```bash
+ln -s $(pwd)/skills/nexusx-4phase ~/.claude/skills/nexusx-4phase
+```
 
 ## How It Compares
 
@@ -148,14 +161,6 @@ git clone https://github.com/allmonday/nexusx.git && cd nexusx && bash start_all
 | 8006 | UseCase MCP (4-layer) |
 | 8007 | UseCase FastAPI (REST) |
 | 8008 | Voyager visualization |
-
-## AI Agent Skill
-
-A [4-phase skill](./skill/) guides AI coding agents: clarify requirements → build POC → add queries → productize.
-
-```bash
-ln -s $(pwd)/skill ~/.claude/skills/nexusx-4phase
-```
 
 ## Development
 
