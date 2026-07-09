@@ -71,6 +71,22 @@ handler = GraphQLHandler(base=SQLModel, session_factory=async_session)
 
 The [GraphQL mode guide](docs/guide/graphql_mode.md) covers filters, pagination (`enable_pagination=True` wraps lists in `Result { items, pagination }`), and `AutoQueryConfig` for auto-generated `by_id` / `by_filter` queries across every entity.
 
+The same `@query`-decorated entities can be exposed as an MCP server without any new code — `create_simple_mcp_server` wraps the GraphQL handler behind two tools (`get_schema`, `graphql_query`), so an AI agent pulls the SDL on demand instead of swallowing a 50K-token introspection dump up front.
+
+```python
+from nexusx.mcp import create_simple_mcp_server
+
+mcp = create_simple_mcp_server(
+    base=SQLModel,
+    name="Blog MCP",
+    desc="Query the blog graph",
+    session_factory=async_session,
+)
+mcp.run()
+```
+
+`allow_mutation=True` adds a third tool (`graphql_mutation`). For several independent databases, `create_mcp_server(apps=[...])` adds a 4-layer discovery path (`list_apps` → `list_queries` → `get_query_schema` → `graphql_query`) so an agent can navigate without ever loading the full schema. This is the top lane in the diagram above — distinct from Step 3, where the MCP is built from `UseCaseService` methods instead of the raw GraphQL surface.
+
 **Step 2 — Typed REST with DTOs**
 
 GraphQL exposes entities directly. For REST handlers or service-layer code you usually want a smaller, intentional shape per endpoint — that's `DefineSubset`. Declare which fields to keep; relationship fields auto-load when their name matches an ORM relationship, so `author: UserDTO | None = None` populates itself from the underlying `author_id` FK without any loader boilerplate.
