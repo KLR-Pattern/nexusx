@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.5.3
+
+### Breaking Change: 移除 UseCase compose query 的 `Op` 包装层
+
+UseCase compose query 原先要求顶层套一层虚拟的 `Op` 字段——`{ Op { UserService { list_users { id } } } }`。这层 wrapper 没有任何业务含义，只是早期实现为了对齐 graphql-core 默认 `Query` 根类型而引入的占位符；每条 compose query 都被迫多写一层缩进、MCP 工具示例与文档也都要解释它的存在，纯粹的认知负担。本次移除后查询直接以 service 开头：`{ UserService { list_users { id } } }`。
+
+**影响范围：**
+- `execute_compose_query` / MCP Layer 3 `compose_query` 工具 / GraphiQL 端点全部一致——graphql 层与 mcp 层均不再接受 `Op`。
+- 已发布的 compose query 全部需要改写；旧形状会被执行器拒绝，错误消息为 `Service 'Op' not found in app '<name>'. Available: [...]`。
+- README / demo / docs / MCP 工具内嵌描述确认无残留 `Op` 示例（仅 specs/ 与历史 plan 文档保留旧语法作为档案，不在此次清理范围）。
+
+**修法：** `_execute_operations` 直接遍历 `selections.items()` 派发到 service，去掉原先"先解一层 root FieldSelection 再迭代 sub_fields"的嵌套循环。QueryParser 仍然按根字段名生成 `FieldSelection`，只是这些 root selection 现在就是 service 名而非 `Op`。`_execute_service_methods` / `_invoke_and_project` / introspection rejection / `compose_introspect` 全部不动——改动只发生在 `_execute_operations` 一个函数内。
+
+**Changes：**
+- `src/nexusx/use_case/compose_executor.py`: `_execute_operations` 移除对 `root_sel.sub_fields` 的内层循环，直接遍历 `selections.items()`
+- `tests/test_compose_executor.py`: 全部 compose query 字面量去掉 `Op` 包装；新增 `test_wrapper_field_is_rejected` 锁定旧形状被拒绝
+- `tests/test_compose_mcp_server.py`: Layer 3 测试同步去 `Op`；新增 `test_wrapper_field_is_rejected`；`test_unknown_app_returns_error_in_errors_array` 同步
+- `tests/test_compose_introspect.py`: `_CoercionService` / `_ContextCoercionService` 系列端到端测试同步去 `Op`
+
+---
+
 ## 3.5.2
 
 ### Bug Fix: Voyager 节点切换后旧节点边框残留橙色描边（#101）

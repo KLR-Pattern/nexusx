@@ -113,7 +113,7 @@ def schema(app: UseCaseAppConfig):
 class TestHappyPath:
     async def test_single_service_single_method(self, app, schema) -> None:
         result = await execute_compose_query(
-            app, schema, "{ Op { UserService { list_users { id name } } } }"
+            app, schema, "{ UserService { list_users { id name } } }"
         )
         assert result["errors"] == []
         users = result["data"]["UserService"]["list_users"]
@@ -125,15 +125,24 @@ class TestHappyPath:
         result = await execute_compose_query(
             app,
             schema,
-            "{ Op { UserService { list_users { id } } TaskService { list_tasks { id title } } } }",
+            "{ UserService { list_users { id } } TaskService { list_tasks { id title } } }",
         )
         assert result["errors"] == []
         assert "UserService" in result["data"]
         assert "TaskService" in result["data"]
 
+    async def test_wrapper_field_is_rejected(self, app, schema) -> None:
+        result = await execute_compose_query(
+            app,
+            schema,
+            "{ Op { UserService { list_users { id } } } }",
+        )
+        assert result["data"] is None
+        assert "Service 'Op' not found" in result["errors"][0]["message"]
+
     async def test_method_with_args(self, app, schema) -> None:
         result = await execute_compose_query(
-            app, schema, "{ Op { TaskService { get_task(task_id: 5) { id title } } } }"
+            app, schema, "{ TaskService { get_task(task_id: 5) { id title } } }"
         )
         task = result["data"]["TaskService"]["get_task"]
         assert task.id == 5
@@ -143,7 +152,7 @@ class TestHappyPath:
         result = await execute_compose_query(
             app,
             schema,
-            "{ Op { TaskService { list_tasks { id title owner { name } } } } }",
+            "{ TaskService { list_tasks { id title owner { name } } } }",
         )
         tasks = result["data"]["TaskService"]["list_tasks"]
         assert tasks[0].owner.name == "Alice"
@@ -152,7 +161,7 @@ class TestHappyPath:
 
     async def test_optional_return_none(self, app, schema) -> None:
         result = await execute_compose_query(
-            app, schema, "{ Op { UserService { get_user(user_id: 99) { id } } } }"
+            app, schema, "{ UserService { get_user(user_id: 99) { id } } }"
         )
         assert result["errors"] == []
         assert result["data"]["UserService"]["get_user"] is None
@@ -166,7 +175,7 @@ class TestHappyPath:
 class TestFieldProjection:
     async def test_projection_returns_subset_of_fields(self, app, schema) -> None:
         result = await execute_compose_query(
-            app, schema, "{ Op { UserService { list_users { name } } } }"
+            app, schema, "{ UserService { list_users { name } } }"
         )
         users = result["data"]["UserService"]["list_users"]
         assert all(set(u.model_dump().keys()) == {"name"} for u in users)
@@ -176,7 +185,7 @@ class TestFieldProjection:
         result = await execute_compose_query(
             app,
             schema,
-            "{ Op { ContextService { echo_actor } } }",
+            "{ ContextService { echo_actor } }",
             context={"actor": "Charlie"},
         )
         assert result["data"]["ContextService"]["echo_actor"] == "hi Charlie"
@@ -192,7 +201,7 @@ class TestFromContextInjection:
         result = await execute_compose_query(
             app,
             schema,
-            "{ Op { ContextService { echo_actor } } }",
+            "{ ContextService { echo_actor } }",
             context={"actor": "Dave"},
         )
         assert result["errors"] == []
@@ -204,7 +213,7 @@ class TestFromContextInjection:
         result = await execute_compose_query(
             app,
             schema,
-            "{ Op { ContextService { echo_actor } } }",
+            "{ ContextService { echo_actor } }",
             context={},  # no "actor" key
         )
         assert result["data"] is None
@@ -223,7 +232,7 @@ class TestIntrospectionRejection:
         [
             "{ __schema { types { name } } }",
             "{ __type(name: \"UserSummary\") { name } }",
-            "{ Op { UserService { list_users { __typename } } } }",
+            "{ UserService { list_users { __typename } } }",
             "{ __schema }",
         ],
     )
@@ -264,14 +273,14 @@ class TestIntrospectionRejection:
 class TestErrorHandling:
     async def test_unknown_service(self, app, schema) -> None:
         result = await execute_compose_query(
-            app, schema, "{ Op { UnknownService { anything { id } } } }"
+            app, schema, "{ UnknownService { anything { id } } }"
         )
         assert result["data"] is None
         assert "Service 'UnknownService' not found" in result["errors"][0]["message"]
 
     async def test_unknown_method(self, app, schema) -> None:
         result = await execute_compose_query(
-            app, schema, "{ Op { UserService { unknown_method { id } } } }"
+            app, schema, "{ UserService { unknown_method { id } } }"
         )
         assert result["data"] is None
         assert "Method 'UserService.unknown_method' not found" in result["errors"][0]["message"]
@@ -287,13 +296,13 @@ class TestErrorHandling:
         app2 = UseCaseAppConfig(name="raise", services=[RaisingService])
         schema2 = build_compose_schema(app2)
         result = await execute_compose_query(
-            app2, schema2, "{ Op { RaisingService { boom } } }"
+            app2, schema2, "{ RaisingService { boom } }"
         )
         assert result["data"] is None
         assert "RaisingService.boom raised RuntimeError" in result["errors"][0]["message"]
 
     async def test_malformed_query_returns_parse_error(self, app, schema) -> None:
-        result = await execute_compose_query(app, schema, "{ Op { UserService }")  # missing close
+        result = await execute_compose_query(app, schema, "{ UserService { list_users")  # missing close
         assert result["data"] is None
         assert "Failed to parse query" in result["errors"][0]["message"]
 
@@ -307,7 +316,7 @@ class TestErrorHandling:
         result = await execute_compose_query(
             app_no_mut,
             schema_no_mut,
-            "{ Op { TaskService { create_task(title: \"x\") { id } } } }",
+            "{ TaskService { create_task(title: \"x\") { id } } }",
         )
         assert result["data"] is None
         assert "enable_mutation=False" in result["errors"][0]["message"]
@@ -356,7 +365,7 @@ class TestNoOuterResolverWrap:
         app = UseCaseAppConfig(name="noresolver", services=[_ServiceSkippingResolver])
         schema = build_compose_schema(app)
         result = await execute_compose_query(
-            app, schema, "{ Op { _ServiceSkippingResolver { m { id derived } } } }"
+            app, schema, "{ _ServiceSkippingResolver { m { id derived } } }"
         )
         # Resolver NOT auto-invoked: derived stays at its default (0).
         # If the GraphQL layer had wrapped in Resolver, derived would be 500.

@@ -191,7 +191,7 @@ class TestCoerceStrictEndToEnd:
         result = await execute_compose_query(
             app,
             schema,
-            '{ Op { _CoercionService { by_uuid(u: "550e8400-e29b-41d4-a716-446655440000") } } }',
+            '{ _CoercionService { by_uuid(u: "550e8400-e29b-41d4-a716-446655440000") } }',
         )
         assert result["errors"] == []
         assert "550e8400" in result["data"]["_CoercionService"]["by_uuid"]
@@ -202,7 +202,7 @@ class TestCoerceStrictEndToEnd:
         result = await execute_compose_query(
             app,
             schema,
-            '{ Op { _CoercionService { by_datetime(ts: "2026-06-20T10:30:00") } } }',
+            '{ _CoercionService { by_datetime(ts: "2026-06-20T10:30:00") } }',
         )
         assert result["errors"] == []
         assert "2026-06-20T10:30:00" in result["data"]["_CoercionService"]["by_datetime"]
@@ -213,7 +213,7 @@ class TestCoerceStrictEndToEnd:
         result = await execute_compose_query(
             app,
             schema,
-            '{ Op { _CoercionService { by_model(user: {id: 7, name: "Zed"}) } } }',
+            '{ _CoercionService { by_model(user: {id: 7, name: "Zed"}) } }',
         )
         # GraphQL object literals as scalar args may or may not parse cleanly
         # depending on QueryParser — accept either success or a clean error.
@@ -241,7 +241,7 @@ class TestCoerceStrictEndToEnd:
         result = await execute_compose_query(
             app,
             schema,
-            '{ Op { Svc { m(n: "abc") } } }',
+            '{ Svc { m(n: "abc") } }',
         )
         assert result["data"] is None
         assert len(result["errors"]) >= 1
@@ -266,7 +266,7 @@ class TestFromContextCoercion:
         result = await execute_compose_query(
             app,
             schema,
-            "{ Op { _ContextCoercionService { echo_uuid } } }",
+            "{ _ContextCoercionService { echo_uuid } }",
             context={"u": "550e8400-e29b-41d4-a716-446655440000"},  # string, not UUID
         )
         assert result["errors"] == []
@@ -278,7 +278,7 @@ class TestFromContextCoercion:
         result = await execute_compose_query(
             app,
             schema,
-            "{ Op { _ContextCoercionService { echo_uuid } } }",
+            "{ _ContextCoercionService { echo_uuid } }",
             context={"u": "not_a_uuid"},
         )
         assert result["data"] is None

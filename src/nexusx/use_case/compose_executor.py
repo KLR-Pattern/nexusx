@@ -150,24 +150,22 @@ async def _execute_operations(
     }
 
     data: dict[str, Any] = {}
-    for _op_name, root_sel in selections.items():
-        # Each root FieldSelection's sub_fields are the service selections.
-        for service_name, service_sel in root_sel.sub_fields.items():
-            service_cls = services_by_name.get(service_name)
-            if service_cls is None:
-                raise _ComposeExecutionError(
-                    f"Service '{service_name}' not found in app '{app.name}'. "
-                    f"Available: {sorted(services_by_name)}.",
-                    service_method=service_name,
-                )
-            method_results = await _execute_service_methods(
-                app=app,
-                schema=schema,
-                service_cls=service_cls,
-                service_sel=service_sel,
-                context=context,
+    for service_name, service_sel in selections.items():
+        service_cls = services_by_name.get(service_name)
+        if service_cls is None:
+            raise _ComposeExecutionError(
+                f"Service '{service_name}' not found in app '{app.name}'. "
+                f"Available: {sorted(services_by_name)}.",
+                service_method=service_name,
             )
-            data[service_name] = method_results
+        method_results = await _execute_service_methods(
+            app=app,
+            schema=schema,
+            service_cls=service_cls,
+            service_sel=service_sel,
+            context=context,
+        )
+        data[service_name] = method_results
     return data
 
 
