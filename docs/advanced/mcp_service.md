@@ -52,18 +52,31 @@ mcp.run(transport="sse", host="0.0.0.0", port=8003)
 When your AI agent needs to work across multiple databases or domains:
 
 ```python
-from nexusx.mcp import create_mcp_server
+from nexusx.mcp import Application, create_mcp_server
 
 mcp = create_mcp_server(
     apps=[
-        {"name": "blog", "base": BlogBase, "description": "Blog API"},
-        {"name": "shop", "base": ShopBase, "description": "Shop API"},
+        Application(
+            name="blog",
+            base=BlogBase,
+            url="sqlite+aiosqlite:///blog.db",
+            description="Blog API",
+        ),
+        Application(
+            name="shop",
+            base=ShopBase,
+            url="sqlite+aiosqlite:///shop.db",
+            description="Shop API",
+        ),
     ],
     name="Multi-App API",
-    session_factory=async_session,
 )
 mcp.run()
 ```
+
+Each `Application` owns its database connection, so the merging project does not
+need to provide `session_factory` or any other connection resource — `pip install`
+a subproject's package, import its `Application`, and pass it to `create_mcp_server`.
 
 Multi-app adds app-level navigation tools:
 
@@ -77,11 +90,40 @@ Multi-app adds app-level navigation tools:
 !!! tip
     Use `create_simple_mcp_server` for single-app scenarios — fewer tool calls, simpler interaction. Only reach for `create_mcp_server` when the AI agent genuinely needs to cross domain boundaries.
 
+## Step 4: Exporting Apps as Standalone Packages
+
+Because each `Application` is self-contained, you can ship it as a Python package
+and assemble multiple subprojects into a single MCP gateway:
+
+```python
+# In subproject blog_app/__init__.py
+from nexusx.mcp import Application
+blog = Application(name="blog", base=BlogBase, url=BLOG_DATABASE_URL)
+
+# In the gateway project
+from blog_app import blog
+from shop_app import shop
+from nexusx.mcp import create_mcp_server
+
+mcp = create_mcp_server(apps=[blog, shop], name="Gateway")
+mcp.run()
+```
+
+The gateway project's full source for assembling three subprojects is typically
+under 10 lines — `pip install blog-app shop-app auth-app`, import, pass to
+`create_mcp_server`, run.
+
+!!! note
+    The legacy `AppConfig` dict form (`{"name": ..., "base": ..., "session_factory": ...}`)
+    still works but emits a `DeprecationWarning`. Prefer `Application(...)` for
+    new code.
+
 ## Recap
 
 - `create_simple_mcp_server` — single app, 3 tools, get started in seconds
-- `create_mcp_server` — multiple apps, app-level navigation for cross-domain queries
-- Both support `stdio` (CLI) and `sse` (HTTP) transport
+- `create_mcp_server` — multiple apps via `Application` instances, app-level navigation for cross-domain queries
+- `Application` — self-contained, independently-exportable unit (URL/engine/session_factory at most one)
+- Both MCP constructors support `stdio` (CLI) and `sse`/`streamable-http` (HTTP) transport
 - `session_factory` is required — the MCP server executes real database queries
 
 ## Next Steps

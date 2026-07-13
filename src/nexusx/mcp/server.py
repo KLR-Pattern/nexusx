@@ -6,19 +6,20 @@ with three-layer progressive disclosure for reduced context usage.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Any
 
+from nexusx.mcp.application import Application
 from nexusx.mcp.managers import MultiAppManager
 from nexusx.mcp.tools.multi_app_tools import register_multi_app_tools
-from nexusx.mcp.types.app_config import AppConfig
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
 
 def create_mcp_server(
-    apps: list[AppConfig],
+    apps: list[Application | dict[str, Any]],
     name: str = "Multi-App nexusx API",
     allow_mutation: bool = False,
 ) -> FastMCP:
@@ -48,37 +49,40 @@ def create_mcp_server(
     All tools (except list_apps) require a mandatory app_name parameter.
 
     Args:
-        apps: List of app configurations. Each app has its own GraphQL schema
-              and independent database.
+        apps: List of :class:`Application` instances (preferred), or legacy
+            ``AppConfig`` dicts (deprecated, triggers ``DeprecationWarning``).
+            Each app has its own GraphQL schema and independent database.
         name: Name of the MCP server (shown in MCP clients).
         allow_mutation: If True, registers mutation-related tools (list_mutations,
             get_mutation_schema, graphql_mutation) and includes mutations_count
             in list_apps. Default is False (read-only mode).
 
     Returns:
-        A configured FastMCP server instance.
+        A configured FastMCP server instance. Its ``lifespan`` is wired so that
+        ``manager.dispose()`` runs on shutdown, releasing any engines owned by
+        ``Application(url=...)`` instances.
 
     Example:
         ```python
-        from myapp.blog_models import BlogBaseEntity
-        from myapp.shop_models import ShopBaseEntity
-        from nexusx.mcp import create_mcp_server
+        from myapp.blog import BlogBaseEntity, BLOG_DATABASE_URL
+        from myapp.shop import ShopBaseEntity, SHOP_DATABASE_URL
+        from nexusx.mcp import Application, create_mcp_server
 
         apps = [
-            {
-                "name": "blog",
-                "base": BlogBaseEntity,
-                "description": "Blog system API",
-                "query_description": "Query users, posts, and comments",
-                "mutation_description": "Create and update blog data",
-            },
-            {
-                "name": "shop",
-                "base": ShopBaseEntity,
-                "description": "E-commerce system API",
-                "query_description": "Query products and orders",
-                "mutation_description": "Create orders and products",
-            }
+            Application(
+                name="blog",
+                base=BlogBaseEntity,
+                url=BLOG_DATABASE_URL,
+                description="Blog system API",
+                query_description="Query users, posts, and comments",
+                mutation_description="Create and update blog data",
+            ),
+            Application(
+                name="shop",
+                base=ShopBaseEntity,
+                url=SHOP_DATABASE_URL,
+                description="E-commerce system API",
+            ),
         ]
 
         mcp = create_mcp_server(
@@ -92,6 +96,10 @@ def create_mcp_server(
         # Or run with HTTP transport
         mcp.run(transport="streamable-http")
         ```
+
+    .. deprecated::
+        Passing ``AppConfig`` dict entries is deprecated; use :class:`Application`
+        instead. The dict form will be removed in a future release.
 
     Tools provided (when allow_mutation=False, default):
         - list_apps(): List all available apps
@@ -109,8 +117,17 @@ def create_mcp_server(
     # Create the multi-app manager
     manager = MultiAppManager(apps)
 
+    # Wire lifespan so manager.dispose() runs on server shutdown,
+    # releasing any engines owned by Applications constructed with url=.
+    @asynccontextmanager
+    async def _lifespan(_mcp: FastMCP) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            await manager.dispose()
+
     # Create the FastMCP server
-    mcp = FastMCP(name)
+    mcp = FastMCP(name, lifespan=_lifespan)
 
     # Register all multi-app tools
     register_multi_app_tools(mcp, manager, allow_mutation=allow_mutation)

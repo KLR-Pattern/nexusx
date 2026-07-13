@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from nexusx.handler import GraphQLHandler
-from nexusx.mcp.builders.type_tracer import TypeTracer
 from nexusx.mcp.managers.app_resources import AppResources
-from nexusx.mcp.types.app_config import AppConfig
 
 if TYPE_CHECKING:
-    pass
+    from nexusx.mcp.application import Application
 
 
 class MultiAppManager:
@@ -20,114 +17,89 @@ class MultiAppManager:
     - Initializing and storing resources for each application
     - Routing tool calls to the correct application
     - Providing app discovery functionality
+
+    Accepts either :class:`Application` objects (preferred) or legacy
+    ``AppConfig`` dicts (deprecated, triggers ``DeprecationWarning``).
     """
 
-    def __init__(self, apps: list[AppConfig]):
+    def __init__(self, apps: list[Application | dict[str, Any]]):
         """Initialize the multi-app manager.
 
         Args:
-            apps: List of application configurations
+            apps: List of :class:`Application` objects, or legacy ``AppConfig``
+                dicts (deprecated).
 
         Example:
             ```python
+            from nexusx.mcp import Application, MultiAppManager
+
             apps = [
-                {"name": "blog", "base": BlogBaseEntity, "description": "Blog API"},
-                {"name": "shop", "base": ShopBaseEntity, "description": "Shop API"}
+                Application(name="blog", base=BlogBaseEntity, url=BLOG_DATABASE_URL),
+                Application(name="shop", base=ShopBaseEntity, url=SHOP_DATABASE_URL),
             ]
             manager = MultiAppManager(apps)
             ```
         """
-        validated_apps = self._validate_apps(apps)
-        self.apps: dict[str, AppResources] = {}
-        self.aliases: dict[str, str] = {}
-
-        for app_config in validated_apps:
-            resources = self._create_app_resources(app_config)
-            app_name = app_config["name"]
-            self.apps[app_name] = resources
-            for alias in app_config.get("aliases", []):
-                self.aliases[alias] = app_name
-
-    @staticmethod
-    def _validate_apps(apps: list[AppConfig]) -> list[AppConfig]:
-        """Validate app configs and normalize aliases."""
         if not apps:
             raise ValueError("At least one app configuration is required")
 
+        # Lazy import to avoid circular dependency
+        # (application.py imports managers.app_resources via this package's __init__).
+        from nexusx.mcp.application import Application as _Application
+        from nexusx.mcp.application import _coerce_to_application
+
+        # Coerce each element to Application (dict → Application + DeprecationWarning)
+        coerced: list[_Application] = [
+            _coerce_to_application(app, index=i) for i, app in enumerate(apps)
+        ]
+
+        # Cross-app validation (unique names, alias collisions)
+        self._validate_cross_app(coerced)
+
+        self._applications: list[_Application] = coerced
+        self.apps: dict[str, AppResources] = {}
+        self.aliases: dict[str, str] = {}
+
+        for app in coerced:
+            self.apps[app.name] = app.resources
+            for alias in app.aliases:
+                self.aliases[alias] = app.name
+
+    @staticmethod
+    def _validate_cross_app(applications: list[Application]) -> None:
+        """Validate unique names and aliases across all apps."""
         seen_names: set[str] = set()
         seen_aliases: set[str] = set()
-        validated_apps: list[AppConfig] = []
 
-        for index, app_config in enumerate(apps):
-            if "name" not in app_config or not app_config["name"]:
-                raise ValueError(f"App config at index {index} is missing required field 'name'")
-            if "base" not in app_config or app_config["base"] is None:
-                app_label = app_config.get("name", f"index {index}")
+        for app in applications:
+            name = app.name
+            if name in seen_names:
                 raise ValueError(
-                    f"App '{app_label}' is missing required field 'base'"
+                    f"Duplicate app name '{name}' is not allowed"
                 )
+            seen_names.add(name)
 
-            app_name = app_config["name"]
-            if app_name in seen_names:
-                raise ValueError(f"Duplicate app name '{app_name}' is not allowed")
-            seen_names.add(app_name)
-
-            aliases = app_config.get("aliases", [])
-            if aliases is None:
-                aliases = []
-            if not isinstance(aliases, list):
-                raise ValueError(f"App '{app_name}' aliases must be a list of strings")
-
-            normalized_aliases: list[str] = []
-            for alias in aliases:
-                if not isinstance(alias, str) or not alias:
-                    raise ValueError(
-                        f"App '{app_name}' aliases must contain only non-empty strings"
-                    )
-                if alias == app_name:
-                    raise ValueError(f"App '{app_name}' alias '{alias}' duplicates its name")
+            for alias in app.aliases:
                 if alias in seen_names or alias in seen_aliases:
-                    raise ValueError(f"Alias '{alias}' is already used by another app")
+                    raise ValueError(
+                        f"Alias '{alias}' is already used by another app"
+                    )
                 seen_aliases.add(alias)
-                normalized_aliases.append(alias)
 
-            validated_app: AppConfig = dict(app_config)
-            validated_app["aliases"] = normalized_aliases
-            validated_apps.append(validated_app)
+    async def dispose(self) -> None:
+        """Dispose all owned resources held by managed applications.
 
-        return validated_apps
-
-
-    def _create_app_resources(self, config: AppConfig) -> AppResources:
-        """Create resources for a single application.
-
-        Args:
-            config: Application configuration
-
-        Returns:
-            AppResources instance with handler, tracer, and SDL generator
+        Idempotent: each Application.dispose() is itself idempotent, so calling
+        this multiple times is safe.
         """
-        # Create GraphQL handler for this app
-        handler = GraphQLHandler(
-            base=config["base"],
-            session_factory=config.get("session_factory"),
-            query_description=config.get("query_description"),
-            mutation_description=config.get("mutation_description"),
-        )
+        for app in self._applications:
+            await app.dispose()
 
-        # Create type tracer for progressive disclosure
-        introspection_data = handler.get_introspection_data()
-        entity_names = {e.__name__ for e in handler.entities}
-        tracer = TypeTracer(introspection_data, entity_names)
+    async def __aenter__(self) -> MultiAppManager:
+        return self
 
-        # Create AppResources container
-        return AppResources(
-            name=config["name"],
-            description=config.get("description", ""),
-            handler=handler,
-            tracer=tracer,
-            sdl_generator=handler.get_sdl_generator(),
-        )
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.dispose()
 
     def get_app(self, name: str) -> AppResources:
         """Get resources for a specific application.

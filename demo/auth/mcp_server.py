@@ -25,7 +25,7 @@ Authentication:
 from demo.auth.auth import MCPAuthMiddleware
 from demo.blog.database import async_session, init_db
 from demo.blog.models import BaseEntity
-from nexusx.mcp import create_mcp_server
+from nexusx.mcp import Application, create_mcp_server
 
 
 async def lifespan(app):
@@ -36,11 +36,13 @@ async def lifespan(app):
 def main() -> None:
     """Run MCP server with authentication middleware."""
     mcp = create_mcp_server(
-        apps=[{
-            "name": "Blog",
-            "base": BaseEntity,
-            "session_factory": async_session,
-        }],
+        apps=[
+            Application(
+                name="Blog",
+                base=BaseEntity,
+                session_factory=async_session,
+            )
+        ],
         name="Auth Demo Blog GraphQL MCP Server",
     )
 

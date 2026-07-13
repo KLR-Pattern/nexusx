@@ -1,10 +1,15 @@
-"""Unit tests for MultiAppManager."""
+"""Unit tests for MultiAppManager.
+
+Most tests construct apps via the preferred :class:`Application` form.
+A handful of tests at the bottom intentionally use the legacy ``AppConfig``
+dict form to verify the deprecation compatibility path (and its error messages).
+"""
 
 import pytest
 from sqlmodel import Field, SQLModel
 
-from nexusx.mcp.managers import AppResources, MultiAppManager
-from nexusx.mcp.types.app_config import AppConfig
+from nexusx.mcp import Application, MultiAppManager
+from nexusx.mcp.managers import AppResources
 
 
 # Mock models for testing (not test classes)
@@ -39,53 +44,28 @@ class TestMultiAppManager:
     """Test cases for MultiAppManager."""
 
     def test_init_with_single_app(self):
-        """Test MultiAppManager initialization with a single app."""
-        apps: list[AppConfig] = [
-            {
-                "name": "test_app",
-                "base": MockBaseEntity1,
-                "description": "Test application",
-            }
-        ]
-
-        manager = MultiAppManager(apps)
-
+        manager = MultiAppManager(
+            [Application(name="test_app", base=MockBaseEntity1, description="Test application")]
+        )
         assert len(manager.apps) == 1
         assert "test_app" in manager.apps
         assert isinstance(manager.apps["test_app"], AppResources)
 
     def test_init_with_multiple_apps(self):
-        """Test MultiAppManager initialization with multiple apps."""
-        apps: list[AppConfig] = [
-            {
-                "name": "app1",
-                "base": MockBaseEntity1,
-                "description": "Application 1",
-            },
-            {
-                "name": "app2",
-                "base": MockBaseEntity2,
-                "description": "Application 2",
-            },
-        ]
-
-        manager = MultiAppManager(apps)
-
+        manager = MultiAppManager(
+            [
+                Application(name="app1", base=MockBaseEntity1, description="Application 1"),
+                Application(name="app2", base=MockBaseEntity2, description="Application 2"),
+            ]
+        )
         assert len(manager.apps) == 2
         assert "app1" in manager.apps
         assert "app2" in manager.apps
 
     def test_get_app_success(self):
-        """Test getting an existing app."""
-        apps: list[AppConfig] = [
-            {
-                "name": "test_app",
-                "base": MockBaseEntity1,
-                "description": "Test application",
-            }
-        ]
-
-        manager = MultiAppManager(apps)
+        manager = MultiAppManager(
+            [Application(name="test_app", base=MockBaseEntity1, description="Test application")]
+        )
         app = manager.get_app("test_app")
 
         assert app.name == "test_app"
@@ -93,16 +73,9 @@ class TestMultiAppManager:
         assert isinstance(app, AppResources)
 
     def test_get_app_not_found(self):
-        """Test getting a non-existent app raises ValueError."""
-        apps: list[AppConfig] = [
-            {
-                "name": "test_app",
-                "base": MockBaseEntity1,
-                "description": "Test application",
-            }
-        ]
-
-        manager = MultiAppManager(apps)
+        manager = MultiAppManager(
+            [Application(name="test_app", base=MockBaseEntity1, description="Test application")]
+        )
 
         with pytest.raises(ValueError) as exc_info:
             manager.get_app("nonexistent")
@@ -111,155 +84,88 @@ class TestMultiAppManager:
         assert "Available apps: ['test_app']" in str(exc_info.value)
 
     def test_list_apps_single(self):
-        """Test listing apps with a single app."""
-        apps: list[AppConfig] = [
-            {
-                "name": "test_app",
-                "base": MockBaseEntity1,
-                "description": "Test application",
-            }
-        ]
-
-        manager = MultiAppManager(apps)
-        app_names = manager.list_apps()
-
-        assert app_names == ["test_app"]
+        manager = MultiAppManager(
+            [Application(name="test_app", base=MockBaseEntity1, description="Test application")]
+        )
+        assert manager.list_apps() == ["test_app"]
 
     def test_list_apps_multiple(self):
-        """Test listing apps with multiple apps."""
-        apps: list[AppConfig] = [
-            {
-                "name": "app1",
-                "base": MockBaseEntity1,
-                "description": "Application 1",
-            },
-            {
-                "name": "app2",
-                "base": MockBaseEntity2,
-                "description": "Application 2",
-            },
-        ]
-
-        manager = MultiAppManager(apps)
+        manager = MultiAppManager(
+            [
+                Application(name="app1", base=MockBaseEntity1, description="Application 1"),
+                Application(name="app2", base=MockBaseEntity2, description="Application 2"),
+            ]
+        )
         app_names = manager.list_apps()
-
         assert len(app_names) == 2
         assert "app1" in app_names
         assert "app2" in app_names
 
     def test_app_resources_have_handler(self):
-        """Test that AppResources has a handler."""
-        apps: list[AppConfig] = [
-            {
-                "name": "test_app",
-                "base": MockBaseEntity1,
-                "description": "Test application",
-            }
-        ]
-
-        manager = MultiAppManager(apps)
+        manager = MultiAppManager(
+            [Application(name="test_app", base=MockBaseEntity1, description="Test application")]
+        )
         app = manager.get_app("test_app")
-
         assert app.handler is not None
         assert hasattr(app.handler, "execute")
 
     def test_app_resources_have_tracer(self):
-        """Test that AppResources has a tracer."""
-        apps: list[AppConfig] = [
-            {
-                "name": "test_app",
-                "base": MockBaseEntity1,
-                "description": "Test application",
-            }
-        ]
-
-        manager = MultiAppManager(apps)
+        manager = MultiAppManager(
+            [Application(name="test_app", base=MockBaseEntity1, description="Test application")]
+        )
         app = manager.get_app("test_app")
-
         assert app.tracer is not None
         assert hasattr(app.tracer, "list_operation_fields")
 
     def test_app_resources_have_sdl_generator(self):
-        """Test that AppResources has an SDL generator."""
-        apps: list[AppConfig] = [
-            {
-                "name": "test_app",
-                "base": MockBaseEntity1,
-                "description": "Test application",
-            }
-        ]
-
-        manager = MultiAppManager(apps)
+        manager = MultiAppManager(
+            [Application(name="test_app", base=MockBaseEntity1, description="Test application")]
+        )
         app = manager.get_app("test_app")
-
         assert app.sdl_generator is not None
         assert hasattr(app.sdl_generator, "generate_operation_sdl")
 
     def test_app_resources_entity_names(self):
-        """Test that AppResources returns entity names as a set."""
-        apps: list[AppConfig] = [
-            {
-                "name": "test_app",
-                "base": MockBaseEntity1,
-                "description": "Test application",
-            }
-        ]
-
-        manager = MultiAppManager(apps)
+        manager = MultiAppManager(
+            [Application(name="test_app", base=MockBaseEntity1, description="Test application")]
+        )
         app = manager.get_app("test_app")
         entity_names = app.entity_names
-
-        # Verify that entity_names is a set
+        # entity_names is a set; may be empty without @query decorators (expected)
         assert isinstance(entity_names, set)
-        # The set may be empty if there are no @query decorated entities
-        # This is expected behavior
 
     def test_optional_description(self):
-        """Test that description is optional."""
-        apps: list[AppConfig] = [
-            {
-                "name": "test_app",
-                "base": MockBaseEntity1,
-            }
-        ]
-
-        manager = MultiAppManager(apps)
+        manager = MultiAppManager([Application(name="test_app", base=MockBaseEntity1)])
         app = manager.get_app("test_app")
-
         assert app.description == ""
 
     def test_custom_descriptions(self):
-        """Test custom query and mutation descriptions are passed to handler."""
-        apps: list[AppConfig] = [
-            {
-                "name": "test_app",
-                "base": MockBaseEntity1,
-                "description": "Test application",
-                "query_description": "Custom query description",
-                "mutation_description": "Custom mutation description",
-            }
-        ]
-
-        manager = MultiAppManager(apps)
+        manager = MultiAppManager(
+            [
+                Application(
+                    name="test_app",
+                    base=MockBaseEntity1,
+                    description="Test application",
+                    query_description="Custom query description",
+                    mutation_description="Custom mutation description",
+                )
+            ]
+        )
         app = manager.get_app("test_app")
-
         assert app.description == "Test application"
-        # Verify that the handler was created successfully with custom descriptions
-        # The descriptions are passed to the introspection generator and SDL generator
         assert app.handler is not None
 
     def test_get_app_with_explicit_alias(self):
-        """Test that get_app resolves configured aliases."""
-        apps: list[AppConfig] = [
-            {
-                "name": "todo",
-                "base": MockBaseEntity1,
-                "description": "Todo application",
-                "aliases": ["todo_app", "todo-app"],
-            }
-        ]
-
-        manager = MultiAppManager(apps)
+        manager = MultiAppManager(
+            [
+                Application(
+                    name="todo",
+                    base=MockBaseEntity1,
+                    description="Todo application",
+                    aliases=["todo_app", "todo-app"],
+                )
+            ]
+        )
 
         app = manager.get_app("todo_app")
         assert app.name == "todo"
@@ -270,39 +176,31 @@ class TestMultiAppManager:
         assert app.description == "Todo application"
 
     def test_get_app_exact_match_priority(self):
-        """Test that exact match takes priority over aliases."""
-        apps: list[AppConfig] = [
-            {
-                "name": "test_app",
-                "base": MockBaseEntity1,
-                "description": "App with _app in name",
-            },
-            {
-                "name": "test",
-                "base": MockBaseEntity2,
-                "description": "App without suffix",
-                "aliases": ["test_alias"],
-            }
-        ]
+        manager = MultiAppManager(
+            [
+                Application(
+                    name="test_app",
+                    base=MockBaseEntity1,
+                    description="App with _app in name",
+                ),
+                Application(
+                    name="test",
+                    base=MockBaseEntity2,
+                    description="App without suffix",
+                    aliases=["test_alias"],
+                ),
+            ]
+        )
 
-        manager = MultiAppManager(apps)
-
-        # Should return exact match "test_app", not an alias target
         app = manager.get_app("test_app")
         assert app.name == "test_app"
         assert app.description == "App with _app in name"
 
     def test_get_app_requires_explicit_alias(self):
-        """Test that implicit suffix normalization no longer happens."""
-        apps: list[AppConfig] = [
-            {
-                "name": "shop",
-                "base": MockBaseEntity1,
-                "description": "Shop application",
-            }
-        ]
-
-        manager = MultiAppManager(apps)
+        """Implicit suffix normalization no longer happens."""
+        manager = MultiAppManager(
+            [Application(name="shop", base=MockBaseEntity1, description="Shop application")]
+        )
 
         with pytest.raises(ValueError) as exc_info:
             manager.get_app("shop_app")
@@ -310,79 +208,66 @@ class TestMultiAppManager:
         assert "App 'shop_app' not found" in str(exc_info.value)
 
     def test_get_app_still_raises_error_for_invalid_names(self):
-        """Test that get_app still raises ValueError for truly invalid names."""
-        apps: list[AppConfig] = [
-            {
-                "name": "todo",
-                "base": MockBaseEntity1,
-                "description": "Todo application",
-            }
-        ]
+        manager = MultiAppManager(
+            [Application(name="todo", base=MockBaseEntity1, description="Todo application")]
+        )
 
-        manager = MultiAppManager(apps)
-
-        # "invalid_name" should still raise ValueError
         with pytest.raises(ValueError) as exc_info:
             manager.get_app("invalid_name")
 
         assert "App 'invalid_name' not found" in str(exc_info.value)
         assert "Available apps: ['todo']" in str(exc_info.value)
 
-
+    # ── Cross-app validation (Application form) ───────────────────────────
 
     def test_duplicate_app_names_raise_error(self):
-        """Test duplicate app names fail fast."""
-        apps: list[AppConfig] = [
-            {"name": "dup", "base": MockBaseEntity1},
-            {"name": "dup", "base": MockBaseEntity2},
-        ]
-
         with pytest.raises(ValueError) as exc_info:
-            MultiAppManager(apps)
-
+            MultiAppManager(
+                [
+                    Application(name="dup", base=MockBaseEntity1),
+                    Application(name="dup", base=MockBaseEntity2),
+                ]
+            )
         assert "Duplicate app name 'dup'" in str(exc_info.value)
 
     def test_empty_apps_raise_error(self):
-        """Test empty app list is rejected."""
         with pytest.raises(ValueError) as exc_info:
             MultiAppManager([])
-
         assert "At least one app configuration is required" in str(exc_info.value)
 
-    def test_missing_name_raises_error(self):
-        """Test missing app name is rejected."""
-        apps: list[AppConfig] = [{"base": MockBaseEntity1}]
-
-        with pytest.raises(ValueError) as exc_info:
-            MultiAppManager(apps)
-
-        assert "missing required field 'name'" in str(exc_info.value)
-
-    def test_missing_base_raises_error(self):
-        """Test missing app base is rejected."""
-        apps: list[AppConfig] = [{"name": "invalid"}]
-
-        with pytest.raises(ValueError) as exc_info:
-            MultiAppManager(apps)
-
-        assert "missing required field 'base'" in str(exc_info.value)
-
     def test_duplicate_aliases_raise_error(self):
-        """Test duplicate aliases across apps are rejected."""
-        apps: list[AppConfig] = [
-            {"name": "app1", "base": MockBaseEntity1, "aliases": ["shared"]},
-            {"name": "app2", "base": MockBaseEntity2, "aliases": ["shared"]},
-        ]
-
         with pytest.raises(ValueError) as exc_info:
-            MultiAppManager(apps)
-
+            MultiAppManager(
+                [
+                    Application(name="app1", base=MockBaseEntity1, aliases=["shared"]),
+                    Application(name="app2", base=MockBaseEntity2, aliases=["shared"]),
+                ]
+            )
         assert "Alias 'shared' is already used" in str(exc_info.value)
 
     def test_aliases_must_be_list_of_strings(self):
-        """Test aliases must be a list of non-empty strings."""
         with pytest.raises(ValueError):
-            MultiAppManager([{"name": "app", "base": MockBaseEntity1, "aliases": "alias"}])
+            Application(name="app", base=MockBaseEntity1, aliases="alias")  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            Application(name="app", base=MockBaseEntity1, aliases=[""])
 
-        with pytest.raises(ValueError):
-            MultiAppManager([{"name": "app", "base": MockBaseEntity1, "aliases": [""]}])
+    # ── Legacy dict compat path (verifies deprecation behavior) ──────────
+
+    def test_dict_form_triggers_deprecation_warning(self):
+        """Passing a dict should emit DeprecationWarning but still work."""
+        import warnings
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            manager = MultiAppManager([{"name": "x", "base": MockBaseEntity1}])
+            assert "x" in manager.apps
+            assert len(caught) == 1
+            assert issubclass(caught[0].category, DeprecationWarning)
+
+    def test_dict_missing_name_raises(self):
+        with pytest.raises(ValueError, match="missing required field 'name'"):
+            MultiAppManager([{"base": MockBaseEntity1}])  # type: ignore[list-item]
+
+    def test_dict_missing_base_raises(self):
+        with pytest.raises(ValueError, match="missing required field 'base'"):
+            MultiAppManager([{"name": "invalid"}])  # type: ignore[list-item]
