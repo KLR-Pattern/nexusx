@@ -20,13 +20,13 @@ This module pins two contracts that nexusx must honor end-to-end:
 
 from __future__ import annotations
 
-from typing import ClassVar, Optional
+from typing import ClassVar, List, Optional
 from uuid import UUID, uuid4
 
 import pytest
 from sqlmodel import Field, SQLModel
 
-from nexusx import GraphQLHandler, query
+from nexusx import GraphQLHandler, mutation, query
 
 
 # ──────────────────────────────────────────────────────────
@@ -185,3 +185,115 @@ class TestUuidSDL:
             f"Expected `uuidItemGetById(id: UUID!)` in SDL, got:\n{sdl}"
         )
         assert "(id: String" not in sdl
+
+
+# ──────────────────────────────────────────────────────────
+# 4. List[UUID] arguments — every element must be converted
+# ──────────────────────────────────────────────────────────
+
+
+class UuidListDemo(UuidArgBase, table=False):
+    """Entity whose mutation accepts ``list[UUID]``.
+
+    Mirrors the travel-planner pattern::
+
+        @mutation
+        async def set_day_places(cls, day_id: UUID, place_ids: list[UUID]) -> ...
+
+    nexusx must convert each list element from str → UUID before invoking the
+    method. The previous fix (single UUID) does not extend to list-of-UUID
+    because ``_convert_scalar_value`` short-circuits on non-scalar target types.
+    """
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    name: str = ""
+
+    @mutation
+    async def reorder(cls, ids: List[UUID]) -> List[UUID]:  # noqa: A002
+        """Echo back the ids; record what the method actually received."""
+        _RECEIVED["ids"] = ids
+        _RECEIVED["ids_types"] = [type(x) for x in ids]
+        if all(isinstance(x, UUID) for x in ids):
+            return list(ids)
+        raise TypeError(
+            f"@mutation received non-UUID element types "
+            f"{_RECEIVED['ids_types']!r}; "
+            f"SQLModel would raise AttributeError: 'str' object has no attribute 'hex'"
+        )
+
+
+class TestUuidListArgumentConversion:
+    """``list[UUID]`` must arrive with every element already converted."""
+
+    @pytest.mark.asyncio
+    async def test_list_of_strings_converted_to_uuids(self) -> None:
+        """Client sends ``ids: ["<uuid>", "<uuid>"]``; method receives ``[UUID, UUID]``."""
+        _RECEIVED.clear()
+        handler = GraphQLHandler(base=UuidArgBase)
+
+        id1 = "123e4567-e89b-12d3-a456-426614174000"
+        id2 = "00000000-0000-0000-0000-000000000001"
+        query_str = (
+            'mutation { uuidListDemoReorder(ids: ["' + id1 + '", "' + id2 + '"]) }'
+        )
+
+        result = await handler.execute(query_str)
+
+        assert "errors" not in result, f"unexpected errors: {result.get('errors')}"
+        received = _RECEIVED.get("ids")
+        assert isinstance(received, list), f"Expected list, got {type(received).__name__}"
+        assert len(received) == 2
+        assert all(isinstance(x, UUID) for x in received), (
+            f"Expected all UUID, got types={[type(x).__name__ for x in received]}. "
+            "ArgumentBuilder._convert_scalar_value must recurse into list[UUID]."
+        )
+        assert [str(x) for x in received] == [id1, id2]
+
+    @pytest.mark.asyncio
+    async def test_list_of_strings_via_variables(self) -> None:
+        """Variables form (the way SDKs send list[UUID]) — same contract."""
+        _RECEIVED.clear()
+        handler = GraphQLHandler(base=UuidArgBase)
+
+        id1 = "123e4567-e89b-12d3-a456-426614174000"
+        id2 = "00000000-0000-0000-0000-000000000001"
+        result = await handler.execute(
+            "mutation M($ids: [UUID!]!) { uuidListDemoReorder(ids: $ids) }",
+            variables={"ids": [id1, id2]},
+            operation_name="M",
+        )
+
+        assert "errors" not in result, f"unexpected errors: {result.get('errors')}"
+        received = _RECEIVED.get("ids")
+        assert all(isinstance(x, UUID) for x in received), (
+            f"Expected all UUID via variables, got {[type(x).__name__ for x in received]}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_empty_list_handled(self) -> None:
+        """Empty list should pass through cleanly (no elements to convert)."""
+        _RECEIVED.clear()
+        handler = GraphQLHandler(base=UuidArgBase)
+
+        result = await handler.execute("mutation { uuidListDemoReorder(ids: []) }")
+
+        assert "errors" not in result, f"unexpected errors: {result.get('errors')}"
+        assert _RECEIVED.get("ids") == []
+
+
+# ──────────────────────────────────────────────────────────
+# 5. List[UUID] SDL — must render as [UUID!]!
+# ──────────────────────────────────────────────────────────
+
+
+class TestUuidListSDL:
+    """``list[UUID]`` arguments must surface as ``[UUID!]!`` in the SDL."""
+
+    def test_list_uuid_argument_in_sdl(self) -> None:
+        handler = GraphQLHandler(base=UuidArgBase)
+        sdl = handler.get_sdl()
+
+        # Non-null list of non-null UUIDs.
+        assert "uuidListDemoReorder(ids: [UUID!]!)" in sdl, (
+            f"Expected `uuidListDemoReorder(ids: [UUID!]!)` in SDL, got:\n{sdl}"
+        )
