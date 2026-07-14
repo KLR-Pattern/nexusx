@@ -5,8 +5,6 @@ Write SQLModel classes. Get a complete API.
 [![pypi](https://img.shields.io/pypi/v/nexusx.svg)](https://pypi.python.org/pypi/nexusx)
 [![PyPI Downloads](https://static.pepy.tech/badge/nexusx/month)](https://pepy.tech/projects/nexusx)
 
-Most Python backends split one domain across five files — SQLModel table, Pydantic DTO, GraphQL resolver with hand-wired DataLoader, REST handler, MCP tool definition. Change a field, sync five files. nexusx collapses them: declare entities once, get back GraphQL with auto-batched relations, typed REST + OpenAPI, and a 4-layer MCP server — all from the same SQLModel classes.
-
 ```mermaid
 flowchart LR
     sqlmodel["SQLModel"]
@@ -20,6 +18,52 @@ flowchart LR
     usecase --> cli["CLI"]
     graphql2 --> mcp2["MCP"]
 ```
+
+## Build a GraphQL + MCP in 3 Minutes
+
+Two SQLModel classes. One relationship. That's enough for a GraphQL endpoint with auto-batched relations **and** an MCP server an AI agent can drive — no resolver code, no introspection dump.
+
+```python
+# app.py
+from sqlmodel import SQLModel, Field, Relationship, select
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from nexusx import query, GraphQLHandler
+from nexusx.mcp import create_simple_mcp_server
+
+engine = create_async_engine("sqlite+aiosqlite:///blog.db")
+async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+class User(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    posts: list["Post"] = Relationship(back_populates="author")
+
+    @query
+    async def users(cls, limit: int = 10) -> list["User"]:
+        async with async_session() as s:
+            return (await s.exec(select(cls).limit(limit))).all()
+
+class Post(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    title: str
+    author_id: int = Field(foreign_key="user.id")
+    author: User | None = Relationship(back_populates="posts")
+
+# 1. GraphQL — querying { users { posts } } is 2 SQL round-trips, not 1 + N
+handler = GraphQLHandler(base=SQLModel, session_factory=async_session)
+
+# 2. MCP — 2 tools (get_schema + graphql_query); agent fetches SDL on demand
+mcp = create_simple_mcp_server(base=SQLModel, name="Blog", session_factory=async_session)
+mcp.run()  # stdio; add transport="streamable-http" for HTTP
+```
+
+**What you've got:**
+
+- **N+1-proof GraphQL** — `{ users(limit: 100) { name posts { title } } }` runs in exactly 2 SQL round-trips (users, then one batched `WHERE author_id IN (...)`), not 101. Scales to arbitrary nesting depth.
+- **AI-ready MCP** — Claude Desktop / Cursor / any MCP client calls `get_schema` to read the SDL, then `graphql_query` to fetch data. The agent pulls context on demand instead of swallowing a 50K-token introspection dump up front.
+- **Zero resolver boilerplate** — `posts: list["Post"] = Relationship(back_populates="author")` is the entire resolver. nexusx inspects SQLAlchemy metadata and wires the DataLoader for you.
+
+Ready to go deeper? [Install](#install) below, then [Quick Start](#quick-start) walks through DTOs, the UseCase service layer, and multi-app MCP.
 
 ## Install
 
