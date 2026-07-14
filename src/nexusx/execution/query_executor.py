@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from graphql import DocumentNode, FieldNode, OperationDefinitionNode
+from pydantic import TypeAdapter
 from sqlmodel import SQLModel
 
 from nexusx.execution.argument_builder import ArgumentBuilder
@@ -455,18 +456,14 @@ class QueryExecutor:
         return result
 
     def _serialize_scalar_value(self, value: Any) -> Any:
-        """Serialize a bare scalar / list-of-scalars returned by a method.
+        """Serialize a non-entity scalar / list-of-scalars returned by a method.
 
-        Methods like ``delete_xxx() -> bool`` or ``reorder() -> list[UUID]``
-        return Python scalars directly (no SQLModel wrapper). ``bool`` /
-        ``int`` / ``str`` are JSON-native; UUID instances must be stringified
-        so the response dict is JSON-encodable.
+        Delegates to Pydantic's ``TypeAdapter``, which handles UUID / datetime
+        / date / time / Decimal / Enum / set / tuple uniformly. Pydantic model
+        instances don't reach here — the caller routes them through
+        ``model_dump(mode="json")``.
         """
-        if isinstance(value, UUID):
-            return str(value)
-        if isinstance(value, list):
-            return [self._serialize_scalar_value(v) for v in value]
-        return value
+        return TypeAdapter(type(value)).dump_python(value, mode="json")
 
     def _serialize_relationship_value(
         self,
