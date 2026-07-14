@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import uuid
 from datetime import date, datetime, time, timezone
 from typing import Any, get_type_hints
 
@@ -81,6 +82,8 @@ class ArgumentBuilder:
             return date.fromisoformat(value)
         if target_type is time and isinstance(value, str):
             return time.fromisoformat(value)
+        if target_type is uuid.UUID and isinstance(value, str):
+            return uuid.UUID(value)
 
         return value
 

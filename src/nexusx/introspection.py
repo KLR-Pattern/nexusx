@@ -184,7 +184,7 @@ class IntrospectionGenerator:
 
     def _build_scalar_types(self) -> list[dict]:
         """Build introspection data for built-in scalar types."""
-        scalars = ["Int", "Float", "String", "Boolean", "ID", "DateTime", "Date", "Time"]
+        scalars = ["Int", "Float", "String", "Boolean", "ID", "DateTime", "Date", "Time", "UUID"]
         return [
             {
                 "kind": "SCALAR",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import types
+import uuid
 from datetime import date, datetime, time
 from enum import Enum
 from typing import Any, Union, get_args, get_origin
@@ -24,6 +25,7 @@ class TypeConverter:
         datetime: "DateTime",
         date: "Date",
         time: "Time",
+        uuid.UUID: "UUID",
     }
 
     def __init__(self, entity_names: set[str]):
