@@ -7,6 +7,7 @@ import inspect
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from graphql import DocumentNode, FieldNode, OperationDefinitionNode
 from sqlmodel import SQLModel
@@ -446,7 +447,10 @@ class QueryExecutor:
                 )
             else:
                 # Scalar field
-                result[field_name] = getattr(item, field_name, None)
+                value = getattr(item, field_name, None)
+                if isinstance(value, UUID):
+                    value = str(value)
+                result[field_name] = value
 
         return result
 

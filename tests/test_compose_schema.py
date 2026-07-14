@@ -197,11 +197,11 @@ class TestTypeMapping:
         assert ref.of_type is not None and ref.of_type.kind == "LIST"
         assert ref.of_type.of_type == TypeRef(kind="SCALAR", name="Int")
 
-    def test_uuid_maps_to_id_scalar(self) -> None:
+    def test_uuid_maps_to_uuid_scalar(self) -> None:
         m = ComposeTypeMapper()
         ref = m.map_python_type(uuid.UUID)
         assert ref.kind == "NON_NULL"
-        assert ref.of_type == TypeRef(kind="SCALAR", name="ID")
+        assert ref.of_type == TypeRef(kind="SCALAR", name="UUID")
 
     def test_datetime_maps_to_datetime_scalar(self) -> None:
         m = ComposeTypeMapper()
