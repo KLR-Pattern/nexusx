@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.6.2
+
+### Bug Fix: `@query`/`@mutation` 返回裸 scalar 或 `list[scalar]` 不再被包装成 `{"_value": ...}`（#106）
+
+`_serialize_item` 的 fallback 分支原本把所有"非 Pydantic 模型 + 无子选择"的返回值统一塞进 `{"_value": str(item)}`——这是函数还是 entity-only 时代留下的防御性兜底。返回裸 scalar 的常见 mutation 模式（`delete_xxx() -> bool`、`count_xxx() -> int`、`reorder() -> list[UUID]`）因为客户端 query 没有子选择、`field_sel.sub_fields` 为空，全部落到这个分支，结果响应变成 `{"_value": "True"}` / `[{"_value": "..."}]`——既不是 SDL 声明的 `Boolean!` 类型，也不是 JSON 原生值。这是 3.6.0/3.6.1 UUID 链路修复的对称缺口：入参方向修完了，出参方向的方法返回值仍坏着。
+
+**修法：** 把 `{"_value": str(item)}` 这条 fallback 改为调 `_serialize_scalar_value`；后者用 Pydantic 的 `TypeAdapter(type(value)).dump_python(value, mode="json")` 统一处理——`bool` / `int` / `str` 原样返回、`UUID` stringify、`datetime` / `Decimal` / `Enum` / `set` / `tuple` / 嵌套 list 也由 Pydantic 统一负责。Pydantic 模型路径（`model_dump(mode="json")`）不动。`bool` / `int` / `str` / `list[str]` / `list[UUID]` 都自然走通。
+
+**为什么借力 Pydantic 而非手写 isinstance 分派：** 一行代码覆盖所有 Pydantic 已知的类型；测试矩阵可以小步快跑（先钉 UUID/list 这两种最常见模式），未来用户写 `Decimal` / `Enum` 返回值时自动受益、不需要再改代码。代价是 Pydantic 的 dump 自带边角决策（Decimal → float、Enum → value），目前没有专门测试覆盖这些边角，可接受。
+
+**行为变更：** 方法返回裸 scalar 时响应格式从 `{"_value": str(...)}` 变成原值（`true` / `42` / `"hello"` / `["uuid1", "uuid2"]` 等）。严格说是 bug fix——`{"_value": ...}` 这个形状从来没匹配过 SDL 契约，没有真实客户端能依赖它。
+
+**Changes：**
+- `src/nexusx/execution/query_executor.py`: 新增 `from pydantic import TypeAdapter` import；`_serialize_item` fallback 分支用 `_serialize_scalar_value(item)` 取代 `{"_value": str(item)}`；新增 `_serialize_scalar_value` 一行 helper（内部调 `TypeAdapter(type(value)).dump_python(value, mode="json")`）
+- `tests/test_scalar_return_serialization.py`: 新增端到端测试——`bool` / `int` / `str` / `UUID` 单值返回、`list[UUID]` / `list[str]` 列表返回、对应 SDL floor test（`Boolean!` / `Int!` / `[UUID!]!`）
+
+---
+
 ## 3.6.1
 
 ### Bug Fix: `list[UUID]` / `list[datetime]` 等参数类型不再原样穿透（#105）
