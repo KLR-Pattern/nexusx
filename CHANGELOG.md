@@ -1,5 +1,36 @@
 # Changelog
 
+## 3.6.0
+
+### Breaking Change: UUID 升级为真正的 GraphQL UUID scalar（#104）
+
+Python 的 `uuid.UUID` 此前在两条 GraphQL 路径上**行为分裂且都不正确**：主路径（sdl_generator + TypeConverter）通过 `or "String"` fallback 把 UUID 字段/参数渲染成 `String`；compose 路径（compose_type_mapper）映射到 `ID`。两种处理都偏离了 Python 端明确的 `uuid.UUID` 类型语义。更严重的是主路径上的入参方向：`@query` 方法声明 `id: UUID`、客户端按 SDL 发字符串字面量、ArgumentBuilder 只识别 `datetime`/`date`/`time` 不识别 UUID → 方法运行时拿到的是 `str`，SQLModel/SQLAlchemy 在绑定 UUID 列时调用 `.hex` 抛 `AttributeError: 'str' object has no attribute 'hex'`，错误堆栈完全不指向 nexusx，对用户极其费解。出参方向同样有问题：`_serialize_item` 标量分支直接 `getattr`，UUID 实例未经 stringify 进入响应 dict。
+
+本次把 UUID 提升为两条路径共同的**一等公民 scalar**，与 `DateTime` / `Date` / `Time` 平起平坐：SDL 一致渲染成 `UUID` / `UUID!`，传输层不变（UUID 仍按字符串序列化），introspection 在 `__schema` 里 advertise UUID scalar。
+
+**影响范围（破坏性）：**
+- **主路径**：UUID 字段从 `String` 变 `UUID`。`String` 本来就是 fallback bug 而非设计契约，所以主路径用户感知到的是 bug 修复——SDL 类型名变了，但 SQLModel app 的运行时行为从"崩溃"变"正常"。
+- **Compose 路径**：UUID 字段从 `ID` 变 `UUID`。这才是真正的破坏性变更——`graphql-codegen` / Apollo 这类消费 SDL 的工具会看到新 scalar 名，需要重新生成类型。Transport 层（字符串序列化）完全不变，纯 SDL 表面变更。
+- **不动的事**：主路径 SDL 是否 emit `scalar X` 声明（保持现状，`DateTime`/`Date`/`Time` 也只引用不声明）；`datetime`/`date`/`time` 出参方向的同源序列化缺陷（未钉契约，留给后续）。
+
+**修法：** 改动分布在 scalar 处理的四个站点 + compose 路径对齐，全部 surgical edit：
+- `TypeConverter.SCALAR_TYPE_MAP` 注册 `uuid.UUID: "UUID"`，`sdl_generator` 与 `introspection.py` 自动消费。
+- `ArgumentBuilder._convert_scalar_value` 在 `time` 分支之后加 UUID 分支，镜像 `date.fromisoformat` / `time.fromisoformat` 的写法调 `uuid.UUID(value)`；非法字符串抛 `ValueError`，被 `query_executor` 的 except 包成 GraphQL 规范的 `{message, path}` 错误响应。
+- `QueryExecutor._serialize_item` 标量分支从 `getattr` 改为 `value = getattr(...); if isinstance(value, UUID): value = str(value)`，确保响应 dict 里的 UUID 是字符串。
+- `IntrospectionGenerator._build_scalar_types` 硬编码 scalar 列表加 `"UUID"`，否则 Apollo/codegen 会报 unknown type。
+- `ComposeTypeMapper._SCALAR_NAMES` 把 `uuid.UUID: "ID"` 改成 `"UUID"`，与主路径对齐；`_SCALAR_DESCRIPTIONS` 同步加 `"UUID"` 描述。
+
+**Changes：**
+- `src/nexusx/type_converter.py`: 顶部 `import uuid`；`SCALAR_TYPE_MAP` 加 `uuid.UUID: "UUID"`
+- `src/nexusx/execution/argument_builder.py`: 顶部 `import uuid`；`_convert_scalar_value` 加 `uuid.UUID(value)` 分支
+- `src/nexusx/execution/query_executor.py`: 顶部 `from uuid import UUID`；`_serialize_item` 标量分支加 UUID → str 归一化
+- `src/nexusx/introspection.py:187`: 硬编码 scalars 列表追加 `"UUID"`
+- `src/nexusx/use_case/compose_type_mapper.py`: `_SCALAR_NAMES` 把 `uuid.UUID` 从 `"ID"` 改 `"UUID"`；`_SCALAR_DESCRIPTIONS` 加 `"UUID"` 条目
+- `tests/test_uuid_arguments.py`: 新增端到端测试——入参方向（字面量/变量/Optional）、出参方向（UUID 实例 → str）、SDL 断言（升级后钉 `UUID!`、负面断言排除 `String`）
+- `tests/test_compose_schema.py`: `test_uuid_maps_to_id_scalar` → `test_uuid_maps_to_uuid_scalar`
+
+---
+
 ## 3.5.3
 
 ### Breaking Change: 移除 UseCase compose query 的 `Op` 包装层
