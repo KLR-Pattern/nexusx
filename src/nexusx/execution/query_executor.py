@@ -433,7 +433,7 @@ class QueryExecutor:
             # Fallback: use model_dump
             if hasattr(item, "model_dump"):
                 return self._filter_output(item.model_dump(mode="json"), entity)
-            return {"_value": str(item)}
+            return self._serialize_scalar_value(item)
 
         entity_rels = self._registry.get_relationships(entity)
         result = {}
@@ -453,6 +453,20 @@ class QueryExecutor:
                 result[field_name] = value
 
         return result
+
+    def _serialize_scalar_value(self, value: Any) -> Any:
+        """Serialize a bare scalar / list-of-scalars returned by a method.
+
+        Methods like ``delete_xxx() -> bool`` or ``reorder() -> list[UUID]``
+        return Python scalars directly (no SQLModel wrapper). ``bool`` /
+        ``int`` / ``str`` are JSON-native; UUID instances must be stringified
+        so the response dict is JSON-encodable.
+        """
+        if isinstance(value, UUID):
+            return str(value)
+        if isinstance(value, list):
+            return [self._serialize_scalar_value(v) for v in value]
+        return value
 
     def _serialize_relationship_value(
         self,
