@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.6.1
+
+### Bug Fix: `list[UUID]` / `list[datetime]` 等参数类型不再原样穿透（#105）
+
+3.6.0 修了单个 UUID 的入参转换，但 `ArgumentBuilder._convert_scalar_value` 对 `list[T]` / `List[T]` 这类泛型 target 类型直接 `return value`——整个 list 原样穿透，元素不被转换。实际表现：`@mutation reorder(cls, ids: list[UUID])` 收到的是 `list[str]`，SQLModel/SQLAlchemy 绑定 UUID 列时同样抛 `AttributeError: 'str' object has no attribute 'hex'`，错误堆栈同样不指向 nexusx。这是 3.6.0 同源 bug 的一层外——单 scalar 修了，list-of-scalar 漏了。
+
+影响范围其实更广：`list[datetime]` / `list[date]` / `list[time]` 参数也都有同样问题，只是项目里暂时没人写过这种签名所以没暴露。本次走通用解，不为 UUID 写特例。
+
+**修法：** 在 `_convert_scalar_value` 头部（`unwrap_optional` 之后、bare scalar 分支之前）加一段 list 递归——`typing.get_origin(target_type) is list` 检测泛型 list，`get_args` 提取元素类型，对每个元素调 `_convert_scalar_value` 自身。空列表自然走通（递归对 `[]` 返回 `[]`），`Optional[list[T]]` 由前置的 `unwrap_optional` 处理后再进 list 分支，元素层的 `Optional[T]` 由递归调用自身的 `unwrap_optional` 处理。所有现有 bare scalar 分支（`datetime`/`date`/`time`/`UUID`）原封不动，只是现在被 list 递归触达。
+
+**Changes：**
+- `src/nexusx/execution/argument_builder.py`: 顶部 `typing` import 加 `get_args, get_origin`；`_convert_scalar_value` 头部加 ~4 行 list 递归分支
+- `tests/test_uuid_arguments.py`: 新增 `TestUuidListArgumentConversion` / `TestUuidListSDL`——覆盖字面量 list 转换、variables 形式 list 转换、空 list 通过、SDL 渲染 `[UUID!]!`
+
+---
+
 ## 3.6.0
 
 ### Breaking Change: UUID 升级为真正的 GraphQL UUID scalar（#104）
