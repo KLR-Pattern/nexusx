@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import inspect
+import uuid
 from datetime import date, datetime, time, timezone
-from typing import Any, get_type_hints
+from typing import Any, get_args, get_origin, get_type_hints
 
 from graphql.utilities import value_from_ast_untyped
 from pydantic import AwareDatetime, TypeAdapter, ValidationError
@@ -75,12 +76,20 @@ class ArgumentBuilder:
 
         if self._converter.is_optional(target_type):
             target_type = self._converter.unwrap_optional(target_type)
+
+        origin = get_origin(target_type)
+        if origin is list and isinstance(value, list):
+            (elem_type,) = get_args(target_type) or (None,)
+            return [self._convert_scalar_value(v, elem_type) for v in value]
+
         if target_type is datetime and isinstance(value, str):
             return self._parse_datetime(value)
         if target_type is date and isinstance(value, str):
             return date.fromisoformat(value)
         if target_type is time and isinstance(value, str):
             return time.fromisoformat(value)
+        if target_type is uuid.UUID and isinstance(value, str):
+            return uuid.UUID(value)
 
         return value
 

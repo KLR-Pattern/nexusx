@@ -1,5 +1,91 @@
 # Changelog
 
+## 3.6.2
+
+### Bug Fix: `@query`/`@mutation` 返回裸 scalar 或 `list[scalar]` 不再被包装成 `{"_value": ...}`（#106）
+
+`_serialize_item` 的 fallback 分支原本把所有"非 Pydantic 模型 + 无子选择"的返回值统一塞进 `{"_value": str(item)}`——这是函数还是 entity-only 时代留下的防御性兜底。返回裸 scalar 的常见 mutation 模式（`delete_xxx() -> bool`、`count_xxx() -> int`、`reorder() -> list[UUID]`）因为客户端 query 没有子选择、`field_sel.sub_fields` 为空，全部落到这个分支，结果响应变成 `{"_value": "True"}` / `[{"_value": "..."}]`——既不是 SDL 声明的 `Boolean!` 类型，也不是 JSON 原生值。这是 3.6.0/3.6.1 UUID 链路修复的对称缺口：入参方向修完了，出参方向的方法返回值仍坏着。
+
+**修法：** 把 `{"_value": str(item)}` 这条 fallback 改为调 `_serialize_scalar_value`；后者用 Pydantic 的 `TypeAdapter(type(value)).dump_python(value, mode="json")` 统一处理——`bool` / `int` / `str` 原样返回、`UUID` stringify、`datetime` / `Decimal` / `Enum` / `set` / `tuple` / 嵌套 list 也由 Pydantic 统一负责。Pydantic 模型路径（`model_dump(mode="json")`）不动。`bool` / `int` / `str` / `list[str]` / `list[UUID]` 都自然走通。
+
+**为什么借力 Pydantic 而非手写 isinstance 分派：** 一行代码覆盖所有 Pydantic 已知的类型；测试矩阵可以小步快跑（先钉 UUID/list 这两种最常见模式），未来用户写 `Decimal` / `Enum` 返回值时自动受益、不需要再改代码。代价是 Pydantic 的 dump 自带边角决策（Decimal → float、Enum → value），目前没有专门测试覆盖这些边角，可接受。
+
+**行为变更：** 方法返回裸 scalar 时响应格式从 `{"_value": str(...)}` 变成原值（`true` / `42` / `"hello"` / `["uuid1", "uuid2"]` 等）。严格说是 bug fix——`{"_value": ...}` 这个形状从来没匹配过 SDL 契约，没有真实客户端能依赖它。
+
+**Changes：**
+- `src/nexusx/execution/query_executor.py`: 新增 `from pydantic import TypeAdapter` import；`_serialize_item` fallback 分支用 `_serialize_scalar_value(item)` 取代 `{"_value": str(item)}`；新增 `_serialize_scalar_value` 一行 helper（内部调 `TypeAdapter(type(value)).dump_python(value, mode="json")`）
+- `tests/test_scalar_return_serialization.py`: 新增端到端测试——`bool` / `int` / `str` / `UUID` 单值返回、`list[UUID]` / `list[str]` 列表返回、对应 SDL floor test（`Boolean!` / `Int!` / `[UUID!]!`）
+
+---
+
+## 3.6.1
+
+### Bug Fix: `list[UUID]` / `list[datetime]` 等参数类型不再原样穿透（#105）
+
+3.6.0 修了单个 UUID 的入参转换，但 `ArgumentBuilder._convert_scalar_value` 对 `list[T]` / `List[T]` 这类泛型 target 类型直接 `return value`——整个 list 原样穿透，元素不被转换。实际表现：`@mutation reorder(cls, ids: list[UUID])` 收到的是 `list[str]`，SQLModel/SQLAlchemy 绑定 UUID 列时同样抛 `AttributeError: 'str' object has no attribute 'hex'`，错误堆栈同样不指向 nexusx。这是 3.6.0 同源 bug 的一层外——单 scalar 修了，list-of-scalar 漏了。
+
+影响范围其实更广：`list[datetime]` / `list[date]` / `list[time]` 参数也都有同样问题，只是项目里暂时没人写过这种签名所以没暴露。本次走通用解，不为 UUID 写特例。
+
+**修法：** 在 `_convert_scalar_value` 头部（`unwrap_optional` 之后、bare scalar 分支之前）加一段 list 递归——`typing.get_origin(target_type) is list` 检测泛型 list，`get_args` 提取元素类型，对每个元素调 `_convert_scalar_value` 自身。空列表自然走通（递归对 `[]` 返回 `[]`），`Optional[list[T]]` 由前置的 `unwrap_optional` 处理后再进 list 分支，元素层的 `Optional[T]` 由递归调用自身的 `unwrap_optional` 处理。所有现有 bare scalar 分支（`datetime`/`date`/`time`/`UUID`）原封不动，只是现在被 list 递归触达。
+
+**Changes：**
+- `src/nexusx/execution/argument_builder.py`: 顶部 `typing` import 加 `get_args, get_origin`；`_convert_scalar_value` 头部加 ~4 行 list 递归分支
+- `tests/test_uuid_arguments.py`: 新增 `TestUuidListArgumentConversion` / `TestUuidListSDL`——覆盖字面量 list 转换、variables 形式 list 转换、空 list 通过、SDL 渲染 `[UUID!]!`
+
+---
+
+## 3.6.0
+
+### Breaking Change: UUID 升级为真正的 GraphQL UUID scalar（#104）
+
+Python 的 `uuid.UUID` 此前在两条 GraphQL 路径上**行为分裂且都不正确**：主路径（sdl_generator + TypeConverter）通过 `or "String"` fallback 把 UUID 字段/参数渲染成 `String`；compose 路径（compose_type_mapper）映射到 `ID`。两种处理都偏离了 Python 端明确的 `uuid.UUID` 类型语义。更严重的是主路径上的入参方向：`@query` 方法声明 `id: UUID`、客户端按 SDL 发字符串字面量、ArgumentBuilder 只识别 `datetime`/`date`/`time` 不识别 UUID → 方法运行时拿到的是 `str`，SQLModel/SQLAlchemy 在绑定 UUID 列时调用 `.hex` 抛 `AttributeError: 'str' object has no attribute 'hex'`，错误堆栈完全不指向 nexusx，对用户极其费解。出参方向同样有问题：`_serialize_item` 标量分支直接 `getattr`，UUID 实例未经 stringify 进入响应 dict。
+
+本次把 UUID 提升为两条路径共同的**一等公民 scalar**，与 `DateTime` / `Date` / `Time` 平起平坐：SDL 一致渲染成 `UUID` / `UUID!`，传输层不变（UUID 仍按字符串序列化），introspection 在 `__schema` 里 advertise UUID scalar。
+
+**影响范围（破坏性）：**
+- **主路径**：UUID 字段从 `String` 变 `UUID`。`String` 本来就是 fallback bug 而非设计契约，所以主路径用户感知到的是 bug 修复——SDL 类型名变了，但 SQLModel app 的运行时行为从"崩溃"变"正常"。
+- **Compose 路径**：UUID 字段从 `ID` 变 `UUID`。这才是真正的破坏性变更——`graphql-codegen` / Apollo 这类消费 SDL 的工具会看到新 scalar 名，需要重新生成类型。Transport 层（字符串序列化）完全不变，纯 SDL 表面变更。
+- **不动的事**：主路径 SDL 是否 emit `scalar X` 声明（保持现状，`DateTime`/`Date`/`Time` 也只引用不声明）；`datetime`/`date`/`time` 出参方向的同源序列化缺陷（未钉契约，留给后续）。
+
+**修法：** 改动分布在 scalar 处理的四个站点 + compose 路径对齐，全部 surgical edit：
+- `TypeConverter.SCALAR_TYPE_MAP` 注册 `uuid.UUID: "UUID"`，`sdl_generator` 与 `introspection.py` 自动消费。
+- `ArgumentBuilder._convert_scalar_value` 在 `time` 分支之后加 UUID 分支，镜像 `date.fromisoformat` / `time.fromisoformat` 的写法调 `uuid.UUID(value)`；非法字符串抛 `ValueError`，被 `query_executor` 的 except 包成 GraphQL 规范的 `{message, path}` 错误响应。
+- `QueryExecutor._serialize_item` 标量分支从 `getattr` 改为 `value = getattr(...); if isinstance(value, UUID): value = str(value)`，确保响应 dict 里的 UUID 是字符串。
+- `IntrospectionGenerator._build_scalar_types` 硬编码 scalar 列表加 `"UUID"`，否则 Apollo/codegen 会报 unknown type。
+- `ComposeTypeMapper._SCALAR_NAMES` 把 `uuid.UUID: "ID"` 改成 `"UUID"`，与主路径对齐；`_SCALAR_DESCRIPTIONS` 同步加 `"UUID"` 描述。
+
+**Changes：**
+- `src/nexusx/type_converter.py`: 顶部 `import uuid`；`SCALAR_TYPE_MAP` 加 `uuid.UUID: "UUID"`
+- `src/nexusx/execution/argument_builder.py`: 顶部 `import uuid`；`_convert_scalar_value` 加 `uuid.UUID(value)` 分支
+- `src/nexusx/execution/query_executor.py`: 顶部 `from uuid import UUID`；`_serialize_item` 标量分支加 UUID → str 归一化
+- `src/nexusx/introspection.py:187`: 硬编码 scalars 列表追加 `"UUID"`
+- `src/nexusx/use_case/compose_type_mapper.py`: `_SCALAR_NAMES` 把 `uuid.UUID` 从 `"ID"` 改 `"UUID"`；`_SCALAR_DESCRIPTIONS` 加 `"UUID"` 条目
+- `tests/test_uuid_arguments.py`: 新增端到端测试——入参方向（字面量/变量/Optional）、出参方向（UUID 实例 → str）、SDL 断言（升级后钉 `UUID!`、负面断言排除 `String`）
+- `tests/test_compose_schema.py`: `test_uuid_maps_to_id_scalar` → `test_uuid_maps_to_uuid_scalar`
+
+---
+
+## 3.5.3
+
+### Breaking Change: 移除 UseCase compose query 的 `Op` 包装层
+
+UseCase compose query 原先要求顶层套一层虚拟的 `Op` 字段——`{ Op { UserService { list_users { id } } } }`。这层 wrapper 没有任何业务含义，只是早期实现为了对齐 graphql-core 默认 `Query` 根类型而引入的占位符；每条 compose query 都被迫多写一层缩进、MCP 工具示例与文档也都要解释它的存在，纯粹的认知负担。本次移除后查询直接以 service 开头：`{ UserService { list_users { id } } }`。
+
+**影响范围：**
+- `execute_compose_query` / MCP Layer 3 `compose_query` 工具 / GraphiQL 端点全部一致——graphql 层与 mcp 层均不再接受 `Op`。
+- 已发布的 compose query 全部需要改写；旧形状会被执行器拒绝，错误消息为 `Service 'Op' not found in app '<name>'. Available: [...]`。
+- README / demo / docs / MCP 工具内嵌描述确认无残留 `Op` 示例（仅 specs/ 与历史 plan 文档保留旧语法作为档案，不在此次清理范围）。
+
+**修法：** `_execute_operations` 直接遍历 `selections.items()` 派发到 service，去掉原先"先解一层 root FieldSelection 再迭代 sub_fields"的嵌套循环。QueryParser 仍然按根字段名生成 `FieldSelection`，只是这些 root selection 现在就是 service 名而非 `Op`。`_execute_service_methods` / `_invoke_and_project` / introspection rejection / `compose_introspect` 全部不动——改动只发生在 `_execute_operations` 一个函数内。
+
+**Changes：**
+- `src/nexusx/use_case/compose_executor.py`: `_execute_operations` 移除对 `root_sel.sub_fields` 的内层循环，直接遍历 `selections.items()`
+- `tests/test_compose_executor.py`: 全部 compose query 字面量去掉 `Op` 包装；新增 `test_wrapper_field_is_rejected` 锁定旧形状被拒绝
+- `tests/test_compose_mcp_server.py`: Layer 3 测试同步去 `Op`；新增 `test_wrapper_field_is_rejected`；`test_unknown_app_returns_error_in_errors_array` 同步
+- `tests/test_compose_introspect.py`: `_CoercionService` / `_ContextCoercionService` 系列端到端测试同步去 `Op`
+
+---
+
 ## 3.5.2
 
 ### Bug Fix: Voyager 节点切换后旧节点边框残留橙色描边（#101）

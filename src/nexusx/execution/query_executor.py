@@ -7,8 +7,10 @@ import inspect
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from graphql import DocumentNode, FieldNode, OperationDefinitionNode
+from pydantic import TypeAdapter
 from sqlmodel import SQLModel
 
 from nexusx.execution.argument_builder import ArgumentBuilder
@@ -432,7 +434,7 @@ class QueryExecutor:
             # Fallback: use model_dump
             if hasattr(item, "model_dump"):
                 return self._filter_output(item.model_dump(mode="json"), entity)
-            return {"_value": str(item)}
+            return self._serialize_scalar_value(item)
 
         entity_rels = self._registry.get_relationships(entity)
         result = {}
@@ -446,9 +448,22 @@ class QueryExecutor:
                 )
             else:
                 # Scalar field
-                result[field_name] = getattr(item, field_name, None)
+                value = getattr(item, field_name, None)
+                if isinstance(value, UUID):
+                    value = str(value)
+                result[field_name] = value
 
         return result
+
+    def _serialize_scalar_value(self, value: Any) -> Any:
+        """Serialize a non-entity scalar / list-of-scalars returned by a method.
+
+        Delegates to Pydantic's ``TypeAdapter``, which handles UUID / datetime
+        / date / time / Decimal / Enum / set / tuple uniformly. Pydantic model
+        instances don't reach here — the caller routes them through
+        ``model_dump(mode="json")``.
+        """
+        return TypeAdapter(type(value)).dump_python(value, mode="json")
 
     def _serialize_relationship_value(
         self,

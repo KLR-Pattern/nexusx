@@ -249,7 +249,7 @@ class TestLayer3ComposeQuery:
         data = await _call(
             mcp_server,
             "compose_query",
-            {"app_name": "project", "query": "{ Op { UserService { list_users { id name } } } }"},
+            {"app_name": "project", "query": "{ UserService { list_users { id name } } }"},
         )
         # Layer 3 returns {data, errors}, NOT {success, data}.
         assert "data" in data
@@ -260,7 +260,7 @@ class TestLayer3ComposeQuery:
         data = await _call(
             mcp_server,
             "compose_query",
-            {"app_name": "project", "query": "{ Op { UserService { list_users { id } } } }"},
+            {"app_name": "project", "query": "{ UserService { list_users { id } } }"},
         )
         assert data["errors"] == []
         assert "UserService" in data["data"]
@@ -282,11 +282,20 @@ class TestLayer3ComposeQuery:
         data = await _call(
             mcp_server,
             "compose_query",
-            {"app_name": "nope", "query": "{ Op { X { y } } }"},
+            {"app_name": "nope", "query": "{ X { y } }"},
         )
         assert data["data"] is None
         assert len(data["errors"]) == 1
         assert "not found" in data["errors"][0]["message"]
+
+    async def test_wrapper_field_is_rejected(self, mcp_server) -> None:
+        data = await _call(
+            mcp_server,
+            "compose_query",
+            {"app_name": "project", "query": "{ Op { UserService { list_users { id } } } }"},
+        )
+        assert data["data"] is None
+        assert "Service 'Op' not found" in data["errors"][0]["message"]
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -299,7 +308,7 @@ class TestFromContextPlumbing:
         data = await _call(
             mcp_server,
             "compose_query",
-            {"app_name": "admin", "query": "{ Op { ContextService { actor_name } } }"},
+            {"app_name": "admin", "query": "{ ContextService { actor_name } }"},
         )
         assert data["data"] is None
         assert "Required FromContext parameter 'actor'" in data["errors"][0]["message"]
@@ -320,7 +329,7 @@ class TestFromContextPlumbing:
         data = await _call(
             mcp,
             "compose_query",
-            {"app_name": "admin", "query": "{ Op { ContextService { actor_name } } }"},
+            {"app_name": "admin", "query": "{ ContextService { actor_name } }"},
         )
         assert data["errors"] == []
         assert data["data"]["ContextService"]["actor_name"] == "Eve"
