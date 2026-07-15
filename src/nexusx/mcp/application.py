@@ -244,8 +244,13 @@ def _coerce_to_application(
         return app
     if isinstance(app, dict):
         warnings.warn(
-            "Passing AppConfig dict is deprecated; use Application(...). "
-            "The dict form will be removed in a future release.",
+            "Passing AppConfig dict is deprecated; use Application(...) instead. "
+            "Example migration:\n"
+            "  # before\n"
+            "  {\"name\": \"blog\", \"base\": B, \"url\": \"...\"}\n"
+            "  # after\n"
+            "  Application(name=\"blog\", base=B, url=\"...\")\n"
+            "The dict form will be removed in v3.8.0.",
             DeprecationWarning,
             stacklevel=3,
         )
