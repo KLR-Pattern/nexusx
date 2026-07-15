@@ -16,9 +16,9 @@ which application to use.
 
 import asyncio
 
-from nexusx.mcp import create_mcp_server
+from nexusx.mcp import Application, create_mcp_server
 
-from .database import blog_async_session, shop_async_session
+from .database import BLOG_DATABASE_URL, SHOP_DATABASE_URL
 from .models import BlogBaseEntity, ShopBaseEntity
 
 
@@ -29,24 +29,25 @@ def main():
 
     asyncio.run(init_databases())
 
-    # Define applications
+    # Define applications — each is self-contained with its own database URL,
+    # so the merging project does not need to provide connection resources.
     apps = [
-        {
-            "name": "blog",
-            "base": BlogBaseEntity,
-            "session_factory": blog_async_session,
-            "description": "Blog system API - Manage users and posts",
-            "query_description": "Query users and posts",
-            "mutation_description": "Create users and posts",
-        },
-        {
-            "name": "shop",
-            "base": ShopBaseEntity,
-            "session_factory": shop_async_session,
-            "description": "E-commerce system API - Manage products and orders",
-            "query_description": "Query products and orders",
-            "mutation_description": "Create products, orders, and order items",
-        },
+        Application(
+            name="blog",
+            base=BlogBaseEntity,
+            url=BLOG_DATABASE_URL,
+            description="Blog system API - Manage users and posts",
+            query_description="Query users and posts",
+            mutation_description="Create users and posts",
+        ),
+        Application(
+            name="shop",
+            base=ShopBaseEntity,
+            url=SHOP_DATABASE_URL,
+            description="E-commerce system API - Manage products and orders",
+            query_description="Query products and orders",
+            mutation_description="Create products, orders, and order items",
+        ),
     ]
 
     # Create the MCP server

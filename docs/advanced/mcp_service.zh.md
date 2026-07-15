@@ -32,20 +32,34 @@ mcp.run()  # stdio 模式
 
 ## Multi-App MCP Server
 
-当你需要管理多个应用的 API 时：
+当你需要管理多个应用的 API 时，每个 app 用一个自包含的 `Application` 实例表示——
+封装 `base` 类加完整的数据库连接信息：
 
 ```python
-from nexusx.mcp import create_mcp_server
+from nexusx.mcp import Application, create_mcp_server
 
 mcp = create_mcp_server(
     apps=[
-        {"name": "blog", "base": BlogBase, "description": "Blog API"},
-        {"name": "shop", "base": ShopBase, "description": "Shop API"},
+        Application(
+            name="blog",
+            base=BlogBase,
+            url="sqlite+aiosqlite:///blog.db",
+            description="Blog API",
+        ),
+        Application(
+            name="shop",
+            base=ShopBase,
+            url="sqlite+aiosqlite:///shop.db",
+            description="Shop API",
+        ),
     ],
     name="Multi-App API",
 )
 mcp.run()
 ```
+
+每个 `Application` 自带数据库连接资源，合并项目无需再提供 `session_factory` 或
+其他连接配置——子项目 `pip install` 后 import 进来，传给 `create_mcp_server` 即可。
 
 多应用工具增加了应用级导航：
 
@@ -58,6 +72,32 @@ mcp.run()
 
 !!! tip
     单应用场景用 `create_simple_mcp_server`——更简单，工具调用更少。只有当 AI 代理需要跨多个数据库或领域工作时才用 `create_mcp_server`。
+
+## 跨项目合并：把 Application 作为独立包导出
+
+`Application` 是自包含的，可作为 Python 包发布到 PyPI 或私有索引，再由合并项目
+组装到统一 mcp 服务：
+
+```python
+# 在子项目 blog_app/__init__.py 里
+from nexusx.mcp import Application
+blog = Application(name="blog", base=BlogBase, url=BLOG_DATABASE_URL)
+
+# 在合并项目里
+from blog_app import blog
+from shop_app import shop
+from nexusx.mcp import create_mcp_server
+
+mcp = create_mcp_server(apps=[blog, shop], name="Gateway")
+mcp.run()
+```
+
+合并项目组装 3 个子项目通常不超过 10 行代码——`pip install blog-app shop-app auth-app`、
+import、传给 `create_mcp_server`、run。
+
+!!! note
+    旧的 `AppConfig` dict 形式（`{"name": ..., "base": ..., "session_factory": ...}`）
+    仍可工作但会发出 `DeprecationWarning`。新代码请使用 `Application(...)`。
 
 ## session_factory 配置
 

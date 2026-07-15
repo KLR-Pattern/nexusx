@@ -10,18 +10,20 @@ Usage:
 
 from demo.blog.database import async_session
 from demo.blog.models import BaseEntity
-from nexusx.mcp import create_mcp_server
+from nexusx.mcp import Application, create_mcp_server
 
 
 def main() -> None:
     import sys
 
     mcp = create_mcp_server(
-        apps=[{
-            "name": "Blog",
-            "base": BaseEntity,
-            "session_factory": async_session,
-        }],
+        apps=[
+            Application(
+                name="Blog",
+                base=BaseEntity,
+                session_factory=async_session,
+            )
+        ],
         name="Demo Blog GraphQL MCP Server",
     )
 

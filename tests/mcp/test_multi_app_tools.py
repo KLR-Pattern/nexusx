@@ -8,7 +8,7 @@ from nexusx import mutation, query
 # Skip all tests in this module if fastmcp is not installed
 pytest.importorskip("fastmcp")
 
-from nexusx.mcp import create_mcp_server  # noqa: E402
+from nexusx.mcp import Application, create_mcp_server  # noqa: E402
 
 
 def _get_tools_dict(mcp):
@@ -77,20 +77,20 @@ class ShopProduct(ShopBaseEntity, table=True):
 def multi_app_mcp():
     """Create a multi-app MCP server for testing."""
     apps = [
-        {
-            "name": "blog",
-            "base": BlogBaseEntity,
-            "description": "Blog application",
-            "query_description": "Query blog data",
-            "mutation_description": "Mutate blog data",
-        },
-        {
-            "name": "shop",
-            "base": ShopBaseEntity,
-            "description": "Shop application",
-            "query_description": "Query shop data",
-            "mutation_description": "Mutate shop data",
-        },
+        Application(
+            name="blog",
+            base=BlogBaseEntity,
+            description="Blog application",
+            query_description="Query blog data",
+            mutation_description="Mutate blog data",
+        ),
+        Application(
+            name="shop",
+            base=ShopBaseEntity,
+            description="Shop application",
+            query_description="Query shop data",
+            mutation_description="Mutate shop data",
+        ),
     ]
     return create_mcp_server(apps=apps, name="Test Multi-App", allow_mutation=True)
 

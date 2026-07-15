@@ -1,5 +1,101 @@
 # Changelog
 
+## 3.7.0
+
+### New Feature: 自包含 `Application` 类（specs/009-app-self-contained）
+
+引入 `nexusx.mcp.Application` 作为 MCP 体系里"业务应用"的最小可导出单元。一个 `Application` 封装 SQLModel `base` + 数据库连接信息（`url` / `engine` / `session_factory` 三选一或全缺）+ GraphQL 元数据，可作为独立 Python 包发布（`pip install blog-app`），再由合并项目组装到 `create_mcp_server(apps=[...])`——把"业务应用的 schema/连接定义"从"运行它的 MCP server"里彻底解耦出来。
+
+**关键设计：**
+- **资源所有权按来源判定**：`url=` 路径下 Application 自造 engine 并拥有，`dispose()` 释放；`engine=` / `session_factory=` 路径下视为外部资源、不拥有，`dispose()` no-op。避免 double-dispose / 错释放外部 engine / 资源泄漏三类坑。
+- **三种连接方式互斥**：构造期校验，多传抛 `ValueError("Provide at most one of: url, engine, session_factory")`。
+- **schema-only 模式**：完全不传连接参数也可构造，仅做 schema 内省（entity_names / SDL）。这是"应用作为包导出"的关键场景——包作者不知道用户的 DB URL。
+- **幂等 dispose**：`if self._disposed: return`，三个触发出口（MCP server lifespan shutdown / `async with Application(...)` / 显式 `await dispose()`)重叠时安全。
+- **URL 凭据脱敏**：`__repr__` 和错误消息里的 URL 自动把密码替换为 `***`（借力 SQLAlchemy `make_url().render_as_string(hide_password=True)`）。
+- **跨 app 名称冲突在构造期失败**：`MultiAppManager` 在初始化时校验重名 / alias 冲突，比运行期失败好排查。
+
+**用法速览：**
+
+```python
+from nexusx.mcp import Application, create_mcp_server
+
+# 单 app 独立使用（schema 内省 + 直接 query）
+blog = Application(name="blog", base=BlogBase, url="sqlite+aiosqlite:///blog.db")
+print(blog.resources.entity_names)
+result = await blog.resources.handler.execute("{ users { id name } }")
+
+# 多 app 合并到 MCP server
+mcp = create_mcp_server(apps=[blog, shop], name="Gateway")
+mcp.run()  # lifespan 退出时自动 dispose 所有 owned engines
+```
+
+**Changes：**
+- `src/nexusx/mcp/application.py`: 新增（288 行）—— `Application` 类 + `_redact_url` + `_coerce_to_application` + `lifespan_dispose_hook`
+- `src/nexusx/mcp/managers/multi_app_manager.py`: 改为消费 `Application` 对象；dict 输入 transparent 转换 + 警告；构造期校验跨 app 名称冲突
+- `src/nexusx/mcp/server.py`: `create_mcp_server` 接线 FastMCP lifespan → `manager.dispose()`
+- `src/nexusx/mcp/__init__.py`: 导出 `Application`
+- `demo/{auth,blog,multi_app}/mcp_server.py` + `skills/nexusx-4phase/template/src/main.py`: 全部迁移到 `Application` 形式
+- `docs/api/api_mcp.{md,zh.md}` + `docs/advanced/mcp_service.{md,zh.md}`: 同步更新
+- `tests/mcp/test_application.py` (396) / `test_dict_compat.py` (109) / `test_multi_app_lifespan.py` (92): 新增；`test_multi_app_manager.py`: fixture 迁移
+
+---
+
+### Deprecation: dict-based `AppConfig` 迁移到 `Application`（specs/009-app-self-contained）
+
+旧 dict 形式（`{"name": ..., "base": ..., "url": ...}`）**仍然工作**，但每次构造会抛 `DeprecationWarning`。dict 形式将在 **3.8.0** 移除。
+
+**迁移示例：**
+
+```python
+# Before (deprecated)
+from nexusx.mcp import create_mcp_server
+
+create_mcp_server(
+    apps=[
+        {"name": "blog", "base": BlogBase, "url": "sqlite+aiosqlite:///blog.db"},
+        {"name": "shop", "base": ShopBase, "url": "sqlite+aiosqlite:///shop.db"},
+    ],
+    name="Gateway",
+)
+
+# After
+from nexusx.mcp import Application, create_mcp_server
+
+create_mcp_server(
+    apps=[
+        Application(name="blog", base=BlogBase, url="sqlite+aiosqlite:///blog.db"),
+        Application(name="shop", base=ShopBase, url="sqlite+aiosqlite:///shop.db"),
+    ],
+    name="Gateway",
+)
+```
+
+**字段映射：**
+
+| dict key | `Application(...)` 参数 | 说明 |
+|---|---|---|
+| `name` | `name=` | 必填 |
+| `base` | `base=` | 必填 |
+| `url` / `engine` / `session_factory` | 同名 | 三选一互斥；全缺则进入 schema-only 模式 |
+| `description` | `description=` | 默认 `""` |
+| `query_description` | `query_description=` | 可选 |
+| `mutation_description` | `mutation_description=` | 可选 |
+| `aliases` | `aliases=` | list[str]，不能与自身 `name` 冲突 |
+
+**对现有项目的影响：**
+- **行为变化**：所有用 dict 形式声明 app 的代码仍能正常运行（功能不变），每次构造会在 stderr 看到 `DeprecationWarning: Passing AppConfig dict is deprecated; use Application(...)`。
+- **零功能破坏**：dict 形式 transparent 转换为 `Application`，行为与新形式完全等价。
+- **迁移工作量**：纯机械替换（如上演示），无逻辑变更。
+- **抑制警告**（仅限过渡期，不推荐长期使用）：`python -W ignore::DeprecationWarning`。
+
+**兼容窗口：** 3.7.x 全系列保留 dict 形式 + 警告；**3.8.0 移除**。建议现有项目在升级到 3.7.x 后尽快迁移，避免升级 3.8 时一次性破坏。
+
+**Changes：**
+- `src/nexusx/mcp/application.py`: `_coerce_to_application` 检测 dict 输入时抛 `DeprecationWarning`
+- 警告文案包含迁移目标（`use Application(...)`）和移除版本（`removed in v3.8.0`）
+
+---
+
 ## 3.6.2
 
 ### Bug Fix: `@query`/`@mutation` 返回裸 scalar 或 `list[scalar]` 不再被包装成 `{"_value": ...}`（#106）
