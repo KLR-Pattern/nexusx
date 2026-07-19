@@ -80,7 +80,7 @@ nav:
     - MCP API: ./api/api_mcp.md
     - UseCase API: ./api/api_use_case.md
   - Reference:
-    - Changelog: ./reference/changelog.md
+    - Changelog: ./changelog.md
     - Migration Guide: ./reference/migration.md
 
 markdown_extensions:
