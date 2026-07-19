@@ -427,6 +427,18 @@ class TestRouterExtensibility:
         response = client.post("/api/ping_service/ping")
         assert response.status_code == 200
 
+    def test_route_options_rejects_reserved_keys(self):
+        """route_options cannot override keys the router sets itself
+        (``endpoint`` / ``methods``). Doing so would otherwise raise a confusing
+        "multiple values for keyword argument" TypeError at route registration;
+        a clear ValueError is raised at ``create_router`` time instead."""
+        config = UseCaseAppConfig(name="test", services=[PingService])
+        with pytest.raises(ValueError, match="reserved keys"):
+            create_router(
+                config,
+                route_options={"PingService.ping": {"methods": ["GET"]}},
+            )
+
     def test_router_kwargs_passthrough(self):
         """**router_kwargs are forwarded to APIRouter constructor."""
         config = UseCaseAppConfig(name="test", services=[PingService])
