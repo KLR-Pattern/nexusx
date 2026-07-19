@@ -96,6 +96,30 @@ create_mcp_server(
 
 ---
 
+### Bug Fix: use_case router 不再把嵌套 `BaseModel` 参数拍平成 dict（#110，修 #107）
+
+`create_router` 生成的 handler 之前用 `body.model_dump()` 把 FastAPI 已校验的 request model 整体拍平成 dict 再传给 service 方法。当方法签名声明 `list[ItemInput]` / `ItemInput` / `ItemInput | None` 等嵌套 BaseModel 参数时，方法体实际收到的是 `list[dict]` / `dict`——签名与运行时类型脱节，访问 `item.text` 直接 `AttributeError`。
+
+改为按字段名从 request model 做属性访问（`getattr(body, name)`）。Pydantic 在校验阶段已构造好的嵌套 BaseModel 实例原样透传给方法体，类型契约不再断链。标量 / `list[scalar]` / `FromContext` / 默认值 / alias 等其他形态行为完全不变，OpenAPI / compose schema 生成路径也不受影响（schema 与 router 是两条正交路径）。
+
+**Changes：**
+- `src/nexusx/use_case/router.py`: `_make_handler` 的 body 分支由 `body.model_dump()` 改为 `{p: getattr(body, p) for p in body_params}`
+- `tests/test_use_case_router.py`: 新增 `TestNestedBaseModelParams`，覆盖 `list[Model]` / `Model` / `Optional[Model]` / `Optional[list[Model]]` / `list[Optional[Model]]` / 两层嵌套 / 标量回归 / alias
+
+---
+
+### Behavior Change: `route_options` 不再允许覆盖 router 自留键（#111）
+
+承接 #107 的 router 清理。`_make_handler` 抽取公共逻辑、移除一个恒真的死分支与一个未使用参数、并为生成的 handler 闭包设置有意义的 `__name__` / `__qualname__`（改善栈轨迹与 FastAPI 生成的 operation_id）——这些都是内部重构，用户无感。
+
+唯一可观察的变化：`route_options` 里若传入 `endpoint` / `methods` 这两个 router 始终显式设置的键，过去会在路由注册阶段抛令人困惑的 `TypeError: got multiple values for keyword argument`；现在在 `create_router()` 调用时即抛清晰的 `ValueError`。`path` 及其他键仍可正常覆盖。
+
+**Changes：**
+- `src/nexusx/use_case/router.py`: 抽取 `_merge_context_params` helper；handler 闭包命名；`route_options` 守护 `_RESERVED_ROUTE_KEYS`（`endpoint` / `methods`）
+- `tests/test_use_case_router.py`: 新增 reserved-keys 回归测试
+
+---
+
 ## 3.6.2
 
 ### Bug Fix: `@query`/`@mutation` 返回裸 scalar 或 `list[scalar]` 不再被包装成 `{"_value": ...}`（#106）
