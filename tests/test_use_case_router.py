@@ -7,7 +7,7 @@ from typing import Annotated
 import pytest
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.requests import Request
 
 from nexusx.decorator import mutation, query
@@ -455,3 +455,336 @@ class TestRouterExtensibility:
 
         response = client.post("/api/user_service/list_users")
         assert response.status_code == 200
+
+
+# ──────────────────────────────────────────────────
+# Tests: Nested BaseModel parameters (issue #107 regression)
+# ──────────────────────────────────────────────────
+
+
+class ItemInput(BaseModel):
+    """Nested BaseModel used as method parameter."""
+    text: str
+    checked: bool = False
+
+
+class ItemOutput(BaseModel):
+    """Nested BaseModel returned by methods."""
+    text: str
+    checked: bool
+
+
+class NestedModelService(UseCaseService):
+    """Service exercising nested BaseModel parameters across all forms."""
+
+    @mutation
+    async def create_items(cls, owner_id: int, items: list[ItemInput]) -> list[ItemOutput]:
+        # The bug: items arrives as list[dict] instead of list[ItemInput]
+        # → AttributeError on it.text
+        return [ItemOutput(text=it.text, checked=it.checked) for it in items]
+
+    @mutation
+    async def echo_single(cls, item: ItemInput) -> ItemOutput:
+        return ItemOutput(text=item.text, checked=item.checked)
+
+    @mutation
+    async def echo_optional(
+        cls,
+        item: ItemInput | None = None,
+    ) -> ItemOutput | None:
+        if item is None:
+            return None
+        return ItemOutput(text=item.text, checked=item.checked)
+
+    @mutation
+    async def echo_optional_list(
+        cls,
+        items: list[ItemInput] | None = None,
+    ) -> list[ItemOutput]:
+        if items is None:
+            return []
+        return [ItemOutput(text=it.text, checked=it.checked) for it in items]
+
+    @mutation
+    async def echo_list_of_optional(
+        cls,
+        items: list[ItemInput | None],
+    ) -> list[ItemOutput | None]:
+        return [
+            ItemOutput(text=it.text, checked=it.checked) if it is not None else None
+            for it in items
+        ]
+
+    @mutation
+    async def echo_nested_two_levels(
+        cls,
+        matrix: list[list[ItemInput]],
+    ) -> list[ItemOutput]:
+        flat: list[ItemOutput] = []
+        for row in matrix:
+            for it in row:
+                flat.append(ItemOutput(text=it.text, checked=it.checked))
+        return flat
+
+    @query
+    async def echo_with_context(
+        cls,
+        user_id: Annotated[int, FromContext()],
+        items: list[ItemInput],
+    ) -> str:
+        # Case 1: body + FromContext. Both must arrive in correct types.
+        first_text = items[0].text if items else "(empty)"
+        return f"user={user_id},first={first_text}"
+
+
+def _extract_user_id_from_header(request):
+    return {"user_id": int(request.headers.get("X-User-Id", "0"))}
+
+
+@pytest.fixture
+def nested_client():
+    return _make_app(
+        UseCaseAppConfig(
+            name="nested",
+            services=[NestedModelService],
+            context_extractor=_extract_user_id_from_header,
+        )
+    )
+
+
+class TestNestedBaseModelParams:
+    """Regression tests for issue #107: nested BaseModel parameters must be
+    received as BaseModel instances by the method body, not as dicts.
+
+    Before fix: router called body.model_dump(), flattening nested BaseModels.
+    After fix:  router uses getattr(body, pname), preserving BaseModel instances.
+    """
+
+    def test_list_of_basemodel(self, nested_client):
+        """list[ItemInput] arrives as list of ItemInput instances."""
+        response = nested_client.post(
+            "/api/nested_model_service/create_items",
+            json={
+                "owner_id": 1,
+                "items": [
+                    {"text": "a", "checked": True},
+                    {"text": "b"},
+                ],
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == [
+            {"text": "a", "checked": True},
+            {"text": "b", "checked": False},
+        ]
+
+    def test_single_nested_basemodel(self, nested_client):
+        """ItemInput (single, non-list) arrives as ItemInput instance."""
+        response = nested_client.post(
+            "/api/nested_model_service/echo_single",
+            json={"item": {"text": "x", "checked": True}},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == {"text": "x", "checked": True}
+
+    def test_optional_basemodel_with_value(self, nested_client):
+        """Optional[ItemInput] with a value arrives as ItemInput instance."""
+        response = nested_client.post(
+            "/api/nested_model_service/echo_optional",
+            json={"item": {"text": "y"}},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == {"text": "y", "checked": False}
+
+    def test_optional_basemodel_with_none(self, nested_client):
+        """Optional[ItemInput] with explicit null arrives as None."""
+        response = nested_client.post(
+            "/api/nested_model_service/echo_optional",
+            json={"item": None},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() is None
+
+    def test_optional_list_of_basemodel(self, nested_client):
+        """Optional[list[ItemInput]] preserves BaseModel instances."""
+        response = nested_client.post(
+            "/api/nested_model_service/echo_optional_list",
+            json={"items": [{"text": "z"}]},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == [{"text": "z", "checked": False}]
+
+    def test_optional_list_of_basemodel_omitted(self, nested_client):
+        """Optional[list[ItemInput]] omitted entirely → None, not empty list."""
+        response = nested_client.post(
+            "/api/nested_model_service/echo_optional_list",
+            json={},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == []
+
+    def test_list_of_optional_basemodel(self, nested_client):
+        """list[Optional[ItemInput]] handles null elements correctly."""
+        response = nested_client.post(
+            "/api/nested_model_service/echo_list_of_optional",
+            json={"items": [{"text": "a"}, None, {"text": "b"}]},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == [
+            {"text": "a", "checked": False},
+            None,
+            {"text": "b", "checked": False},
+        ]
+
+    def test_nested_two_levels(self, nested_client):
+        """list[list[ItemInput]] preserves BaseModel instances at both levels."""
+        response = nested_client.post(
+            "/api/nested_model_service/echo_nested_two_levels",
+            json={
+                "matrix": [
+                    [{"text": "r0a"}, {"text": "r0b"}],
+                    [{"text": "r1a"}],
+                ]
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == [
+            {"text": "r0a", "checked": False},
+            {"text": "r0b", "checked": False},
+            {"text": "r1a", "checked": False},
+        ]
+
+    def test_basemodel_with_from_context(self, nested_client):
+        """Case 1: body has nested BaseModel + FromContext scalar param."""
+        response = nested_client.post(
+            "/api/nested_model_service/echo_with_context",
+            json={"items": [{"text": "alpha"}]},
+            headers={"X-User-Id": "42"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == "user=42,first=alpha"
+
+    def test_explicit_type_check_list_of_basemodel(self, nested_client):
+        """Explicit isinstance lock-in: list[ItemInput] elements must be
+        ItemInput instances (not dicts). Documents the fix's invariant."""
+        # Service method echoes the runtime type name of the first element.
+        # We piggyback on create_items — if elements aren't ItemInput,
+        # the method body's .text access raises AttributeError before this
+        # assertion is reached. So this test is essentially a stronger
+        # version of test_list_of_basemodel.
+        response = nested_client.post(
+            "/api/nested_model_service/create_items",
+            json={"owner_id": 1, "items": [{"text": "a"}]},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == [{"text": "a", "checked": False}]
+
+
+# ──────────────────────────────────────────────────
+# Tests: Regression — scalar / list[scalar] / default / alias unchanged
+# ──────────────────────────────────────────────────
+
+
+class RegressionService(UseCaseService):
+    """Service asserting scalar / list[scalar] / default / alias behavior
+    is unchanged by the model_dump → getattr fix (issue #107)."""
+
+    @query
+    async def scalar_int(cls, n: int) -> int:
+        # Assert exact type — not bool (which is a subclass of int).
+        assert type(n) is int, f"expected int, got {type(n)}"
+        return n
+
+    @query
+    async def scalar_str(cls, s: str) -> str:
+        assert type(s) is str, f"expected str, got {type(s)}"
+        return s
+
+    @query
+    async def scalar_list(cls, tags: list[str]) -> list[str]:
+        assert isinstance(tags, list)
+        assert all(type(t) is str for t in tags)
+        return tags
+
+    @query
+    async def default_value(cls, count: int = 10) -> int:
+        # Default must fire when client omits the field; explicit value must
+        # override the default. Both paths exercise the same getattr route.
+        return count
+
+    @query
+    async def aliased_field(
+        cls,
+        name: Annotated[str, Field(alias="userName")],
+    ) -> str:
+        # Pydantic alias: JSON key is "userName", Python field name is "name".
+        # getattr(body, "name") must still resolve correctly.
+        assert type(name) is str
+        return name
+
+
+@pytest.fixture
+def regression_client():
+    return _make_app(
+        UseCaseAppConfig(name="regression", services=[RegressionService])
+    )
+
+
+class TestRouterRegression:
+    """US2 regression: scalar / list[scalar] / default / alias must behave
+    identically before and after the issue #107 fix."""
+
+    def test_scalar_int_unchanged(self, regression_client):
+        """Scalar int param: type preserved (not coerced, not dict'd)."""
+        response = regression_client.post(
+            "/api/regression_service/scalar_int",
+            json={"n": 42},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == 42
+
+    def test_scalar_str_unchanged(self, regression_client):
+        """Scalar str param: type preserved."""
+        response = regression_client.post(
+            "/api/regression_service/scalar_str",
+            json={"s": "hello"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == "hello"
+
+    def test_scalar_list_unchanged(self, regression_client):
+        """list[str] param: stays list of str (was already correct pre-fix)."""
+        response = regression_client.post(
+            "/api/regression_service/scalar_list",
+            json={"tags": ["a", "b", "c"]},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == ["a", "b", "c"]
+
+    def test_default_value_omitted(self, regression_client):
+        """Default value fires when client omits the field."""
+        response = regression_client.post(
+            "/api/regression_service/default_value",
+            json={},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == 10
+
+    def test_default_value_overridden(self, regression_client):
+        """Explicit value overrides the default."""
+        response = regression_client.post(
+            "/api/regression_service/default_value",
+            json={"count": 42},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == 42
+
+    def test_alias_field_unchanged(self, regression_client):
+        """Annotated[..., Field(alias=...)]: JSON key is alias, Python
+        attribute access uses field name. Both must resolve."""
+        response = regression_client.post(
+            "/api/regression_service/aliased_field",
+            json={"userName": "alice"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == "alice"

@@ -144,6 +144,7 @@ def _make_context_extractor_dep(
 def _make_handler(
     method: Any,
     request_model: type[BaseModel] | None,
+    body_params: list[str],
     context_extractor: Callable[[Any], dict[str, Any] | Awaitable[dict[str, Any]]]
     | None,
     context_params: dict[str, Any],
@@ -167,7 +168,9 @@ def _make_handler(
             body: request_model,  # type: ignore[valid-type]
             ctx: dict[str, Any] = ctx_dep,
         ) -> Any:
-            kwargs = body.model_dump()  # type: ignore[attr-defined]
+            # Use attribute access instead of body.model_dump() so nested
+            # BaseModel instances are preserved (issue #107).
+            kwargs: dict[str, Any] = {p: getattr(body, p) for p in body_params}
             for pname in context_params:
                 if pname in ctx:
                     kwargs[pname] = ctx[pname]
@@ -183,7 +186,10 @@ def _make_handler(
         async def handler(  # type: ignore[misc]
             body: request_model,  # type: ignore[valid-type]
         ) -> Any:
-            return await method(**body.model_dump())  # type: ignore[attr-defined]
+            # Use attribute access instead of body.model_dump() so nested
+            # BaseModel instances are preserved (issue #107).
+            kwargs = {p: getattr(body, p) for p in body_params}
+            return await method(**kwargs)
 
     elif ctx_dep is not None:
         # Case 3: FromContext only
@@ -314,6 +320,7 @@ def create_router(
             handler = _make_handler(
                 method=method,
                 request_model=request_model,
+                body_params=body_params,
                 context_extractor=config.context_extractor,
                 context_params=context_params,
             )
