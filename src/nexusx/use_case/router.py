@@ -23,6 +23,11 @@ from nexusx.use_case.types import UseCaseAppConfig
 
 _CAMEL_TO_SNAKE_RE = re.compile(r"(?<!^)(?=[A-Z])")
 
+# Keys ``create_router`` always passes explicitly to ``add_api_route``; letting
+# callers override them via ``route_options`` would raise a confusing
+# "multiple values for keyword argument" TypeError.
+_RESERVED_ROUTE_KEYS = frozenset({"endpoint", "methods"})
+
 
 def _camel_to_snake(name: str) -> str:
     """PascalCase / camelCase -> snake_case."""
@@ -123,7 +128,6 @@ def _get_from_context_params(method: Any) -> set[str]:
 
 def _make_context_extractor_dep(
     context_extractor: Callable[[Any], dict[str, Any] | Awaitable[dict[str, Any]]],
-    context_params: dict[str, Any],
 ) -> Callable[..., Any]:
     """Create a FastAPI dependency that calls context_extractor with Request."""
 
@@ -139,6 +143,27 @@ def _make_context_extractor_dep(
         return result
 
     return extract_context
+
+
+def _merge_context_params(
+    kwargs: dict[str, Any],
+    context_params: dict[str, Any],
+    ctx: dict[str, Any],
+) -> None:
+    """Resolve ``FromContext`` parameters from *ctx* into *kwargs* in place.
+
+    Raises HTTP 400 if a required context parameter is missing from *ctx*.
+    ``body_params`` and ``context_params`` are disjoint by construction (see
+    ``_classify_params``), so context params never collide with body params.
+    """
+    for pname in context_params:
+        if pname in ctx:
+            kwargs[pname] = ctx[pname]
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Required context parameter '{pname}' not provided",
+            )
 
 
 def _make_handler(
@@ -157,7 +182,7 @@ def _make_handler(
 
     # Build context dependency if needed
     if context_params and context_extractor is not None:
-        extract_ctx = _make_context_extractor_dep(context_extractor, context_params)
+        extract_ctx = _make_context_extractor_dep(context_extractor)
         ctx_dep: Any = Depends(extract_ctx)
     else:
         ctx_dep = None
@@ -171,14 +196,7 @@ def _make_handler(
             # Use attribute access instead of body.model_dump() so nested
             # BaseModel instances are preserved (issue #107).
             kwargs: dict[str, Any] = {p: getattr(body, p) for p in body_params}
-            for pname in context_params:
-                if pname in ctx:
-                    kwargs[pname] = ctx[pname]
-                elif pname not in kwargs:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Required context parameter '{pname}' not provided",
-                    )
+            _merge_context_params(kwargs, context_params, ctx)
             return await method(**kwargs)
 
     elif request_model is not None:
@@ -197,14 +215,7 @@ def _make_handler(
             ctx: dict[str, Any] = ctx_dep,
         ) -> Any:
             kwargs: dict[str, Any] = {}
-            for pname in context_params:
-                if pname in ctx:
-                    kwargs[pname] = ctx[pname]
-                else:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Required context parameter '{pname}' not provided",
-                    )
+            _merge_context_params(kwargs, context_params, ctx)
             return await method(**kwargs)
 
     else:
@@ -325,8 +336,12 @@ def create_router(
                 context_params=context_params,
             )
 
-            # Set handler metadata
+            # Set handler metadata. The closures above are all named ``handler``;
+            # give them meaningful names so tracebacks, logs, and FastAPI's
+            # generated operation_ids reflect the originating use case.
             handler.__doc__ = description or method_name
+            handler.__name__ = method_name
+            handler.__qualname__ = f"{service_cls.__name__}.{method_name}"
 
             # Determine return type
             return_type = get_return_type(method)
@@ -347,6 +362,13 @@ def create_router(
             route_key = f"{service_cls.__name__}.{method_name}"
             overrides = (route_options or {}).get(route_key)
             if overrides:
+                reserved = _RESERVED_ROUTE_KEYS & overrides.keys()
+                if reserved:
+                    raise ValueError(
+                        f"route_options[{route_key!r}] cannot override "
+                        f"reserved keys (set by the router itself): "
+                        f"{sorted(reserved)}"
+                    )
                 route_kwargs.update(overrides)
 
             router.add_api_route(
