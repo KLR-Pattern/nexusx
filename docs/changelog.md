@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 3.7.0."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 4.0.0."
 ---
 
 # Changelog
@@ -9,6 +9,22 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 - **Patch (x.y.Z)**: Bug fixes and minor improvements
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
+
+## 4.0
+
+### 4.0.0 (2026-7-20)
+
+- breaking change:
+  - **SQLModel GraphQL root restructured from flat fields to per-entity grouping (#115)**: A `@query`/`@mutation` method like `User.get_by_id` is now queried as `{ User { get_by_id(id: 1){} } }` instead of the flat `{ userGetById(id: 1){} }`. The root `Query`/`Mutation` mount one field per entity (`User: UserQuery!`), and each method lives on a synthesized `{Entity}Query`/`{Entity}Mutation` group type under its **original Python name** (no camelCase, no entity prefix) — mirroring the UseCaseService `Service { method {} }` convention so the query surface stays legible as entities and methods grow. Auto-generated `by_id`/`by_filter` and pagination land inside the group automatically; pagination itself is unaffected (it only wraps relationship fields, never method returns or root fields). Selecting a bare entity group (`{ User }`) returns a friendly `BARE_GROUP_FIELD` error listing the available methods. Name collisions the old flat prefix used to mask are now rejected eagerly at startup (`DuplicateEntityError`, `DuplicateMethodError`, `ReservedMethodFieldError`, `ReservedEntityError`). The UseCaseService/compose GraphQL path is unchanged.
+
+    **Migration**: rewrite query strings — `entityPrefixMethodCamel` (e.g. `userGetById`) → `{ Entity { method {} } }` (e.g. `{ User { by_id {} } }`); response paths nest one level deeper (`data["userGetById"]` → `data["User"]["by_id"]`). MCP tools `get_query_schema`/`get_mutation_schema` now take explicit `entity` + `method` (was a single flat `name`); `list_queries`/`list_mutations` return `{entity, method, name}` entries.
+
+- feat:
+  - **demo launcher regrouped + MCP added to the paginated blog demo (#115)**: `start_all.sh` is reorganized around the README's two-pillar model (Query surface / Core API / Business-logic / Visualization), prints per-port capability tags (GraphQL / MCP / REST / Voyager), and lists every endpoint. The paginated blog demo now serves both GraphQL and MCP on one port (`/graphql` + `/mcp/mcp`).
+
+- fix:
+  - **multi-app MCP demo crashed at startup since 3.7.0 (#115)**: `demo/multi_app/mcp_server.py` subscripted the self-contained `Application` object as a dict (`app['name']`), raising `TypeError: 'Application' object is not subscriptable` on boot after 3.7.0's `Application` refactor — fixed to attribute access.
+  - **paginated blog demo moved off port 8005 (#115)**: Windows reserves 8005 for Windows Hello, so browsers visiting the demo on :8005 popped a "sign in to access this site" dialog. Moved to 8015.
 
 ## 3.7
 

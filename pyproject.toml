@@ -1,6 +1,6 @@
 [project]
 name = "nexusx"
-version = "3.7.0"
+version = "4.0.0"
 description = "GraphQL SDL generation and query optimization for SQLModel"
 authors = [{ name = "tangkikodo", email = "allmonday@126.com" }]
 readme = "README.md"
