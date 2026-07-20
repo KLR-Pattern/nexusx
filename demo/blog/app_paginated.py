@@ -28,9 +28,10 @@ class GraphQLRequest(BaseModel):
 
 
 # Pagination enabled — all list relationships return Page types
-config = AutoQueryConfig(session_factory=async_session, default_limit=20)
+config = AutoQueryConfig(default_limit=20)
 handler = GraphQLHandler(
     base=BaseEntity,
+    session_factory=async_session,
     auto_query_config=config,
     enable_pagination=True,
 )
@@ -46,6 +47,8 @@ mcp_server = create_simple_mcp_server(
     desc="Blog system — query users/posts/comments (paginated GraphQL)",
     allow_mutation=True,
     session_factory=async_session,
+    enable_pagination=True,
+    auto_query_config=config,
 )
 mcp_app = mcp_server.http_app()
 
