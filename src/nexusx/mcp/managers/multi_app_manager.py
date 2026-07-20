@@ -116,7 +116,7 @@ class MultiAppManager:
         Example:
             ```python
             app = manager.get_app("blog")
-            queries = app.tracer.list_operation_fields("Query")
+            queries = app.tracer.list_group_operations("Query")
             ```
         """
         if name in self.apps:

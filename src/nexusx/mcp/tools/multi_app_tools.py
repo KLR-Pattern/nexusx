@@ -71,10 +71,10 @@ def register_multi_app_tools(
                     "name": app.name,
                     "description": app.description,
                     "queries_count": len(
-                        app.tracer.list_operation_fields("Query")
+                        app.tracer.list_group_operations("Query")
                     ),
                     "mutations_count": len(
-                        app.tracer.list_operation_fields("Mutation")
+                        app.tracer.list_group_operations("Mutation")
                     )
                     if allow_mutation
                     else 0,
@@ -103,9 +103,10 @@ def register_multi_app_tools(
     def list_queries(app_name: str) -> dict[str, Any]:
         """List all available GraphQL queries for a specific application.
 
-        Returns a lightweight list of query names and descriptions.
-        Use this tool after list_apps to discover queries for a specific app,
-        then use get_query_schema to get detailed information.
+        Queries are grouped by entity (``{ Entity { method {} } }``). Returns a
+        lightweight list of methods, each tagged with its entity. Use this tool
+        after list_apps to discover queries for a specific app, then use
+        get_query_schema with the entity and method to get detailed information.
 
         Args:
             app_name: Name of the application (required). Get available names from list_apps().
@@ -113,7 +114,7 @@ def register_multi_app_tools(
         Returns:
             Dictionary containing:
             - success: True
-            - data: List of query info dictionaries with name and description
+            - data: List of {entity, method, name, description} method dicts
             - hint: Reminder to use the same app_name in subsequent calls
 
         Example:
@@ -121,7 +122,7 @@ def register_multi_app_tools(
         """
         try:
             app = manager.get_app(app_name)
-            queries = app.tracer.list_operation_fields("Query")
+            queries = app.tracer.list_group_operations("Query")
 
             # Add reminder about app_name
             result = create_success_response(queries)
@@ -142,9 +143,10 @@ def register_multi_app_tools(
         def list_mutations(app_name: str) -> dict[str, Any]:
             """List all available GraphQL mutations for a specific application.
 
-            Returns a lightweight list of mutation names and descriptions.
-            Use this tool after list_apps to discover mutations for a specific app,
-            then use get_mutation_schema to get detailed information.
+            Mutations are grouped by entity (``{ Entity { method {} } }``). Returns a
+            lightweight list of methods, each tagged with its entity. Use this tool
+            after list_apps to discover mutations for a specific app, then use
+            get_mutation_schema with the entity and method to get detailed information.
 
             Args:
                 app_name: Name of the application (required). Get available names from list_apps().
@@ -152,7 +154,7 @@ def register_multi_app_tools(
             Returns:
                 Dictionary containing:
                 - success: True
-                - data: List of mutation info dictionaries with name and description
+                - data: List of {entity, method, name, description} method dicts
                 - hint: Reminder to use the same app_name in subsequent calls
 
             Example:
@@ -160,7 +162,7 @@ def register_multi_app_tools(
             """
             try:
                 app = manager.get_app(app_name)
-                mutations = app.tracer.list_operation_fields("Mutation")
+                mutations = app.tracer.list_group_operations("Mutation")
 
                 # Add reminder about app_name
                 result = create_success_response(mutations)
@@ -178,17 +180,19 @@ def register_multi_app_tools(
     # Layer 2: Get operation schema
     @mcp.tool()
     def get_query_schema(
-        name: str, app_name: str, response_type: str = "sdl"
+        entity: str, method: str, app_name: str, response_type: str = "sdl"
     ) -> dict[str, Any]:
         """Get detailed schema information for a specific GraphQL query.
 
-        Use this tool to understand the structure of a query, including its
-        arguments, return type, and related types. Supports two response formats:
-        - sdl: Returns GraphQL Schema Definition Language (compact, AI-friendly)
-        - introspection: Returns detailed introspection data
+        Queries are grouped by entity (``{ Entity { method {} } }``); each query
+        is identified by its entity and method name. Use this tool to understand
+        a query's arguments, return type, and related types. Supports two formats:
+        - sdl: GraphQL Schema Definition Language (compact, AI-friendly)
+        - introspection: detailed introspection data
 
         Args:
-            name: Name of the query (e.g., "users", "post")
+            entity: The entity (group) the query belongs to, e.g. "User".
+            method: The method name verbatim, e.g. "get_all", "by_id".
             app_name: Name of the application (required)
             response_type: Response format - "sdl" or "introspection" (default: "sdl")
 
@@ -199,19 +203,21 @@ def register_multi_app_tools(
 
         Examples:
             # SDL format (recommended)
-            get_query_schema(name="users", app_name="blog", response_type="sdl")
+            get_query_schema(entity="User", method="get_all", app_name="blog", response_type="sdl")
 
             # Introspection format
-            get_query_schema(name="users", app_name="blog", response_type="introspection")
+            get_query_schema(
+                entity="User", method="get_all", app_name="blog", response_type="introspection"
+            )
         """
         try:
             app = manager.get_app(app_name)
 
             if response_type == "sdl":
-                sdl = app.sdl_generator.generate_operation_sdl(name, "Query")
+                sdl = app.sdl_generator.generate_operation_sdl(entity, method, "Query")
                 if sdl is None:
                     return create_error_response(
-                        f"Query '{name}' not found in app '{app.name}'",
+                        f"Query '{entity}.{method}' not found in app '{app.name}'",
                         MCPErrors.TYPE_NOT_FOUND,
                     )
                 result = create_success_response({"sdl": sdl})
@@ -222,10 +228,10 @@ def register_multi_app_tools(
                 return result
 
             # Introspection format
-            operation = app.tracer.get_operation_field("Query", name)
+            operation = app.tracer.get_group_operation("Query", entity, method)
             if operation is None:
                 return create_error_response(
-                    f"Query '{name}' not found in app '{app.name}'",
+                    f"Query '{entity}.{method}' not found in app '{app.name}'",
                     MCPErrors.TYPE_NOT_FOUND,
                 )
 
@@ -254,17 +260,20 @@ def register_multi_app_tools(
 
         @mcp.tool()
         def get_mutation_schema(
-            name: str, app_name: str, response_type: str = "sdl"
+            entity: str, method: str, app_name: str, response_type: str = "sdl"
         ) -> dict[str, Any]:
             """Get detailed schema information for a specific GraphQL mutation.
 
-            Use this tool to understand the structure of a mutation, including its
-            arguments, return type, and related types. Supports two response formats:
-            - sdl: Returns GraphQL Schema Definition Language (compact, AI-friendly)
-            - introspection: Returns detailed introspection data
+            Mutations are grouped by entity (``{ Entity { method {} } }``); each
+            mutation is identified by its entity and method name. Use this tool to
+            understand a mutation's arguments, return type, and related types. Supports
+            two formats:
+            - sdl: GraphQL Schema Definition Language (compact, AI-friendly)
+            - introspection: detailed introspection data
 
             Args:
-                name: Name of the mutation (e.g., "createUser", "updatePost")
+                entity: The entity (group) the mutation belongs to, e.g. "User".
+                method: The method name verbatim, e.g. "create", "update".
                 app_name: Name of the application (required)
                 response_type: Response format - "sdl" or "introspection" (default: "sdl")
 
@@ -276,31 +285,31 @@ def register_multi_app_tools(
             Examples:
                 # SDL format (recommended)
                 get_mutation_schema(
-                    name="createUser", app_name="blog", response_type="sdl"
+                    entity="User", method="create", app_name="blog", response_type="sdl"
                 )
 
                 # Introspection format
                 get_mutation_schema(
-                    name="createUser", app_name="blog", response_type="introspection"
+                    entity="User", method="create", app_name="blog", response_type="introspection"
                 )
             """
             try:
                 app = manager.get_app(app_name)
 
                 if response_type == "sdl":
-                    sdl = app.sdl_generator.generate_operation_sdl(name, "Mutation")
+                    sdl = app.sdl_generator.generate_operation_sdl(entity, method, "Mutation")
                     if sdl is None:
                         return create_error_response(
-                            f"Mutation '{name}' not found in app '{app.name}'",
+                            f"Mutation '{entity}.{method}' not found in app '{app.name}'",
                             MCPErrors.TYPE_NOT_FOUND,
                         )
                     return create_success_response({"sdl": sdl})
 
                 # Introspection format
-                operation = app.tracer.get_operation_field("Mutation", name)
+                operation = app.tracer.get_group_operation("Mutation", entity, method)
                 if operation is None:
                     return create_error_response(
-                        f"Mutation '{name}' not found in app '{app.name}'",
+                        f"Mutation '{entity}.{method}' not found in app '{app.name}'",
                         MCPErrors.TYPE_NOT_FOUND,
                     )
 
@@ -349,13 +358,13 @@ def register_multi_app_tools(
         Examples:
             # Simple query
             graphql_query(
-                query="{ users(limit: 10) { id name email } }",
+                query="{ User { get_all(limit: 10) { id name email } } }",
                 app_name="blog"
             )
 
             # Query with relationships
             graphql_query(
-                query="{ user(id: 1) { name posts { title } } }",
+                query="{ User { by_id(id: 1) { name posts { title } } } }",
                 app_name="blog"
             )
         """
@@ -419,14 +428,14 @@ def register_multi_app_tools(
             Examples:
                 # Create mutation
                 graphql_mutation(
-                    mutation='mutation { createUser(name: "Alice", '
-                    'email: "alice@example.com") { id name } }',
+                    mutation='mutation { User { create(name: "Alice", '
+                    'email: "alice@example.com") { id name } } }',
                     app_name="blog"
                 )
 
                 # Update mutation
                 graphql_mutation(
-                    mutation='mutation { updatePost(id: 1, title: "New Title") { id title } }',
+                    mutation='mutation { Post { update(id: 1, title: "New Title") { id title } } }',
                     app_name="blog"
                 )
             """

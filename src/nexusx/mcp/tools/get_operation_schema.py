@@ -38,16 +38,20 @@ def register_get_operation_schema_tools(
 
     @mcp.tool()
     def get_query_schema(
-        name: str,
+        entity: str,
+        method: str,
         response_type: Literal["sdl", "introspection"] = "sdl"
     ) -> dict[str, Any]:
         """Get detailed schema information for a specific GraphQL query.
 
-        Returns the query's arguments, return type, and related entity types.
-        Use this after list_queries to get detailed information before executing a query.
+        Queries are grouped by entity (``{ Entity { method {} } }``); each
+        query is identified by its entity and method name. Returns the query's
+        arguments, return type, and related entity types. Use this after
+        list_queries to get detailed information before executing a query.
 
         Args:
-            name: The name of the query (e.g., "users", "user").
+            entity: The entity (group) the query belongs to, e.g. "User".
+            method: The method name verbatim, e.g. "get_all", "by_id".
             response_type: Output format - "sdl" (default, compact) or "introspection" (full).
 
         Returns:
@@ -64,36 +68,27 @@ def register_get_operation_schema_tools(
             {
                 "success": true,
                 "data": {
-                    "sdl": "# Query\\nusers(limit: Int): [User!]!\\n\\n"
+                    "sdl": "# Query\\nget_all(limit: Int): [User!]!\\n\\n"
                     "# Related Types\\ntype User { ... }"
-                }
-            }
-
-        Example introspection response:
-            {
-                "success": true,
-                "data": {
-                    "operation": {"name": "users", "args": [...], "type": {...}},
-                    "types": [{"kind": "OBJECT", "name": "User", "fields": [...]}]
                 }
             }
         """
         try:
             # For SDL format, use SDLGenerator directly (more efficient)
             if response_type == "sdl":
-                sdl = sdl_generator.generate_operation_sdl(name, "Query")
+                sdl = sdl_generator.generate_operation_sdl(entity, method, "Query")
                 if sdl is None:
                     return create_error_response(
-                        f"Query '{name}' not found",
+                        f"Query '{entity}.{method}' not found",
                         MCPErrors.TYPE_NOT_FOUND,
                     )
                 return create_success_response({"sdl": sdl})
 
             # For introspection format, use TypeTracer
-            operation = tracer.get_operation_field("Query", name)
+            operation = tracer.get_group_operation("Query", entity, method)
             if operation is None:
                 return create_error_response(
-                    f"Query '{name}' not found",
+                    f"Query '{entity}.{method}' not found",
                     MCPErrors.TYPE_NOT_FOUND,
                 )
 
@@ -118,16 +113,20 @@ def register_get_operation_schema_tools(
 
     @mcp.tool()
     def get_mutation_schema(
-        name: str,
+        entity: str,
+        method: str,
         response_type: Literal["sdl", "introspection"] = "sdl"
     ) -> dict[str, Any]:
         """Get detailed schema information for a specific GraphQL mutation.
 
-        Returns the mutation's arguments, return type, and related entity types.
-        Use this after list_mutations to get detailed information before executing a mutation.
+        Mutations are grouped by entity (``{ Entity { method {} } }``); each
+        mutation is identified by its entity and method name. Returns the
+        mutation's arguments, return type, and related entity types. Use this
+        after list_mutations to get detailed information before executing a mutation.
 
         Args:
-            name: The name of the mutation (e.g., "createUser", "updateUser").
+            entity: The entity (group) the mutation belongs to, e.g. "User".
+            method: The method name verbatim, e.g. "create", "update".
             response_type: Output format - "sdl" (default, compact) or "introspection" (full).
 
         Returns:
@@ -144,36 +143,27 @@ def register_get_operation_schema_tools(
             {
                 "success": true,
                 "data": {
-                    "sdl": "# Mutation\\ncreateUser(name: String!, email: String!): User!\\n\\n"
+                    "sdl": "# Mutation\\ncreate(name: String!, email: String!): User!\\n\\n"
                     "# Related Types\\ntype User { ... }"
-                }
-            }
-
-        Example introspection response:
-            {
-                "success": true,
-                "data": {
-                    "operation": {"name": "createUser", "args": [...], "type": {...}},
-                    "types": [{"kind": "OBJECT", "name": "User", "fields": [...]}]
                 }
             }
         """
         try:
             # For SDL format, use SDLGenerator directly (more efficient)
             if response_type == "sdl":
-                sdl = sdl_generator.generate_operation_sdl(name, "Mutation")
+                sdl = sdl_generator.generate_operation_sdl(entity, method, "Mutation")
                 if sdl is None:
                     return create_error_response(
-                        f"Mutation '{name}' not found",
+                        f"Mutation '{entity}.{method}' not found",
                         MCPErrors.TYPE_NOT_FOUND,
                     )
                 return create_success_response({"sdl": sdl})
 
             # For introspection format, use TypeTracer
-            operation = tracer.get_operation_field("Mutation", name)
+            operation = tracer.get_group_operation("Mutation", entity, method)
             if operation is None:
                 return create_error_response(
-                    f"Mutation '{name}' not found",
+                    f"Mutation '{entity}.{method}' not found",
                     MCPErrors.TYPE_NOT_FOUND,
                 )
 
