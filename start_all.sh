@@ -50,19 +50,19 @@ declare -A GROUP_TITLE=(
 # Add a demo by appending one line here; start/wait/table all derive from this.
 SERVICES=(
   # ── Query surface: SQLModel entities exposed as GraphQL / MCP ──
-  "query|Blog GraphQL|$PORT_BLOG_GQL|/graphql|uv run uvicorn demo.blog.app:app --port %PORT%"
-  "query|Blog GraphQL (paginated)|$PORT_BLOG_GQL_PAG|/graphql|uv run uvicorn demo.blog.app_paginated:app --port %PORT%"
-  "query|Auth GraphQL|$PORT_AUTH_GQL|/graphql|uv run uvicorn demo.auth.app:app --port %PORT%"
-  "query|Auth MCP (entity → MCP)|$PORT_AUTH_MCP|/mcp|PORT=%PORT% uv run python -m demo.auth.mcp_server"
-  "query|Multi-app MCP (gateway)|$PORT_MULTI_MCP|/mcp|PORT=%PORT% uv run python -m demo.multi_app.mcp_server"
+  "query|Blog GraphQL|$PORT_BLOG_GQL|GraphQL|/graphql,/schema|uv run uvicorn demo.blog.app:app --port %PORT%"
+  "query|Blog GraphQL (paginated)|$PORT_BLOG_GQL_PAG|GraphQL|/graphql,/schema|uv run uvicorn demo.blog.app_paginated:app --port %PORT%"
+  "query|Auth GraphQL|$PORT_AUTH_GQL|GraphQL|/graphql,/schema|uv run uvicorn demo.auth.app:app --port %PORT%"
+  "query|Auth MCP (entity → MCP)|$PORT_AUTH_MCP|MCP|/mcp|PORT=%PORT% uv run python -m demo.auth.mcp_server"
+  "query|Multi-app MCP (gateway)|$PORT_MULTI_MCP|MCP|/mcp|PORT=%PORT% uv run python -m demo.multi_app.mcp_server"
   # ── Core API: DefineSubset DTOs + Resolver served via REST ──
-  "core_api|Core API REST|$PORT_CORE_API|/api/sprints|uv run uvicorn demo.core_api.app:app --port %PORT%"
+  "core_api|Core API REST|$PORT_CORE_API|REST|/api/sprints,/api/tasks,/api/er-diagram|uv run uvicorn demo.core_api.app:app --port %PORT%"
   # ── Business-logic: one UseCaseService signature → REST / MCP ──
-  "business|UseCase REST (FastAPI + OpenAPI)|$PORT_USECASE_REST|/api/sprints|uv run uvicorn demo.use_case.fastapi:app --port %PORT%"
-  "business|UseCase MCP (4-layer)|$PORT_USECASE_MCP|/mcp|PORT=%PORT% uv run --with fastmcp python -m demo.use_case.mcp_server --http"
+  "business|UseCase REST (FastAPI + OpenAPI)|$PORT_USECASE_REST|REST|/api/sprints,/api/tasks,/api/users|uv run uvicorn demo.use_case.fastapi:app --port %PORT%"
+  "business|UseCase MCP (4-layer)|$PORT_USECASE_MCP|MCP|/mcp|PORT=%PORT% uv run --with fastmcp python -m demo.use_case.mcp_server --http"
   # ── Visualization: Voyager ──
-  "viz|Voyager — UseCase service graph|$PORT_VOYAGER_USECASE|/voyager|uv run uvicorn demo.use_case.voyager_demo:app --port %PORT%"
-  "viz|Voyager — ER + enterprise schema|$PORT_VOYAGER_ER|/voyager|uv run uvicorn demo.enterprise_voyager.voyager_demo:app --port %PORT%"
+  "viz|Voyager — UseCase service graph|$PORT_VOYAGER_USECASE|Voyager, REST|/voyager,/api/users,/api/sprints|uv run uvicorn demo.use_case.voyager_demo:app --port %PORT%"
+  "viz|Voyager — ER + enterprise schema|$PORT_VOYAGER_ER|Voyager|/voyager|uv run uvicorn demo.enterprise_voyager.voyager_demo:app --port %PORT%"
 )
 
 # Derive ALL_PORTS from the registry (single source of truth).
@@ -123,10 +123,10 @@ wait_for_port() {
 }
 
 start_service() {
-  # args: group name port command-template
-  local name="$2" port="$3" cmd="$4"
+  # args: group name port tags paths command-template
+  local name="$2" port="$3" tags="$4" cmd="$6"
   local resolved="${cmd//\%PORT\%/$port}"
-  printf "  ${BLUE}▶${NC} %-36s ${YELLOW}(:%s)${NC}\n" "$name" "$port"
+  printf "  ${BLUE}▶${NC} %-34s ${YELLOW}(:%s)${NC} ${CYAN}[%s]${NC}\n" "$name" "$port" "$tags"
   eval "$resolved &"
   PIDS+=($!)
 }
@@ -142,35 +142,39 @@ echo ""
 
 current_group=""
 for record in "${SERVICES[@]}"; do
-  IFS='|' read -r group name port url cmd <<< "$record"
+  IFS='|' read -r group name port tags paths cmd <<< "$record"
   if [ "$group" != "$current_group" ]; then
     current_group="$group"
     echo -e "${CYAN}── ${GROUP_TITLE[$group]} ──${NC}"
   fi
-  start_service "$group" "$name" "$port" "$cmd"
+  start_service "$group" "$name" "$port" "$tags" "$paths" "$cmd"
 done
 echo ""
 
 # ── Wait for readiness ────────────────────────────────────────────────────
 echo -e "${YELLOW}Waiting for services to be ready...${NC}"
 for record in "${SERVICES[@]}"; do
-  IFS='|' read -r group name port url cmd <<< "$record"
+  IFS='|' read -r group name port tags paths cmd <<< "$record"
   wait_for_port "$port" "$name" || true
 done
 echo ""
 
-# ── Status table (grouped) ────────────────────────────────────────────────
+# ── Status table (grouped, with capability tags + all endpoints) ───────────
 echo "=============================================="
 echo -e "${CYAN}Service Status${NC}"
 echo "=============================================="
 current_group=""
 for record in "${SERVICES[@]}"; do
-  IFS='|' read -r group name port url cmd <<< "$record"
+  IFS='|' read -r group name port tags paths cmd <<< "$record"
   if [ "$group" != "$current_group" ]; then
     current_group="$group"
     echo -e "${CYAN}── ${GROUP_TITLE[$group]} ──${NC}"
   fi
-  printf "  %-36s :%-5s http://localhost:%s%s\n" "$name" "$port" "$port" "$url"
+  printf "  %-34s :%-5s  ${CYAN}[%s]${NC}\n" "$name" "$port" "$tags"
+  IFS=',' read -ra path_list <<< "$paths"
+  for p in "${path_list[@]}"; do
+    printf "      http://localhost:%s%s\n" "$port" "$p"
+  done
 done
 echo "=============================================="
 echo ""
