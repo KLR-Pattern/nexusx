@@ -28,9 +28,10 @@ class GraphQLRequest(BaseModel):
 
 
 # Pagination enabled — all list relationships return Page types
-config = AutoQueryConfig(session_factory=async_session, default_limit=20)
+config = AutoQueryConfig(default_limit=20)
 handler = GraphQLHandler(
     base=BaseEntity,
+    session_factory=async_session,
     auto_query_config=config,
     enable_pagination=True,
 )

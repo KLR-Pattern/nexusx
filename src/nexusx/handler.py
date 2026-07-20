@@ -60,8 +60,12 @@ class GraphQLHandler:
             enable_pagination: When True, list relationships return Result types
                 with { items, pagination } wrapping.
         """
-        if auto_query_config and not session_factory:
-            session_factory = auto_query_config.session_factory
+        if auto_query_config is not None and session_factory is None:
+            raise ValueError(
+                "auto_query_config requires a session_factory (a database "
+                "connection). Pass session_factory to GraphQLHandler, "
+                "Application (url/engine/session_factory), or the MCP builder."
+            )
 
         self.session_factory = session_factory
         self.enable_pagination = enable_pagination
@@ -70,9 +74,11 @@ class GraphQLHandler:
         discovery = EntityDiscovery(base)
         self.entities = discovery.discover(include_all=auto_query_config is not None)
 
-        # Add standard queries if auto_query_config is provided
+        # Add standard queries if auto_query_config is provided. The config is
+        # pure policy; the session_factory comes from this handler (resolved
+        # from the caller — Application / builder / direct).
         if auto_query_config is not None:
-            add_standard_queries(self.entities, auto_query_config)
+            add_standard_queries(self.entities, auto_query_config, session_factory)
 
         # Build ErManager for DataLoader-based relationship resolution
         self._er_manager = ErManager(

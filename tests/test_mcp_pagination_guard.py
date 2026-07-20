@@ -116,12 +116,19 @@ class TestThreadingBothOptions:
     """enable_pagination + auto_query_config thread through every MCP path."""
 
     def test_single_app_manager_sdl_matches_bare_handler(self) -> None:
-        cfg = AutoQueryConfig(session_factory=_DummySessionFactory())
+        cfg = AutoQueryConfig()
+        sf = _DummySessionFactory()
         bare = GraphQLHandler(
-            base=_ThreadingBase, enable_pagination=True, auto_query_config=cfg
+            base=_ThreadingBase,
+            session_factory=sf,
+            enable_pagination=True,
+            auto_query_config=cfg,
         ).get_sdl()
         via_manager = SingleAppManager(
-            base=_ThreadingBase, enable_pagination=True, auto_query_config=cfg
+            base=_ThreadingBase,
+            session_factory=sf,
+            enable_pagination=True,
+            auto_query_config=cfg,
         ).handler.get_sdl()
 
         # Strongest proof of correct threading: byte-identical SDL.
@@ -132,13 +139,18 @@ class TestThreadingBothOptions:
         assert "Result" in via_manager or "Pagination" in via_manager
 
     def test_application_sdl_matches_bare_handler(self) -> None:
-        cfg = AutoQueryConfig(session_factory=_DummySessionFactory())
+        cfg = AutoQueryConfig()
+        sf = _DummySessionFactory()
         bare = GraphQLHandler(
-            base=_ThreadingBase, enable_pagination=True, auto_query_config=cfg
+            base=_ThreadingBase,
+            session_factory=sf,
+            enable_pagination=True,
+            auto_query_config=cfg,
         ).get_sdl()
         via_app = Application(
             name="x",
             base=_ThreadingBase,
+            session_factory=sf,
             enable_pagination=True,
             auto_query_config=cfg,
         ).resources.handler.get_sdl()
@@ -147,11 +159,12 @@ class TestThreadingBothOptions:
         assert "by_id(" in via_app and "by_filter(" in via_app
 
     def test_dict_coerce_threads_both_options(self) -> None:
-        cfg = AutoQueryConfig(session_factory=_DummySessionFactory())
+        cfg = AutoQueryConfig()
         app = _coerce_to_application(
             {
                 "name": "x",
                 "base": _ThreadingBase,
+                "session_factory": _DummySessionFactory(),
                 "enable_pagination": True,
                 "auto_query_config": cfg,
             }
@@ -190,11 +203,69 @@ class TestEmptySchemaGuard:
 
     def test_auto_query_counts_as_operation(self) -> None:
         """auto_query_config injects by_id → non-empty → no raise."""
-        cfg = AutoQueryConfig(session_factory=_DummySessionFactory())
-        mcp = create_simple_mcp_server(base=_AutoOnlyBase, auto_query_config=cfg)
+        cfg = AutoQueryConfig()
+        mcp = create_simple_mcp_server(
+            base=_AutoOnlyBase,
+            session_factory=_DummySessionFactory(),
+            auto_query_config=cfg,
+        )
         assert mcp is not None
 
     def test_simple_server_default_with_query_succeeds(self) -> None:
         """Backward-compat: a normal base with @query builds fine, no guard trip."""
         mcp = create_simple_mcp_server(base=_PlainBase)
         assert mcp is not None
+
+
+class TestAutoQueryConfigPurePolicy:
+    """AutoQueryConfig is pure policy — the container owns the session_factory."""
+
+    def test_handler_rejects_auto_query_without_session_factory(self) -> None:
+        """auto_query_config requires a session_factory on the container."""
+        with pytest.raises(ValueError, match="session_factory"):
+            GraphQLHandler(base=_PlainBase, auto_query_config=AutoQueryConfig())
+
+    @pytest.mark.asyncio
+    async def test_by_id_uses_container_session_factory(self) -> None:
+        """Regression: by_id executes against the container's connection.
+
+        Pre-fix, by_id closed over ``config.session_factory`` (None when the
+        config wasn't given one), so ``Application(url=...) + AutoQueryConfig()``
+        crashed at execution. Now the config carries no factory and by_id uses
+        the handler/Application's session_factory.
+        """
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+        from sqlmodel.ext.asyncio.session import AsyncSession
+
+        class RegBase(SQLModel):
+            pass
+
+        class RegItem(RegBase, table=True):
+            __tablename__ = "reg_byid_item"
+
+            id: int = Field(default=None, primary_key=True)
+            name: str
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        sf = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda c: RegItem.__table__.create(c, checkfirst=True))
+        async with sf() as session:
+            session.add(RegItem(id=1, name="alice"))
+            await session.commit()
+
+        try:
+            app = Application(
+                name="reg",
+                base=RegBase,
+                session_factory=sf,
+                auto_query_config=AutoQueryConfig(),
+            )
+            result = await app.resources.handler.execute(
+                "{ RegItem { by_id(id: 1) { id name } } }"
+            )
+            assert result == {
+                "data": {"RegItem": {"by_id": {"id": 1, "name": "alice"}}}
+            }
+        finally:
+            await engine.dispose()
