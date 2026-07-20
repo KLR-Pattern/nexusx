@@ -205,7 +205,7 @@ Strawberry and FastMCP are excellent at what they do — Strawberry gives you fi
 
 ## Status
 
-**Alpha** — actively developed, APIs may change between minor versions. Not yet battle-tested in production. Bug reports and PRs welcome.
+**Stable** — follows semantic versioning. Minor releases are backward-compatible; breaking changes land in a major release (see [changelog](docs/changelog.md)). Bug reports and PRs welcome.
 
 ## Demos
 
