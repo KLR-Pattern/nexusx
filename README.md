@@ -9,18 +9,18 @@ GraphQL, MCP, and CLI from a single signature.
 
 ```mermaid
 flowchart LR
-    subgraph Query["Query surface — friendlier than SQL"]
-        e["SQLModel entities<br/>+ relationships"]
-        e --> gql1["GraphQL"]
-        e --> mcp1["MCP"]
-        e --> er["ER diagrams (Voyager)"]
-    end
     subgraph Logic["Business logic — one signature, many transports"]
         s["UseCaseService<br/>methods"]
         s --> rest["REST / OpenAPI"]
         s --> gql2["GraphQL"]
         s --> mcp2["MCP (AI agents)"]
         s --> cli["CLI"]
+    end
+    subgraph Query["Query surface — friendlier than SQL"]
+        e["SQLModel entities<br/>+ relationships"]
+        e --> gql1["GraphQL"]
+        e --> mcp1["MCP"]
+        e --> er["ER diagrams (Voyager)"]
     end
 ```
 
