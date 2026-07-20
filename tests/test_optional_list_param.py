@@ -160,29 +160,29 @@ class TestOptionalListParameterBug:
     def test_sdl_required_list_param(self):
         """Required list[str] param should produce [String!]!."""
         sdl = SDLGenerator([ItemForListBug]).generate()
-        gql_type = _extract_param_type(sdl, "itemForListBugCreateWithRequiredTags", "tags")
+        gql_type = _extract_param_type(sdl, "create_with_required_tags", "tags")
         assert gql_type == "[String!]!", f"Expected '[String!]!' but got '{gql_type}'"
 
     def test_sdl_optional_list_param(self):
         """list[str] | None param should produce [String!], not String."""
         sdl = SDLGenerator([ItemForListBug]).generate()
-        gql_type = _extract_param_type(sdl, "itemForListBugCreateWithOptionalTags", "tags")
+        gql_type = _extract_param_type(sdl, "create_with_optional_tags", "tags")
         assert gql_type == "[String!]", f"Expected '[String!]' but got '{gql_type}'"
 
     def test_sdl_optional_typing_list_param(self):
         """Optional[list[str]] (typing module) should also produce [String!]."""
         sdl = SDLGenerator([ItemForListBug]).generate()
-        gql_type = _extract_param_type(sdl, "itemForListBugCreateWithOptionalTyping", "tags")
+        gql_type = _extract_param_type(sdl, "create_with_optional_typing", "tags")
         assert gql_type == "[String!]", f"Expected '[String!]' but got '{gql_type}'"
 
     def test_sdl_optional_list_int_param(self):
         """list[int] | None param should produce [Int!], not String."""
         sdl = SDLGenerator([ItemForListBug]).generate()
-        gql_type = _extract_param_type(sdl, "itemForListBugSearchOptionalInts", "ids")
+        gql_type = _extract_param_type(sdl, "search_optional_ints", "ids")
         assert gql_type == "[Int!]", f"Expected '[Int!]' but got '{gql_type}'"
 
     def test_sdl_combined_optional_list_param(self):
         """list[int | None] | None param should produce [Int], not String."""
         sdl = SDLGenerator([ItemForListBug]).generate()
-        gql_type = _extract_param_type(sdl, "itemForListBugSearchNullableEntities", "ids")
+        gql_type = _extract_param_type(sdl, "search_nullable_entities", "ids")
         assert gql_type == "[Int]", f"Expected '[Int]' but got '{gql_type}'"

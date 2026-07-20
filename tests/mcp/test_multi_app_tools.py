@@ -187,31 +187,37 @@ class TestMultiAppTools:
         tools = _get_tools_dict(multi_app_mcp)
         get_query_schema_tool = tools.get("get_query_schema")
 
-        # First get the list of queries to find a valid query name
+        # First get the list of queries to find a valid entity/method
         list_queries_tool = tools.get("list_queries")
         queries_result = list_queries_tool.fn(app_name="blog")
-        query_name = queries_result["data"][0]["name"]
+        first_query = queries_result["data"][0]
+        entity = first_query["entity"]
+        method = first_query["method"]
 
         result = get_query_schema_tool.fn(
-            name=query_name, app_name="blog", response_type="sdl"
+            entity=entity, method=method, app_name="blog", response_type="sdl"
         )
 
         assert result["success"] is True
         assert "sdl" in result["data"]
-        assert query_name in result["data"]["sdl"]
+        # SDL now shows the method name verbatim.
+        assert method in result["data"]["sdl"]
 
     def test_get_query_schema_introspection_format(self, multi_app_mcp):
         """Test get_query_schema tool with introspection format."""
         tools = _get_tools_dict(multi_app_mcp)
         get_query_schema_tool = tools.get("get_query_schema")
 
-        # First get the list of queries to find a valid query name
+        # First get the list of queries to find a valid entity/method
         list_queries_tool = tools.get("list_queries")
         queries_result = list_queries_tool.fn(app_name="blog")
-        query_name = queries_result["data"][0]["name"]
+        first_query = queries_result["data"][0]
+        entity = first_query["entity"]
+        method = first_query["method"]
 
         result = get_query_schema_tool.fn(
-            name=query_name, app_name="blog", response_type="introspection"
+            entity=entity, method=method, app_name="blog",
+            response_type="introspection",
         )
 
         assert result["success"] is True
@@ -219,12 +225,13 @@ class TestMultiAppTools:
         assert "types" in result["data"]
 
     def test_get_query_schema_invalid_query(self, multi_app_mcp):
-        """Test get_query_schema tool with an invalid query name."""
+        """Test get_query_schema tool with an invalid entity/method."""
         tools = _get_tools_dict(multi_app_mcp)
         get_query_schema_tool = tools.get("get_query_schema")
 
         result = get_query_schema_tool.fn(
-            name="nonexistent_query", app_name="blog", response_type="sdl"
+            entity="Nonexistent", method="nonexistent",
+            app_name="blog", response_type="sdl",
         )
 
         assert result["success"] is False
@@ -235,18 +242,21 @@ class TestMultiAppTools:
         tools = _get_tools_dict(multi_app_mcp)
         get_mutation_schema_tool = tools.get("get_mutation_schema")
 
-        # First get the list of mutations to find a valid mutation name
+        # First get the list of mutations to find a valid entity/method
         list_mutations_tool = tools.get("list_mutations")
         mutations_result = list_mutations_tool.fn(app_name="shop")
-        mutation_name = mutations_result["data"][0]["name"]
+        first_mutation = mutations_result["data"][0]
+        entity = first_mutation["entity"]
+        method = first_mutation["method"]
 
         result = get_mutation_schema_tool.fn(
-            name=mutation_name, app_name="shop", response_type="sdl"
+            entity=entity, method=method, app_name="shop", response_type="sdl"
         )
 
         assert result["success"] is True
         assert "sdl" in result["data"]
-        assert mutation_name in result["data"]["sdl"]
+        # SDL now shows the method name verbatim.
+        assert method in result["data"]["sdl"]
 
     @pytest.mark.asyncio
     async def test_graphql_query_with_valid_app(self, multi_app_mcp):
@@ -255,11 +265,13 @@ class TestMultiAppTools:
         graphql_query_tool = tools.get("graphql_query")
 
         result = await graphql_query_tool.fn(
-            query="{ blogUserGetBlogUsers(limit: 1) { id } }", app_name="blog"
+            query="{ BlogUser { get_blog_users(limit: 1) { id } } }",
+            app_name="blog",
         )
 
         assert result["success"] is True
-        assert "blogUserGetBlogUsers" in result["data"]
+        assert "BlogUser" in result["data"]
+        assert "get_blog_users" in result["data"]["BlogUser"]
 
     @pytest.mark.asyncio
     async def test_graphql_query_with_invalid_app(self, multi_app_mcp):
@@ -292,13 +304,14 @@ class TestMultiAppTools:
         graphql_mutation_tool = tools.get("graphql_mutation")
 
         result = await graphql_mutation_tool.fn(
-            mutation='mutation { shopProductCreateShopProduct(name: "Test", '
-                     'description: "A product") { id name } }',
+            mutation='mutation { ShopProduct { create_shop_product('
+                     'name: "Test", description: "A product") { id name } } }',
             app_name="shop",
         )
 
         assert result["success"] is True
-        assert "shopProductCreateShopProduct" in result["data"]
+        assert "ShopProduct" in result["data"]
+        assert "create_shop_product" in result["data"]["ShopProduct"]
 
     @pytest.mark.asyncio
     async def test_graphql_mutation_with_invalid_app(self, multi_app_mcp):

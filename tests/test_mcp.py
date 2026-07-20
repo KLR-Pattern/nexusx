@@ -97,11 +97,11 @@ class TestSchemaFormatter:
         assert "mutations" in info
         assert "types" in info
 
-        # Check queries
+        # Check queries — under the grouped layout the SchemaFormatter exposes
+        # one entry per entity group on the root Query type.
         assert len(info["queries"]) > 0
         query_names = [q["name"] for q in info["queries"]]
-        # New naming: testUserGetAll
-        assert "testUserGetAll" in query_names
+        assert "TestUser" in query_names
 
         # Check types
         assert len(info["types"]) > 0
@@ -149,7 +149,7 @@ class TestSchemaFormatter:
 
         from nexusx import query
         from nexusx.handler import GraphQLHandler
-        from nexusx.mcp.builders.schema_formatter import SchemaFormatter
+        from nexusx.mcp.builders.type_tracer import TypeTracer
 
         class TestBase(SQLModel):
             pass
@@ -163,21 +163,21 @@ class TestSchemaFormatter:
                 return None
 
         handler = GraphQLHandler(base=TestBase)
-        formatter = SchemaFormatter(handler)
-        info = formatter.get_schema_info()
+        introspection = handler._introspection_generator.generate()
+        entity_names = {e.__name__ for e in handler.entities}
+        tracer = TypeTracer(introspection, entity_names)
 
-        # Find testItemGetById query
-        item_query = next(
-            (q for q in info["queries"] if q["name"] == "testItemGetById"), None
-        )
+        # Under the grouped layout the method lives on the {Entity}Query type,
+        # fetched via get_group_operation.
+        item_query = tracer.get_group_operation("Query", "TestItem", "get_by_id")
         assert item_query is not None
 
         # Check arguments
-        arg_names = [a["name"] for a in item_query["arguments"]]
+        arg_names = [a["name"] for a in item_query["args"]]
         assert "item_id" in arg_names
 
         # Check that the argument has a type
-        id_arg = next((a for a in item_query["arguments"] if a["name"] == "item_id"), None)
+        id_arg = next((a for a in item_query["args"] if a["name"] == "item_id"), None)
         assert id_arg is not None
         assert "type" in id_arg
 
@@ -249,11 +249,14 @@ class TestListOperations:
         entity_names = {e.__name__ for e in handler.entities}
         tracer = TypeTracer(introspection, entity_names)
 
-        queries = tracer.list_operation_fields("Query")
+        # Under the grouped layout, methods are listed via list_group_operations
+        # which returns one entry per method tagged with its entity.
+        queries = tracer.list_group_operations("Query")
 
         assert len(queries) == 1
-        # New naming: testUserGetAll
-        assert queries[0]["name"] == "testUserGetAll"
+        assert queries[0]["entity"] == "TestUser"
+        assert queries[0]["method"] == "get_all"
+        assert queries[0]["name"] == "TestUser.get_all"
         assert queries[0]["description"] == "Get all test users."
 
     def test_list_queries_empty_when_no_queries(self) -> None:
@@ -300,11 +303,13 @@ class TestListOperations:
         entity_names = {e.__name__ for e in handler.entities}
         tracer = TypeTracer(introspection, entity_names)
 
-        mutations = tracer.list_operation_fields("Mutation")
+        # Under the grouped layout, methods are listed via list_group_operations.
+        mutations = tracer.list_group_operations("Mutation")
 
         assert len(mutations) == 1
-        # New naming: testUserCreate
-        assert mutations[0]["name"] == "testUserCreate"
+        assert mutations[0]["entity"] == "TestUser"
+        assert mutations[0]["method"] == "create"
+        assert mutations[0]["name"] == "TestUser.create"
 
 
 class TestGetOperationSchema:
@@ -335,11 +340,11 @@ class TestGetOperationSchema:
         entity_names = {e.__name__ for e in handler.entities}
         tracer = TypeTracer(introspection, entity_names)
 
-        # New naming: testUserGetById
-        operation = tracer.get_operation_field("Query", "testUserGetById")
+        # Under the grouped layout, fetch the method via get_group_operation.
+        operation = tracer.get_group_operation("Query", "TestUser", "get_by_id")
 
         assert operation is not None
-        assert operation["name"] == "testUserGetById"
+        assert operation["name"] == "get_by_id"
         assert len(operation["args"]) == 1
         assert operation["args"][0]["name"] == "user_id"
 
@@ -477,11 +482,11 @@ class TestGetOperationSchema:
         entity_names = {e.__name__ for e in handler.entities}
         tracer = TypeTracer(introspection, entity_names)
 
-        # New naming: testUserCreate
-        operation = tracer.get_operation_field("Mutation", "testUserCreate")
+        # Under the grouped layout, fetch the method via get_group_operation.
+        operation = tracer.get_group_operation("Mutation", "TestUser", "create")
 
         assert operation is not None
-        assert operation["name"] == "testUserCreate"
+        assert operation["name"] == "create"
 
     def test_operation_with_no_arguments(self) -> None:
         """Test operation with no arguments."""
@@ -507,8 +512,8 @@ class TestGetOperationSchema:
         entity_names = {e.__name__ for e in handler.entities}
         tracer = TypeTracer(introspection, entity_names)
 
-        # New naming: testUserGetAll
-        operation = tracer.get_operation_field("Query", "testUserGetAll")
+        # Under the grouped layout, fetch the method via get_group_operation.
+        operation = tracer.get_group_operation("Query", "TestUser", "get_all")
 
         assert operation is not None
         assert operation["args"] == []
@@ -542,16 +547,17 @@ class TestThreeLayerProgressiveDisclosure:
         entity_names = {e.__name__ for e in handler.entities}
         tracer = TypeTracer(introspection, entity_names)
 
-        # Layer 1: List queries
-        queries = tracer.list_operation_fields("Query")
+        # Layer 1: List queries (grouped: one entry per method)
+        queries = tracer.list_group_operations("Query")
         assert len(queries) == 1
-        # New naming: testUserGetAll
-        assert queries[0]["name"] == "testUserGetAll"
+        assert queries[0]["entity"] == "TestUser"
+        assert queries[0]["method"] == "get_all"
+        assert queries[0]["name"] == "TestUser.get_all"
 
-        # Layer 2: Get query schema
-        operation = tracer.get_operation_field("Query", "testUserGetAll")
+        # Layer 2: Get query schema (fetch the method from its entity group)
+        operation = tracer.get_group_operation("Query", "TestUser", "get_all")
         assert operation is not None
-        assert operation["name"] == "testUserGetAll"
+        assert operation["name"] == "get_all"
         assert operation["description"] == "Get all test users."
 
         # Note: Due to Python's forward reference limitations when classes are

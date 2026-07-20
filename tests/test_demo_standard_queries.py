@@ -34,13 +34,19 @@ def test_demo_with_standard_queries():
     print(sdl)
     print("\n=== End of SDL ===\n")
 
-    # Verify SDL contains expected queries
-    assert "userById" in sdl
-    assert "userByFilter" in sdl
-    assert "postById" in sdl
-    assert "postByFilter" in sdl
-    assert "commentById" in sdl
-    assert "commentByFilter" in sdl
+    # Verify SDL contains expected queries (grouped by entity at the GraphQL root)
+    assert "User: UserQuery!" in sdl
+    assert "Post: PostQuery!" in sdl
+    assert "Comment: CommentQuery!" in sdl
+    assert "type UserQuery {" in sdl
+    assert "type PostQuery {" in sdl
+    assert "type CommentQuery {" in sdl
+    assert "by_id(id: Int!): User" in sdl
+    assert "by_filter(filter: UserFilterInput, limit: Int): [User!]!" in sdl
+    assert "by_id(id: Int!): Post" in sdl
+    assert "by_filter(filter: PostFilterInput, limit: Int): [Post!]!" in sdl
+    assert "by_id(id: Int!): Comment" in sdl
+    assert "by_filter(filter: CommentFilterInput, limit: Int): [Comment!]!" in sdl
 
     # Verify filter input types
     assert "input UserFilterInput" in sdl
@@ -60,9 +66,11 @@ def test_graphql_handler_with_auto_config():
     handler = GraphQLHandler(base=BaseEntity, auto_query_config=config)
     sdl = handler.get_sdl()
 
-    # Verify SDL contains expected queries
-    assert "userById" in sdl
-    assert "userByFilter" in sdl
+    # Verify SDL contains expected queries (grouped by entity at the GraphQL root)
+    assert "User: UserQuery!" in sdl
+    assert "type UserQuery {" in sdl
+    assert "by_id(id: Int!): User" in sdl
+    assert "by_filter(filter: UserFilterInput, limit: Int): [User!]!" in sdl
 
     print("✅ auto_query_config works with GraphQLHandler!")
 

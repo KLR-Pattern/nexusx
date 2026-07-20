@@ -86,8 +86,9 @@ class TestInputTypesSDL:
         handler = GraphQLHandler(base=InputTestBase)
         sdl = handler.get_sdl()
 
-        # Check mutation uses the input type
-        assert "inputTestUserCreate(input: UserCreateInput!)" in sdl
+        # Methods now live inside `type InputTestUserMutation { ... }` under the
+        # verbatim Python method name, so we assert on the inner method def.
+        assert "create(input: UserCreateInput!)" in sdl
 
     def test_input_type_with_optional_field(self) -> None:
         handler = GraphQLHandler(base=InputTestBase)
@@ -130,16 +131,19 @@ class TestInputTypesIntrospection:
         handler = GraphQLHandler(base=InputTestBase)
         schema = handler._introspection_generator.generate()
 
-        # Find the Mutation type
-        mutation_type = next(
-            (t for t in schema["types"] if t["name"] == "Mutation"), None
+        # With the grouped-by-entity layout, Mutation no longer holds the method
+        # directly. The method lives inside the per-entity mutation group, e.g.
+        # `type InputTestUserMutation { create(input: ...): ... }`.
+        group_type = next(
+            (t for t in schema["types"] if t["name"] == "InputTestUserMutation"),
+            None,
         )
-        assert mutation_type is not None
+        assert group_type is not None, "Expected an InputTestUserMutation group type"
 
-        # Find the create mutation field
+        # Find the create method field inside the entity's mutation group
         create_field = next(
-            (f for f in mutation_type["fields"] if f["name"] == "inputTestUserCreate"),
-            None
+            (f for f in group_type["fields"] if f["name"] == "create"),
+            None,
         )
         assert create_field is not None
 
@@ -171,18 +175,20 @@ class TestInputTypesExecution:
         result = await handler.execute(
             """
             mutation {
-                inputTestUserCreate(input: {name: "Alice", email: "alice@test.com", age: 25}) {
-                    id
-                    name
-                    email
+                InputTestUser {
+                    create(input: {name: "Alice", email: "alice@test.com", age: 25}) {
+                        id
+                        name
+                        email
+                    }
                 }
             }
         """
         )
 
         assert "data" in result
-        assert result["data"]["inputTestUserCreate"]["name"] == "Alice"
-        assert result["data"]["inputTestUserCreate"]["email"] == "alice@test.com"
+        assert result["data"]["InputTestUser"]["create"]["name"] == "Alice"
+        assert result["data"]["InputTestUser"]["create"]["email"] == "alice@test.com"
 
     @pytest.mark.asyncio
     async def test_nested_input_conversion(self) -> None:
@@ -191,19 +197,21 @@ class TestInputTypesExecution:
         result = await handler.execute(
             """
             mutation {
-                inputTestUserCreateWithAddress(input: {
-                    name: "Bob",
-                    address: {street: "Main St", city: "NYC", zip_code: "10001"}
-                }) {
-                    id
-                    name
+                InputTestUser {
+                    create_with_address(input: {
+                        name: "Bob",
+                        address: {street: "Main St", city: "NYC", zip_code: "10001"}
+                    }) {
+                        id
+                        name
+                    }
                 }
             }
         """
         )
 
         assert "data" in result
-        assert result["data"]["inputTestUserCreateWithAddress"]["name"] == "Bob"
+        assert result["data"]["InputTestUser"]["create_with_address"]["name"] == "Bob"
 
 
 class TestInputTypesMCP:
@@ -227,9 +235,12 @@ class TestInputTypesMCP:
         formatter = SchemaFormatter(handler)
         info = formatter.get_schema_info()
 
+        # The grouped-by-entity layout surfaces one Mutation entry per entity
+        # group; the entity's methods live one level deeper. The entry's name
+        # is the entity class name (InputTestUser).
         create_mutation = next(
-            (m for m in info["mutations"] if m["name"] == "inputTestUserCreate"),
-            None
+            (m for m in info["mutations"] if m["name"] == "InputTestUser"),
+            None,
         )
         assert create_mutation is not None
         # Check for input_types field

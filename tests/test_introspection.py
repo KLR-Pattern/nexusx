@@ -200,10 +200,18 @@ class TestIntrospectionGenerator:
         assert query_type is not None
         assert query_type["kind"] == "OBJECT"
 
+        # Grouped layout: root Query mounts one field per entity; the methods
+        # themselves live on the {Entity}Query group OBJECT.
         field_names = [f["name"] for f in query_type["fields"]]
-        # New naming: introspectionUserGetUsers, introspectionUserGetUser
-        assert "introspectionUserGetUsers" in field_names
-        assert "introspectionUserGetUser" in field_names
+        assert "IntrospectionUser" in field_names
+
+        user_group = next(
+            (t for t in schema["types"] if t["name"] == "IntrospectionUserQuery"), None
+        )
+        assert user_group is not None
+        group_field_names = [f["name"] for f in user_group["fields"]]
+        assert "get_users" in group_field_names
+        assert "get_user" in group_field_names
 
     def test_mutation_type(self, generator: IntrospectionGenerator):
         """Test that Mutation type is generated with correct fields."""
@@ -213,17 +221,27 @@ class TestIntrospectionGenerator:
         assert mutation_type is not None
         assert mutation_type["kind"] == "OBJECT"
 
+        # Grouped layout: methods live on the {Entity}Mutation group OBJECT.
         field_names = [f["name"] for f in mutation_type["fields"]]
-        # New naming: introspectionUserCreateUser
-        assert "introspectionUserCreateUser" in field_names
+        assert "IntrospectionUser" in field_names
+
+        user_group = next(
+            (t for t in schema["types"] if t["name"] == "IntrospectionUserMutation"), None
+        )
+        assert user_group is not None
+        group_field_names = [f["name"] for f in user_group["fields"]]
+        assert "create_user" in group_field_names
 
     def test_field_arguments(self, generator: IntrospectionGenerator):
         """Test that field arguments are generated correctly."""
         schema = generator.generate()
 
-        query_type = next((t for t in schema["types"] if t["name"] == "Query"), None)
+        user_group = next(
+            (t for t in schema["types"] if t["name"] == "IntrospectionUserQuery"), None
+        )
+        assert user_group is not None
         users_field = next(
-            (f for f in query_type["fields"] if f["name"] == "introspectionUserGetUsers"),
+            (f for f in user_group["fields"] if f["name"] == "get_users"),
             None,
         )
 
@@ -235,9 +253,12 @@ class TestIntrospectionGenerator:
         """Test that return types are structured correctly."""
         schema = generator.generate()
 
-        query_type = next((t for t in schema["types"] if t["name"] == "Query"), None)
+        user_group = next(
+            (t for t in schema["types"] if t["name"] == "IntrospectionUserQuery"), None
+        )
+        assert user_group is not None
         users_field = next(
-            (f for f in query_type["fields"] if f["name"] == "introspectionUserGetUsers"),
+            (f for f in user_group["fields"] if f["name"] == "get_users"),
             None,
         )
 
@@ -250,9 +271,12 @@ class TestIntrospectionGenerator:
         """Test that Optional return types are handled correctly."""
         schema = generator.generate()
 
-        query_type = next((t for t in schema["types"] if t["name"] == "Query"), None)
+        user_group = next(
+            (t for t in schema["types"] if t["name"] == "IntrospectionUserQuery"), None
+        )
+        assert user_group is not None
         user_field = next(
-            (f for f in query_type["fields"] if f["name"] == "introspectionUserGetUser"),
+            (f for f in user_group["fields"] if f["name"] == "get_user"),
             None,
         )
 
@@ -629,17 +653,29 @@ class TestDefaultValueFormat:
         return handler._introspection_generator
 
     def _get_mutation_field(self, schema: dict, field_name: str) -> dict:
-        mutation_type = next(t for t in schema["types"] if t["name"] == "Mutation")
-        return next(f for f in mutation_type["fields"] if f["name"] == field_name)
+        """Look up a method field on the {Entity}Mutation group type.
+
+        All tests in this class target the IntrospectionConfig entity.
+        """
+        group_type = next(
+            t for t in schema["types"] if t["name"] == "IntrospectionConfigMutation"
+        )
+        return next(f for f in group_type["fields"] if f["name"] == field_name)
 
     def _get_query_field(self, schema: dict, field_name: str) -> dict:
-        query_type = next(t for t in schema["types"] if t["name"] == "Query")
-        return next(f for f in query_type["fields"] if f["name"] == field_name)
+        """Look up a method field on the {Entity}Query group type.
+
+        All tests in this class target the IntrospectionConfig entity.
+        """
+        group_type = next(
+            t for t in schema["types"] if t["name"] == "IntrospectionConfigQuery"
+        )
+        return next(f for f in group_type["fields"] if f["name"] == field_name)
 
     def test_string_default_uses_json_format(self, generator: IntrospectionGenerator):
         """String defaults must use double-quoted JSON format, not Python single quotes."""
         schema = generator.generate()
-        field = self._get_mutation_field(schema, "introspectionConfigCreateConfig")
+        field = self._get_mutation_field(schema, "create_config")
         value_arg = next(a for a in field["args"] if a["name"] == "value")
 
         assert value_arg["defaultValue"] == '"default"'
@@ -648,7 +684,7 @@ class TestDefaultValueFormat:
     def test_none_default_produces_null(self, generator: IntrospectionGenerator):
         """None defaults must produce GraphQL 'null', not Python 'None'."""
         schema = generator.generate()
-        field = self._get_mutation_field(schema, "introspectionConfigCreateConfig")
+        field = self._get_mutation_field(schema, "create_config")
         tag_arg = next(a for a in field["args"] if a["name"] == "tag")
 
         assert tag_arg["defaultValue"] == "null"
@@ -657,7 +693,7 @@ class TestDefaultValueFormat:
     def test_int_default_format(self, generator: IntrospectionGenerator):
         """Integer defaults must be valid GraphQL Int literals."""
         schema = generator.generate()
-        field = self._get_mutation_field(schema, "introspectionConfigCreateConfig")
+        field = self._get_mutation_field(schema, "create_config")
         priority_arg = next(a for a in field["args"] if a["name"] == "priority")
 
         assert priority_arg["defaultValue"] == "5"
@@ -665,7 +701,7 @@ class TestDefaultValueFormat:
     def test_float_default_format(self, generator: IntrospectionGenerator):
         """Float defaults must be valid GraphQL Float literals."""
         schema = generator.generate()
-        field = self._get_mutation_field(schema, "introspectionConfigCreateConfig")
+        field = self._get_mutation_field(schema, "create_config")
         score_arg = next(a for a in field["args"] if a["name"] == "score")
 
         assert score_arg["defaultValue"] == "1.0"
@@ -673,7 +709,7 @@ class TestDefaultValueFormat:
     def test_bool_true_default_format(self, generator: IntrospectionGenerator):
         """Boolean True defaults must be GraphQL 'true', not Python 'True'."""
         schema = generator.generate()
-        field = self._get_mutation_field(schema, "introspectionConfigCreateConfig")
+        field = self._get_mutation_field(schema, "create_config")
         is_active_arg = next(a for a in field["args"] if a["name"] == "is_active")
 
         assert is_active_arg["defaultValue"] == "true"
@@ -682,7 +718,7 @@ class TestDefaultValueFormat:
     def test_bool_false_default_format(self, generator: IntrospectionGenerator):
         """Boolean False defaults must be GraphQL 'false', not Python 'False'."""
         schema = generator.generate()
-        field = self._get_query_field(schema, "introspectionConfigGetConfigs")
+        field = self._get_query_field(schema, "get_configs")
         enabled_arg = next(a for a in field["args"] if a["name"] == "enabled")
 
         assert enabled_arg["defaultValue"] == "false"
@@ -691,7 +727,7 @@ class TestDefaultValueFormat:
     def test_list_default_format(self, generator: IntrospectionGenerator):
         """Optional list with None default renders as null in GraphQL."""
         schema = generator.generate()
-        field = self._get_mutation_field(schema, "introspectionConfigCreateConfig")
+        field = self._get_mutation_field(schema, "create_config")
         tags_arg = next(a for a in field["args"] if a["name"] == "tags")
 
         assert tags_arg["defaultValue"] == "null"

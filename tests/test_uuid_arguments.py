@@ -20,14 +20,12 @@ This module pins two contracts that nexusx must honor end-to-end:
 
 from __future__ import annotations
 
-from typing import ClassVar, List, Optional
 from uuid import UUID, uuid4
 
 import pytest
 from sqlmodel import Field, SQLModel
 
 from nexusx import GraphQLHandler, mutation, query
-
 
 # ──────────────────────────────────────────────────────────
 # Test entity — single UUID field, no DB table required
@@ -53,7 +51,7 @@ class UuidItem(UuidArgBase, table=False):
     name: str = ""
 
     @query
-    async def get_by_id(cls, id: UUID) -> Optional[UuidItem]:  # noqa: A002
+    async def get_by_id(cls, id: UUID) -> UuidItem | None:  # noqa: A002
         """Return an echo entity; record the runtime type of ``id``.
 
         nexusx must convert the incoming GraphQL string into ``UUID`` before
@@ -92,7 +90,7 @@ class TestUuidArgumentConversion:
     ) -> None:
         """Client sends ``id: "<uuid-str>"``; method receives ``UUID(<uuid-str>)``."""
         literal = "123e4567-e89b-12d3-a456-426614174000"
-        query_str = f'{{ uuidItemGetById(id: "{literal}") {{ id name }} }}'
+        query_str = f'{{ UuidItem {{ get_by_id(id: "{literal}") {{ id name }} }} }}'
 
         result = await uuid_handler.execute(query_str)
 
@@ -110,7 +108,7 @@ class TestUuidArgumentConversion:
     ) -> None:
         """Same contract via GraphQL variables (the form SDKs typically send)."""
         literal = "123e4567-e89b-12d3-a456-426614174000"
-        query_str = "query Q($id: String!) { uuidItemGetById(id: $id) { id name } }"
+        query_str = "query Q($id: String!) { UuidItem { get_by_id(id: $id) { id name } } }"
 
         result = await uuid_handler.execute(
             query_str, variables={"id": literal}, operation_name="Q"
@@ -128,7 +126,7 @@ class TestUuidArgumentConversion:
         """Optional[UUID] must still convert when a value is provided."""
         # This indirectly exercises unwrap_optional + UUID conversion ordering.
         literal = "00000000-0000-0000-0000-000000000001"
-        query_str = f'{{ uuidItemGetById(id: "{literal}") {{ id }} }}'
+        query_str = f'{{ UuidItem {{ get_by_id(id: "{literal}") {{ id }} }} }}'
 
         result = await uuid_handler.execute(query_str)
 
@@ -151,11 +149,11 @@ class TestUuidFieldSerialization:
         """``id`` field (UUID instance) must come back as a JSON string."""
         literal = "123e4567-e89b-12d3-a456-426614174000"
         result = await uuid_handler.execute(
-            f'{{ uuidItemGetById(id: "{literal}") {{ id name }} }}'
+            f'{{ UuidItem {{ get_by_id(id: "{literal}") {{ id name }} }} }}'
         )
 
         assert "errors" not in result, f"unexpected errors: {result.get('errors')}"
-        payload = result["data"]["uuidItemGetById"]
+        payload = result["data"]["UuidItem"]["get_by_id"]
         # JSON values reach us as Python str when the encoder handled UUID; if
         # nexusx passed the raw UUID into the response builder, the value here
         # would either be a UUID instance (encoder fallback) or the call would
@@ -181,8 +179,10 @@ class TestUuidSDL:
         assert "type UuidItem" in sdl
         # nexusx now registers uuid.UUID → "UUID" in TypeConverter.SCALAR_TYPE_MAP,
         # so the SDL must render the canonical UUID scalar (not the String fallback).
-        assert "uuidItemGetById(id: UUID!)" in sdl, (
-            f"Expected `uuidItemGetById(id: UUID!)` in SDL, got:\n{sdl}"
+        # Methods now live inside `type UuidItemQuery { ... }` under the verbatim
+        # Python method name (get_by_id), so we assert on the inner method def.
+        assert "get_by_id(id: UUID!)" in sdl, (
+            f"Expected `get_by_id(id: UUID!)` in SDL, got:\n{sdl}"
         )
         assert "(id: String" not in sdl
 
@@ -209,7 +209,7 @@ class UuidListDemo(UuidArgBase, table=False):
     name: str = ""
 
     @mutation
-    async def reorder(cls, ids: List[UUID]) -> List[UUID]:  # noqa: A002
+    async def reorder(cls, ids: list[UUID]) -> list[UUID]:  # noqa: A002
         """Echo back the ids; record what the method actually received."""
         _RECEIVED["ids"] = ids
         _RECEIVED["ids_types"] = [type(x) for x in ids]
@@ -234,7 +234,7 @@ class TestUuidListArgumentConversion:
         id1 = "123e4567-e89b-12d3-a456-426614174000"
         id2 = "00000000-0000-0000-0000-000000000001"
         query_str = (
-            'mutation { uuidListDemoReorder(ids: ["' + id1 + '", "' + id2 + '"]) }'
+            'mutation { UuidListDemo { reorder(ids: ["' + id1 + '", "' + id2 + '"]) } }'
         )
 
         result = await handler.execute(query_str)
@@ -258,7 +258,7 @@ class TestUuidListArgumentConversion:
         id1 = "123e4567-e89b-12d3-a456-426614174000"
         id2 = "00000000-0000-0000-0000-000000000001"
         result = await handler.execute(
-            "mutation M($ids: [UUID!]!) { uuidListDemoReorder(ids: $ids) }",
+            "mutation M($ids: [UUID!]!) { UuidListDemo { reorder(ids: $ids) } }",
             variables={"ids": [id1, id2]},
             operation_name="M",
         )
@@ -275,7 +275,7 @@ class TestUuidListArgumentConversion:
         _RECEIVED.clear()
         handler = GraphQLHandler(base=UuidArgBase)
 
-        result = await handler.execute("mutation { uuidListDemoReorder(ids: []) }")
+        result = await handler.execute("mutation { UuidListDemo { reorder(ids: []) } }")
 
         assert "errors" not in result, f"unexpected errors: {result.get('errors')}"
         assert _RECEIVED.get("ids") == []
@@ -293,7 +293,8 @@ class TestUuidListSDL:
         handler = GraphQLHandler(base=UuidArgBase)
         sdl = handler.get_sdl()
 
-        # Non-null list of non-null UUIDs.
-        assert "uuidListDemoReorder(ids: [UUID!]!)" in sdl, (
-            f"Expected `uuidListDemoReorder(ids: [UUID!]!)` in SDL, got:\n{sdl}"
+        # Non-null list of non-null UUIDs. The method lives inside
+        # `type UuidListDemoMutation { ... }` under the verbatim method name.
+        assert "reorder(ids: [UUID!]!)" in sdl, (
+            f"Expected `reorder(ids: [UUID!]!)` in SDL, got:\n{sdl}"
         )

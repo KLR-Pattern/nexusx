@@ -20,7 +20,6 @@ from nexusx.use_case.business import UseCaseService
 from nexusx.use_case.compose_schema import build_compose_schema
 from nexusx.use_case.types import UseCaseAppConfig
 
-
 # ──────────────────────────────────────────────────────────────────────
 # Self-referential DTO (return side → OBJECT)
 # ──────────────────────────────────────────────────────────────────────
@@ -31,8 +30,8 @@ class TreeNode(BaseModel):
 
     id: int
     name: str
-    children: list["TreeNode"] = []
-    parent: "TreeNode | None" = None
+    children: list[TreeNode] = []
+    parent: TreeNode | None = None
 
 
 class TreeService(UseCaseService):
@@ -54,12 +53,12 @@ def tree_app() -> UseCaseAppConfig:
 
 class NodeA(BaseModel):
     id: int
-    b: "NodeB | None" = None
+    b: NodeB | None = None
 
 
 class NodeB(BaseModel):
     id: int
-    a: "NodeA | None" = None
+    a: NodeA | None = None
 
 
 # Forward refs span two class bodies — rebuild after both are defined so
@@ -89,7 +88,7 @@ class TreeFilter(BaseModel):
     """A tree-shaped filter used as a method argument (INPUT_OBJECT)."""
 
     label: str
-    children: list["TreeFilter"] = []
+    children: list[TreeFilter] = []
 
 
 class TreeFilterService(UseCaseService):

@@ -78,9 +78,12 @@ class TestSDLGenerator:
         sdl = generator.generate()
 
         assert "type Query" in sdl
-        # New naming: userForTestGetAll, userForTestGetById
-        assert "userForTestGetAll(limit: Int): [UserForTest!]!" in sdl
-        assert "userForTestGetById(id: Int!): UserForTest" in sdl
+        # Grouped layout: methods live on the {Entity}Query group type; the root
+        # Query field is the entity class name mounting that group type.
+        assert "type UserForTestQuery {" in sdl
+        assert "UserForTest: UserForTestQuery!" in sdl
+        assert "get_all(limit: Int): [UserForTest!]!" in sdl
+        assert "get_by_id(id: Int!): UserForTest" in sdl
 
     def test_generate_mutation_type(self) -> None:
         """Test that Mutation type is generated correctly."""
@@ -88,8 +91,10 @@ class TestSDLGenerator:
         sdl = generator.generate()
 
         assert "type Mutation" in sdl
-        # New naming: userForTestCreate
-        assert "userForTestCreate(name: String!, email: String!): UserForTest!" in sdl
+        # Grouped layout: methods live on the {Entity}Mutation group type.
+        assert "type UserForTestMutation {" in sdl
+        assert "UserForTest: UserForTestMutation!" in sdl
+        assert "create(name: String!, email: String!): UserForTest!" in sdl
 
     def test_snake_case_preserved(self) -> None:
         """Test that snake_case field names are preserved (no conversion to camelCase)."""
@@ -395,20 +400,20 @@ class TestSDLGeneratorOperationSDL:
     def test_generate_operation_sdl_query(self) -> None:
         """Test generating SDL for a single query."""
         generator = SDLGenerator([UserForTest])
-        sdl = generator.generate_operation_sdl("userForTestGetAll", "Query")
+        sdl = generator.generate_operation_sdl("UserForTest", "get_all", "Query")
 
         assert sdl is not None
-        assert "userForTestGetAll" in sdl
+        assert "get_all" in sdl
         assert "limit: Int" in sdl
         assert "UserForTest" in sdl
 
     def test_generate_operation_sdl_mutation(self) -> None:
         """Test generating SDL for a single mutation."""
         generator = SDLGenerator([UserForTest])
-        sdl = generator.generate_operation_sdl("userForTestCreate", "Mutation")
+        sdl = generator.generate_operation_sdl("UserForTest", "create", "Mutation")
 
         assert sdl is not None
-        assert "userForTestCreate" in sdl
+        assert "create" in sdl
         assert "name: String!" in sdl
 
     def test_generate_operation_sdl_not_found(self) -> None:
@@ -438,7 +443,7 @@ class TestSDLGeneratorOperationSDL:
                 return []
 
         generator = SDLGenerator([AuthorForTest, ArticleForTest])
-        sdl = generator.generate_operation_sdl("articleForTestGetAll", "Query")
+        sdl = generator.generate_operation_sdl("ArticleForTest", "get_all", "Query")
 
         assert sdl is not None
         assert "ArticleForTest" in sdl
@@ -537,9 +542,9 @@ class TestSDLGeneratorExtras:
                 return []
 
         generator = SDLGenerator([NoReturnEntity])
-        sdl = generator.generate_operation_sdl("noReturnEntityGetAll", "Query")
+        sdl = generator.generate_operation_sdl("NoReturnEntity", "get_all", "Query")
         assert sdl is not None
-        assert "noReturnEntityGetAll" in sdl
+        assert "get_all" in sdl
 
     def test_collect_related_entities_unreachable(self):
         """Type hint referencing non-entity should not crash."""

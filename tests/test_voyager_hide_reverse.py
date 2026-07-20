@@ -17,12 +17,10 @@ manually via quickstart.md §2.9 (DevTools → Application → Storage disable).
 
 from typing import Optional
 
-from fastapi.testclient import TestClient
 from sqlmodel import Field, Relationship, SQLModel
 
 from nexusx.loader.registry import ErManager
 from nexusx.voyager.er_diagram_dot import ErDiagramDotBuilder
-
 
 # ── Fixtures ───────────────────────────────────────────────────────────
 
