@@ -46,6 +46,8 @@ mcp_server = create_simple_mcp_server(
     desc="Blog system — query users/posts/comments (paginated GraphQL)",
     allow_mutation=True,
     session_factory=async_session,
+    enable_pagination=True,
+    auto_query_config=config,
 )
 mcp_app = mcp_server.http_app()
 

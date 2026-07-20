@@ -9,6 +9,7 @@ import pytest
 from sqlmodel import Field, SQLModel
 
 from nexusx.mcp import Application, MultiAppManager, create_mcp_server
+from nexusx import query
 
 
 class _TestBase(SQLModel):
@@ -18,6 +19,10 @@ class _TestBase(SQLModel):
 class _Item(_TestBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
+
+    @query
+    async def list_all(cls) -> list[_Item]:
+        return []
 
 
 def _make_app(url: str = "sqlite+aiosqlite:///:memory:") -> Application:
