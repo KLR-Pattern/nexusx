@@ -96,11 +96,13 @@ async def root():
                 "description": "Paginate user posts (limit + offset)",
                 "query": """
 query {
-  userGetUser(id: 1) {
-    name
-    posts(limit: 3, offset: 0) {
-      items { id title }
-      pagination { has_more total_count }
+  User {
+    get_user(id: 1) {
+      name
+      posts(limit: 3, offset: 0) {
+        items { id title }
+        pagination { has_more total_count }
+      }
     }
   }
 }""",
@@ -110,17 +112,19 @@ query {
                 "description": "Paginate comments inside posts",
                 "query": """
 query {
-  userGetUser(id: 1) {
-    name
-    posts(limit: 2) {
-      items {
-        title
-        comments(limit: 2) {
-          items { content }
-          pagination { has_more }
+  User {
+    get_user(id: 1) {
+      name
+      posts(limit: 2) {
+        items {
+          title
+          comments(limit: 2) {
+            items { content }
+            pagination { has_more }
+          }
         }
+        pagination { has_more total_count }
       }
-      pagination { has_more total_count }
     }
   }
 }""",
@@ -130,11 +134,13 @@ query {
                 "description": "Paginate favorite posts",
                 "query": """
 query {
-  userGetUser(id: 1) {
-    name
-    favorite_posts(limit: 2) {
-      items { id title }
-      pagination { has_more total_count }
+  User {
+    get_user(id: 1) {
+      name
+      favorite_posts(limit: 2) {
+        items { id title }
+        pagination { has_more total_count }
+      }
     }
   }
 }""",
@@ -148,5 +154,5 @@ if __name__ == "__main__":
 
     import uvicorn
 
-    port = int(os.environ.get("PORT", 8005))
+    port = int(os.environ.get("PORT", 8015))
     uvicorn.run(app, host="0.0.0.0", port=port)

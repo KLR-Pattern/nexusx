@@ -23,7 +23,10 @@ NC='\033[0m'
 # ── Ports (numbers kept stable; names now reflect the README pillars) ─────
 # Query surface (SQLModel entities)
 PORT_BLOG_GQL=8000          # Blog GraphQL — entity query surface
-PORT_BLOG_GQL_PAG=8005      # Blog GraphQL — pagination enabled
+PORT_BLOG_GQL_PAG=8015      # Blog GraphQL — pagination enabled
+                            # (8015, not 8005: Windows reserves 8005 for
+                            #  Windows Hello auth, which makes browsers pop a
+                            #  "sign in" dialog on that port)
 PORT_AUTH_GQL=8002          # Auth GraphQL — entities + FromContext
 PORT_AUTH_MCP=8003          # entity → single-app MCP
 PORT_MULTI_MCP=8004         # entity → multi-app MCP gateway
