@@ -6,6 +6,7 @@ from sqlmodel import Field, SQLModel
 
 from nexusx import GraphQLHandler, mutation, query
 from nexusx.mcp.builders.schema_formatter import SchemaFormatter
+from nexusx.mcp.builders.type_tracer import TypeTracer
 
 
 class SchemaTestBase(SQLModel):
@@ -86,29 +87,24 @@ class TestMethodDocstrings:
         """Docstring should be used as description."""
         handler = GraphQLHandler(base=SchemaTestBase)
         handler.entities = [TestEntity]
-        formatter = SchemaFormatter(handler)
-        schema = formatter.get_schema_info()
+        introspection = handler._introspection_generator.generate()
+        tracer = TypeTracer(introspection, {TestEntity.__name__})
 
-        # New naming: testEntityGetAll
-        query = next(
-            (q for q in schema["queries"] if q["name"] == "testEntityGetAll"), None
-        )
-        assert query is not None
-        assert query["description"] == "Get all items."
+        # Under the grouped layout the method lives on the {Entity}Query type.
+        operation = tracer.get_group_operation("Query", "TestEntity", "get_all")
+        assert operation is not None
+        assert operation["description"] == "Get all items."
 
     def test_docstring_used_for_get_by_id(self) -> None:
         """Docstring should be used for get_by_id."""
         handler = GraphQLHandler(base=SchemaTestBase)
         handler.entities = [TestEntity]
-        formatter = SchemaFormatter(handler)
-        schema = formatter.get_schema_info()
+        introspection = handler._introspection_generator.generate()
+        tracer = TypeTracer(introspection, {TestEntity.__name__})
 
-        # New naming: testEntityGetById
-        query = next(
-            (q for q in schema["queries"] if q["name"] == "testEntityGetById"), None
-        )
-        assert query is not None
-        assert query["description"] == "Get item by its unique identifier."
+        operation = tracer.get_group_operation("Query", "TestEntity", "get_by_id")
+        assert operation is not None
+        assert operation["description"] == "Get item by its unique identifier."
 
 
 class TestArgumentDefaults:
@@ -118,37 +114,32 @@ class TestArgumentDefaults:
         """Argument default value should be extracted."""
         handler = GraphQLHandler(base=SchemaTestBase)
         handler.entities = [TestEntity]
-        formatter = SchemaFormatter(handler)
-        schema = formatter.get_schema_info()
+        introspection = handler._introspection_generator.generate()
+        tracer = TypeTracer(introspection, {TestEntity.__name__})
 
-        # New naming: testEntityGetAll
-        query = next(
-            (q for q in schema["queries"] if q["name"] == "testEntityGetAll"), None
-        )
-        assert query is not None
+        operation = tracer.get_group_operation("Query", "TestEntity", "get_all")
+        assert operation is not None
 
         limit_arg = next(
-            (a for a in query["arguments"] if a["name"] == "limit"), None
+            (a for a in operation["args"] if a["name"] == "limit"), None
         )
         assert limit_arg is not None
-        assert limit_arg["default_value"] == "10"
+        assert limit_arg["defaultValue"] == "10"
 
     def test_required_argument_no_default(self) -> None:
         """Required arguments should have no default value."""
         handler = GraphQLHandler(base=SchemaTestBase)
         handler.entities = [TestEntity]
-        formatter = SchemaFormatter(handler)
-        schema = formatter.get_schema_info()
+        introspection = handler._introspection_generator.generate()
+        tracer = TypeTracer(introspection, {TestEntity.__name__})
 
-        # New naming: testEntityGetById
-        query = next(
-            (q for q in schema["queries"] if q["name"] == "testEntityGetById"), None
-        )
-        assert query is not None
+        operation = tracer.get_group_operation("Query", "TestEntity", "get_by_id")
+        assert operation is not None
 
         id_arg = next(
-            (a for a in query["arguments"] if a["name"] == "id"), None
+            (a for a in operation["args"] if a["name"] == "id"), None
         )
         assert id_arg is not None
-        assert id_arg["required"] is True
-        assert id_arg["default_value"] is None
+        # Required args are wrapped in NON_NULL at the outermost kind.
+        assert id_arg["type"]["kind"] == "NON_NULL"
+        assert id_arg["defaultValue"] is None

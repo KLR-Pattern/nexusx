@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from demo.blog.database import async_session, init_db
 from demo.blog.models import BaseEntity
 from nexusx import AutoQueryConfig, GraphQLHandler
+from nexusx.mcp import create_simple_mcp_server
 
 
 class GraphQLRequest(BaseModel):
@@ -35,11 +36,26 @@ handler = GraphQLHandler(
 )
 
 
+# Build the MCP app before the FastAPI app so its lifespan can be composed in.
+# FastMCP's streamable-http session manager initializes inside its lifespan;
+# if that lifespan isn't run by the parent app, every /mcp request 500s with
+# "Task group is not initialized".
+mcp_server = create_simple_mcp_server(
+    base=BaseEntity,
+    name="nexusx Blog (Paginated) MCP",
+    desc="Blog system — query users/posts/comments (paginated GraphQL)",
+    allow_mutation=True,
+    session_factory=async_session,
+)
+mcp_app = mcp_server.http_app()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize database on startup."""
-    await init_db()
-    yield
+    """Start the MCP session manager and initialize the database."""
+    async with mcp_app.lifespan(app):
+        await init_db()
+        yield
 
 
 app = FastAPI(
@@ -96,11 +112,13 @@ async def root():
                 "description": "Paginate user posts (limit + offset)",
                 "query": """
 query {
-  userGetUser(id: 1) {
-    name
-    posts(limit: 3, offset: 0) {
-      items { id title }
-      pagination { has_more total_count }
+  User {
+    get_user(id: 1) {
+      name
+      posts(limit: 3, offset: 0) {
+        items { id title }
+        pagination { has_more total_count }
+      }
     }
   }
 }""",
@@ -110,17 +128,19 @@ query {
                 "description": "Paginate comments inside posts",
                 "query": """
 query {
-  userGetUser(id: 1) {
-    name
-    posts(limit: 2) {
-      items {
-        title
-        comments(limit: 2) {
-          items { content }
-          pagination { has_more }
+  User {
+    get_user(id: 1) {
+      name
+      posts(limit: 2) {
+        items {
+          title
+          comments(limit: 2) {
+            items { content }
+            pagination { has_more }
+          }
         }
+        pagination { has_more total_count }
       }
-      pagination { has_more total_count }
     }
   }
 }""",
@@ -130,11 +150,13 @@ query {
                 "description": "Paginate favorite posts",
                 "query": """
 query {
-  userGetUser(id: 1) {
-    name
-    favorite_posts(limit: 2) {
-      items { id title }
-      pagination { has_more total_count }
+  User {
+    get_user(id: 1) {
+      name
+      favorite_posts(limit: 2) {
+        items { id title }
+        pagination { has_more total_count }
+      }
     }
   }
 }""",
@@ -143,10 +165,17 @@ query {
     }
 
 
+# MCP interface on the same port — exposes the blog entities to AI agents via
+# 3 tools (get_schema, graphql_query, graphql_mutation). FastMCP's
+# streamable-http app is mounted at /mcp; its endpoint lives at /mcp/mcp
+# (FastMCP hosts the streamable handler one level under the mount prefix).
+app.mount("/mcp", mcp_app)
+
+
 if __name__ == "__main__":
     import os
 
     import uvicorn
 
-    port = int(os.environ.get("PORT", 8005))
+    port = int(os.environ.get("PORT", 8015))
     uvicorn.run(app, host="0.0.0.0", port=port)

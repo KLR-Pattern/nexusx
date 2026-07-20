@@ -61,20 +61,26 @@ def main():
     print("=" * 60)
     print("\nAvailable applications:")
     for app in apps:
-        print(f"  - {app['name']}: {app['description']}")
+        print(f"  - {app.name}: {app.description}")
     print("\nMCP Tools:")
     print("  - list_apps()")
     print("  - list_queries(app_name)")
     print("  - list_mutations(app_name)")
-    print("  - get_query_schema(name, app_name, response_type)")
-    print("  - get_mutation_schema(name, app_name, response_type)")
+    print("  - get_query_schema(entity, method, app_name, response_type)")
+    print("  - get_mutation_schema(entity, method, app_name, response_type)")
     print("  - graphql_query(query, app_name)")
     print("  - graphql_mutation(mutation, app_name)")
     print("\nExample queries:")
     print('  - list_apps()')
     print('  - list_queries(app_name="blog")')
-    print('  - graphql_query(query="{ users { id name email } }", app_name="blog")')
-    print('  - graphql_query(query="{ products { id name price } }", app_name="shop")')
+    print(
+        '  - graphql_query(query="{ User { get_users { id name email } } }", '
+        'app_name="blog")'
+    )
+    print(
+        '  - graphql_query(query="{ Product { get_products { id name price } } }", '
+        'app_name="shop")'
+    )
     print("\n" + "=" * 60)
     print("Starting MCP server...")
     print("=" * 60 + "\n")

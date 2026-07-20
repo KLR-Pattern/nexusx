@@ -71,8 +71,8 @@ class TestQueryExecutorBasic:
                     return list((await session.exec(select(FixtureUser))).all())
 
         method = _get_bound_method(UserQuery, "get_all")
-        query_methods = {"users": (FixtureUser, method)}
-        document, parsed = _parse("{ users { id name } }")
+        query_methods = {"FixtureUser": {"get_all": (FixtureUser, method)}}
+        document, parsed = _parse("{ FixtureUser { get_all { id name } } }")
 
         result = await executor.execute_query(
             document,
@@ -85,9 +85,10 @@ class TestQueryExecutorBasic:
         )
 
         assert "data" in result
-        assert "users" in result["data"]
-        assert len(result["data"]["users"]) == 2
-        names = {u["name"] for u in result["data"]["users"]}
+        assert "FixtureUser" in result["data"]
+        users = result["data"]["FixtureUser"]["get_all"]
+        assert len(users) == 2
+        names = {u["name"] for u in users}
         assert "Alice" in names or "Bob" in names
 
     @pytest.mark.usefixtures("test_db")
@@ -107,8 +108,8 @@ class TestQueryExecutorBasic:
                     return user
 
         method = _get_bound_method(UserMutation, "create")
-        mutation_methods = {"createUser": (FixtureUser, method)}
-        document, parsed = _parse('mutation { createUser(name: "Eve") { id name } }')
+        mutation_methods = {"FixtureUser": {"create": (FixtureUser, method)}}
+        document, parsed = _parse('mutation { FixtureUser { create(name: "Eve") { id name } } }')
 
         result = await executor.execute_query(
             document,
@@ -121,7 +122,7 @@ class TestQueryExecutorBasic:
         )
 
         assert "data" in result
-        assert result["data"]["createUser"]["name"] == "Eve"
+        assert result["data"]["FixtureUser"]["create"]["name"] == "Eve"
 
     async def test_execute_returns_error_on_unknown_field(self):
         """Querying an unknown field should produce an error entry."""
@@ -151,8 +152,8 @@ class TestQueryExecutorBasic:
                 raise RuntimeError("kaboom")
 
         method = _get_bound_method(FailQuery, "boom")
-        query_methods = {"fail": (FixtureUser, method)}
-        document, parsed = _parse("{ fail { id } }")
+        query_methods = {"FixtureUser": {"boom": (FixtureUser, method)}}
+        document, parsed = _parse("{ FixtureUser { boom { id } } }")
 
         result = await executor.execute_query(
             document,
@@ -194,8 +195,8 @@ class TestQueryExecutorBasic:
                 )
 
         method = _get_bound_method(FailQuery, "boom")
-        query_methods = {"fail": (FixtureUser, method)}
-        document, parsed = _parse("{ fail { id } }")
+        query_methods = {"FixtureUser": {"boom": (FixtureUser, method)}}
+        document, parsed = _parse("{ FixtureUser { boom { id } } }")
 
         with caplog.at_level(
             logging.ERROR,
@@ -215,7 +216,7 @@ class TestQueryExecutorBasic:
         assert "errors" in result
         err = result["errors"][0]
         assert "NoneType" in err["message"]
-        assert err["path"] == ["fail"]
+        assert err["path"] == ["FixtureUser", "boom"]
 
         # Server log must contain the traceback and exception type — these
         # are what ops searches for when triaging "API returned errors".
@@ -265,8 +266,8 @@ class TestQueryExecutorBasic:
                     return list((await session.exec(select(FixtureTask))).all())
 
         method = _get_bound_method(TaskQuery, "get_all")
-        query_methods = {"tasks": (FixtureTask, method)}
-        document, parsed = _parse("{ tasks { id title } }")
+        query_methods = {"FixtureTask": {"get_all": (FixtureTask, method)}}
+        document, parsed = _parse("{ FixtureTask { get_all { id title } } }")
 
         entities = [FixtureTask, FixtureUser, FixtureSprint]
         await executor.execute_query(
@@ -292,14 +293,14 @@ class TestQueryExecutorSerialization:
                 return None
 
         method = _get_bound_method(NoneQuery, "get_one")
-        query_methods = {"user": (FixtureUser, method)}
-        document, parsed = _parse("{ user { id } }")
+        query_methods = {"FixtureUser": {"get_one": (FixtureUser, method)}}
+        document, parsed = _parse("{ FixtureUser { get_one { id } } }")
 
         result = await executor.execute_query(
             document, None, None, parsed, query_methods, {}, [FixtureUser]
         )
 
-        assert result["data"]["user"] is None
+        assert result["data"]["FixtureUser"]["get_one"] is None
 
     @pytest.mark.usefixtures("test_db")
     async def test_serialize_list_result(self):
@@ -314,8 +315,8 @@ class TestQueryExecutorSerialization:
                     return list((await session.exec(select(FixtureUser))).all())
 
         method = _get_bound_method(UserQuery, "get_all")
-        query_methods = {"users": (FixtureUser, method)}
-        document, parsed = _parse("{ users { id name } }")
+        query_methods = {"FixtureUser": {"get_all": (FixtureUser, method)}}
+        document, parsed = _parse("{ FixtureUser { get_all { id name } } }")
 
         entities = [FixtureUser, FixtureSprint, FixtureTask]
         result = await executor.execute_query(
@@ -323,7 +324,7 @@ class TestQueryExecutorSerialization:
             parsed, query_methods, {}, entities,
         )
 
-        users = result["data"]["users"]
+        users = result["data"]["FixtureUser"]["get_all"]
         assert isinstance(users, list)
         assert len(users) == 2
         assert all(isinstance(u, dict) for u in users)
@@ -341,8 +342,10 @@ class TestQueryExecutorSerialization:
                     return list((await session.exec(select(FixtureTask))).all())
 
         method = _get_bound_method(TaskQuery, "get_all")
-        query_methods = {"tasks": (FixtureTask, method)}
-        document, parsed = _parse("{ tasks { id title owner { id name } } }")
+        query_methods = {"FixtureTask": {"get_all": (FixtureTask, method)}}
+        document, parsed = _parse(
+            "{ FixtureTask { get_all { id title owner { id name } } } }"
+        )
 
         result = await executor.execute_query(
             document,
@@ -354,7 +357,7 @@ class TestQueryExecutorSerialization:
             [FixtureTask, FixtureUser, FixtureSprint],
         )
 
-        tasks = result["data"]["tasks"]
+        tasks = result["data"]["FixtureTask"]["get_all"]
         assert len(tasks) == 4
         for task in tasks:
             assert "owner" in task
@@ -445,8 +448,10 @@ class TestQueryExecutorSplitMode:
                     return list((await session.exec(select(FixtureTask))).all())
 
         method = _get_bound_method(TaskQuery, "get_all")
-        query_methods = {"tasks": (FixtureTask, method)}
-        document, parsed = _parse("{ tasks { id title owner { id name } } }")
+        query_methods = {"FixtureTask": {"get_all": (FixtureTask, method)}}
+        document, parsed = _parse(
+            "{ FixtureTask { get_all { id title owner { id name } } } }"
+        )
 
         result = await executor.execute_query(
             document,
@@ -454,7 +459,7 @@ class TestQueryExecutorSplitMode:
             [FixtureTask, FixtureUser, FixtureSprint],
         )
 
-        tasks = result["data"]["tasks"]
+        tasks = result["data"]["FixtureTask"]["get_all"]
         assert len(tasks) == 4
         for task in tasks:
             assert task["owner"] is not None
@@ -476,12 +481,18 @@ class TestQueryExecutorSplitMode:
                 async with session_factory() as session:
                     return list((await session.exec(select(FixtureTask))).all())
 
+            @query
+            async def get_all_alt(cls):
+                async with session_factory() as session:
+                    return list((await session.exec(select(FixtureTask))).all())
+
         method = _get_bound_method(TaskQuery, "get_all")
-        query_methods = {
-            "tasks": (FixtureTask, method),
-            "otherTasks": (FixtureTask, method),
-        }
-        gql = "{ tasks { owner { id name } } otherTasks { owner { id email } } }"
+        method_alt = _get_bound_method(TaskQuery, "get_all_alt")
+        query_methods = {"FixtureTask": {
+            "get_all": (FixtureTask, method),
+            "get_all_alt": (FixtureTask, method_alt),
+        }}
+        gql = "{ FixtureTask { get_all { owner { id name } } get_all_alt { owner { id email } } } }"
         document, parsed = _parse(gql)
 
         result = await executor.execute_query(
@@ -489,11 +500,11 @@ class TestQueryExecutorSplitMode:
             [FixtureTask, FixtureUser, FixtureSprint],
         )
 
-        # Verify results are correct for both root fields
-        for task in result["data"]["tasks"]:
+        # Verify results are correct for both methods in the group
+        for task in result["data"]["FixtureTask"]["get_all"]:
             assert task["owner"] is not None
             assert "name" in task["owner"]
-        for task in result["data"]["otherTasks"]:
+        for task in result["data"]["FixtureTask"]["get_all_alt"]:
             assert task["owner"] is not None
             assert "email" in task["owner"]
 
@@ -526,9 +537,9 @@ class TestQueryExecutorSplitMode:
                     return list((await session.exec(select(FixtureSprint))).all())
 
         method = _get_bound_method(SprintQuery, "get_all")
-        query_methods = {"sprints": (FixtureSprint, method)}
+        query_methods = {"FixtureSprint": {"get_all": (FixtureSprint, method)}}
         document, parsed = _parse(
-            "{ sprints { id name tasks { id title owner { id name } } } }"
+            "{ FixtureSprint { get_all { id name tasks { id title owner { id name } } } } }"
         )
 
         result = await executor.execute_query(
@@ -537,7 +548,7 @@ class TestQueryExecutorSplitMode:
             [FixtureTask, FixtureUser, FixtureSprint],
         )
 
-        sprints = result["data"]["sprints"]
+        sprints = result["data"]["FixtureSprint"]["get_all"]
         assert len(sprints) == 2
         for sprint in sprints:
             assert "tasks" in sprint
@@ -564,8 +575,8 @@ class TestQueryExecutorSplitMode:
                     return list((await session.exec(select(FixtureTask))).all())
 
         method = _get_bound_method(TaskQuery, "get_all")
-        query_methods = {"tasks": (FixtureTask, method)}
-        document, parsed = _parse("{ tasks { owner { id name } } }")
+        query_methods = {"FixtureTask": {"get_all": (FixtureTask, method)}}
+        document, parsed = _parse("{ FixtureTask { get_all { owner { id name } } } }")
 
         await executor.execute_query(
             document,
@@ -657,10 +668,10 @@ class TestQueryExecutorPagination:
                     return list((await session.exec(select(FixtureSprint))).all())
 
         method = _get_bound_method(SprintQuery, "get_all")
-        query_methods = {"sprints": (FixtureSprint, method)}
+        query_methods = {"FixtureSprint": {"get_all": (FixtureSprint, method)}}
         gql = (
-            "{ sprints { id name tasks { items { id title } "
-            "pagination { total_count has_more } } } }"
+            "{ FixtureSprint { get_all { id name tasks { items { id title } "
+            "pagination { total_count has_more } } } } }"
         )
         document, parsed = _parse(gql)
 
@@ -669,7 +680,7 @@ class TestQueryExecutorPagination:
             [FixtureTask, FixtureUser, FixtureSprint],
         )
 
-        sprints = result["data"]["sprints"]
+        sprints = result["data"]["FixtureSprint"]["get_all"]
         assert len(sprints) == 2
         for sprint in sprints:
             page = sprint["tasks"]
@@ -691,10 +702,10 @@ class TestQueryExecutorPagination:
                     return list((await session.exec(select(FixtureSprint))).all())
 
         method = _get_bound_method(SprintQuery, "get_all")
-        query_methods = {"sprints": (FixtureSprint, method)}
+        query_methods = {"FixtureSprint": {"get_all": (FixtureSprint, method)}}
         gql = (
-            "{ sprints { id name tasks(limit: 1) { items { id title } "
-            "pagination { total_count has_more } } } }"
+            "{ FixtureSprint { get_all { id name tasks(limit: 1) { items { id title } "
+            "pagination { total_count has_more } } } } }"
         )
         document, parsed = _parse(gql)
 
@@ -703,7 +714,7 @@ class TestQueryExecutorPagination:
             [FixtureTask, FixtureUser, FixtureSprint],
         )
 
-        sprints = result["data"]["sprints"]
+        sprints = result["data"]["FixtureSprint"]["get_all"]
         for sprint in sprints:
             page = sprint["tasks"]
             assert len(page["items"]) == 1
@@ -754,9 +765,9 @@ class TestQueryExecutorPagination:
                         return list((await session.exec(select(FixtureSprint))).all())
 
             method = _get_bound_method(SprintQuery, "get_all")
-            query_methods = {"sprints": (FixtureSprint, method)}
+            query_methods = {"FixtureSprint": {"get_all": (FixtureSprint, method)}}
             # Custom relationship field — no pagination wrapper, just a plain list
-            gql = "{ sprints { id name custom_tasks { id title } } }"
+            gql = "{ FixtureSprint { get_all { id name custom_tasks { id title } } } }"
             document, parsed = _parse(gql)
 
             result = await executor.execute_query(
@@ -764,7 +775,7 @@ class TestQueryExecutorPagination:
                 [FixtureSprint, FixtureTask],
             )
 
-            sprints = result["data"]["sprints"]
+            sprints = result["data"]["FixtureSprint"]["get_all"]
             assert len(sprints) == 2
             for sprint in sprints:
                 assert "custom_tasks" in sprint

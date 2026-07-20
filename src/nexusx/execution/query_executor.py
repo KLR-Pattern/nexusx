@@ -74,11 +74,18 @@ class QueryExecutor:
         variables: dict[str, Any] | None,
         operation_name: str | None,
         parsed_selections: dict[str, FieldSelection],
-        query_methods: dict[str, tuple[type[SQLModel], Any]],
-        mutation_methods: dict[str, tuple[type[SQLModel], Any]],
+        query_methods: dict[str, dict[str, tuple[type[SQLModel], Any]]],
+        mutation_methods: dict[str, dict[str, tuple[type[SQLModel], Any]]],
         entities: list[type[SQLModel]],
     ) -> dict[str, Any]:
-        """Execute a GraphQL query or mutation."""
+        """Execute a GraphQL query or mutation.
+
+        Dispatch is two-level, mirroring the grouped schema: each top-level
+        field is an entity group (``{ Entity { method {} } }``); the method
+        fields live one level deeper on the ``{Entity}Query`` /
+        ``{Entity}Mutation`` group type. ``query_methods`` / ``mutation_methods``
+        are grouped as ``{entity_name: {method_name: (entity, method)}}``.
+        """
         data: dict[str, Any] = {}
         errors: list[dict[str, Any]] = []
         entity_names = {e.__name__ for e in entities}
@@ -88,84 +95,61 @@ class QueryExecutor:
         self._results.clear()
 
         for definition in document.definitions:
-            if isinstance(definition, OperationDefinitionNode):
-                op_type = definition.operation.value
+            if not isinstance(definition, OperationDefinitionNode):
+                continue
+            op_type = definition.operation.value
+            grouped_methods = query_methods if op_type == "query" else mutation_methods
+            group_suffix = op_type.title()  # "Query" or "Mutation"
 
-                for selection in definition.selection_set.selections:
-                    if isinstance(selection, FieldNode):
-                        field_name = selection.name.value
+            for selection in definition.selection_set.selections:
+                if not isinstance(selection, FieldNode):
+                    continue
 
-                        try:
-                            if (
-                                op_type == "query"
-                                and self._introspection_generator is not None
-                                and field_name in {"__schema", "__type"}
-                            ):
-                                data[field_name] = self._introspection_generator.execute_field(
-                                    selection,
-                                    variables,
-                                )
-                                continue
+                entity_name = selection.name.value
 
-                            if op_type == "query":
-                                method_info = query_methods.get(field_name)
-                            else:
-                                method_info = mutation_methods.get(field_name)
+                # Introspection fields (query only) — not entity groups.
+                if (
+                    op_type == "query"
+                    and self._introspection_generator is not None
+                    and entity_name in {"__schema", "__type"}
+                ):
+                    data[entity_name] = self._introspection_generator.execute_field(
+                        selection, variables
+                    )
+                    continue
 
-                            if method_info is None:
-                                op_name = op_type.title()
-                                errors.append(
-                                    {
-                                        "message": (
-                                            f"Cannot query field '{field_name}'"
-                                            f" on type '{op_name}'"
-                                        ),
-                                        "path": [field_name],
-                                    }
-                                )
-                                continue
+                method_group = grouped_methods.get(entity_name)
 
-                            entity, method = method_info
+                # Selected an entity group without any method subselection.
+                if method_group is not None and selection.selection_set is None:
+                    errors.append(
+                        self._bare_group_field_error(entity_name, method_group)
+                    )
+                    continue
 
-                            # Build arguments (no query_meta anymore)
-                            args = self._argument_builder.build_arguments(
-                                selection, variables, method, entity, entity_names
-                            )
+                if method_group is None:
+                    errors.append(
+                        {
+                            "message": (
+                                f"Cannot query field '{entity_name}' on type "
+                                f"'{group_suffix}'"
+                            ),
+                            "path": [entity_name],
+                        }
+                    )
+                    continue
 
-                            # Execute the method
-                            result = method(**args)
-                            if inspect.isawaitable(result):
-                                result = await result
-
-                            # Get selection tree
-                            field_sel = parsed_selections.get(field_name)
-
-                            # Resolve relationships via BFS DataLoader
-                            if field_sel and result is not None:
-                                await self._resolve_result(
-                                    result, entity, field_sel
-                                )
-
-                            # Serialize
-                            data[field_name] = self._serialize(
-                                result, entity, field_sel
-                            )
-
-                        except Exception as e:
-                            # Log the full traceback BEFORE flattening to
-                            # response. Per-field exceptions are common (user
-                            # input bugs, DB constraint violations, resolver
-                            # programming errors); the response stays
-                            # GraphQL-spec compliant ({message, path}) but
-                            # the server log retains the exception type and
-                            # stack for ops debugging.
-                            logger.exception(
-                                "Resolver error in field %s",
-                                field_name,
-                            )
-                            errors.append(
-                                {"message": str(e), "path": [field_name]}
-                            )
+                # Two-level: dispatch each method field inside the entity group.
+                data[entity_name] = await self._execute_entity_group(
+                    entity_name,
+                    method_group,
+                    selection,
+                    parsed_selections,
+                    variables,
+                    entity_names,
+                    group_suffix,
+                    errors,
+                )
 
         response: dict[str, Any] = {}
         if data:
@@ -173,6 +157,113 @@ class QueryExecutor:
         if errors:
             response["errors"] = errors
         return response
+
+    async def _execute_entity_group(
+        self,
+        entity_name: str,
+        method_group: dict[str, tuple[type[SQLModel], Any]],
+        group_selection: FieldNode,
+        parsed_selections: dict[str, FieldSelection],
+        variables: dict[str, Any] | None,
+        entity_names: set[str],
+        group_suffix: str,
+        errors: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Execute every method field selected inside one entity group.
+
+        Methods run sequentially (v1) to preserve the BFS DataLoader's
+        store-then-read deduplication invariants across sibling fields.
+        """
+        entity_data: dict[str, Any] = {}
+        group_sel = parsed_selections.get(entity_name)
+
+        for method_node in group_selection.selection_set.selections:
+            if not isinstance(method_node, FieldNode):
+                continue
+            method_name = method_node.name.value
+
+            try:
+                method_info = method_group.get(method_name)
+                if method_info is None:
+                    errors.append(
+                        {
+                            "message": (
+                                f"Cannot query field '{method_name}' on type "
+                                f"'{entity_name}{group_suffix}'"
+                            ),
+                            "path": [entity_name, method_name],
+                        }
+                    )
+                    continue
+
+                entity, method = method_info
+
+                # Build arguments from the METHOD field node (second level).
+                args = self._argument_builder.build_arguments(
+                    method_node, variables, method, entity, entity_names
+                )
+
+                # Execute the method
+                result = method(**args)
+                if inspect.isawaitable(result):
+                    result = await result
+
+                # The method's selection tree is nested one level deeper than
+                # the entity-group selection.
+                field_sel = (
+                    group_sel.sub_fields.get(method_name)
+                    if group_sel and group_sel.sub_fields
+                    else None
+                )
+
+                # Resolve relationships via BFS DataLoader
+                if field_sel and result is not None:
+                    await self._resolve_result(result, entity, field_sel)
+
+                # Serialize
+                entity_data[method_name] = self._serialize(result, entity, field_sel)
+
+            except Exception as e:
+                # Per-field exceptions are common (user input bugs, DB
+                # constraint violations, resolver programming errors); the
+                # response stays GraphQL-spec compliant ({message, path}) but
+                # the server log retains the exception type and stack.
+                logger.exception(
+                    "Resolver error in field %s.%s", entity_name, method_name
+                )
+                errors.append(
+                    {"message": str(e), "path": [entity_name, method_name]}
+                )
+
+        return entity_data
+
+    @staticmethod
+    def _bare_group_field_error(
+        entity_name: str, method_group: dict[str, tuple[type[SQLModel], Any]]
+    ) -> dict[str, Any]:
+        """Build the friendly error for selecting a bare entity group field.
+
+        Fires when a query selects ``{ Entity }`` with no method subselection.
+        ``{ Entity {} }`` (empty braces) is rejected by graphql-core's parser
+        before reaching the executor, so only the truly-bare case is caught.
+        """
+        method_names = sorted(method_group)
+        first = method_names[0] if method_names else "method_name"
+        example = f"{{ {entity_name} {{ {first}(id: 1) {{ id }} }} }}"
+        return {
+            "message": (
+                f"Field '{entity_name}' is a grouping field that requires a "
+                f"method subselection. Available methods on '{entity_name}': "
+                f"{', '.join(method_names)}.\n"
+                f"Example: {example}"
+            ),
+            "path": [entity_name],
+            "extensions": {
+                "code": "BARE_GROUP_FIELD",
+                "entity": entity_name,
+                "available_methods": method_names,
+            },
+        }
 
     # ──────────────────────────────────────────────────────────
     # BFS resolution

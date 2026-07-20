@@ -11,7 +11,6 @@ from sqlmodel import SQLModel
 
 from nexusx.introspection import QUERY_META_PARAM  # noqa: F401
 from nexusx.type_converter import TypeConverter
-from nexusx.utils.naming import to_graphql_field_name
 from nexusx.utils.schema_helpers import get_core_types, is_input_type
 
 logger = logging.getLogger(__name__)
@@ -145,19 +144,23 @@ class SDLGenerator:
             if pag_types:
                 parts.append(pag_types)
 
-        # 5. Generate Query type
-        query_fields = self._collect_query_fields()
-        if query_fields:
-            query_def = f"type Query {{\n{chr(10).join(query_fields)}\n}}"
+        # 5. Generate per-entity Query group types + the root Query type
+        query_group_blocks, query_root_lines = self._collect_query_groups()
+        if query_root_lines:
+            parts.extend(query_group_blocks)
+            root_lines = "\n".join(f"  {line}" for line in query_root_lines)
+            query_def = f"type Query {{\n{root_lines}\n}}"
             if self._query_description:
                 query_def = f'"""{self._query_description}"""\n{query_def}'
             parts.append(query_def)
 
-        # 6. Generate Mutation type (conditional)
+        # 6. Generate per-entity Mutation group types + the root Mutation type
         if include_mutations:
-            mutation_fields = self._collect_mutation_fields()
-            if mutation_fields:
-                mutation_def = f"type Mutation {{\n{chr(10).join(mutation_fields)}\n}}"
+            mutation_group_blocks, mutation_root_lines = self._collect_mutation_groups()
+            if mutation_root_lines:
+                parts.extend(mutation_group_blocks)
+                root_lines = "\n".join(f"  {line}" for line in mutation_root_lines)
+                mutation_def = f"type Mutation {{\n{root_lines}\n}}"
                 if self._mutation_description:
                     mutation_def = f'"""{self._mutation_description}"""\n{mutation_def}'
                 parts.append(mutation_def)
@@ -473,65 +476,73 @@ class SDLGenerator:
         annotation = field_info.annotation
         return _python_type_to_graphql(annotation, self._converter)
 
-    def _collect_query_fields(self) -> list[str]:
-        """Collect @query methods from all entities."""
-        fields: list[str] = []
+    def _collect_query_groups(self) -> tuple[list[str], list[str]]:
+        """Collect @query methods grouped by entity.
+
+        Returns:
+            ``(group_type_blocks, root_field_lines)``. ``group_type_blocks``
+            are ``type {Entity}Query { ... }`` SDL definitions;
+            ``root_field_lines`` are ``{Entity}: {Entity}Query!`` entries for
+            the root Query type. Entities with no @query methods contribute
+            nothing.
+        """
+        return self._collect_groups("_graphql_query", "Query")
+
+    def _collect_mutation_groups(self) -> tuple[list[str], list[str]]:
+        """Collect @mutation methods grouped by entity (see _collect_query_groups)."""
+        return self._collect_groups("_graphql_mutation", "Mutation")
+
+    def _collect_groups(
+        self, decorator_attr: str, group_suffix: str
+    ) -> tuple[list[str], list[str]]:
+        """Build per-entity group type blocks and root mount lines."""
+        group_blocks: list[str] = []
+        root_lines: list[str] = []
 
         for entity in self.entities:
-            for name in dir(entity):
+            method_fields: list[str] = []
+            for attr_name in dir(entity):
                 try:
-                    attr = getattr(entity, name)
-                    if not callable(attr):
-                        continue
-                    # Check for _graphql_query on the function (classmethod wraps it)
-                    func = attr.__func__ if hasattr(attr, "__func__") else attr
-                    if hasattr(func, "_graphql_query"):
-                        field_def = self._method_to_graphql_field(attr, entity)
-                        fields.append(f"  {field_def}")
+                    attr = getattr(entity, attr_name)
                 except (AttributeError, NameError):
                     continue
                 except Exception:
                     logger.warning(
-                        "Unexpected error collecting query from %s.%s",
-                        entity.__name__, name, exc_info=True,
+                        "Unexpected error collecting %s from %s.%s",
+                        group_suffix.lower(), entity.__name__, attr_name, exc_info=True,
                     )
                     continue
-
-        return fields
-
-    def _collect_mutation_fields(self) -> list[str]:
-        """Collect @mutation methods from all entities."""
-        fields: list[str] = []
-
-        for entity in self.entities:
-            for name in dir(entity):
-                try:
-                    attr = getattr(entity, name)
-                    if not callable(attr):
-                        continue
-                    # Check for _graphql_mutation on the function (classmethod wraps it)
-                    func = attr.__func__ if hasattr(attr, "__func__") else attr
-                    if hasattr(func, "_graphql_mutation"):
-                        field_def = self._method_to_graphql_field(attr, entity)
-                        fields.append(f"  {field_def}")
-                except (AttributeError, NameError):
+                if not callable(attr):
                     continue
-                except Exception:
-                    logger.warning(
-                        "Unexpected error collecting mutation from %s.%s",
-                        entity.__name__, name, exc_info=True,
-                    )
-                    continue
+                func = attr.__func__ if hasattr(attr, "__func__") else attr
+                if hasattr(func, decorator_attr):
+                    field_def = self._method_to_graphql_field(attr, entity, func.__name__)
+                    method_fields.append(f"  {field_def}")
 
-        return fields
+            if not method_fields:
+                continue
 
-    def _method_to_graphql_field(self, method: Any, entity: type[SQLModel]) -> str:
-        """Convert a method to GraphQL field definition."""
+            group_type_name = f"{entity.__name__}{group_suffix}"
+            body = f"type {group_type_name} {{\n{chr(10).join(method_fields)}\n}}"
+            if entity.__doc__:
+                body = f'"""{entity.__doc__}"""\n{body}'
+            group_blocks.append(body)
+            root_lines.append(f"{entity.__name__}: {group_type_name}!")
+
+        return group_blocks, root_lines
+
+    def _method_to_graphql_field(
+        self, method: Any, entity: type[SQLModel], method_name: str
+    ) -> str:
+        """Convert a method to a GraphQL field definition.
+
+        ``method_name`` is used verbatim as the field name (no entity prefix,
+        no camelCase) — the field lives on the ``{Entity}Query`` /
+        ``{Entity}Mutation`` group type, so the entity context is already the
+        parent group.
+        """
         # Get the underlying function from classmethod
         func = method.__func__ if hasattr(method, "__func__") else method
-
-        # Generate GraphQL field name: entityName + MethodName
-        gql_name = to_graphql_field_name(entity.__name__, func.__name__)
 
         # Get description from docstring
         description = func.__doc__
@@ -596,7 +607,7 @@ class SDLGenerator:
 
         # Build field definition
         param_str = f"({', '.join(params)})" if params else ""
-        field_def = f"{gql_name}{param_str}: {return_gql_type}"
+        field_def = f"{method_name}{param_str}: {return_gql_type}"
 
         if description:
             field_def = f'"""{description}"""\n  {field_def}'
@@ -641,12 +652,13 @@ class SDLGenerator:
         return visited
 
     def _find_operation_method(
-        self, operation_name: str, operation_type: str
+        self, entity_name: str, method_name: str, operation_type: str
     ) -> tuple[Any, type[SQLModel]] | None:
-        """Find the method and entity for a given operation name.
+        """Find the method and entity for a given (entity, method) pair.
 
         Args:
-            operation_name: Name of the GraphQL operation (e.g., "userGetAll").
+            entity_name: Entity class name (the group field on the root type).
+            method_name: Method name verbatim (the field on the group type).
             operation_type: "Query" or "Mutation".
 
         Returns:
@@ -657,14 +669,14 @@ class SDLGenerator:
         )
 
         for entity in self.entities:
+            if entity.__name__ != entity_name:
+                continue
             for name in dir(entity):
                 try:
                     attr = getattr(entity, name)
                     if callable(attr) and hasattr(attr, decorator_attr):
                         func = attr.__func__ if hasattr(attr, "__func__") else attr
-                        # Generate GraphQL field name and compare
-                        gql_name = to_graphql_field_name(entity.__name__, func.__name__)
-                        if gql_name == operation_name:
+                        if func.__name__ == method_name:
                             return (attr, entity)
                 except (AttributeError, NameError):
                     continue
@@ -672,23 +684,27 @@ class SDLGenerator:
         return None
 
     def generate_operation_sdl(
-        self, operation_name: str, operation_type: str = "Query"
+        self,
+        entity_name: str,
+        method_name: str,
+        operation_type: str = "Query",
     ) -> str | None:
         """Generate SDL for a single operation and its related types.
 
         Args:
-            operation_name: Name of the GraphQL operation (e.g., "users").
+            entity_name: Entity class name (the group the method belongs to).
+            method_name: Method name verbatim.
             operation_type: "Query" or "Mutation".
 
         Returns:
             SDL string for the operation and related types, or None if not found.
 
         Example:
-            >>> generator.generate_operation_sdl("users", "Query")
-            '# Query\\nusers(limit: Int): [User!]!\\n\\n# Related Types\\ntype User { ... }'
+            >>> generator.generate_operation_sdl("User", "get_all", "Query")
+            '# Query\\nget_all(limit: Int): [User!]!\\n\\n# Related Types\\ntype User { ... }'
         """
         # Find the operation method
-        result = self._find_operation_method(operation_name, operation_type)
+        result = self._find_operation_method(entity_name, method_name, operation_type)
         if not result:
             return None
 
@@ -722,7 +738,7 @@ class SDLGenerator:
         parts = []
 
         # Generate operation line
-        field_def = self._method_to_graphql_field(method, entity)
+        field_def = self._method_to_graphql_field(method, entity, method_name)
         # Remove leading spaces from field_def (it's formatted for type body)
         field_def = field_def.strip()
         parts.append(f"# {operation_type}\n{field_def}")

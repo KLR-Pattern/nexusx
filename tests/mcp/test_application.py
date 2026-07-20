@@ -15,13 +15,12 @@ from __future__ import annotations
 import warnings
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, SQLModel
 
 from nexusx.mcp import Application
 from nexusx.mcp.application import _coerce_to_application, _redact_url
 from nexusx.mcp.managers.app_resources import AppResources
-
 
 # ── Shared test models ────────────────────────────────────────────────────
 
@@ -296,7 +295,6 @@ class TestStandaloneUsage:
     @pytest.mark.asyncio
     async def test_external_engine_remains_usable_after_app_dispose(self):
         """When caller passes engine=, the engine is NOT disposed by Application."""
-        from sqlmodel import select
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         try:

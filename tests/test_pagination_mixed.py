@@ -18,7 +18,6 @@ from nexusx.loader.registry import ErManager
 from nexusx.sdl_generator import SDLGenerator
 from tests.conftest import get_test_session_factory
 
-
 # ──────────────────────────────────────────────────────────
 # Shared mixed-pagination fixtures
 # ──────────────────────────────────────────────────────────

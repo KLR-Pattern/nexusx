@@ -16,12 +16,18 @@ sdl = handler.get_sdl()
 print("=== Demo with Standard Queries ===\n")
 print(sdl)
 
-# Check if standard queries exist
-assert "userById" in sdl
-assert "userByFilter" in sdl
-assert "postById" in sdl
-assert "postByFilter" in sdl
-assert "commentById" in sdl
-assert "commentByFilter" in sdl
+# Check if standard queries exist (grouped by entity at the GraphQL root)
+assert "User: UserQuery!" in sdl
+assert "Post: PostQuery!" in sdl
+assert "Comment: CommentQuery!" in sdl
+assert "type UserQuery {" in sdl
+assert "type PostQuery {" in sdl
+assert "type CommentQuery {" in sdl
+assert "by_id(id: Int!): User" in sdl
+assert "by_filter(filter: UserFilterInput, limit: Int): [User!]!" in sdl
+assert "by_id(id: Int!): Post" in sdl
+assert "by_filter(filter: PostFilterInput, limit: Int): [Post!]!" in sdl
+assert "by_id(id: Int!): Comment" in sdl
+assert "by_filter(filter: CommentFilterInput, limit: Int): [Comment!]!" in sdl
 
 print("\n✅ All standard queries added successfully!")

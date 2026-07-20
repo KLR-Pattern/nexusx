@@ -31,8 +31,8 @@ class IntrospectionGenerator:
     def __init__(
         self,
         entities: list[type[SQLModel]],
-        query_methods: dict[str, tuple[type[SQLModel], Callable]],
-        mutation_methods: dict[str, tuple[type[SQLModel], Callable]],
+        query_methods: dict[str, dict[str, tuple[type[SQLModel], Callable]]],
+        mutation_methods: dict[str, dict[str, tuple[type[SQLModel], Callable]]],
         query_description: str | None = None,
         mutation_description: str | None = None,
         enable_pagination: bool = False,
@@ -42,8 +42,8 @@ class IntrospectionGenerator:
 
         Args:
             entities: List of SQLModel classes.
-            query_methods: Mapping of field name to (entity, method) for queries.
-            mutation_methods: Mapping of field name to (entity, method) for mutations.
+            query_methods: Grouped mapping {entity_name: {method_name: (entity, method)}}.
+            mutation_methods: Grouped mapping {entity_name: {method_name: (entity, method)}}.
             query_description: Optional custom description for Query type.
             mutation_description: Optional custom description for Mutation type.
             enable_pagination: When True, list relationships produce Result types.
@@ -51,6 +51,7 @@ class IntrospectionGenerator:
         """
         self.entities = entities
         self._entity_names = {e.__name__ for e in entities}
+        self._entity_map = {e.__name__: e for e in entities}
         self._query_methods = query_methods
         self._mutation_methods = mutation_methods
         self._query_description = query_description
@@ -66,9 +67,15 @@ class IntrospectionGenerator:
         """Generate complete __schema introspection data."""
         types_list = self._get_all_types()
 
-        query_type = {"name": "Query", "kind": "OBJECT"} if self._query_methods else None
+        query_type = (
+            {"name": "Query", "kind": "OBJECT"}
+            if any(self._query_methods.values())
+            else None
+        )
         mutation_type = (
-            {"name": "Mutation", "kind": "OBJECT"} if self._mutation_methods else None
+            {"name": "Mutation", "kind": "OBJECT"}
+            if any(self._mutation_methods.values())
+            else None
         )
 
         return {
@@ -172,12 +179,24 @@ class IntrospectionGenerator:
         if self._enable_pagination and self._loader_registry:
             types_list.extend(self._build_pagination_types())
 
+        # 5b. Entity group types ({Entity}Query / {Entity}Mutation)
+        for entity_name, methods in self._query_methods.items():
+            if methods:
+                types_list.append(
+                    self._build_entity_group_type(entity_name, methods, "Query")
+                )
+        for entity_name, methods in self._mutation_methods.items():
+            if methods:
+                types_list.append(
+                    self._build_entity_group_type(entity_name, methods, "Mutation")
+                )
+
         # 6. Query type
-        if self._query_methods:
+        if any(self._query_methods.values()):
             types_list.append(self._build_query_type())
 
         # 7. Mutation type
-        if self._mutation_methods:
+        if any(self._mutation_methods.values()):
             types_list.append(self._build_mutation_type())
 
         return types_list
@@ -291,12 +310,17 @@ class IntrospectionGenerator:
         }
 
     def _build_query_type(self) -> dict:
-        """Build introspection data for the Query type."""
-        fields: list[dict] = []
+        """Build introspection data for the root Query type.
 
-        for field_name, (_entity, method) in self._query_methods.items():
-            field = self._build_method_field(field_name, method)
-            fields.append(field)
+        Under the grouped layout the root Query has one field per entity
+        (``Entity: EntityQuery!``); the methods themselves live on the
+        ``{Entity}Query`` group types (see ``_build_entity_group_type``).
+        """
+        fields = [
+            self._build_group_mount_field(name, "Query")
+            for name, methods in self._query_methods.items()
+            if methods
+        ]
 
         return {
             "kind": "OBJECT",
@@ -310,17 +334,68 @@ class IntrospectionGenerator:
         }
 
     def _build_mutation_type(self) -> dict:
-        """Build introspection data for the Mutation type."""
-        fields: list[dict] = []
-
-        for field_name, (_entity, method) in self._mutation_methods.items():
-            field = self._build_method_field(field_name, method)
-            fields.append(field)
+        """Build introspection data for the root Mutation type (grouped)."""
+        fields = [
+            self._build_group_mount_field(name, "Mutation")
+            for name, methods in self._mutation_methods.items()
+            if methods
+        ]
 
         return {
             "kind": "OBJECT",
             "name": "Mutation",
             "description": self._mutation_description,
+            "fields": fields,
+            "inputFields": None,
+            "interfaces": [],
+            "enumValues": None,
+            "possibleTypes": None,
+        }
+
+    def _build_group_mount_field(self, entity_name: str, group_suffix: str) -> dict:
+        """Build the root field that mounts an entity's group type.
+
+        Produces ``EntityName: EntityNameQuery!`` (NON_NULL OBJECT), with the
+        entity's docstring as its description so GraphiQL's Docs panel has
+        something to show.
+        """
+        entity = self._entity_map.get(entity_name)
+        description = entity.__doc__.strip() if entity and entity.__doc__ else None
+        return {
+            "name": entity_name,
+            "description": description,
+            "args": [],
+            "type": {
+                "kind": "NON_NULL",
+                "name": None,
+                "ofType": {
+                    "kind": "OBJECT",
+                    "name": f"{entity_name}{group_suffix}",
+                    "ofType": None,
+                },
+            },
+            "isDeprecated": False,
+            "deprecationReason": None,
+        }
+
+    def _build_entity_group_type(
+        self,
+        entity_name: str,
+        methods: dict[str, tuple[type[SQLModel], Callable]],
+        group_suffix: str,
+    ) -> dict:
+        """Build the ``{Entity}Query`` / ``{Entity}Mutation`` group OBJECT.
+
+        Its fields are the entity's @query/@mutation methods, named verbatim.
+        """
+        fields = [
+            self._build_method_field(method_name, method)
+            for method_name, (_entity, method) in methods.items()
+        ]
+        return {
+            "kind": "OBJECT",
+            "name": f"{entity_name}{group_suffix}",
+            "description": None,
             "fields": fields,
             "inputFields": None,
             "interfaces": [],
@@ -534,16 +609,17 @@ class IntrospectionGenerator:
 
         # Also collect enums from query/mutation method signatures
         for methods in [self._query_methods, self._mutation_methods]:
-            for _name, (_, method) in methods.items():
-                func = method.__func__ if hasattr(method, "__func__") else method
-                try:
-                    hints = get_type_hints(func)
-                except Exception:
-                    continue
+            for _group in methods.values():
+                for _name, (_, method) in _group.items():
+                    func = method.__func__ if hasattr(method, "__func__") else method
+                    try:
+                        hints = get_type_hints(func)
+                    except Exception:
+                        continue
 
-                for hint in hints.values():
-                    if self._converter.is_enum_type(hint):
-                        enums[hint.__name__] = hint
+                    for hint in hints.values():
+                        if self._converter.is_enum_type(hint):
+                            enums[hint.__name__] = hint
 
         return enums
 
@@ -571,19 +647,20 @@ class IntrospectionGenerator:
 
         # Scan all query and mutation methods
         for methods in [self._query_methods, self._mutation_methods]:
-            for _name, (_, method) in methods.items():
-                func = method.__func__ if hasattr(method, "__func__") else method
-                sig = inspect.signature(func)
-                try:
-                    hints = get_type_hints(func)
-                except Exception:
-                    hints = {}
+            for _group in methods.values():
+                for _name, (_, method) in _group.items():
+                    func = method.__func__ if hasattr(method, "__func__") else method
+                    sig = inspect.signature(func)
+                    try:
+                        hints = get_type_hints(func)
+                    except Exception:
+                        hints = {}
 
-                for param_name, _param in sig.parameters.items():
-                    if param_name in ("cls", "self", QUERY_META_PARAM, "return"):
-                        continue
-                    if param_name in hints:
-                        collect_from_type(hints[param_name])
+                    for param_name, _param in sig.parameters.items():
+                        if param_name in ("cls", "self", QUERY_META_PARAM, "return"):
+                            continue
+                        if param_name in hints:
+                            collect_from_type(hints[param_name])
 
         return input_types
 

@@ -81,7 +81,7 @@ def test_replacement_documented_in_changelog() -> None:
     from pathlib import Path
 
     repo_root = Path(__file__).resolve().parents[1]
-    changelog = repo_root / "CHANGELOG.md"
+    changelog = repo_root / "docs" / "changelog.md"
     assert changelog.exists()
     text = changelog.read_text(encoding="utf-8")
     assert "## 3.0.0" in text

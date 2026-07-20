@@ -71,9 +71,11 @@ def test_standard_queries_functionality():
     handler = GraphQLHandler(base=TestBase)
     sdl = handler.get_sdl()
 
-    # Verify SDL contains expected content
-    assert "testUserById" in sdl
-    assert "testUserByFilter" in sdl
+    # Verify SDL contains expected content (grouped by entity at the GraphQL root)
+    assert "TestUser: TestUserQuery!" in sdl
+    assert "type TestUserQuery {" in sdl
+    assert "by_id(id: Int!): TestUser" in sdl
+    assert "by_filter(filter: TestUserFilterInput, limit: Int): [TestUser!]!" in sdl
     assert "input TestUserFilterInput" in sdl
     assert "name: String" in sdl
     assert "email: String" in sdl
@@ -167,8 +169,10 @@ def test_auto_query_config_discovers_entities_without_existing_methods():
     )
     sdl = handler.get_sdl()
 
-    assert "testUser5ById" in sdl
-    assert "testUser5ByFilter" in sdl
+    assert "TestUser5: TestUser5Query!" in sdl
+    assert "type TestUser5Query {" in sdl
+    assert "by_id(id: Int!): TestUser5" in sdl
+    assert "by_filter(filter: TestUser5FilterInput, limit: Int): [TestUser5!]!" in sdl
 
 
 @pytest.mark.asyncio
@@ -190,7 +194,7 @@ async def test_by_filter_execution_uses_input_model_values():
     )
 
     result = await handler.execute(
-        '{ testUser6ByFilter(filter: {name: "alice", age: 30}) { id name } }'
+        '{ TestUser6 { by_filter(filter: {name: "alice", age: 30}) { id name } } }'
     )
 
     assert "errors" not in result
@@ -240,9 +244,11 @@ async def test_by_id_uses_actual_primary_key_name_and_type():
     )
     sdl = handler.get_sdl()
 
-    assert "productById(code: String!)" in sdl
+    assert "by_id(code: String!): Product" in sdl
+    assert "Product: ProductQuery!" in sdl
+    assert "type ProductQuery {" in sdl
 
-    result = await handler.execute('{ productById(code: "sku-1") { code name } }')
+    result = await handler.execute('{ Product { by_id(code: "sku-1") { code name } } }')
 
     assert "errors" not in result
     where_clause = str(state["stmt"].whereclause)
@@ -268,9 +274,11 @@ async def test_by_id_ignores_non_primary_id_field():
     )
     sdl = handler.get_sdl()
 
-    assert "catalogItemById(code: String!)" in sdl
+    assert "by_id(code: String!): CatalogItem" in sdl
+    assert "CatalogItem: CatalogItemQuery!" in sdl
+    assert "type CatalogItemQuery {" in sdl
 
-    result = await handler.execute('{ catalogItemById(code: "sku-2") { code name } }')
+    result = await handler.execute('{ CatalogItem { by_id(code: "sku-2") { code name } } }')
 
     assert "errors" not in result
     where_clause = str(state["stmt"].whereclause)
@@ -303,5 +311,8 @@ def test_existing_custom_filter_input_is_not_overridden_in_sdl():
     sdl = handler.get_sdl()
 
     assert "input ExplicitSearchFilter" in sdl
-    assert "testUser8Search(filter: ExplicitSearchFilter!): [TestUser8!]!" in sdl
+    # Custom @query method now lives inside the TestUser8 group with its verbatim name.
+    assert "TestUser8: TestUser8Query!" in sdl
+    assert "type TestUser8Query {" in sdl
+    assert "search(filter: ExplicitSearchFilter!): [TestUser8!]!" in sdl
     assert "input TestUser8FilterInput" not in sdl

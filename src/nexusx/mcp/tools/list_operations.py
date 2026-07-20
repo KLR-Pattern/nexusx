@@ -28,26 +28,27 @@ def register_list_operations_tools(mcp: FastMCP, tracer: TypeTracer) -> None:
     def list_queries() -> dict[str, Any]:
         """List all available GraphQL queries.
 
-        Returns a lightweight list of query names and descriptions.
-        Use this tool first to discover available queries, then use
-        get_query_schema to get detailed information about a specific query.
+        Queries are grouped by entity (``{ Entity { method {} } }``). Returns a
+        lightweight list of methods, each tagged with its entity. Use this tool
+        first to discover available queries, then use get_query_schema with the
+        entity and method to get detailed information.
 
         Returns:
             Dictionary containing:
             - success: True
-            - data: List of query info dictionaries with name and description
+            - data: List of {entity, method, name, description} method dicts
 
         Example response:
             {
                 "success": true,
                 "data": [
-                    {"name": "users", "description": "Get all users"},
-                    {"name": "user", "description": "Get user by ID"}
+                    {"entity": "User", "method": "get_all", "name": "User.get_all"},
+                    {"entity": "User", "method": "by_id", "name": "User.by_id"}
                 ]
             }
         """
         try:
-            queries = tracer.list_operation_fields("Query")
+            queries = tracer.list_group_operations("Query")
             return create_success_response(queries)
         except Exception as e:
             return {
@@ -60,26 +61,27 @@ def register_list_operations_tools(mcp: FastMCP, tracer: TypeTracer) -> None:
     def list_mutations() -> dict[str, Any]:
         """List all available GraphQL mutations.
 
-        Returns a lightweight list of mutation names and descriptions.
-        Use this tool first to discover available mutations, then use
-        get_mutation_schema to get detailed information about a specific mutation.
+        Mutations are grouped by entity (``{ Entity { method {} } }``). Returns a
+        lightweight list of methods, each tagged with its entity. Use this tool
+        first to discover available mutations, then use get_mutation_schema with
+        the entity and method to get detailed information.
 
         Returns:
             Dictionary containing:
             - success: True
-            - data: List of mutation info dictionaries with name and description
+            - data: List of {entity, method, name, description} method dicts
 
         Example response:
             {
                 "success": true,
                 "data": [
-                    {"name": "createUser", "description": "Create a new user"},
-                    {"name": "updateUser", "description": "Update user information"}
+                    {"entity": "User", "method": "create", "name": "User.create"},
+                    {"entity": "User", "method": "update", "name": "User.update"}
                 ]
             }
         """
         try:
-            mutations = tracer.list_operation_fields("Mutation")
+            mutations = tracer.list_group_operations("Mutation")
             return create_success_response(mutations)
         except Exception as e:
             return {

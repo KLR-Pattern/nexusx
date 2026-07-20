@@ -17,7 +17,6 @@ as JSON-native scalars (booleans, ints, strings) without wrapping.
 
 from __future__ import annotations
 
-from typing import List
 from uuid import UUID, uuid4
 
 import pytest
@@ -68,14 +67,14 @@ class ScalarReturnDemo(ScalarReturnBase, table=False):
         return value
 
     @mutation
-    async def return_uuid_list(cls) -> List[UUID]:
+    async def return_uuid_list(cls) -> list[UUID]:
         """Return list[UUID] (typical reorder/set shape)."""
         ids = [uuid4(), uuid4()]
         _LAST_RESULT["uuid_list"] = ids
         return ids
 
     @mutation
-    async def return_str_list(cls) -> List[str]:
+    async def return_str_list(cls) -> list[str]:
         """Return list[str]."""
         items = ["a", "b", "c"]
         _LAST_RESULT["str_list"] = items
@@ -102,11 +101,11 @@ class TestSingleScalarReturn:
     ) -> None:
         """``return_bool() -> bool`` must come back as JSON ``true``."""
         result = await scalar_handler.execute(
-            "mutation { scalarReturnDemoReturnBool }"
+            "mutation { ScalarReturnDemo { return_bool } }"
         )
 
         assert "errors" not in result, f"errors: {result.get('errors')}"
-        value = result["data"]["scalarReturnDemoReturnBool"]
+        value = result["data"]["ScalarReturnDemo"]["return_bool"]
         # The wire value is a Python bool, which JSON-encodes to ``true``.
         # ``{"_value": "True"}`` would be a dict and a string — both wrong.
         assert value is True, (
@@ -119,11 +118,11 @@ class TestSingleScalarReturn:
     ) -> None:
         """``return_int() -> int`` must come back as JSON int."""
         result = await scalar_handler.execute(
-            "mutation { scalarReturnDemoReturnInt }"
+            "mutation { ScalarReturnDemo { return_int } }"
         )
 
         assert "errors" not in result, f"errors: {result.get('errors')}"
-        value = result["data"]["scalarReturnDemoReturnInt"]
+        value = result["data"]["ScalarReturnDemo"]["return_int"]
         assert isinstance(value, int) and not isinstance(value, bool), (
             f"Expected int, got {value!r} ({type(value).__name__})"
         )
@@ -135,11 +134,11 @@ class TestSingleScalarReturn:
     ) -> None:
         """``return_str() -> str`` must come back as JSON string."""
         result = await scalar_handler.execute(
-            "mutation { scalarReturnDemoReturnStr }"
+            "mutation { ScalarReturnDemo { return_str } }"
         )
 
         assert "errors" not in result, f"errors: {result.get('errors')}"
-        value = result["data"]["scalarReturnDemoReturnStr"]
+        value = result["data"]["ScalarReturnDemo"]["return_str"]
         assert value == "hello", (
             f"Expected 'hello', got {value!r} ({type(value).__name__})"
         )
@@ -150,11 +149,11 @@ class TestSingleScalarReturn:
     ) -> None:
         """``return_uuid() -> UUID`` must come back as JSON string of the UUID."""
         result = await scalar_handler.execute(
-            "mutation { scalarReturnDemoReturnUuid }"
+            "mutation { ScalarReturnDemo { return_uuid } }"
         )
 
         assert "errors" not in result, f"errors: {result.get('errors')}"
-        value = result["data"]["scalarReturnDemoReturnUuid"]
+        value = result["data"]["ScalarReturnDemo"]["return_uuid"]
         assert isinstance(value, str), (
             f"Expected str (JSON-serialized UUID), got {type(value).__name__}"
         )
@@ -175,11 +174,11 @@ class TestScalarListReturn:
     ) -> None:
         """``return_uuid_list() -> list[UUID]`` → ``["uuid1", "uuid2"]``."""
         result = await scalar_handler.execute(
-            "mutation { scalarReturnDemoReturnUuidList }"
+            "mutation { ScalarReturnDemo { return_uuid_list } }"
         )
 
         assert "errors" not in result, f"errors: {result.get('errors')}"
-        value = result["data"]["scalarReturnDemoReturnUuidList"]
+        value = result["data"]["ScalarReturnDemo"]["return_uuid_list"]
         assert isinstance(value, list), f"Expected list, got {type(value).__name__}"
         assert len(value) == 2
         # Every element must be a string, not an ``{"_value": ...}`` dict.
@@ -195,11 +194,11 @@ class TestScalarListReturn:
     ) -> None:
         """``return_str_list() -> list[str]`` → ``["a", "b", "c"]``."""
         result = await scalar_handler.execute(
-            "mutation { scalarReturnDemoReturnStrList }"
+            "mutation { ScalarReturnDemo { return_str_list } }"
         )
 
         assert "errors" not in result, f"errors: {result.get('errors')}"
-        value = result["data"]["scalarReturnDemoReturnStrList"]
+        value = result["data"]["ScalarReturnDemo"]["return_str_list"]
         assert value == ["a", "b", "c"], (
             f"Expected ['a','b','c'], got {value!r}"
         )
@@ -215,12 +214,12 @@ class TestScalarReturnSDL:
 
     def test_bool_return_sdl(self, scalar_handler: GraphQLHandler) -> None:
         sdl = scalar_handler.get_sdl()
-        assert "scalarReturnDemoReturnBool: Boolean!" in sdl
+        assert "return_bool: Boolean!" in sdl
 
     def test_int_return_sdl(self, scalar_handler: GraphQLHandler) -> None:
         sdl = scalar_handler.get_sdl()
-        assert "scalarReturnDemoReturnInt: Int!" in sdl
+        assert "return_int: Int!" in sdl
 
     def test_uuid_list_return_sdl(self, scalar_handler: GraphQLHandler) -> None:
         sdl = scalar_handler.get_sdl()
-        assert "scalarReturnDemoReturnUuidList: [UUID!]!" in sdl
+        assert "return_uuid_list: [UUID!]!" in sdl

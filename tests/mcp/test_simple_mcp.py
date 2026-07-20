@@ -150,11 +150,12 @@ class TestGraphQLQuery:
         graphql_query_tool = tools.get("graphql_query")
 
         result = await graphql_query_tool.fn(
-            query="{ simpleMCPMockUserGetUsers(limit: 1) { id name } }"
+            query="{ SimpleMCPMockUser { get_users(limit: 1) { id name } } }"
         )
 
         assert result["success"] is True
-        assert "simpleMCPMockUserGetUsers" in result["data"]
+        assert "SimpleMCPMockUser" in result["data"]
+        assert "get_users" in result["data"]["SimpleMCPMockUser"]
 
     @pytest.mark.asyncio
     async def test_graphql_query_with_invalid_syntax(self) -> None:
@@ -201,11 +202,11 @@ class TestGraphQLQuery:
         graphql_query_tool = tools.get("graphql_query")
 
         result = await graphql_query_tool.fn(
-            query="{ simpleMCPMockUserGetUser(id: 1) { id name email } }"
+            query="{ SimpleMCPMockUser { get_user(id: 1) { id name email } } }"
         )
 
         assert result["success"] is True
-        assert "simpleMCPMockUserGetUser" in result["data"]
+        assert "get_user" in result["data"]["SimpleMCPMockUser"]
 
 
 class TestGraphQLMutation:
@@ -220,14 +221,14 @@ class TestGraphQLMutation:
 
         result = await graphql_mutation_tool.fn(
             mutation=(
-                'mutation { simpleMCPMockUserCreateUser('
-                'name: "Test", email: "test@example.com") { id name } }'
+                'mutation { SimpleMCPMockUser { create_user('
+                'name: "Test", email: "test@example.com") { id name } } }'
             )
         )
 
         assert result["success"] is True
-        assert "simpleMCPMockUserCreateUser" in result["data"]
-        assert result["data"]["simpleMCPMockUserCreateUser"]["name"] == "Test"
+        assert "SimpleMCPMockUser" in result["data"]
+        assert result["data"]["SimpleMCPMockUser"]["create_user"]["name"] == "Test"
 
     @pytest.mark.asyncio
     async def test_graphql_mutation_with_invalid_syntax(self) -> None:
@@ -364,24 +365,24 @@ class TestSimpleMCPIntegration:
         # Step 2: Execute query
         graphql_query_tool = tools.get("graphql_query")
         query_result = await graphql_query_tool.fn(
-            query="{ simpleMCPMockUserGetUsers(limit: 2) { id name } }"
+            query="{ SimpleMCPMockUser { get_users(limit: 2) { id name } } }"
         )
 
         assert query_result["success"] is True
-        assert "simpleMCPMockUserGetUsers" in query_result["data"]
+        assert "SimpleMCPMockUser" in query_result["data"]
 
         # Step 3: Execute mutation
         graphql_mutation_tool = tools.get("graphql_mutation")
         mutation_result = await graphql_mutation_tool.fn(
             mutation=(
-                'mutation { simpleMCPMockUserCreateUser('
-                'name: "New User", email: "new@example.com") { id name } }'
+                'mutation { SimpleMCPMockUser { create_user('
+                'name: "New User", email: "new@example.com") { id name } } }'
             )
         )
 
         assert mutation_result["success"] is True
-        assert "simpleMCPMockUserCreateUser" in mutation_result["data"]
-        assert mutation_result["data"]["simpleMCPMockUserCreateUser"]["name"] == "New User"
+        assert "SimpleMCPMockUser" in mutation_result["data"]
+        assert mutation_result["data"]["SimpleMCPMockUser"]["create_user"]["name"] == "New User"
 
     @pytest.mark.asyncio
     async def test_read_only_workflow(self) -> None:
@@ -400,11 +401,11 @@ class TestSimpleMCPIntegration:
         # Step 2: Execute query
         graphql_query_tool = tools.get("graphql_query")
         query_result = await graphql_query_tool.fn(
-            query="{ simpleMCPMockUserGetUsers(limit: 2) { id name } }"
+            query="{ SimpleMCPMockUser { get_users(limit: 2) { id name } } }"
         )
 
         assert query_result["success"] is True
-        assert "simpleMCPMockUserGetUsers" in query_result["data"]
+        assert "SimpleMCPMockUser" in query_result["data"]
 
         # Step 3: Mutation tool should not be available
         assert "graphql_mutation" not in tools

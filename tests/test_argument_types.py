@@ -168,8 +168,11 @@ class TestArgumentTypeInE2EQuery:
         executor = QueryExecutor(registry)
 
         method = UserQuery.get_filtered
-        query_methods = {"userGetFiltered": (FixtureUser, method)}
-        document = parse("{ userGetFiltered(limit: 1) { id name } }")
+        # Grouped dispatch: top-level field is the entity class (UserQuery),
+        # the method (get_filtered) lives one level deeper. The query_methods
+        # registry mirrors that grouping: {entity_name: {method_name: (entity, method)}}.
+        query_methods = {"UserQuery": {"get_filtered": (FixtureUser, method)}}
+        document = parse("{ UserQuery { get_filtered(limit: 1) { id name } } }")
         parsed = QueryParser().parse_document(document)
 
         result = await executor.execute_query(
@@ -178,7 +181,8 @@ class TestArgumentTypeInE2EQuery:
         )
 
         assert "data" in result
-        assert "userGetFiltered" in result["data"]
+        assert "UserQuery" in result["data"]
+        assert "get_filtered" in result["data"]["UserQuery"]
         assert received_types.get("limit") is int, (
             f"Expected int, got {received_types.get('limit')}"
         )
