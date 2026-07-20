@@ -1,46 +1,79 @@
 # nexusx
 
-Write SQLModel classes. Get a complete API.
-
 [![pypi](https://img.shields.io/pypi/v/nexusx.svg)](https://pypi.python.org/pypi/nexusx)
 [![PyPI Downloads](https://static.pepy.tech/badge/nexusx/month)](https://pepy.tech/projects/nexusx)
 
+nexusx turns a SQLModel database into two things: a GraphQL **query interface**
+that's friendlier than writing SQL, and **business logic** that ships as REST,
+GraphQL, MCP, and CLI from a single signature.
+
 ```mermaid
 flowchart LR
-    sqlmodel["SQLModel"]
-
-    sqlmodel --> graphql["GraphQL"]
-    graphql --> mcp1["MCP"]
-
-    sqlmodel --> usecase["UseCaseService"]
-    usecase --> rest["REST"]
-    usecase --> graphql2["GraphQL"]
-    usecase --> cli["CLI"]
-    graphql2 --> mcp2["MCP"]
+    subgraph Logic["Business logic — one signature, many transports"]
+        s["UseCaseService<br/>methods"]
+        s --> rest["REST / OpenAPI"]
+        s --> gql2["GraphQL"]
+        s --> mcp2["MCP (AI agents)"]
+        s --> cli["CLI"]
+    end
+    subgraph Query["Query surface — friendlier than SQL"]
+        e["SQLModel entities<br/>+ relationships"]
+        e --> gql1["GraphQL"]
+        e --> mcp1["MCP"]
+        e --> er["ER diagrams (Voyager)"]
+    end
 ```
 
-## Build a GraphQL + MCP in 3 Minutes
+## What it does for you
 
-Two SQLModel classes. One relationship. That's enough for a GraphQL endpoint with auto-batched relations **and** an MCP server an AI agent can drive — no resolver code, no introspection dump.
+**1. A query interface over your database — not another query writer.**
+
+`GraphQLHandler` reflects your entities and relationships into a read surface
+where you declare the shape you want — `users { posts { comments } }` — and
+nexusx compiles it to optimal SQL: one batched round-trip per level, columns
+pruned to what you selected, per-parent pagination. N+1 and over-fetching
+aren't pitfalls to avoid; they're structurally impossible. Turn on
+`auto_query_config` for `by_id` and equality `by_filter`; richer predicates
+(range, like, ordering) are one `@query` method that rejoins the same surface.
+[Voyager](docs/advanced/voyager.md) renders the schema as an interactive ER
+diagram, so the query interface is self-documenting.
+
+**2. Business logic, on every transport.**
+
+A `UseCaseService` method is plain async Python. One signature becomes a
+FastAPI route (with OpenAPI), an MCP tool for AI agents, a CLI command — and a
+GraphQL field. Note this GraphQL is *different* from the one above: it projects
+**business operations**, not your raw data graph, and it's built AI-first
+(compact `describe_*` discovery, no 50K-token introspection dump). The same
+codebase serves a web frontend, power integrations, and an AI agent without
+rewriting the logic three times.
+
+Both pillars speak "GraphQL," but they are different surfaces:
+
+|  | SQLModel GraphQL (`GraphQLHandler`) | UseCaseService GraphQL (`compose_query`) |
+|---|---|---|
+| What it is | A query interface over your DB | A projection of business methods |
+| Source | Auto-reflected from entities + relations | Hand-written `@query` / `@mutation` |
+| Built for | Browsing / slicing your data graph | Invoking operations (app + AI) |
+| Introspection | Full (GraphiQL-friendly) | Rejected (AI-first, compact `describe_*`) |
+
+## In 30 seconds
+
+**The query surface** — entities become a GraphQL and MCP query interface:
 
 ```python
-# app.py
 from sqlmodel import SQLModel, Field, Relationship, select
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from nexusx import query, GraphQLHandler
 from nexusx.mcp import create_simple_mcp_server
-
-engine = create_async_engine("sqlite+aiosqlite:///blog.db")
-async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 class User(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
-    posts: list["Post"] = Relationship(back_populates="author")
+    posts: list["Post"] = Relationship(back_populates="author")  # ← the entire resolver
 
     @query
     async def users(cls, limit: int = 10) -> list["User"]:
-        async with async_session() as s:
+        async with session() as s:
             return (await s.exec(select(cls).limit(limit))).all()
 
 class Post(SQLModel, table=True):
@@ -49,119 +82,20 @@ class Post(SQLModel, table=True):
     author_id: int = Field(foreign_key="user.id")
     author: User | None = Relationship(back_populates="posts")
 
-# 1. GraphQL — querying { users { posts } } is 2 SQL round-trips, not 1 + N
-handler = GraphQLHandler(base=SQLModel, session_factory=async_session)
+# GraphQL — { users { posts { title } } } is 2 SQL round-trips, not 1+N
+GraphQLHandler(base=SQLModel, session_factory=session)
 
-# 2. MCP — 2 tools (get_schema + graphql_query); agent fetches SDL on demand
-mcp = create_simple_mcp_server(base=SQLModel, name="Blog", session_factory=async_session)
-mcp.run()  # stdio; add transport="streamable-http" for HTTP
+# MCP — Claude / Cursor call get_schema + graphql_query, fetching SDL on demand
+create_simple_mcp_server(base=SQLModel, name="Blog", session_factory=session)
 ```
 
-**What you've got:**
-
-- **N+1-proof GraphQL** — `{ users(limit: 100) { name posts { title } } }` runs in exactly 2 SQL round-trips (users, then one batched `WHERE author_id IN (...)`), not 101. Scales to arbitrary nesting depth.
-- **AI-ready MCP** — Claude Desktop / Cursor / any MCP client calls `get_schema` to read the SDL, then `graphql_query` to fetch data. The agent pulls context on demand instead of swallowing a 50K-token introspection dump up front.
-- **Zero resolver boilerplate** — `posts: list["Post"] = Relationship(back_populates="author")` is the entire resolver. nexusx inspects SQLAlchemy metadata and wires the DataLoader for you.
-
-Ready to go deeper? [Install](#install) below, then [Quick Start](#quick-start) walks through DTOs, the UseCase service layer, and multi-app MCP.
-
-## Install
-
-```bash
-pip install nexusx
-pip install nexusx[fastmcp]  # with MCP support
-```
-
-Requires Python ≥ 3.10.
-
-## Features
-
-- **N+1-proof by default** — DataLoaders are auto-generated from SQLAlchemy metadata. Querying `users { posts { comments } }` is three SQL round-trips total, not thousands.
-- **Selection runs through the stack** — GraphQL field sets → `DefineSubset` DTO → SQL `load_only`. A 50-column table queried for 3 columns reads 3 columns from disk.
-- **Relationships beyond ORM** — `Relationship(...)` is a first-class escape hatch: Redis caches, Elasticsearch, or external APIs flow through the same DataLoader / DTO / ER-diagram plumbing as native SQLAlchemy relations.
-- **One service, many transports** — a `UseCaseService` method generates GraphQL / FastAPI routes / MCP tools / CLI commands, with types and docs derived from the Python signature.
-- **AI-agent-first MCP** — the UseCase path rejects GraphQL introspection (often 50K+ tokens on real schemas) and exposes compact `describe_*` discovery tools instead.
-
-## Quick Start
-
-**Step 1 — Entities + GraphQL**
-
-Define SQLModel entities and decorate entry-point methods with `@query`. `GraphQLHandler` walks the entity graph, generates SDL, and resolves relationships through DataLoader — one batched SQL per relationship level instead of N+1.
+**The business-logic surface** — one service class becomes REST + MCP:
 
 ```python
-from sqlmodel import SQLModel, Field, Relationship, select
-from nexusx import query, mutation, GraphQLHandler
-
-class User(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    name: str
-    posts: list["Post"] = Relationship(back_populates="author")
-
-    @query
-    async def get_users(cls, limit: int = 10) -> list["User"]:
-        async with get_session() as session:
-            return (await session.exec(select(cls).limit(limit))).all()
-
-class Post(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    title: str
-    author_id: int = Field(foreign_key="user.id")
-    author: User | None = Relationship(back_populates="posts")
-
-handler = GraphQLHandler(base=SQLModel, session_factory=async_session)
-```
-
-`User.get_users` becomes a GraphQL query field. Querying `{ userGetUsers(limit: 5) { name posts { title } } }` triggers exactly two SQL round-trips — one for the users, one batched `SELECT ... WHERE author_id IN (...)` for all their posts. Scale to 100 users with 10 posts each and the answer is still two queries, not 101 — the same shape extends to arbitrary nesting depth. The handler is executor-only: mount it on any ASGI app via a POST route that calls `handler.execute(query=...)` (see [`demo/blog/app.py`](demo/blog/app.py) for a complete FastAPI example with GraphiQL). `handler.get_sdl()` returns the schema for codegen or external clients.
-
-The [GraphQL mode guide](docs/guide/graphql_mode.md) covers filters, pagination (`enable_pagination=True` wraps lists in `Result { items, pagination }`), and `AutoQueryConfig` for auto-generated `by_id` / `by_filter` queries across every entity.
-
-The same `@query`-decorated entities can be exposed as an MCP server without any new code — `create_simple_mcp_server` wraps the GraphQL handler behind two tools (`get_schema`, `graphql_query`), so an AI agent pulls the SDL on demand instead of swallowing a 50K-token introspection dump up front.
-
-```python
-from nexusx.mcp import create_simple_mcp_server
-
-mcp = create_simple_mcp_server(
-    base=SQLModel,
-    name="Blog MCP",
-    desc="Query the blog graph",
-    session_factory=async_session,
+from nexusx import (
+    query, UseCaseService, UseCaseAppConfig,
+    create_use_case_router, create_use_case_graphql_mcp_server,
 )
-mcp.run()
-```
-
-`allow_mutation=True` adds a third tool (`graphql_mutation`). For several independent databases, `create_mcp_server(apps=[...])` adds a 4-layer discovery path (`list_apps` → `list_queries` → `get_query_schema` → `graphql_query`) so an agent can navigate without ever loading the full schema. This is the top lane in the diagram above — distinct from Step 3, where the MCP is built from `UseCaseService` methods instead of the raw GraphQL surface.
-
-**Step 2 — Typed REST with DTOs**
-
-GraphQL exposes entities directly. For REST handlers or service-layer code you usually want a smaller, intentional shape per endpoint — that's `DefineSubset`. Declare which fields to keep; relationship fields auto-load when their name matches an ORM relationship, so `author: UserDTO | None = None` populates itself from the underlying `author_id` FK without any loader boilerplate.
-
-```python
-from sqlmodel import select
-from nexusx import DefineSubset, ErManager
-
-class UserDTO(DefineSubset):
-    __subset__ = (User, ("id", "name"))
-
-class PostDTO(DefineSubset):
-    __subset__ = (Post, ("id", "title", "author_id"))
-    author: UserDTO | None = None  # auto-loaded — field name matches relationship
-
-Resolver = ErManager(base=SQLModel, session_factory=async_session).create_resolver()
-
-async with async_session() as session:
-    posts = (await session.exec(select(Post))).all()
-
-dtos = await Resolver().resolve(posts)
-```
-
-`posts` is whatever list of ORM instances you fetched — your query, your filter, your permissions. The Resolver traverses the DTO tree level-by-level, batching each level's loads the same way GraphQL does, and returns typed `PostDTO` instances with relationships filled in. Add `resolve_*` methods to override the auto-loader for a field, `post_*` methods for derived/computed fields. See the [Core API guide](docs/guide/core_api.md).
-
-**Step 3 — MCP + REST from business logic**
-
-For operations that compose multiple entities, apply permissions, or go beyond single-table CRUD, write a `UseCaseService` — a plain class whose `@query` / `@mutation` methods hold your business logic. One service class generates both an MCP server (4-layer progressive disclosure for AI agents) and FastAPI routes (one POST per method, types derived from signatures, OpenAPI docs included).
-
-```python
-from nexusx import UseCaseService, UseCaseAppConfig, create_use_case_graphql_mcp_server, create_use_case_router
 
 class SprintService(UseCaseService):
     @query
@@ -169,73 +103,41 @@ class SprintService(UseCaseService):
         """Get all sprints with task counts."""
         ...
 
-config = UseCaseAppConfig(name="project", services=[SprintService])
-
-# MCP for AI agents
-mcp = create_use_case_graphql_mcp_server(apps=[config])
-mcp.run()
-
-# REST for frontend
-app.include_router(create_use_case_router(config))
+cfg = UseCaseAppConfig(name="project", services=[SprintService])
+app.include_router(create_use_case_router(cfg))        # REST + OpenAPI
+create_use_case_graphql_mcp_server(apps=[cfg]).run()   # MCP for AI agents
 ```
 
-Methods are regular async functions — they can call `Resolver().resolve(...)` from Step 2 internally, so business logic and DTO assembly compose freely. Same Python class, three surfaces (MCP / REST / GraphQL-via-MCP). See [feature highlights](docs/feature-highlights.md) for the full picture.
+## When to reach for it
 
-## AI Agent Skill
+- You want a **friendlier query interface** over a SQLModel database than writing SQL — graph-shaped reads, N+1-proof, selection-driven.
+- You need **more than one transport** from one codebase — REST + GraphQL, or app + AI agent.
+- You have **non-ORM relations** (Redis, search, external APIs) that should flow through the same loader / DTO / diagram plumbing as native ones.
 
-A [4-phase skill](./skills/nexusx-4phase/) guides AI coding agents: clarify requirements → build POC → add queries → productize.
+## When *not* to
+
+- You only ever need **one REST handler per endpoint** and are happy writing them by hand — plain FastAPI is simpler.
+- You want **fine-grained resolver control** over a large GraphQL schema — Strawberry gives you more knobs.
+
+## Install
 
 ```bash
-ln -s $(pwd)/skills/nexusx-4phase ~/.claude/skills/nexusx-4phase
+pip install nexusx
+pip install nexusx[fastmcp]   # MCP support
 ```
 
-## How It Compares
+Requires Python ≥ 3.10.
 
-| | nexusx | Strawberry | FastAPI + SQLModel | FastMCP |
-|---|:---:|:---:|:---:|:---:|
-| GraphQL auto-gen | ✓ | ✓ | — | — |
-| REST + OpenAPI | ✓ | — | ✓ (one handler per endpoint) | — |
-| MCP | ✓ | — | — | ✓ |
-| N+1 prevention | ✓ auto from metadata | manual `DataLoader` per relation | — | — |
-| Relationship auto-loading | ✓ via SQLAlchemy inspect | hand-written resolver per relation | — | — |
-| SQL column pruning follows selection | ✓ | — | — | — |
-| Same code → GraphQL + REST + MCP | ✓ | — | — | — |
+## Learn more
 
-Strawberry and FastMCP are excellent at what they do — Strawberry gives you fine-grained resolver control for complex GraphQL APIs, and FastMCP is the cleanest way to expose a single Python function as an MCP tool. nexusx trades per-endpoint control for cross-protocol consistency: the tradeoff pays off when one codebase needs to serve several transports at once.
+- [Quick Start](docs/guide/quick_start.md) — entities, DTOs, the UseCase layer
+- [Feature highlights](docs/feature-highlights.md) — the design decisions, in depth
+- [Voyager visualization](docs/advanced/voyager.md) — interactive ER + service diagrams
+- [Auto query](docs/guide/graphql_auto_query.md) — `by_id` / `by_filter` without writing `@query`
+- [Clean Architecture comparison](docs/clean-architecture-comparison.md)
+- [Changelog](docs/changelog.md)
+- Demos: `bash start_all.sh` · [4-phase AI skill](skills/nexusx-4phase/)
 
 ## Status
 
-**Stable** — follows semantic versioning. Minor releases are backward-compatible; breaking changes land in a major release (see [changelog](docs/changelog.md)). Bug reports and PRs welcome.
-
-## Demos
-
-```bash
-git clone https://github.com/allmonday/nexusx.git && cd nexusx && bash start_all.sh
-```
-
-| Port | Mode |
-|-----:|------|
-| 8000 | GraphQL playground |
-| 8001 | Core API (REST + DTOs) |
-| 8005 | Paginated GraphQL |
-| 8006 | UseCase MCP (4-layer) |
-| 8007 | UseCase FastAPI (REST) |
-| 8008 | Voyager visualization |
-
-## Development
-
-```bash
-./scripts/check-ci.sh       # lint + type-check + tests
-uv run pytest               # tests only
-uv run ruff check src/ tests/  # lint only
-uv run mypy src/            # type-check only
-```
-
-## Documentation
-
-- [API docs](docs/) — per-mode guides for GraphQL, Core API, and UseCase
-- [Clean Architecture comparison](docs/clean-architecture-comparison.md)
-
-## License
-
-MIT
+**Stable** — follows semantic versioning. Bug reports and PRs welcome. MIT.
