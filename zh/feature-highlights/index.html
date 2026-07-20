@@ -1,0 +1,2649 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Progressive SQLModel extension — from ER diagrams to GraphQL API and beyond.">
+      
+      
+        <meta name="author" content="tangkikodo">
+      
+      
+        <link rel="canonical" href="https://allmonday.github.io/nexusx/zh/feature-highlights/">
+      
+      
+        <link rel="prev" href="../advanced/voyager/">
+      
+      
+        <link rel="next" href="../clean-architecture-comparison/">
+      
+      
+        
+          <link rel="alternate" href="../../feature-highlights/" hreflang="en">
+        
+          <link rel="alternate" href="./" hreflang="zh">
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>设计亮点 - nexusx</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#nexusx-12" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href="../" title="nexusx" class="md-header__button md-logo" aria-label="nexusx" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            nexusx
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              设计亮点
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="light-blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="light-blue"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+      <div class="md-header__option">
+  <div class="md-select">
+    
+    <button class="md-header__button md-icon" aria-label="选择当前语言">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12.87 15.07-2.54-2.51.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2zm-2.62 7 1.62-4.33L19.12 17z"/></svg>
+    </button>
+    <div class="md-select__inner">
+      <ul class="md-select__list">
+        
+          <li class="md-select__item">
+            <a href="../../feature-highlights/" hreflang="en" class="md-select__link">
+              English
+            </a>
+          </li>
+        
+          <li class="md-select__item">
+            <a href="./" hreflang="zh" class="md-select__link">
+              中文
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</div>
+    
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/allmonday/nexusx" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    allmonday/nexusx
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="标签" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  指南
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../advanced/mcp_service/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  进阶
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+    
+  
+  文集
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api/api_graphql_handler/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API 参考
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  参考
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../" title="nexusx" class="md-nav__button md-logo" aria-label="nexusx" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    nexusx
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/allmonday/nexusx" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    allmonday/nexusx
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    指南
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    指南
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/quick_start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    快速开始
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/er_diagram/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ER 图与非 ORM 关系
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/graphql_mode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GraphQL 模式
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/graphql_pagination/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GraphQL 分页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/graphql_auto_query/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    自动查询
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/core_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core API 模式
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/core_api_advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core API 进阶
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/custom_relationship/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    自定义关系
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/er_diagram_visual/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ER 图可视化
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    进阶
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    进阶
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/mcp_service/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP 服务
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/use_case_service/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UseCase 服务
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/use_case_fastapi/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UseCase + FastAPI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/voyager/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Voyager 可视化
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    文集
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    文集
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    设计亮点
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    设计亮点
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#tldr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TL;DR — 三条主线
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第一条主线：字段选择作为一等公民
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第一条主线：字段选择作为一等公民">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-definesubset-graphql-python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. DefineSubset —— 把 GraphQL 字段选择搬进 Python 类型系统
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-exposeas-sendto-collector-dto" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. ExposeAs / SendTo / Collector —— DTO 树内的双向上下文流
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-selection-graphql-python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. selection 投影 —— 把 GraphQL 字段语法复用到任意 Python 函数返回值上
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-_query_meta-load_only-selection-sql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. 列裁剪（_query_meta + load_only）—— selection 一路下沉到 SQL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-pagination-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. 分页 Pagination 类型按 selection 收缩
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#orm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第二条主线：关系不止于 ORM
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第二条主线：关系不止于 ORM">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#6-sqlalchemy-dataloader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. 从 SQLAlchemy 元数据自动生成 DataLoader
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-orm-relationship-sqlalchemy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. 非 ORM 自定义 Relationship —— 不被 SQLAlchemy 绑死的逃生舱
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-row_number-over-partition-by" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. ROW_NUMBER() OVER (PARTITION BY ...) 批量分页
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9-by_id-by_filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. 自动标准查询 —— 实体上免费长出 by_id / by_filter
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第三条主线：传输层是后挂的
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第三条主线：传输层是后挂的">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#10-usecaseservice-graphql-rest-mcp-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. 一份 UseCaseService 同时生成 GraphQL / REST / MCP / CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#11-fromcontext" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. FromContext —— 同一签名跨传输层的参数注入
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-usecase-graphql-introspection-ai-agent-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. UseCase 路径显式拒绝 GraphQL introspection —— AI-agent-first 的设计
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        支撑工程：那些不那么显眼但很关键的决策
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="支撑工程：那些不那么显眼但很关键的决策">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#13-schema-graphql-core-graphqlschema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. 自建 schema 注册表，不直接用 graphql-core 的 GraphQLSchema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#14-split_loader_by_type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. split_loader_by_type —— 多消费者列冲突的精确隔离
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#15-forward-reference-pep-563" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. Forward reference / PEP 563 处理
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        亮点之间的关系
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        和其他框架的对比（精选维度）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#contributor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        写给 contributor：哪些地方还值得继续投入
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        结语
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../clean-architecture-comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clean Architecture 对比
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API 参考
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API 参考
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_graphql_handler/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GraphQLHandler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_cross_layer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    跨层数据流
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_relationship/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    关系与 ER 图
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_use_case/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UseCase API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    参考
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    参考
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    变更记录
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    迁移指南
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#tldr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TL;DR — 三条主线
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第一条主线：字段选择作为一等公民
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第一条主线：字段选择作为一等公民">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-definesubset-graphql-python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. DefineSubset —— 把 GraphQL 字段选择搬进 Python 类型系统
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-exposeas-sendto-collector-dto" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. ExposeAs / SendTo / Collector —— DTO 树内的双向上下文流
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-selection-graphql-python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. selection 投影 —— 把 GraphQL 字段语法复用到任意 Python 函数返回值上
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-_query_meta-load_only-selection-sql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. 列裁剪（_query_meta + load_only）—— selection 一路下沉到 SQL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-pagination-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. 分页 Pagination 类型按 selection 收缩
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#orm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第二条主线：关系不止于 ORM
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第二条主线：关系不止于 ORM">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#6-sqlalchemy-dataloader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. 从 SQLAlchemy 元数据自动生成 DataLoader
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-orm-relationship-sqlalchemy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. 非 ORM 自定义 Relationship —— 不被 SQLAlchemy 绑死的逃生舱
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-row_number-over-partition-by" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. ROW_NUMBER() OVER (PARTITION BY ...) 批量分页
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9-by_id-by_filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. 自动标准查询 —— 实体上免费长出 by_id / by_filter
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第三条主线：传输层是后挂的
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第三条主线：传输层是后挂的">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#10-usecaseservice-graphql-rest-mcp-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. 一份 UseCaseService 同时生成 GraphQL / REST / MCP / CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#11-fromcontext" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. FromContext —— 同一签名跨传输层的参数注入
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-usecase-graphql-introspection-ai-agent-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. UseCase 路径显式拒绝 GraphQL introspection —— AI-agent-first 的设计
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        支撑工程：那些不那么显眼但很关键的决策
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="支撑工程：那些不那么显眼但很关键的决策">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#13-schema-graphql-core-graphqlschema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. 自建 schema 注册表，不直接用 graphql-core 的 GraphQLSchema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#14-split_loader_by_type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. split_loader_by_type —— 多消费者列冲突的精确隔离
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#15-forward-reference-pep-563" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. Forward reference / PEP 563 处理
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        亮点之间的关系
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        和其他框架的对比（精选维度）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#contributor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        写给 contributor：哪些地方还值得继续投入
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        结语
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="nexusx-12">nexusx 的设计亮点：从代码里挖出来的 12 个差异化决策</h1>
+<blockquote>
+<p>这篇文章不是 tutorial，而是一次对 nexusx 代码库的纵向巡检：把那些真正能让它在 Strawberry / FastAPI / FastMCP 之间立住脚的设计决策拎出来，说清楚每个决策解决的是什么问题、底层怎么实现的、为什么难、nexusx 怎么解的。</p>
+<p>阅读对象：评估框架选型的后端架构师、想贡献代码的 contributor、对「字段选择作为一种通用思想」感兴趣的工程师。</p>
+</blockquote>
+<h2 id="tldr">TL;DR — 三条主线</h2>
+<p>把全文 12 个亮点收敛起来，nexusx 的差异化可以用三句话讲完：</p>
+<ol>
+<li><strong>「字段选择」是一等公民</strong> —— 从 GraphQL selection 到 DefineSubset，再到 SQL 列裁剪和分页类型收缩，同一个概念贯穿四层。其他框架只把「按需选字段」当作 GraphQL 协议特性，nexusx 把它提升成贯穿整个数据流的设计原则。</li>
+<li><strong>关系不止于 ORM</strong> —— <code>sqlalchemy.inspect</code> 自动发现 + <code>Relationship(...)</code> 自定义逃生舱 + DataLoader 批量 + <code>ROW_NUMBER()</code> 窗口分页，覆盖了从纯 ORM 到外部数据源的全谱。这意味着你的数据访问层不会因为遇到一个 Redis 缓存或搜索引擎就被迫分裂成两个世界。</li>
+<li><strong>传输层是后挂的</strong> —— 一份 <code>UseCaseService</code> + 一份方法签名 → GraphQL / REST / MCP / CLI 四端口，靠 metaclass + <code>FromContext</code> + selection 三件套粘起来。业务方法写一遍，端口增加是配置问题不是代码问题。</li>
+</ol>
+<p>下面是具体支撑。</p>
+<hr />
+<h2 id="_1">第一条主线：字段选择作为一等公民</h2>
+<h3 id="1-definesubset-graphql-python">1. <code>DefineSubset</code> —— 把 GraphQL 字段选择搬进 Python 类型系统</h3>
+<p><strong>问题背景</strong>：传统 Web 框架里，从 ORM 实体到 API 响应有几条路径，每条都有代价：</p>
+<ul>
+<li>直接返回 ORM 实体 → 序列化时把所有列都暴露出去，既泄漏内部字段，也无法做派生计算；</li>
+<li>手写 Pydantic DTO → 每加一个 API 端点都要复制一遍字段定义，ORM 改字段后 DTO 跟着改，drift 严重；</li>
+<li>继承 ORM 实体做响应变体 → SQLModel / Pydantic 的继承语义在「哪些字段是表字段、哪些是序列化字段」上容易混淆，且无法表达「我只要 name，不要 email」这种按需收缩。</li>
+</ul>
+<p>GraphQL 用 selection set 解决了这个问题，但只在 GraphQL 路径上有效。REST 处理器、后台任务、CLI 命令都享受不到。</p>
+<p><strong>原理</strong>：<code>src/nexusx/subset.py:739</code> 的 <code>DefineSubset</code> 通过 metaclass（<code>SubsetMeta</code>）在类创建时做了一次编译期变换：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">PostDTO</span><span class="p">(</span><span class="n">DefineSubset</span><span class="p">):</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">__subset__</span> <span class="o">=</span> <span class="p">(</span><span class="n">Post</span><span class="p">,</span> <span class="p">(</span><span class="s2">&quot;id&quot;</span><span class="p">,</span> <span class="s2">&quot;title&quot;</span><span class="p">,</span> <span class="s2">&quot;author_id&quot;</span><span class="p">))</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">author</span><span class="p">:</span> <span class="n">UserDTO</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>     <span class="c1"># 字段名匹配关系 → 自动加载</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">full_title</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">post_full_title</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ancestor_context</span><span class="p">):</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ancestor_context</span><span class="p">[</span><span class="s1">&#39;sprint_name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> / </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">title</span><span class="si">}</span><span class="s2">&quot;</span>
+</code></pre></div>
+<p>metaclass 做了三件事：</p>
+<ol>
+<li><strong>从 <code>__subset__ = (Entity, fields)</code> 读出源实体和想要的标量列</strong>，把它们转成 Pydantic 字段定义。这一步同时校验：所有列名必须在 entity 上存在、FK 列要么在白名单里要么不在白名单里不能被关系字段用到。</li>
+<li><strong>扫描类体里的额外字段</strong>（如 <code>author: UserDTO | None</code>），如果字段名匹配源实体的某个关系名，就在 resolver 执行时把它接到对应 DataLoader；如果是新字段（如 <code>full_title</code>），它就是「派生字段」，需要 <code>post_*</code> 方法填充。</li>
+<li><strong>抽出 <code>resolve_*</code> 和 <code>post_*</code> 方法</strong>作为生命周期钩子。<code>resolve_*</code> 在 loader 触发前运行（可用来覆盖默认加载），<code>post_*</code> 在嵌套数据就绪后运行（用来做派生计算或聚合）。</li>
+</ol>
+<p>最终 <code>PostDTO</code> 是一个标准的 Pydantic BaseModel，可以正常 <code>model_dump()</code>、可以被 <code>TypeAdapter</code> 校验，可以挂在 FastAPI 端点的 <code>response_model</code> 上。换句话说，<strong>它没有发明一种新的类型系统，而是借力 Pydantic</strong>——这是它能和整个 Python Web 生态兼容的关键。</p>
+<p><strong>这一项的意义</strong>：GraphQL 不是 GraphQL 框架独占的能力。Strawberry 的 resolver 体系只服务于 GraphQL 端点，REST 处理器想享受「字段选择 + 自动加载」就得绕回手写 DTO。<code>DefineSubset</code> 把这件事提升成业务代码的通用姿态：你写在 <code>DefineSubset</code> 里的字段声明，就是一份可被 REST / GraphQL / MCP 三条路径共享的「响应契约」。当项目同时需要 GraphQL 的灵活性和 REST 的稳定性时，这件事的价值是数量级的——它消灭了「同一个业务实体在不同协议下维护三套字段定义」的整个工作流。</p>
+<h3 id="2-exposeas-sendto-collector-dto">2. <code>ExposeAs</code> / <code>SendTo</code> / <code>Collector</code> —— DTO 树内的双向上下文流</h3>
+<p><strong>问题背景</strong>：考虑一个真实需求——「一个 Sprint 下所有 Task 的 owner 去重后作为 contributors 列出来」。常规做法有三种，每种都有问题：</p>
+<ol>
+<li><strong>手写 SQL 子查询</strong>：性能好，但跨数据库方言（SQLite 的 <code>DISTINCT ON</code> 不存在于 MySQL），且和 ORM session 耦合；</li>
+<li><strong>在 SprintDTO 上挂个方法，遍历 <code>self.tasks</code> 收集 <code>owner</code></strong>：会触发每个 task 的 owner 懒加载，N+1；</li>
+<li><strong>在 sprint 业务方法里预先 query 出 contributors</strong>：可行，但 contributors 的逻辑散落在业务层、和 DTO 装配层割裂，遇到「contributors 还要带每个 contributor 参与的 task 数」就又开始递归。</li>
+</ol>
+<p>本质上这是一个 <strong>DTO 树内跨层数据流</strong>问题：信息需要在父→子和子→父两个方向流动，且要和 DataLoader 的批量加载协同（避免 N+1）。</p>
+<p><strong>原理</strong>：<code>src/nexusx/context.py</code> 提供了三个原语：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">SprintDTO</span><span class="p">(</span><span class="n">DefineSubset</span><span class="p">):</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">__subset__</span> <span class="o">=</span> <span class="p">(</span><span class="n">Sprint</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="s1">&#39;name&#39;</span><span class="p">))</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">name</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExposeAs</span><span class="p">(</span><span class="s1">&#39;sprint_name&#39;</span><span class="p">)]</span>   <span class="c1"># 向下广播</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">tasks</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">TaskDTO</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">contributors</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UserDTO</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>                 <span class="c1"># 向上聚合的容器</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">post_contributors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">collector</span><span class="o">=</span><span class="n">Collector</span><span class="p">(</span><span class="s1">&#39;contributors&#39;</span><span class="p">)):</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        <span class="k">return</span> <span class="n">collector</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="k">class</span><span class="w"> </span><span class="nc">TaskDTO</span><span class="p">(</span><span class="n">DefineSubset</span><span class="p">):</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">__subset__</span> <span class="o">=</span> <span class="p">(</span><span class="n">Task</span><span class="p">,</span> <span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="s1">&#39;title&#39;</span><span class="p">))</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">owner</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">UserDTO</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">SendTo</span><span class="p">(</span><span class="s1">&#39;contributors&#39;</span><span class="p">)]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># 上送</span>
+</code></pre></div>
+<p>执行时 resolver 走两遍：</p>
+<ul>
+<li><strong>第一遍（下行）</strong>：在 <code>SprintDTO.name</code> 加载完毕后，把它的值塞进一个 <code>ancestor_context</code> 字典（key 是 <code>ExposeAs</code> 的 alias），传给所有后代节点。<code>TaskDTO.post_full_title(self, ancestor_context)</code> 就能读到 <code>ancestor_context['sprint_name']</code>。这个上下文是<strong>只读广播</strong>——子节点改不了父节点的值，避免副作用。</li>
+<li><strong>第二遍（上行）</strong>：在 <code>TaskDTO.owner</code> 加载完毕后，resolver 检查它是否带 <code>SendTo('contributors')</code> 注解，是的话把值塞进最近的祖先上名叫 <code>'contributors'</code> 的 <code>Collector</code>。<code>Collector.add</code> 默认是 append，<code>flat=True</code> 时是 extend（用于 list 字段）。<code>SprintDTO.post_contributors</code> 在所有子树都跑完后被调用，从 <code>collector.values()</code> 拿到去重前的列表（去重由 loader 层完成——同一个 User 只会查一次）。</li>
+</ul>
+<p><code>scan_expose_fields</code> 和 <code>scan_send_to_fields</code> 用类级别 cache（<code>_expose_cache</code> / <code>_send_to_cache</code>）避免每次请求重新扫注解。<code>SendTo</code> 支持元组（<code>SendTo(('a', 'b'))</code>）让一个值同时上送给多个 collector——这是为「同一份数据要进多个聚合」准备的。</p>
+<p><strong>这一项的意义</strong>：这个 pattern 在其他 Python GraphQL / DTO 框架里基本没有对应物。GraphQL 自身有 <code>@parent</code>、context 机制，但都是 GraphQL 执行层内部的事，跨不出去；Pydantic 的 model_validator 只能在单个模型内部跑。<code>ExposeAs</code> / <code>SendTo</code> / <code>Collector</code> 的真正价值在于<strong>把 DTO 树当成一个有向无环图，支持父子之间的有限数据流动</strong>——既不是无限制的共享状态（那样难调试），也不是完全隔离（那样就要绕回手写 SQL）。这种「受控的双向流」是 nexusx 解决「树形响应组装」的核心抽象，几乎所有「派生自子树」的字段都能用它优雅表达。从代码量看，原本需要 30-50 行手写聚合 + 去重 + 批量加载的逻辑，现在压缩成 3 行注解。</p>
+<h3 id="3-selection-graphql-python">3. <code>selection</code> 投影 —— 把 GraphQL 字段语法复用到任意 Python 函数返回值上</h3>
+<p><strong>问题背景</strong>：GraphQL 解决了「客户端告诉服务端要哪些字段」的问题，但这个能力被锁死在 GraphQL 协议里。一个普通的 Python 函数（比如 UseCase 方法的返回值）就没有这种「按需裁剪」的能力——要么方法返回完整对象（带宽和序列化开销），要么为每个调用方写一个变体（方法爆炸）。</p>
+<p>MCP 让这个问题变得更尖锐：LLM 调用一个工具时，往往只需要返回值的 10%（比如「列出 sprint 的名字和 id，不要 tasks 明细」），但工具签名是固定的，LLM 只能拿到全量再自己裁剪——既浪费 token 又增加 prompt 复杂度。</p>
+<p><strong>原理</strong>：<code>src/nexusx/use_case/selection.py:apply_selection</code> 让任意 Python 函数的返回值都支持 GraphQL 风格的字段投影：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">SprintService</span><span class="o">.</span><span class="n">list_sprints</span><span class="p">()</span>  <span class="c1"># 返回 list[SprintDTO]，全量字段</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># 调用方传一个 GraphQL 风格的 selection 字符串</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">pruned</span> <span class="o">=</span> <span class="n">apply_selection</span><span class="p">(</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">result</span><span class="p">,</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">return_annotation</span><span class="o">=</span><span class="nb">list</span><span class="p">[</span><span class="n">SprintDTO</span><span class="p">],</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">selection</span><span class="o">=</span><span class="s2">&quot;id name tasks { title }&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="p">)</span>
+</code></pre></div>
+<p>实现走四步：</p>
+<ol>
+<li><strong>解析 selection</strong>：用 <code>QueryParser</code> 把 <code>"id name tasks { title }"</code> 包成 <code>{ __result: ... }</code> 解析成 <code>FieldSelection</code> 树——这是和 GraphQL 查询解析<strong>完全共用</strong>的代码路径，没有重新发明。</li>
+<li><strong>从返回类型注解提取根 model</strong>：<code>_extract_root_model</code> 处理 <code>list[X]</code> / <code>X | None</code> / <code>dict[K, V]</code> 等容器类型，最终拿到一个 Pydantic BaseModel 子类。</li>
+<li><strong>动态构建子集 model</strong>：<code>build_subset_model</code> 根据 <code>FieldSelection</code> 递归 <code>pydantic.create_model</code> 一个全新的类型，只包含请求的字段。嵌套关系字段会递归处理，参数（如 GraphQL 的 limit/offset）会被拒绝（<code>_reject_arguments</code>）——这是 UseCase 路径和 GraphQL 路径的语义差异：前者只投影、不重新查询。</li>
+<li><strong>TypeAdapter 投影</strong>：用新 model 的 <code>TypeAdapter.validate_python(result)</code> 跑一次 Pydantic 校验，结果就是裁剪后的子集。</li>
+</ol>
+<p><strong>这一项的意义</strong>：这是 nexusx 内聚力最直接的体现。<strong>同一份字段选择语法</strong>复用在三个执行路径上：GraphQL 协议层（客户端 → 服务器）、DefineSubset 声明层（开发者写代码时）、selection 运行时投影层（调用方动态裁剪）。这意味着一个学会写 GraphQL selection 的开发者，自动就会用 DefineSubset、就会用 MCP selection——零额外心智成本。从架构看，这种「同一概念跨层复用」是 nexusx 区别于「一堆松散功能拼成的框架」的根本特征。对 MCP 场景，它还直接解决了「LLM 浪费 token 在不感兴趣的字段上」的痛点——LLM 只要在工具调用时加一个 <code>selection</code> 参数，就能像写 GraphQL 一样精确控制响应。</p>
+<h3 id="4-_query_meta-load_only-selection-sql">4. 列裁剪（<code>_query_meta</code> + <code>load_only</code>）—— selection 一路下沉到 SQL</h3>
+<p><strong>问题背景</strong>：DataLoader 解决了 N+1（一次批量查 N 个父的子），但默认情况下每次批量查都 <code>SELECT *</code>——即使调用方只关心 3 列。在大宽表（比如 50 列的实体）和高并发下，多余列的 IO 和反序列化开销很可观。</p>
+<p>更难的是：同一个 loader 实例可能在一次请求里被多个消费者复用。比如 <code>User.posts</code> 这个关系可能被 <code>PostSummary</code>（只要 title）和 <code>PostDetail</code>（要 title + content + author_id + created_at）同时请求。如果你为每个消费者裁剪到最小集合，另一个消费者就会 AttributeError；如果你 <code>SELECT *</code>，又回到原点。</p>
+<p><strong>原理</strong>：<code>src/nexusx/loader/query_meta.py</code> + <code>factories.py:_apply_load_only</code> 把字段选择一路下沉到 SQL：</p>
+<ol>
+<li><strong>生成 <code>_query_meta</code></strong>：<code>generate_query_meta_from_dto(dto_class)</code> 扫描响应 model 的字段，列出所有对应 SQL 列的字段名；<code>generate_query_meta_from_selection</code> 从 GraphQL FieldSelection 出发做同样的事，且会<strong>保留 FK 列</strong>——即使调用方没显式选 FK，下一层关系还需要它做 batch key。</li>
+<li><strong>挂到 loader 实例</strong>：<code>merge_query_meta(loader, meta)</code> 把 metadata 合并到 loader 的 <code>_query_meta</code> 属性上。合并是<strong>字段并集</strong>（union），保证所有消费者需要的列都在。</li>
+<li><strong>batch_load_fn 里转换</strong>：<code>_get_effective_query_fields</code> 读取 <code>_query_meta</code>，<code>_apply_load_only</code> 把字段列表转成 SQLAlchemy 的 <code>load_only(*cols)</code>：</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">SELECT</span> <span class="n">post</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">post</span><span class="o">.</span><span class="n">title</span><span class="p">,</span> <span class="n">post</span><span class="o">.</span><span class="n">author_id</span> <span class="n">FROM</span> <span class="n">post</span> <span class="n">WHERE</span> <span class="n">post</span><span class="o">.</span><span class="n">author_id</span> <span class="n">IN</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="c1"># 而不是 SELECT * FROM post WHERE post.author_id IN (1, 2, 3)</span>
+</code></pre></div>
+<p><strong>这一项的意义</strong>：大部分「ORM + GraphQL」框架要么 SELECT *（如 Strawberry 默认行为），要么让你在每个 resolver 手写 <code>load_only</code>（且容易和别的 resolver 冲突）。nexusx 通过反向推导 + 并集合并，让裁剪对开发者完全透明——你写 <code>DefineSubset</code> 时只声明你要的字段，SQL 端就只查那些列；多个 DTO 共享一个 loader 时自动取并集避免裁剪过度。性能上，对于 50 列的实体只查 5 列，带宽节省 90% 是常见的；更重要的是数据库的 buffer pool 命中率会显著提升（更小的行 → 更多行进 buffer），这是一个对所有查询都生效的乘数效应。这种「selection 全程收缩」的设计，是 nexusx 在性能维度上区别于其他 Python GraphQL 框架的关键。</p>
+<h3 id="5-pagination-selection">5. 分页 Pagination 类型按 selection 收缩</h3>
+<p><strong>问题背景</strong>：GraphQL 分页响应通常长这样：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">type</span><span class="w"> </span><span class="err">PostResult</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nl">items</span><span class="p">:</span><span class="w"> </span><span class="err">[</span><span class="n">Post</span><span class="err">!]!</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nl">pagination</span><span class="p">:</span><span class="w"> </span><span class="n">Pagination</span><span class="err">!</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="p">}</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="k">type</span><span class="w"> </span><span class="err">Pagination</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="nl">has_more</span><span class="p">:</span><span class="w"> </span><span class="n">Boolean</span><span class="err">!</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nl">total_count</span><span class="p">:</span><span class="w"> </span><span class="n">Int</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="p">}</span>
+</code></pre></div>
+<p>但 <code>total_count</code> 要算 <code>COUNT(*)</code> 才能得到，对一个百万行表的分页查询，<code>COUNT(*)</code> 可能比 LIMIT 查询本身慢一个数量级。如果调用方根本没问 <code>total_count</code>，算它就是纯浪费。</p>
+<p><strong>原理</strong>：<code>src/nexusx/loader/pagination.py:create_result_type</code> 不是固定生成完整的 <code>Pagination</code> 类型，而是根据 selection 动态收缩：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">create_result_type</span><span class="p">(</span><span class="n">item_type</span><span class="p">,</span> <span class="n">pagination_selection</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">fields</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;items&quot;</span><span class="p">:</span> <span class="p">(</span><span class="nb">list</span><span class="p">[</span><span class="n">item_type</span><span class="p">],</span> <span class="o">...</span><span class="p">)}</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="k">if</span> <span class="n">pagination_selection</span><span class="p">:</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>        <span class="n">pag_model</span> <span class="o">=</span> <span class="n">_build_pagination_model</span><span class="p">(</span><span class="n">pagination_selection</span><span class="p">)</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>        <span class="n">fields</span><span class="p">[</span><span class="s2">&quot;pagination&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">pag_model</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="k">return</span> <span class="n">create_model</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+</code></pre></div>
+<p><code>_build_pagination_model</code> 只把 selection 里实际出现的字段（<code>has_more</code> / <code>total_count</code>）编进动态生成的 Pydantic 模型。下游的 <code>create_page_one_to_many_loader</code> 在执行 SQL 时也读这个收缩后的 schema：如果 <code>total_count</code> 不在响应模型里，就根本不算 <code>COUNT(*)</code>，只算 <code>has_more</code>（用 <code>LIMIT + 1</code> 技巧判断）。</p>
+<p><strong>这一项的意义</strong>：这是第 4 条「selection 全程收缩」在分页场景的特例，但单独拎出来是因为分页是 GraphQL 性能的高敏区域。一个标准的 GraphQL Relay 分页默认会算 cursor + total_count + has_previous_page + has_next_page 四个指标，每个都可能是独立 SQL；很多框架因为不区分「调用方问了什么」和「协议规定算什么」，导致分页响应的元数据开销超过实际数据。nexusx 让元数据的计算也跟着 selection 走——这是「字段选择作为一等公民」原则在工程上的彻底贯彻：任何不被请求的字段，从 Pydantic 模型到 SQL 都不应该出现。</p>
+<hr />
+<h2 id="orm">第二条主线：关系不止于 ORM</h2>
+<h3 id="6-sqlalchemy-dataloader">6. 从 SQLAlchemy 元数据自动生成 DataLoader</h3>
+<p><strong>问题背景</strong>：GraphQL 解决 N+1 的标准武器是 DataLoader。但 DataLoader 用起来很繁琐：</p>
+<ul>
+<li>每个 relationship 都要手写一个 loader 类（继承 <code>aiodataloader.DataLoader</code>，实现 <code>batch_load_fn</code>）；</li>
+<li>每个 resolver 要手动从 <code>context</code> 里取对应 loader，调 <code>.load(key)</code>；</li>
+<li>batch key 的设计、SQL 拼接、<code>IN (...)</code> 子句的构造，每个 loader 都要重复一遍；</li>
+<li>多对多还要处理中间表，比一对多复杂得多。</li>
+</ul>
+<p>Strawberry 的文档里这部分占了相当篇幅，且每个 relationship 都是一段样板代码。</p>
+<p><strong>原理</strong>：<code>src/nexusx/loader/registry.py</code> 的 <code>ErManager</code> 在启动时做了三件事：</p>
+<ol>
+<li><strong><code>_inspect_relationships(entity, all_entities, session_factory)</code></strong> 用 <code>sqlalchemy.inspect(entity)</code> 读出 ORM mapper 的所有 relationship，分类成 <code>MANYTOONE</code> / <code>ONETOMANY</code> / <code>MANYTOMANY</code> 三种方向，提取每个关系的 FK 列、目标实体、是否 list。</li>
+<li><strong>为每个方向调用对应工厂</strong>（<code>factories.py</code>）：</li>
+<li><code>create_many_to_one_loader</code>：batch key 是子实体的 FK 列值列表，SQL 是 <code>SELECT * FROM child WHERE child.fk IN (...)</code>，结果按 FK 分组后 return 给每个 key。</li>
+<li><code>create_one_to_many_loader</code>：batch key 是父实体的 PK 列表，SQL 是 <code>SELECT * FROM child WHERE child.parent_id IN (...)</code>，结果按 parent_id 分组。</li>
+<li><code>create_many_to_many_loader</code>：多了一步中间表查询，先 <code>SELECT * FROM association WHERE ... IN (...)</code>，拿到关联对，再批量查目标实体。</li>
+<li><strong>注册到 <code>self._registry</code></strong>：一个 <code>dict[type[SQLModel], dict[str, RelationshipInfo]]</code>。运行时通过 <code>entity → rel_name → loader_cls</code> 反查，每个 loader 实例按 request scope 缓存（<code>get_loader</code> 第一次调用 <code>loader_cls()</code> 创建，后续请求内复用）。</li>
+</ol>
+<p>整个过程用户完全不参与。实体类定义好之后，关系就是可查的——<code>Sprint.tasks</code>、<code>Task.owner</code>、<code>User.posts</code> 不需要写一行 resolver。</p>
+<p><strong>这一项的意义</strong>：这一项是「写 SQLModel 类即可」承诺的兑现点。对比 Strawberry 的典型用法——每个 relationship 都要写 <code>@strawberry.field(resolver=lambda ...) → context.loader.load(...)</code>，一个 10 个实体的项目可能要写 30-50 个 resolver，每个 resolver 都是相似的样板。nexusx 把这些样板通过 ORM 元数据反射全部消解掉。代码量从「实体数 × 关系数 × 几行」缩减到「0」。更重要的是<strong>反射的准确性</strong>——SQLAlchemy 的 relationship 元数据是经过深思熟虑的（支持 <code>back_populates</code>、<code>secondary</code>、<code>viewonly</code>、<code>cascade</code> 等），nexusx 直接复用它的语义而不是重新发明，这意味着所有 SQLAlchemy 用户的知识和直觉都能直接迁移过来。这是「不重新发明轮子」的工程纪律。</p>
+<h3 id="7-orm-relationship-sqlalchemy">7. 非 ORM 自定义 <code>Relationship</code> —— 不被 SQLAlchemy 绑死的逃生舱</h3>
+<p><strong>问题背景</strong>：第 6 条把关系反射做得再好，也只能覆盖 SQLAlchemy <code>Relationship(...)</code> 表达的「数据库内关系」。但真实业务里很多关系不在这个范畴：</p>
+<ul>
+<li><strong>跨存储</strong>：用户最近浏览的文章列表存在 Redis，不是数据库表；</li>
+<li><strong>派生</strong>：「和我相关的文章」可能要查 Elasticsearch；</li>
+<li><strong>聚合</strong>：「这个 sprint 的 contributors」需要 join task + user 做去重，但你想在数据库层用 view 或物化视图表达；</li>
+<li><strong>外部 API</strong>：从第三方服务拉数据。</li>
+</ul>
+<p>这些场景下，传统做法是在业务层手写「先 query 实体、再补充字段」，把代码割裂成「ORM 数据 + 手动拼接」。结果是：这些字段享受不到 DataLoader、用不了 DefineSubset、出现在 ER 图里也得不到表达。</p>
+<p><strong>原理</strong>：<code>src/nexusx/relationship.py:38</code> 提供了一个一等公民的 <code>Relationship</code> 类，把「关系」从「ORM 元数据」抽象成「一个 async 批量函数」：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">tags_by_post_id_loader</span><span class="p">(</span><span class="n">post_ids</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Tag</span><span class="p">]]:</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="c1"># 走 Redis / ES / 外部 API 都行，只要是 batch 接口</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">redis_keys</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;post:</span><span class="si">{</span><span class="n">pid</span><span class="si">}</span><span class="s2">:tags&quot;</span> <span class="k">for</span> <span class="n">pid</span> <span class="ow">in</span> <span class="n">post_ids</span><span class="p">]</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">redis</span><span class="o">.</span><span class="n">mget</span><span class="p">(</span><span class="n">redis_keys</span><span class="p">)</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="k">return</span> <span class="p">[</span><span class="n">parse_tags</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">results</span><span class="p">]</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="k">class</span><span class="w"> </span><span class="nc">Post</span><span class="p">(</span><span class="n">SQLModel</span><span class="p">,</span> <span class="n">table</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">__tablename__</span> <span class="o">=</span> <span class="s2">&quot;post&quot;</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="n">__relationships__</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>        <span class="n">Relationship</span><span class="p">(</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>            <span class="n">fk</span><span class="o">=</span><span class="s1">&#39;id&#39;</span><span class="p">,</span>                    <span class="c1"># 用 post.id 作为 batch key</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>            <span class="n">target</span><span class="o">=</span><span class="nb">list</span><span class="p">[</span><span class="n">Tag</span><span class="p">],</span>           <span class="c1"># 一对多</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>            <span class="n">name</span><span class="o">=</span><span class="s1">&#39;tags&#39;</span><span class="p">,</span>                <span class="c1"># 关系名</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>            <span class="n">loader</span><span class="o">=</span><span class="n">tags_by_post_id_loader</span><span class="p">,</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>        <span class="p">),</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>    <span class="p">]</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>    <span class="nb">id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>    <span class="n">title</span><span class="p">:</span> <span class="nb">str</span>
+</code></pre></div>
+<p><code>ErManager.__init__</code> 在反射完 ORM 关系后，调 <code>get_custom_relationships(entity)</code> 读 <code>__relationships__</code> 列表，把每个 <code>Relationship</code> 包装成 <code>RelationshipInfo</code>（<code>direction='CUSTOM'</code>），塞进同一个 registry。<strong>注意 registry 不区分 ORM 关系和自定义关系</strong>——下游的 loader / resolver / DefineSubset / ER 图都把它当一等关系处理。</p>
+<p><code>Relationship</code> 的契约由 <code>target</code> 类型决定：</p>
+<ul>
+<li>标量目标（<code>target=User</code>）：loader 签名是 <code>async def fn(keys: list[K]) -&gt; list[V | None]</code>，按 key 一对一返回；</li>
+<li>列表目标（<code>target=list[Tag]</code>）：loader 签名是 <code>async def fn(keys: list[K]) -&gt; list[list[V]]</code>，按 key 返回子列表。</li>
+</ul>
+<p>启动时 <code>ErManager</code> 会校验名字不冲突（<code>rel.name in entity_rels → raise</code>），避免自定义关系覆盖 ORM 关系导致隐式行为。</p>
+<p><strong>这一项的意义</strong>：这是 nexusx 最被低估的设计之一。它解决了一个根本性的框架困境：<strong>框架要么严格依赖 ORM（享受反射便利但被绑死），要么保持 ORM-agnostic（灵活但要手写一切）</strong>。nexusx 通过把「关系」从「ORM 的 relationship 元数据」抽象成「批量函数」，让两边的代码享受同一套基础设施——DefineSubset 能选自定义字段、DataLoader 能批量加载、ER 图能可视化、selection 能投影。这种抽象的优雅在于：批量加载本质就是函数 <code>list[K] → list[V]</code>，ORM 只是这个函数的一种实现。Strawberry / FastAPI 在这个场景下都只能绕开框架自己写，等于把这部分代码开除出框架的管辖范围。</p>
+<h3 id="8-row_number-over-partition-by">8. <code>ROW_NUMBER() OVER (PARTITION BY ...)</code> 批量分页</h3>
+<p><strong>问题背景</strong>：一对多关系加分页，朴素实现是 N 个独立的 <code>LIMIT</code> 查询：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">post</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">author_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="mi">3</span><span class="p">;</span><span class="w">   </span><span class="c1">-- 父 1</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">post</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">author_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="mi">3</span><span class="p">;</span><span class="w">   </span><span class="c1">-- 父 2</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">post</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">author_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="mi">3</span><span class="p">;</span><span class="w">   </span><span class="c1">-- 父 3</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1">-- ... N 个父就是 N 次往返</span>
+</code></pre></div>
+<p>这在 GraphQL 嵌套分页里几乎是灾难——一棵 5 层深的查询树，每层 10 个父，每层都 N+1。一些框架会用应用层批处理（一次 IN 查询所有，然后内存分组 + 裁剪），但这会把所有数据拉到应用层，分页的意义就没了；且 <code>has_more</code> / <code>total_count</code> 还得另算。</p>
+<p><strong>原理</strong>：<code>src/nexusx/loader/factories.py:create_page_one_to_many_loader</code> 用窗口函数在一条 SQL 内完成「每个父各取 N 条」：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="n">ROW_NUMBER</span><span class="p">()</span><span class="w"> </span><span class="n">OVER</span><span class="w"> </span><span class="p">(</span><span class="n">PARTITION</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">author_id</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">_rn</span><span class="p">,</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span><span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="n">OVER</span><span class="w"> </span><span class="p">(</span><span class="n">PARTITION</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">author_id</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">_total</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span><span class="k">FROM</span><span class="w"> </span><span class="n">post</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="k">WHERE</span><span class="w"> </span><span class="n">author_id</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="p">...)</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">t</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="k">WHERE</span><span class="w"> </span><span class="n">_rn</span><span class="w"> </span><span class="k">BETWEEN</span><span class="w"> </span><span class="p">:</span><span class="k">offset</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="p">:</span><span class="k">offset</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">:</span><span class="k">limit</span>
+</code></pre></div>
+<p>一次往返拿到：</p>
+<ul>
+<li>每个父的当前页 items（<code>_rn BETWEEN ...</code> 过滤）；</li>
+<li><code>total_count</code>（<code>COUNT(*) OVER (PARTITION BY ...)</code> 算出来）；</li>
+<li><code>has_more</code>（<code>_rn &lt;= _offset + _limit</code> 但 <code>_total &gt; _offset + _limit</code> 时为 true）。</li>
+</ul>
+<p>多对多（<code>create_page_many_to_many_loader</code>）多了一层：先批量查中间表拿到 <code>(parent_id, child_id)</code> 对，再窗口函数分页，再批量查 child 详情。整个流程都在 SQL 端完成，应用层只做组装。</p>
+<p><code>PageArgs</code>（<code>pagination.py:24</code>）在 <code>__post_init__</code> 里做参数校验（<code>limit &gt;= 0</code>、<code>offset &gt;= 0</code>、<code>max_page_size</code> 上限），<code>effective_limit</code> 用 <code>min(limit, max_page_size)</code> 防止恶意大页。</p>
+<p><strong>这一项的意义</strong>：这是工业级 GraphQL 分页的标杆做法（参考 Shopify / GitHub 的 Relay cursor 模式底层实现思路），但在 Python 生态里能从 ORM 元数据<strong>全自动</strong>接出来、且和普通 loader 共享同一抽象的不多。它的价值在嵌套分页场景下呈指数级放大：3 层嵌套、每层 20 个父、每页 5 条，朴素 N+1 是 20×20×20 = 8000 次查询，窗口函数方案是 3 次（每层一次）。即使你不在乎查询次数，单次往返也意味着更稳定的尾延迟——这对 SLO 的影响往往比平均延迟更大。和第 5 条的 Pagination 类型收缩配合，nexusx 的分页在「响应正确性 + 性能 + 协议符合度」三个维度都达到了 production-grade。</p>
+<h3 id="9-by_id-by_filter">9. 自动标准查询 —— 实体上免费长出 <code>by_id</code> / <code>by_filter</code></h3>
+<p><strong>问题背景</strong>：CRUD 是后端 80% 的工作量，但每个实体都要手写一遍「按主键查、按字段过滤、按字段排序、分页」这套样板。FastAPI + SQLModel 的典型项目里，每个实体一个 router 文件、每个端点一段 <code>select(Entity).where(...)</code>，写完和维护成本都很高。Django DRF 用 ModelViewSet + FilterSet 解决了一部分，但绑定 Django；其他框架要么没解决，要么用代码生成器（重）。</p>
+<p><strong>原理</strong>：<code>src/nexusx/standard_queries.py</code> 通过 <code>AutoQueryConfig</code> 给每个 entity 自动生成两类 query：</p>
+<ol>
+<li><strong><code>&lt;entity&gt;by_id</code></strong>（<code>_create_by_id_query</code>）：从实体读主键列（<code>_get_primary_key_fields</code> 处理单主键、复合主键），生成一个 GraphQL query field，签名是 <code>(id: ID!)</code>，返回单个实体。</li>
+<li><strong><code>&lt;entity&gt;by_filter</code></strong>（<code>_create_by_filter_query</code>）：动态 <code>pydantic.create_model</code> 一个 filter input 类型，每个标量列变成可选的 filter 字段，支持 <code>=</code> 比较；返回 <code>list[Entity]</code>，支持 <code>limit</code> / <code>offset</code>。</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">AutoQueryConfig</span><span class="p">:</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>        <span class="bp">self</span><span class="p">,</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>        <span class="n">session_factory</span><span class="p">,</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>        <span class="n">default_limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>        <span class="n">generate_by_id</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>        <span class="n">generate_by_filter</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>    <span class="p">):</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>        <span class="o">...</span>
+</code></pre></div>
+<p><code>add_standard_queries</code> 在 schema build 期把生成的 method 注册到 entity 上，挂 <code>@query</code> 装饰器，下游 SDL 生成就把它们当成普通 <code>@query</code> 方法处理。生成的 query 也走 DataLoader 路径——只加载标量列，关系字段按 selection 延迟加载，享受列裁剪和批量分页的所有好处。</p>
+<p><strong>这一项的意义</strong>：消灭了「每个表手写 get_by_id」的样板。一个 20 个实体的项目，原本要写 20×3 = 60 个端点（by_id、by_filter、list），现在 0 行代码。但更重要的是<strong>它没把简单问题复杂化</strong>：当默认生成的 query 不满足需求（比如要 join、要权限过滤、要复杂排序），直接写一个 <code>@query</code> 方法就行，自动查询和手写查询可以共存。<code>generate_by_id=False</code> 可以关掉某个方向的自动生成，避免 schema 暴露不该有的入口。这种「默认开 + 可关 + 不挡手写」的设计，比「全部代码生成、想改就得改 generator」的方案更可持续。</p>
+<hr />
+<h2 id="_2">第三条主线：传输层是后挂的</h2>
+<h3 id="10-usecaseservice-graphql-rest-mcp-cli">10. 一份 <code>UseCaseService</code> 同时生成 GraphQL / REST / MCP / CLI</h3>
+<p><strong>问题背景</strong>：现代后端服务往往要同时服务多种客户端：</p>
+<ul>
+<li><strong>Web 前端</strong>：REST + OpenAPI（工具链成熟、缓存友好）；</li>
+<li><strong>Mobile</strong>：REST 或 GraphQL（看团队习惯）；</li>
+<li><strong>第三方集成</strong>：GraphQL（灵活）或 REST（标准）；</li>
+<li><strong>AI agent</strong>：MCP（Anthropic 推的工具协议）；</li>
+<li><strong>运维</strong>：CLI（脚本化）。</li>
+</ul>
+<p>传统做法是每个协议一套代码：FastAPI 写一遍 REST、Strawberry 写一遍 GraphQL、FastMCP 写一遍 MCP tools、Click 写一遍 CLI。同一个业务方法（「列出当前用户的 sprint」）被实现 4 次，鉴权、参数校验、错误处理分散在 4 套代码里，业务逻辑改一处要同步改 4 处。</p>
+<p><strong>原理</strong>：<code>src/nexusx/use_case/business.py:122</code> 的 <code>UseCaseService</code> + <code>BusinessMeta</code> metaclass 把业务方法的定义和协议翻译解耦：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">SprintService</span><span class="p">(</span><span class="n">UseCaseService</span><span class="p">):</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>    <span class="nd">@query</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">list_sprints</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">SprintSummary</span><span class="p">]:</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Get all sprints with task counts.&quot;&quot;&quot;</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>        <span class="o">...</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="nd">@mutation</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">create_sprint</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SprintSummary</span><span class="p">:</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Create a new sprint.&quot;&quot;&quot;</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>        <span class="o">...</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="n">config</span> <span class="o">=</span> <span class="n">UseCaseAppConfig</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;project&quot;</span><span class="p">,</span> <span class="n">services</span><span class="o">=</span><span class="p">[</span><span class="n">SprintService</span><span class="p">])</span>
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="c1"># 同一个 config → 四个传输层</span>
+<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="n">mcp</span> <span class="o">=</span> <span class="n">create_use_case_graphql_mcp_server</span><span class="p">(</span><span class="n">apps</span><span class="o">=</span><span class="p">[</span><span class="n">config</span><span class="p">])</span>
+<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="n">app</span><span class="o">.</span><span class="n">include_router</span><span class="p">(</span><span class="n">create_use_case_router</span><span class="p">(</span><span class="n">config</span><span class="p">))</span>
+<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="n">graphql_handler</span> <span class="o">=</span> <span class="n">create_use_case_graphql_handler</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="n">cli</span> <span class="o">=</span> <span class="n">build_cli</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+</code></pre></div>
+<p>底层机制：</p>
+<ol>
+<li><strong><code>BusinessMeta</code> metaclass</strong>（<code>business.py:60</code>）在类创建时扫类体，收集所有 <code>@query</code> / <code>@mutation</code> 装饰的 classmethod，存到类的 <code>_business_methods</code> 上。这一步只做发现，不做翻译——metaclass 不知道也不关心协议。</li>
+<li><strong>每个协议一个 builder</strong>：</li>
+<li><code>compose_schema.py</code>：扫 <code>_business_methods</code>，结合方法签名（<code>inspect.signature</code>）+ 返回类型注解（<code>get_type_hints</code>），翻译成 GraphQL schema（<code>dict[str, TypeInfo]</code>，见第 13 条）；</li>
+<li><code>router.py:create_router</code>：同样扫方法，翻译成 FastAPI router，每个方法变成一个 POST endpoint；</li>
+<li><code>compose_mcp_server.py</code>：翻译成 MCP tool definitions，每个方法变成一个 callable tool；</li>
+<li><code>cli.py:build_cli</code>：翻译成 Click / Typer 风格的 CLI 命令。</li>
+<li><strong>协议间共享的部分</strong>：参数解析（<code>FromContext</code>）、响应投影（selection）、错误模型（<code>errors.py</code>）、类型映射（<code>compose_type_mapper.py</code>）都是协议无关的，被四个 builder 复用。</li>
+</ol>
+<p><code>compose_executor.py</code> 的注释明确了一个关键设计：<strong>「The executor does NOT wrap results in Resolver()」</strong>。意思是 GraphQL 执行路径不自动套 DTO 装配——如果方法想用 DefineSubset / Collector 的能力，方法体里自己调 <code>Resolver().resolve(dtos)</code>。这是单一职责的体现：执行器只负责调度方法 + 投影 selection，DTO 装配是业务方法的责任。</p>
+<p><strong>这一项的意义</strong>：业务方法写一遍、端口增加是配置问题。这对项目的演化能力是数量级的提升：</p>
+<ul>
+<li>新加协议（比如 gRPC）：写一个新 builder，业务代码 0 改动；</li>
+<li>协议间一致性：参数 schema、错误码、文档天然同步，因为它们都从同一份方法签名生成；</li>
+<li>测试降级：业务方法可以独立单测（不依赖任何协议），协议层只测翻译正确性。</li>
+</ul>
+<p>对比典型 FastAPI 项目——每个协议一份代码、改动需同步多个文件、协议间行为漂移——nexusx 的「单一来源」优势随着端口数量和实体数量线性放大。这是 Clean Architecture 的「交付无关性」在工程上的真正落地，而不是停留在 PPT 上的口号。</p>
+<h3 id="11-fromcontext">11. <code>FromContext</code> —— 同一签名跨传输层的参数注入</h3>
+<p><strong>问题背景</strong>：业务方法经常需要一些「不在协议里、但在执行时需要」的参数：</p>
+<ul>
+<li><code>user_id</code>（从 JWT 解出来，客户端不能伪造）；</li>
+<li><code>tenant_id</code>（多租户系统）；</li>
+<li><code>request_id</code>（链路追踪）；</li>
+<li><code>db_session</code>（事务边界）。</li>
+</ul>
+<p>这些参数的麻烦在于：</p>
+<ul>
+<li><strong>GraphQL 路径</strong>：不应该出现在 schema 里（否则客户端能传任意 user_id）；</li>
+<li><strong>REST 路径</strong>：要从 header / cookie / token 里解，每个端点都要写一遍 <code>Depends(get_current_user)</code>；</li>
+<li><strong>MCP 路径</strong>：要从 MCP context（headers / session metadata）解；</li>
+<li><strong>CLI 路径</strong>：要从 <code>--user-id</code> 参数或环境变量解。</li>
+</ul>
+<p>传统做法是每个端点重写一遍抽取逻辑，或者在业务方法里塞一个 <code>request</code> 参数（泄漏协议细节到业务层）。</p>
+<p><strong>原理</strong>：<code>src/nexusx/use_case/context.py</code> 的 <code>FromContext</code> 标记一个参数为「跨传输层注入」：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Annotated</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">nexusx.use_case</span><span class="w"> </span><span class="kn">import</span> <span class="n">UseCaseService</span><span class="p">,</span> <span class="n">FromContext</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="k">class</span><span class="w"> </span><span class="nc">TaskService</span><span class="p">(</span><span class="n">UseCaseService</span><span class="p">):</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    <span class="nd">@query</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">my_tasks</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>                      <span class="n">user_id</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">FromContext</span><span class="p">()],</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>                      <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">TaskDTO</span><span class="p">]:</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>        <span class="k">return</span> <span class="k">await</span> <span class="n">Resolver</span><span class="p">()</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>            <span class="k">await</span> <span class="n">get_tasks_by_user</span><span class="p">(</span><span class="n">user_id</span><span class="p">,</span> <span class="n">limit</span><span class="p">)</span>
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>        <span class="p">)</span>
+</code></pre></div>
+<p>每个传输层用自己的方式注入：</p>
+<ul>
+<li><strong>GraphQL / MCP</strong>：<code>is_from_context_annotation</code> 检测到 <code>FromContext</code> 标记后，<strong>不把这个参数暴露到 schema</strong>（<code>compose_type_mapper.py</code> 的 <code>is_from_context=True</code>），执行时从 <code>context_extractor(request) -&gt; {"user_id": ...}</code> 拿值（<code>compose_executor.py:_build_kwargs</code>）；</li>
+<li><strong>FastAPI</strong>：<code>router.py:_make_context_extractor_dep</code> 把 <code>context_extractor</code> 包成一个 FastAPI Depends，从 <code>Request</code> 对象解出 context dict，再分发到对应参数；</li>
+<li><strong>CLI</strong>：<code>cli.py</code> 把 <code>FromContext</code> 参数映射到 <code>--user-id</code> 命令行选项或环境变量。</li>
+</ul>
+<p><code>context_extractor</code> 是用户提供的回调，签名是 <code>(request) -&gt; dict | Awaitable[dict]</code>，在配置层挂上：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">UseCaseAppConfig</span><span class="p">(</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;project&quot;</span><span class="p">,</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="n">services</span><span class="o">=</span><span class="p">[</span><span class="n">TaskService</span><span class="p">],</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    <span class="n">context_extractor</span><span class="o">=</span><span class="k">lambda</span> <span class="n">req</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="n">decode_jwt</span><span class="p">(</span><span class="n">req</span><span class="o">.</span><span class="n">headers</span><span class="p">[</span><span class="s2">&quot;Authorization&quot;</span><span class="p">])},</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="p">)</span>
+</code></pre></div>
+<p><strong>这一项的意义</strong>：签名是单一来源。鉴权、租户上下文、链路追踪这些横切关注点，以往要在每个端点重写一遍抽取逻辑——一个 30 个端点的项目可能要写 30 次 <code>Depends(get_current_user)</code>，每次都要处理 token 解析、错误响应、user 对象加载。<code>FromContext</code> 把这件事降级成方法签名上一行注解 + 配置层一个回调。更重要的是它<strong>保持了业务方法的纯粹性</strong>：业务方法看到的只是 <code>user_id: int</code>，不知道也不需要知道这个值是从 JWT、cookie、API key 还是命令行参数来的——这是 Clean Architecture「业务逻辑不依赖交付细节」的精确实现。当项目从单租户切到多租户、从 session 鉴权切到 JWT、从 HTTP 切到 gRPC，业务方法零改动。</p>
+<h3 id="12-usecase-graphql-introspection-ai-agent-first">12. UseCase 路径显式拒绝 GraphQL introspection —— AI-agent-first 的设计</h3>
+<p><strong>问题背景</strong>：GraphQL 的招牌能力之一是 introspection——客户端通过查询 <code>__schema</code> 拿到整个 schema，工具（GraphiQL、Apollo Studio）依赖它做自动补全和文档展示。但对 LLM agent 来说，introspection 是个灾难：</p>
+<ul>
+<li><strong>Token 成本</strong>：一个 30 个 service、每个 service 5 个方法的项目，<code>__schema</code> 的 JSON 输出可能超过 50K token，每次对话都要带一遍；</li>
+<li><strong>认知负担</strong>：LLM 在一个巨大的 schema 里找「我应该调用哪个方法」的准确率，远低于调用一个结构化的 discovery 工具；</li>
+<li><strong>缓存友好性</strong>：introspection 响应不变但每次都要传，浪费上下文窗口的「热点」部分。</li>
+</ul>
+<p>MCP 的设计哲学是「给 LLM 专门优化的工具接口」，但很多 GraphQL-via-MCP 的方案默认把 GraphQL 端点直接转发，让 LLM 跑 introspection query——把 GraphQL 的问题原封不动继承了过来。</p>
+<p><strong>原理</strong>：<code>src/nexusx/use_case/compose_executor.py</code> 主动拒绝 introspection，并提供专门的 discovery 工具：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">_INTROSPECTION_REJECTION_HINT</span> <span class="o">=</span> <span class="p">(</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>    <span class="s2">&quot;GraphQL introspection is not available via compose_query. &quot;</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>    <span class="s2">&quot;Use describe_compose_schema(app_name=...) and &quot;</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>    <span class="s2">&quot;describe_compose_method(app_name=..., service_name=..., method_name=...) &quot;</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>    <span class="s2">&quot;to discover the schema.&quot;</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="p">)</span>
+</code></pre></div>
+<p>实现分两步：</p>
+<ol>
+<li><strong>AST 级别检测</strong>：<code>_document_uses_introspection</code> 在执行前 walk GraphQL AST，发现任何 <code>__schema</code> / <code>__type</code> / <code>__typename</code> 字段就拒绝，<strong>不进入方法调度</strong>。这避免了「先 dispatch 再失败」的副作用。</li>
+<li><strong>专门的 discovery 工具</strong>：<code>describe_compose_schema(app_name)</code> 返回紧凑的 service/method 列表（每个方法一行 description + 参数 schema + 返回类型），<code>describe_compose_method(...)</code> 返回单个方法的详细 schema。LLM 可以分阶段发现：先 <code>describe_compose_schema</code> 看全貌，再 <code>describe_compose_method</code> 看感兴趣的方法细节。</li>
+</ol>
+<p><code>describe_compose_schema</code> 的输出比 GraphQL introspection 紧凑 5-10 倍——去掉类型系统元信息（kind、of_type 嵌套等），只保留「这个方法叫什么、要什么参数、返回什么」对 LLM 实际有用的部分。</p>
+<p><strong>这一项的意义</strong>：这是反 GraphQL 教科书但符合 MCP 心智的决策。GraphQL 在「人类开发者用 IDE 写查询」的场景下，introspection + GraphiQL 是无可替代的开发体验；但在「LLM agent 用工具调用完成任务」的场景下，巨型 schema 是负担。nexusx 把这两个场景分开：GraphQL 路径（<code>GraphQLHandler</code>）保留完整 introspection 服务人类开发；UseCase / MCP 路径（<code>compose_query</code>）拒绝 introspection 服务 agent。这种「同一框架、不同协议、不同优化对象」的精细化设计，是 nexusx 真正把 AI agent 当一等公民对待的体现，而不是「把 GraphQL 包一层 MCP 就算 MCP 支持」。对实际使用 nexusx 构建 agent 的团队，这个决策直接 translate 到更低的 token 成本和更高的 LLM 调用准确率——这两个指标在 production agent 系统里是核心 KPI。</p>
+<hr />
+<h2 id="_3">支撑工程：那些不那么显眼但很关键的决策</h2>
+<h3 id="13-schema-graphql-core-graphqlschema">13. 自建 schema 注册表，不直接用 graphql-core 的 <code>GraphQLSchema</code></h3>
+<p><strong>原理</strong>：GraphQL schema 被建模成 <code>dict[str, TypeInfo]</code>（<code>compose_schema.py</code>），每个 <code>TypeInfo</code> 是一个 frozen + slotted dataclass，结构和 graphql introspection <code>__schema</code> payload 同构。<code>render_introspection()</code> 把这个内部表示转成 introspection JSON，round-trip 走 <code>graphql.utilities.build_client_schema(...)</code> 就能喂给 GraphiQL。<code>IntrospectionGenerator</code>（<code>introspection.py:24</code>）走类似路径，从实体 + 方法直接生成 introspection JSON，<strong>不经过 graphql-core 的 <code>GraphQLSchema</code></strong>。</p>
+<p><strong>意义</strong>：好处有三：(1) 避免被 graphql-core 内部 API 绑死，升级 graphql-core 时迁移面小（graphql-core 5.0 就改过不少内部接口）；(2) UseCase / GraphQL / MCP 三条路径共用同一份 schema 描述，不需要三套转换层；(3) slotted dataclass 比 graphql-core 的 <code>GraphQLObjectType</code> 等类内存占用更小、构造更快，对启动时间和并发都有帮助。这是一个「我们想清楚了」的架构决策，平时看不见但每条路径都受益。</p>
+<h3 id="14-split_loader_by_type">14. <code>split_loader_by_type</code> —— 多消费者列冲突的精确隔离</h3>
+<p><strong>原理</strong>：默认情况下同一 loader 全局共享一个实例（<code>get_loader</code> 里 <code>loader_cls → instance</code>），多个消费者复用时 <code>_query_meta</code> 字段做并集（见第 4 条）。但偶尔一棵树里同一关系会被<strong>不同 DTO 类型</strong>消费、且每个类型请求的列差异极大——比如 <code>PostCardDTO</code> 只要 <code>title</code> 和 <code>cover_url</code>，<code>PostDetailDTO</code> 要 12 列——并集会越并越大，最终 SELECT 几乎回到 <code>SELECT *</code>。<code>split_loader_by_type=True</code> 切到 split 模式，按 <code>frozenset[fields]</code> 作为二级 key 缓存 loader 实例：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># 默认: {loader_cls: instance}</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="c1"># Split: {loader_cls: {frozenset[fields]: instance}}</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_loader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">loader_cls</span><span class="p">,</span> <span class="n">type_key</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_split_mode</span> <span class="ow">or</span> <span class="n">type_key</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_loader_instances</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">loader_cls</span><span class="p">,</span> <span class="n">loader_cls</span><span class="p">())</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>    <span class="n">inner</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_loader_instances</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">loader_cls</span><span class="p">,</span> <span class="p">{})</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>    <span class="k">return</span> <span class="n">inner</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">type_key</span><span class="p">,</span> <span class="n">loader_cls</span><span class="p">())</span>
+</code></pre></div>
+<p><strong>意义</strong>：这是很小众但很真实的场景的精确解。大部分项目不需要开这个开关（默认并集模式已经够好），但遇到「同一关系在响应里以多种 DTO 形态出现」时，split 模式让列裁剪真正生效而不是被并集稀释。开关默认关闭体现了「不要为不存在的需求付复杂度」的原则，但需要时它就在那里。</p>
+<h3 id="15-forward-reference-pep-563">15. Forward reference / PEP 563 处理</h3>
+<p><strong>原理</strong>：在 <code>from __future__ import annotations</code> + SQLModel + Pydantic + <code>list["Post"]</code> + <code>int | None</code> 的混合场景下正确解析类型，是用户看不见但缺了就跑不起来的脏活累活。<code>response_builder.py:_resolve_forward_reference</code> 处理字符串形式的前向引用，<code>_extract_entity_from_annotation</code> 从复杂注解（<code>Optional[list[X]]</code> 等）里抽出实体类型。<code>subset.py:_get_namespace_annotations</code> 甚至处理了 Python 3.14 的行为变化——3.14 在某些情况下会把类体内的 <code>__annotations__</code> 设为 <code>None</code>，必须从 namespace 直接读。</p>
+<p><strong>意义</strong>：Python 类型注解在 3.10 / 3.11 / 3.12 / 3.13 / 3.14 之间行为不一致，每个版本都有自己的边界情形。这种「框架骨架下面的胶水代码」质量直接决定「开箱能不能跑」——一个在 3.10 跑得好好的项目，迁到 3.12 可能就因为 <code>X | Y</code> 在运行时的表示变化而崩。nexusx 在这部分投入了相当篇幅的边界处理（看 <code>subset.py</code> 里多个 <code>_unwrap_*</code> / <code>_get_namespace_annotations</code> / <code>_extract_*</code> 函数），这些代码不出彩，但缺了它们整个框架就立不住。这是工程成熟度的的一个隐性指标。</p>
+<hr />
+<h2 id="_4">亮点之间的关系</h2>
+<pre class="mermaid"><code>flowchart TB
+    subgraph Main1["主线 1：字段选择是一等公民"]
+        DS["DefineSubset&lt;br/&gt;声明式 DTO"]
+        SEL["selection 投影&lt;br/&gt;运行时选字段"]
+        QM["_query_meta + load_only&lt;br/&gt;SQL 列裁剪"]
+        PAG["Pagination 类型收缩"]
+        ESC["ExposeAs/SendTo/Collector&lt;br/&gt;树内上下文流"]
+    end
+
+    subgraph Main2["主线 2：关系不止于 ORM"]
+        AUTO["inspect → DataLoader&lt;br/&gt;ORM 自动发现"]
+        CUST["自定义 Relationship&lt;br/&gt;非 ORM 逃生舱"]
+        ROWNUM["ROW_NUMBER 批量分页"]
+    end
+
+    subgraph Main3["主线 3：传输层是后挂的"]
+        UC["UseCaseService&lt;br/&gt;一签名多端口"]
+        FC["FromContext&lt;br/&gt;跨端口注入"]
+        NOINTRO["拒绝 introspection&lt;br/&gt;AI-agent-first"]
+    end
+
+    DS --&gt; QM
+    SEL --&gt; QM
+    QM --&gt; PAG
+    DS --&gt; ESC
+
+    AUTO --&gt; DS
+    CUST --&gt; AUTO
+    AUTO --&gt; ROWNUM
+    ROWNUM --&gt; PAG
+
+    UC --&gt; DS
+    UC --&gt; SEL
+    FC --&gt; UC
+    NOINTRO --&gt; UC</code></pre>
+<p>三条主线不是独立的：DefineSubset 的 <code>post_*</code> 钩子复用 DataLoader（主线 1 + 2），selection 投影在 UseCase 路径触发列裁剪（主线 1 + 3），自定义 Relationship 也能进 DefineSubset（主线 2 + 1）。这种「层之间互相喂养」的特性，是 nexusx 整体大于部分之和的根本原因。</p>
+<hr />
+<h2 id="_5">和其他框架的对比（精选维度）</h2>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th style="text-align: center;">nexusx</th>
+<th style="text-align: center;">Strawberry</th>
+<th style="text-align: center;">FastAPI + SQLModel</th>
+<th style="text-align: center;">FastMCP</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GraphQL 字段选择 ←→ Python DTO</td>
+<td style="text-align: center;"><code>DefineSubset</code> 一致</td>
+<td style="text-align: center;">仅 GraphQL 内</td>
+<td style="text-align: center;">需手写</td>
+<td style="text-align: center;">N/A</td>
+</tr>
+<tr>
+<td>关系自动加载（无需 resolver）</td>
+<td style="text-align: center;">✓ inspect + 自定义</td>
+<td style="text-align: center;">手写 resolver</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>N+1 预防</td>
+<td style="text-align: center;">✓ DataLoader 自动</td>
+<td style="text-align: center;">手动接 DataLoader</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>SQL 列裁剪跟随 selection</td>
+<td style="text-align: center;">✓ <code>_query_meta</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>DTO 树跨层上下文</td>
+<td style="text-align: center;">✓ ExposeAs/SendTo</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>非 ORM 关系</td>
+<td style="text-align: center;">✓ <code>Relationship(...)</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>同一签名 → GraphQL+REST+MCP</td>
+<td style="text-align: center;">✓ UseCaseService</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>AI-agent 友好的 schema 发现</td>
+<td style="text-align: center;">✓ 拒绝 introspection + discovery 工具</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">部分</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="contributor">写给 contributor：哪些地方还值得继续投入</h2>
+<p>巡检过程中我注意到的几个潜在改进方向（不属于「亮点」，但属于「下一步可亮」）：</p>
+<ul>
+<li><strong>第 4 条（<code>_query_meta</code>）目前是运行时合并</strong>：未来若把 selection → 列裁剪的推导提前到 schema build 期（针对已知 selection 集合），可以省掉每次请求的合并开销。</li>
+<li><strong>第 7 条（自定义 Relationship）和 GraphQL schema 生成的衔接</strong>：自定义关系如何在 SDL / ER 图里得到一等表达，目前文档偏薄。</li>
+<li><strong>第 12 条（拒绝 introspection）的代理发现工具</strong>：<code>describe_compose_method</code> 能否进一步生成 few-shot example 帮 LLM 学会调用，这是 MCP 生态目前的开放问题。</li>
+<li><strong>第 14 条（split_loader_by_type）的可观测性</strong>：开了 split 模式后 loader 实例数会按 type_key 组合数爆炸，需要监控指标。</li>
+</ul>
+<hr />
+<h2 id="_6">结语</h2>
+<p>nexusx 的真正卖点不是「又一个 GraphQL 库」或「又一个 MCP 框架」，而是<strong>把字段选择、关系批量加载、传输层翻译这三件本来割裂的事统一到一个编程模型里</strong>。DefineSubset 是这个统一性的语法表现，<code>ExposeAs</code>/<code>SendTo</code>/<code>Collector</code> 是它在树结构上的延伸，UseCaseService 是它在跨端口上的延伸。</p>
+<p>如果你在做一个同时需要 GraphQL 灵活性 + REST 交付能力 + AI agent 接入的项目，这三个维度上的「不用重写一遍」省下来的代码量是数量级的。</p>
+<blockquote>
+<p><strong>相关文档</strong>
+- <a href="../clean-architecture-comparison/">Clean Architecture 对比</a> —— nexusx 与 Litestar / Django / Strawberry 等的横向对比
+- <a href="../api/api_cross_layer/">Cross-Layer Data Flow API</a> —— <code>ExposeAs</code>/<code>SendTo</code>/<code>Collector</code> 的 API 参考
+- <a href="https://github.com/allmonday/nexusx/blob/master/how_it_works.md">How it works</a> —— 完整的转换逻辑和模块详解（仓库内）</p>
+</blockquote>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="页脚" >
+        
+          
+          <a href="../advanced/voyager/" class="md-footer__link md-footer__link--prev" aria-label="上一页: Voyager 可视化">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                上一页
+              </span>
+              <div class="md-ellipsis">
+                Voyager 可视化
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../clean-architecture-comparison/" class="md-footer__link md-footer__link--next" aria-label="下一页: Clean Architecture 对比">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                下一页
+              </span>
+              <div class="md-ellipsis">
+                Clean Architecture 对比
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.tracking", "navigation.top", "navigation.footer", "toc.follow", "header.autohide", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.tabs.link", "content.links.target_blank"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

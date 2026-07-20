@@ -1,0 +1,2589 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Progressive SQLModel extension — from ER diagrams to GraphQL API and beyond.">
+      
+      
+        <meta name="author" content="tangkikodo">
+      
+      
+        <link rel="canonical" href="https://allmonday.github.io/nexusx/clean-architecture-comparison/">
+      
+      
+        <link rel="prev" href="../feature-highlights/">
+      
+      
+        <link rel="next" href="../api/api_graphql_handler/">
+      
+      
+        
+          <link rel="alternate" href="./" hreflang="en">
+        
+          <link rel="alternate" href="../zh/clean-architecture-comparison/" hreflang="zh">
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Clean Architecture Comparison - nexusx</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#clean-architecture-in-python-nexusx-vs-mainstream-frameworks" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="nexusx" class="md-header__button md-logo" aria-label="nexusx" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            nexusx
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Clean Architecture Comparison
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="light-blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="light-blue"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+      <div class="md-header__option">
+  <div class="md-select">
+    
+    <button class="md-header__button md-icon" aria-label="Select language">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12.87 15.07-2.54-2.51.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2zm-2.62 7 1.62-4.33L19.12 17z"/></svg>
+    </button>
+    <div class="md-select__inner">
+      <ul class="md-select__list">
+        
+          <li class="md-select__item">
+            <a href="./" hreflang="en" class="md-select__link">
+              English
+            </a>
+          </li>
+        
+          <li class="md-select__item">
+            <a href="../zh/clean-architecture-comparison/" hreflang="zh" class="md-select__link">
+              中文
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</div>
+    
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/allmonday/nexusx" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    allmonday/nexusx
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href=".." class="md-tabs__link">
+          
+  
+  
+    
+  
+  Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../advanced/mcp_service/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Advanced
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../feature-highlights/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Articles
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api/api_graphql_handler/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="nexusx" class="md-nav__button md-logo" aria-label="nexusx" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    nexusx
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/allmonday/nexusx" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    allmonday/nexusx
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href=".." class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/quick_start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/er_diagram/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ER Diagram & Non-ORM Relationships
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/graphql_mode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GraphQL Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/graphql_pagination/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GraphQL Pagination
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/graphql_auto_query/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Generated Queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/core_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core API Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/core_api_advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core API Advanced
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/custom_relationship/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Relationships
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/er_diagram_visual/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ER Diagram Visualization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/mcp_service/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/use_case_service/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UseCase Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/use_case_fastapi/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UseCase + FastAPI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/voyager/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Voyager Visualization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Articles
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Articles
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../feature-highlights/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Highlights
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clean Architecture Comparison
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clean Architecture Comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-clean-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Is Clean Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#framework-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Framework Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#nexusxs-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        nexusx's Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#detailed-framework-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Detailed Framework Analysis
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Detailed Framework Analysis">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#litestar-closest-to-nexusxs-philosophy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Litestar — Closest to nexusx's Philosophy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django-drf-highest-automation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Django + DRF — Highest Automation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strawberry-best-graphql-ecosystem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strawberry — Best GraphQL Ecosystem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fastapi-sqlmodel-minimal-framework-constraint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FastAPI + SQLModel — Minimal Framework Constraint
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ariadne-tartiflette-schema-first-graphql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ariadne / Tartiflette — Schema-first GraphQL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#temporalio-clean-architecture-for-workflow-orchestration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Temporalio — Clean Architecture for Workflow Orchestration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-dimension-comparison" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core-Dimension Comparison
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Core-Dimension Comparison">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-entity-dto-decoupling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Entity-DTO Decoupling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-multi-api-surface-unification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Multi-API Surface Unification
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-response-assembly-complexity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Response-Assembly Complexity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-business-logic-vs-delivery-separation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Business Logic vs. Delivery Separation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#nexusxs-unique-position" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        nexusx's Unique Position
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="nexusx&#39;s Unique Position">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-it-achieves-that-others-dont" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What It Achieves That Others Don't
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trade-offs-to-be-aware-of" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trade-offs to Be Aware Of
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#selection-guide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Selection Guide
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extension-4-phase-skills-recommended-project-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extension: 4-phase Skill's Recommended Project Structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_graphql_handler/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GraphQLHandler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_cross_layer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cross-Layer Data Flow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_relationship/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Relationships & ER Diagram
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_use_case/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UseCase API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migration Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-clean-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Is Clean Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#framework-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Framework Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#nexusxs-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        nexusx's Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#detailed-framework-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Detailed Framework Analysis
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Detailed Framework Analysis">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#litestar-closest-to-nexusxs-philosophy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Litestar — Closest to nexusx's Philosophy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django-drf-highest-automation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Django + DRF — Highest Automation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strawberry-best-graphql-ecosystem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strawberry — Best GraphQL Ecosystem
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fastapi-sqlmodel-minimal-framework-constraint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FastAPI + SQLModel — Minimal Framework Constraint
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ariadne-tartiflette-schema-first-graphql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ariadne / Tartiflette — Schema-first GraphQL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#temporalio-clean-architecture-for-workflow-orchestration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Temporalio — Clean Architecture for Workflow Orchestration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-dimension-comparison" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core-Dimension Comparison
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Core-Dimension Comparison">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-entity-dto-decoupling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Entity-DTO Decoupling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-multi-api-surface-unification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Multi-API Surface Unification
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-response-assembly-complexity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Response-Assembly Complexity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-business-logic-vs-delivery-separation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Business Logic vs. Delivery Separation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#nexusxs-unique-position" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        nexusx's Unique Position
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="nexusx&#39;s Unique Position">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-it-achieves-that-others-dont" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What It Achieves That Others Don't
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trade-offs-to-be-aware-of" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trade-offs to Be Aware Of
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#selection-guide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Selection Guide
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extension-4-phase-skills-recommended-project-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extension: 4-phase Skill's Recommended Project Structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="clean-architecture-in-python-nexusx-vs-mainstream-frameworks">Clean Architecture in Python: nexusx vs. Mainstream Frameworks</h1>
+<blockquote>
+<p>Updated 2026-06</p>
+</blockquote>
+<h2 id="what-is-clean-architecture">What Is Clean Architecture</h2>
+<p>Clean Architecture's central claim: <strong>business logic depends on no framework, database, UI, or any external agency</strong>. Through dependency inversion, high-level policy (use cases) is decoupled from low-level detail (database, API delivery), so the same business logic can be reused across multiple delivery modes.</p>
+<p>Three things determine a framework's Clean Architecture maturity:</p>
+<ol>
+<li><strong>Entity definition</strong> — is the domain model decoupled from infrastructure (ORM, serialization framework)?</li>
+<li><strong>DTO / response assembly</strong> — is there an independent response-construction layer that auto-generates external contracts from entity models?</li>
+<li><strong>Multi-API surface</strong> — can the same business logic serve REST, GraphQL, MCP, and other delivery modes simultaneously?</li>
+</ol>
+<h2 id="framework-overview">Framework Overview</h2>
+<table>
+<thead>
+<tr>
+<th>Framework</th>
+<th>Entity definition</th>
+<th>DTO mechanism</th>
+<th>Business logic</th>
+<th>API generation</th>
+<th>Multi-API surface</th>
+<th>MCP</th>
+<th>DI</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>nexusx</strong></td>
+<td>SQLModel + Relationship</td>
+<td>DefineSubset metaclass auto-gen</td>
+<td>UseCaseService (<code>@query</code> / <code>@mutation</code>)</td>
+<td>Auto (SDL + REST + MCP)</td>
+<td>GraphQL + REST + MCP</td>
+<td>Native</td>
+<td>Loader injection + FromContext</td>
+</tr>
+<tr>
+<td><strong>Litestar</strong></td>
+<td>SQLAlchemy / Pydantic</td>
+<td>DTO factory auto-gen</td>
+<td>Controller + Service + DI</td>
+<td>Semi-auto (Controller decorators)</td>
+<td>REST + GraphQL (plugin) + WebSocket</td>
+<td>None</td>
+<td>Built-in DI (layered scopes)</td>
+</tr>
+<tr>
+<td><strong>Django + DRF</strong></td>
+<td>Django Model</td>
+<td>ModelSerializer auto-gen</td>
+<td>Fat Model / Service Layer</td>
+<td>Auto (ViewSet + Router)</td>
+<td>REST + GraphQL (third-party) + Admin</td>
+<td>None</td>
+<td>No DI container</td>
+</tr>
+<tr>
+<td><strong>Strawberry</strong></td>
+<td><code>@strawberry.type</code></td>
+<td>Pydantic integration bridge</td>
+<td>Resolver + DataLoader</td>
+<td>Auto (SDL from code)</td>
+<td>GraphQL only</td>
+<td>None</td>
+<td>Extensions</td>
+</tr>
+<tr>
+<td><strong>FastAPI + SQLModel</strong></td>
+<td>SQLModel(table=True)</td>
+<td>Manual inheritance variants</td>
+<td>Manual Service / Repository</td>
+<td>Manual (per-endpoint)</td>
+<td>REST only</td>
+<td>None</td>
+<td>Depends</td>
+</tr>
+<tr>
+<td><strong>Ariadne</strong></td>
+<td>External ORM</td>
+<td>SDL as DTO</td>
+<td>Manual resolver binding</td>
+<td>Manual (hand-written SDL)</td>
+<td>GraphQL only</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Tartiflette</strong></td>
+<td>External ORM</td>
+<td>SDL as DTO</td>
+<td>Manual resolver binding</td>
+<td>Manual (hand-written SDL)</td>
+<td>GraphQL only</td>
+<td>None</td>
+<td>Directives</td>
+</tr>
+<tr>
+<td><strong>Temporalio</strong></td>
+<td>dataclass / Pydantic</td>
+<td>Parameters / return values</td>
+<td>Workflow + Activity separation</td>
+<td>N/A (workflow engine)</td>
+<td>N/A</td>
+<td>N/A</td>
+<td>N/A (Worker registration, not traditional DI)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="nexusxs-architecture">nexusx's Architecture</h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>                    ┌──────────────────────────────┐
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>                    │   Delivery Layer              │
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>                    │   GraphQL / REST / MCP / CLI │
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>                    └──────────┬───────────────────┘
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>                               │ Auto-generated by protocol builders
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>                    ┌──────────▼──────────────────┐
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                    │   Use Case / Business Logic  │
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>                    │   UseCaseService            │
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>                    │   @query / @mutation        │
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                    │   Method body = logic entry │
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                    └──────────┬──────────────────┘
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>                               │ Method may call Resolver to assemble DTO
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>                    ┌──────────▼───────────────────┐
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>                    │   Response Assembly (DTO)     │
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>                    │   DefineSubset → Resolver    │
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>                    │   BFS traversal + post_*     │
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>                    └──────────┬───────────────────┘
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>                               │ Load relationships
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>                    ┌──────────▼──────────────────┐
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>                    │   Data Access Layer           │
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>                    │   ErManager + DataLoader    │
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>                    │   SQLModel Entity           │
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>                    └─────────────────────────────┘
+</code></pre></div>
+<p><strong>Key design decisions</strong>:</p>
+<ul>
+<li><strong>UseCaseService methods are the business-logic entry point</strong>: the classmethods decorated with <code>@query</code> / <code>@mutation</code> are simultaneously the external contract (translated by each protocol builder into GraphQL fields / REST endpoints / MCP tools) and the executable body of business logic. The method body can be the full business logic or a thin wrapper calling external pure functions (a project-structure choice, not enforced by the library).</li>
+<li><strong>DefineSubset is a declarative DTO</strong>: auto-generates a Pydantic model from SQLModel entity metadata; the field set is declared explicitly by the developer via <code>__subset__</code> (including whether FK columns are included).</li>
+<li><strong>Resolver is a model-driven response builder</strong>: walks the object tree via BFS, automatically batch-loading relational data.</li>
+<li><strong>The same UseCaseService method serves multiple APIs</strong>: translated to different protocols via builders like <code>create_use_case_graphql_mcp_server</code> / <code>create_use_case_router</code> / <code>build_cli</code>, with zero changes to the business method.</li>
+</ul>
+<h2 id="detailed-framework-analysis">Detailed Framework Analysis</h2>
+<h3 id="litestar-closest-to-nexusxs-philosophy">Litestar — Closest to nexusx's Philosophy</h3>
+<p>Litestar's DTO factory pattern is conceptually similar to nexusx's DefineSubset: auto-generates request/response schemas from SQLAlchemy/Pydantic models, supporting field exclusion and renaming. But Litestar's DTO only serves REST — no unified GraphQL or MCP generation.</p>
+<p><strong>Strengths</strong>:
+- DTOs are first-class citizens, auto-generated from models, with field-level control
+- Built-in DI container with layered scopes (transient / scoped / singleton)
+- Plugin system for extensibility (SQLAlchemy, Redis, etc.)
+- Supports multiple serialization backends (Pydantic, msgspec, attrs)</p>
+<p><strong>Weaknesses</strong>:
+- GraphQL requires the Strawberry plugin — no unified generation
+- No MCP support
+- DTO factory is oriented around OpenAPI schema, not multi-API response assembly
+- Smaller community, limited production cases</p>
+<p><strong>Best for</strong>: REST-only projects that value DTO automation and DI.</p>
+<h3 id="django-drf-highest-automation">Django + DRF — Highest Automation</h3>
+<p>Django's Model → ModelSerializer → ModelViewSet → Router pipeline generates a complete CRUD REST API + Admin UI in four steps. Among all frameworks, this is the highest level of automation.</p>
+<p><strong>Strengths</strong>:
+- ModelSerializer auto-generates serializers from Django Models
+- ModelViewSet + Router auto-generates CRUD endpoints
+- Django Admin auto-generates an admin UI (an irreplaceable productivity tool)
+- graphene-django auto-generates GraphQL schemas from Models
+- Mature ecosystem, many production cases</p>
+<p><strong>Weaknesses</strong>:
+- Django Model is tightly coupled with ORM — domain models cannot be independent of the database
+- No built-in DI container, relies on module-level imports (anti-Clean-Architecture)
+- Clean Architecture refactoring is expensive, requires manually introducing a Service Layer
+- No MCP support
+- Fat Model pattern mixes business logic with data access</p>
+<p><strong>Best for</strong>: Projects with mostly CRUD delivery needs, where strict layering is not a priority.</p>
+<h3 id="strawberry-best-graphql-ecosystem">Strawberry — Best GraphQL Ecosystem</h3>
+<p>Strawberry is the most mature code-first GraphQL solution in Python. Pydantic integration auto-bridges models, and DataLoader is built-in to prevent N+1.</p>
+<p><strong>Strengths</strong>:
+- Code-first, SDL auto-generated from Python code
+- Pydantic integration (<code>strawberry.experimental.pydantic.type</code>) auto-bridges models
+- Built-in DataLoader abstraction, but each resolver must be wired manually (unlike nexusx, which is fully automatic from ORM metadata)
+- Supports Relay spec (cursor pagination), Subscription, Federation 2.x
+- Active community, high-quality docs</p>
+<p><strong>Weaknesses</strong>:
+- GraphQL only — no REST or MCP support
+- Pydantic bridging requires manually defining <code>strawberry.type</code> (unlike nexusx's fully automatic DefineSubset)
+- No built-in DI (relies on FastAPI's Depends)
+- Response assembly requires hand-written resolver logic</p>
+<p><strong>Best for</strong>: GraphQL-only projects that value type safety and developer experience.</p>
+<h3 id="fastapi-sqlmodel-minimal-framework-constraint">FastAPI + SQLModel — Minimal Framework Constraint</h3>
+<p>This is the most "frameworkless" option: a single SQLModel class serves as both ORM model and Pydantic validation model, and FastAPI auto-generates OpenAPI docs from type annotations. Clean Architecture is entirely up to the developer.</p>
+<p><strong>Strengths</strong>:
+- Low learning curve, rich FastAPI documentation
+- SQLModel single-class-multi-role reduces boilerplate
+- FastAPI's <code>Depends</code> provides lightweight DI
+- OpenAPI docs auto-generated
+- Largest community, richest ecosystem</p>
+<p><strong>Weaknesses</strong>:
+- No DTO auto-generation mechanism (must manually define Create/Update/Read variants)
+- No business-logic organization pattern (must manually introduce Service/Repository layers)
+- Each endpoint defined manually — high repetition
+- No GraphQL or MCP support
+- Clean Architecture requires substantial manual implementation</p>
+<p><strong>Best for</strong>: Small-to-medium projects where the team already has FastAPI experience and strict layering is not a priority.</p>
+<h3 id="ariadne-tartiflette-schema-first-graphql">Ariadne / Tartiflette — Schema-first GraphQL</h3>
+<p>Both are Schema-first (SDL-first) solutions: write the GraphQL schema first, then bind resolvers. The opposite of nexusx's model-driven (code-first) philosophy.</p>
+<p><strong>Strengths</strong> (Ariadne):
+- SDL is the front-end/back-end contract — clear collaboration
+- Ariadne Codegen generates client code (Pydantic models) from the schema
+- Framework-agnostic, integrates with Django, Flask, FastAPI</p>
+<p><strong>Weaknesses</strong>:
+- SDL must be hand-written — high maintenance cost
+- Manual resolver binding — lots of boilerplate
+- No DTO conversion layer; resolvers operate directly on Python objects
+- No REST or MCP support
+- Tartiflette community activity is questionable</p>
+<p><strong>Best for</strong>: GraphQL projects where front-end and back-end teams need SDL as a collaboration contract.</p>
+<h3 id="temporalio-clean-architecture-for-workflow-orchestration">Temporalio — Clean Architecture for Workflow Orchestration</h3>
+<p>Temporalio's Workflow/Activity separation is a natural implementation of dependency inversion: Workflows are the deterministic orchestration layer (similar to Use Cases), Activities are the side-effectful business layer (similar to Repositories/Gateways).</p>
+<p><strong>Strengths</strong>:
+- Workflow/Activity separation enforces dependency inversion
+- Event sourcing auto-persists state
+- Native support for long-running executions, retries, timeouts
+- Idempotency is a design constraint, not an optional practice</p>
+<p><strong>Weaknesses</strong>:
+- Not an API framework — cannot directly generate REST/GraphQL/MCP
+- Workflows must be deterministic (no randomness, network calls, or time retrieval inside)
+- Steep learning curve
+- Requires Temporal Server infrastructure</p>
+<p><strong>Best for</strong>: Long-running workflow orchestration (order processing, approval flows, data pipelines); must be used alongside an API framework.</p>
+<h2 id="core-dimension-comparison">Core-Dimension Comparison</h2>
+<h3 id="1-entity-dto-decoupling">1. Entity-DTO Decoupling</h3>
+<table>
+<thead>
+<tr>
+<th>Framework</th>
+<th>Entity→DTO approach</th>
+<th>Automation level</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>nexusx</strong></td>
+<td>DefineSubset metaclass auto-generates Pydantic DTOs from SQLModel metadata</td>
+<td>High (declarative)</td>
+</tr>
+<tr>
+<td><strong>Litestar</strong></td>
+<td>DTO factory auto-generates from SQLAlchemy/Pydantic models</td>
+<td>High (factory pattern)</td>
+</tr>
+<tr>
+<td><strong>Django</strong></td>
+<td>ModelSerializer auto-generates from Django Model</td>
+<td>High (reflection)</td>
+</tr>
+<tr>
+<td><strong>Strawberry</strong></td>
+<td>Pydantic integration bridge, requires manually defining <code>@strawberry.type</code></td>
+<td>Medium (semi-auto)</td>
+</tr>
+<tr>
+<td><strong>FastAPI</strong></td>
+<td>Manually define Create/Update/Read inheritance variants</td>
+<td>Low (pure manual)</td>
+</tr>
+<tr>
+<td><strong>Ariadne</strong></td>
+<td>Hand-written SDL, no DTO layer</td>
+<td>None</td>
+</tr>
+</tbody>
+</table>
+<p>nexusx and Litestar lead on DTO automation. nexusx's DefineSubset goes further — it controls both DTO generation and relationship-loading strategy (via Resolver), forming a complete response-assembly pipeline.</p>
+<h3 id="2-multi-api-surface-unification">2. Multi-API Surface Unification</h3>
+<table>
+<thead>
+<tr>
+<th>Framework</th>
+<th>REST</th>
+<th>GraphQL</th>
+<th>MCP</th>
+<th>Unification level</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>nexusx</strong></td>
+<td><code>create_use_case_router()</code></td>
+<td><code>GraphQLHandler</code></td>
+<td><code>create_use_case_graphql_mcp_server()</code></td>
+<td>Three-way unified</td>
+</tr>
+<tr>
+<td><strong>Litestar</strong></td>
+<td>Native</td>
+<td>Strawberry plugin</td>
+<td>None</td>
+<td>Two-way (not unified)</td>
+</tr>
+<tr>
+<td><strong>Django</strong></td>
+<td>DRF</td>
+<td>graphene-django</td>
+<td>None</td>
+<td>Two-way (not unified)</td>
+</tr>
+<tr>
+<td><strong>Strawberry</strong></td>
+<td>None (needs FastAPI)</td>
+<td>Native</td>
+<td>None</td>
+<td>Single surface</td>
+</tr>
+<tr>
+<td><strong>FastAPI</strong></td>
+<td>Native</td>
+<td>Third-party required</td>
+<td>None</td>
+<td>Single surface</td>
+</tr>
+</tbody>
+</table>
+<p>nexusx is the only framework that achieves unified auto-generation across three surfaces (REST + GraphQL + MCP). Others require writing adapter code per surface when targeting multiple APIs.</p>
+<h3 id="3-response-assembly-complexity">3. Response-Assembly Complexity</h3>
+<p>When API responses need to assemble nested relational data (e.g. "return a Sprint with its Task list, each Task including its owner"):</p>
+<table>
+<thead>
+<tr>
+<th>Framework</th>
+<th>Approach</th>
+<th>N+1 resolution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>nexusx</strong></td>
+<td>Resolver BFS traversal + DataLoader batch loading</td>
+<td>Automatic (ErManager)</td>
+</tr>
+<tr>
+<td><strong>Litestar</strong></td>
+<td>SQLAlchemy eager load / manual DTO control</td>
+<td>Manual (selectinload)</td>
+</tr>
+<tr>
+<td><strong>Django</strong></td>
+<td><code>select_related</code> / <code>prefetch_related</code></td>
+<td>Manual (must remember to add)</td>
+</tr>
+<tr>
+<td><strong>Strawberry</strong></td>
+<td>Manual DataLoader integration</td>
+<td>Built-in DataLoader</td>
+</tr>
+<tr>
+<td><strong>FastAPI</strong></td>
+<td>Manual query + Pydantic serialization</td>
+<td>Manual</td>
+</tr>
+</tbody>
+</table>
+<p>nexusx's Resolver + ErManager combination is the only solution that achieves "declarative DTO definition + automatic batch relationship loading." Other frameworks either require manual loading-strategy control (Django, Litestar, FastAPI) or manual DataLoader logic (Strawberry).</p>
+<h3 id="4-business-logic-vs-delivery-separation">4. Business Logic vs. Delivery Separation</h3>
+<table>
+<thead>
+<tr>
+<th>Framework</th>
+<th>Separation approach</th>
+<th>Reuse level</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>nexusx</strong></td>
+<td>UseCaseService methods (business-logic entry) → translated by per-protocol builders</td>
+<td>High (one method, four surfaces: GraphQL/REST/MCP/CLI)</td>
+</tr>
+<tr>
+<td><strong>Litestar</strong></td>
+<td>Service injected into Controller via DI</td>
+<td>Medium (Service reusable, but Controllers must be written separately)</td>
+</tr>
+<tr>
+<td><strong>Django</strong></td>
+<td>Fat Model / Service Layer</td>
+<td>Low (logic mixed into Views/Serializers)</td>
+</tr>
+<tr>
+<td><strong>Strawberry</strong></td>
+<td>Resolver binding</td>
+<td>Medium (Resolver reusable, but GraphQL-only)</td>
+</tr>
+<tr>
+<td><strong>FastAPI</strong></td>
+<td>Manually organized Service layer</td>
+<td>Medium (Service reusable, but manual wiring required)</td>
+</tr>
+<tr>
+<td><strong>Temporalio</strong></td>
+<td>Activity implemented independently</td>
+<td>High (Workflow orchestrates Activities)</td>
+</tr>
+</tbody>
+</table>
+<p>nexusx's <code>UseCaseService</code> pattern achieves complete decoupling of business logic from delivery: business methods focus purely on business, protocol translation is handled by per-protocol builders. Methods are independently testable (no dependency on any protocol runtime), and adding a new protocol only requires adding a new builder — zero changes to business code.</p>
+<blockquote>
+<p><strong>Extension</strong>: nexusx's official <strong>4-phase skill</strong> recommends a stricter project structure (<code>methods.py</code> pure functions + user-defined <code>_mount()</code> to mount onto Entities), splitting "business logic" and "protocol entry" into separate layers. This is a project-organization convention, not a library requirement — see the "Extension: 4-phase skill's recommended project structure" section at the end.</p>
+</blockquote>
+<h2 id="nexusxs-unique-position">nexusx's Unique Position</h2>
+<h3 id="what-it-achieves-that-others-dont">What It Achieves That Others Don't</h3>
+<ol>
+<li><strong>Four-surface unified generation</strong>: one set of SQLModel entities + UseCaseService business methods → auto-generated GraphQL + REST + MCP + CLI</li>
+<li><strong>Declarative response assembly</strong>: DefineSubset specifies "what"; Resolver + ErManager automatically handle "how"</li>
+<li><strong>MCP as a first-class citizen</strong>: AI agents can discover and invoke APIs through four-layer progressive disclosure (list_apps → describe_compose_schema → describe_compose_method → compose_query) — completely absent from other frameworks</li>
+<li><strong>Model-driven contract generation</strong>: auto-generates GraphQL SDL and OpenAPI spec from SQLModel entities as the single source of truth for front-end/back-end collaboration</li>
+</ol>
+<h3 id="trade-offs-to-be-aware-of">Trade-offs to Be Aware Of</h3>
+<ol>
+<li><strong>SQLModel binding</strong>: the entity layer is coupled to SQLModel/SQLAlchemy, less flexible than Litestar's multi-ORM backend support</li>
+<li><strong>Python ecosystem niche</strong>: nexusx positions itself within the "SQLModel + FastAPI" ecosystem, narrower than Django's "batteries-included" scope</li>
+<li><strong>Community size</strong>: as an emerging framework, production cases and community resources are smaller than FastAPI's or Django's</li>
+<li><strong>Learning curve</strong>: DefineSubset + Resolver + ErManager + UseCaseService is a lot of concepts — non-trivial initial barrier</li>
+</ol>
+<h2 id="selection-guide">Selection Guide</h2>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Recommended framework</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>New project needing GraphQL + REST + MCP</td>
+<td><strong>nexusx</strong></td>
+<td>Three-surface unified generation, only one with MCP</td>
+</tr>
+<tr>
+<td>REST-only, values DI and DTO automation</td>
+<td><strong>Litestar</strong></td>
+<td>Most complete DTO factory + built-in DI</td>
+</tr>
+<tr>
+<td>Fast CRUD + Admin backend</td>
+<td><strong>Django + DRF</strong></td>
+<td>Highest automation, Admin is irreplaceable</td>
+</tr>
+<tr>
+<td>GraphQL-only, values type safety</td>
+<td><strong>Strawberry</strong></td>
+<td>Best Python GraphQL ecosystem</td>
+</tr>
+<tr>
+<td>Lightweight API, team knows FastAPI</td>
+<td><strong>FastAPI + SQLModel</strong></td>
+<td>Lowest learning curve, largest community</td>
+</tr>
+<tr>
+<td>Long-running workflow orchestration</td>
+<td><strong>Temporalio</strong></td>
+<td>Workflow/Activity is natural dependency inversion</td>
+</tr>
+<tr>
+<td>Front-end/back-end SDL collaboration</td>
+<td><strong>Ariadne</strong></td>
+<td>Schema-first, Codegen supports client generation</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="extension-4-phase-skills-recommended-project-structure">Extension: 4-phase Skill's Recommended Project Structure</h2>
+<p>The <code>methods.py</code> / <code>_mount()</code> / TS SDK generation mentioned earlier are <strong>not</strong> built-in features of the nexusx <strong>library</strong> — they are project scaffolding recommended by the official <strong>nexusx-4phase skill</strong>. The skill is a set of guidance for AI coding agents (in the repo's <code>skill/</code> directory), splitting "build a complete project with nexusx" into four phases:</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Goal</th>
+<th>Key artifacts</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Phase 1</td>
+<td>ER modeling + mock data</td>
+<td>SQLModel entities + Relationship + ER diagram</td>
+</tr>
+<tr>
+<td>Phase 2</td>
+<td>Business methods + GraphQL</td>
+<td><code>service/&lt;domain&gt;/methods.py</code> pure functions + user-defined <code>_mount()</code> to mount onto Entities</td>
+</tr>
+<tr>
+<td>Phase 3</td>
+<td>DTOs + multi-protocol</td>
+<td><code>dtos.py</code> (DefineSubset) + <code>service.py</code> (UseCaseService) + REST/MCP/CLI</td>
+</tr>
+<tr>
+<td>Phase 4</td>
+<td>Front-end SDK</td>
+<td>OpenAPI spec → TypeScript SDK (via <code>@hey-api/openapi-ts</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Core conventions recommended by the skill:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># service/project/methods.py — Phase 2 recommended structure</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sqlmodel</span><span class="w"> </span><span class="kn">import</span> <span class="n">select</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">list_sprints</span><span class="p">(</span><span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Sprint</span><span class="p">]:</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Pure function: doesn&#39;t import nexusx, independently unit-testable.&quot;&quot;&quot;</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="k">async</span> <span class="k">with</span> <span class="n">get_session</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>        <span class="k">return</span> <span class="p">(</span><span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">select</span><span class="p">(</span><span class="n">Sprint</span><span class="p">)</span><span class="o">.</span><span class="n">limit</span><span class="p">(</span><span class="n">limit</span><span class="p">)))</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="c1"># src/models.py — user defines _mount helper in their own project</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="kn">from</span><span class="w"> </span><span class="nn">nexusx</span><span class="w"> </span><span class="kn">import</span> <span class="n">query</span><span class="p">,</span> <span class="n">mutation</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="kn">from</span><span class="w"> </span><span class="nn">service.project.methods</span><span class="w"> </span><span class="kn">import</span> <span class="n">list_sprints</span><span class="p">,</span> <span class="n">create_sprint</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="k">def</span><span class="w"> </span><span class="nf">_mount</span><span class="p">(</span><span class="n">entity</span><span class="p">,</span> <span class="n">fn</span><span class="p">,</span> <span class="n">decorator</span><span class="p">):</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Mount a methods.py pure function onto an entity as @query / @mutation.&quot;&quot;&quot;</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    <span class="nb">setattr</span><span class="p">(</span><span class="n">entity</span><span class="p">,</span> <span class="n">fn</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="nb">classmethod</span><span class="p">(</span><span class="n">fn</span><span class="p">))</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>    <span class="c1"># ... decorator registration details provided by the skill template</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="n">_mount</span><span class="p">(</span><span class="n">Sprint</span><span class="p">,</span> <span class="n">list_sprints</span><span class="p">,</span> <span class="n">query</span><span class="p">)</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="n">_mount</span><span class="p">(</span><span class="n">Sprint</span><span class="p">,</span> <span class="n">create_sprint</span><span class="p">,</span> <span class="n">mutation</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>Additional benefits of this structure</strong> (not in the library itself, but encouraged by the skill):</p>
+<ul>
+<li>Business logic is pure functions (no <code>cls</code> dependency, no decorator dependency) — unit tests don't need to start any protocol runtime</li>
+<li>"Business logic" and "protocol entry" are physically separated — adding a protocol requires zero changes to business files</li>
+<li>Phase 4 uses <code>@hey-api/openapi-ts</code> to translate the FastAPI-generated OpenAPI spec into a TypeScript SDK, keeping front-end/back-end type contracts in sync</li>
+</ul>
+<p><strong>Notes</strong>:</p>
+<ul>
+<li><code>_mount()</code> / <code>methods.py</code> are part of the <strong>skill template</strong>, not the <code>nexusx</code> library API. <code>pip install nexusx</code> does not give you these tools — they live in <code>skills/nexusx-4phase/template/src/models.py</code> and are provided by the skill for AI agents or developers to copy.</li>
+<li>You can completely skip the skill's project structure and write <code>@query</code> methods directly inside a <code>UseCaseService</code> class body (the library's native usage). The skill only offers an optional convention with stricter separation of "business logic / protocol entry."</li>
+<li>Install the skill: <code>npx skills add KLR-Pattern/nexusx -s nexusx-4phase -a claude-code</code> (see the repo's <a href="https://github.com/KLR-Pattern/nexusx/blob/master/skills/nexusx-4phase/SKILL.md"><code>skills/nexusx-4phase/SKILL.md</code></a> for details).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../feature-highlights/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Design Highlights">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Design Highlights
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../api/api_graphql_handler/" class="md-footer__link md-footer__link--next" aria-label="Next: GraphQLHandler">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                GraphQLHandler
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.tracking", "navigation.top", "navigation.footer", "toc.follow", "header.autohide", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.tabs.link", "content.links.target_blank"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
