@@ -3,45 +3,63 @@
 [![pypi](https://img.shields.io/pypi/v/nexusx.svg)](https://pypi.python.org/pypi/nexusx)
 [![PyPI Downloads](https://static.pepy.tech/badge/nexusx/month)](https://pepy.tech/projects/nexusx)
 
-Write SQLModel entities and business methods once. Get a consistent, N+1-free
-API across **REST, GraphQL, MCP, and CLI** — plus live ER diagrams — without
-writing resolvers, DTOs, or schema by hand.
+nexusx turns a SQLModel database into two things: a GraphQL **query interface**
+that's friendlier than writing SQL, and **business logic** that ships as REST,
+GraphQL, MCP, and CLI from a single signature.
 
 ```mermaid
 flowchart LR
-    model["SQLModel entities<br/>+ UseCaseService"]
-    model --> rest["REST / OpenAPI"]
-    model --> graphql["GraphQL"]
-    model --> mcp["MCP (AI agents)"]
-    model --> cli["CLI"]
-    model --> er["ER diagrams (Voyager)"]
+    subgraph Query["Query surface — friendlier than SQL"]
+        e["SQLModel entities<br/>+ relationships"]
+        e --> gql1["GraphQL"]
+        e --> mcp1["MCP"]
+        e --> er["ER diagrams (Voyager)"]
+    end
+    subgraph Logic["Business logic — one signature, many transports"]
+        s["UseCaseService<br/>methods"]
+        s --> rest["REST / OpenAPI"]
+        s --> gql2["GraphQL"]
+        s --> mcp2["MCP (AI agents)"]
+        s --> cli["CLI"]
+    end
 ```
 
 ## What it does for you
 
-**1. Build the data layer fast — and keep it legible.**
+**1. A query interface over your database — not another query writer.**
 
-Declare SQLModel entities and relationships. nexusx reflects the SQLAlchemy
-metadata into auto-batched DataLoaders, so a nested query like
-`users { posts { comments } }` costs one SQL round-trip per level, not N+1 —
-and field selection prunes all the way down to the columns read from disk. The
-same metadata drives an interactive ER diagram ([Voyager](docs/advanced/voyager.md))
-your whole team can read, not just whoever wrote it.
+`GraphQLHandler` reflects your entities and relationships into a read surface
+where you declare the shape you want — `users { posts { comments } }` — and
+nexusx compiles it to optimal SQL: one batched round-trip per level, columns
+pruned to what you selected, per-parent pagination. N+1 and over-fetching
+aren't pitfalls to avoid; they're structurally impossible. Turn on
+`auto_query_config` for `by_id` and equality `by_filter`; richer predicates
+(range, like, ordering) are one `@query` method that rejoins the same surface.
+[Voyager](docs/advanced/voyager.md) renders the schema as an interactive ER
+diagram, so the query interface is self-documenting.
 
-**2. Write each piece of business logic once — serve every interface.**
+**2. Business logic, on every transport.**
 
-A `UseCaseService` method is plain async Python. One signature generates a
-FastAPI route (with OpenAPI), a GraphQL field, an MCP tool for AI agents, and a
-CLI command — sharing types, auth injection (`FromContext`), and field-level
-selection.
+A `UseCaseService` method is plain async Python. One signature becomes a
+FastAPI route (with OpenAPI), an MCP tool for AI agents, a CLI command — and a
+GraphQL field. Note this GraphQL is *different* from the one above: it projects
+**business operations**, not your raw data graph, and it's built AI-first
+(compact `describe_*` discovery, no 50K-token introspection dump). The same
+codebase serves a web frontend, power integrations, and an AI agent without
+rewriting the logic three times.
 
-The MCP path is built AI-first: agents discover the API through compact
-`describe_*` tools instead of swallowing a 50K-token GraphQL introspection
-dump. That is what makes nexusx worth reaching for over a single-protocol
-stack — **the same codebase serves a web frontend (REST), power integrations
-(GraphQL), and an AI agent (MCP) without rewriting the logic three times.**
+Both pillars speak "GraphQL," but they are different surfaces:
+
+|  | SQLModel GraphQL (`GraphQLHandler`) | UseCaseService GraphQL (`compose_query`) |
+|---|---|---|
+| What it is | A query interface over your DB | A projection of business methods |
+| Source | Auto-reflected from entities + relations | Hand-written `@query` / `@mutation` |
+| Built for | Browsing / slicing your data graph | Invoking operations (app + AI) |
+| Introspection | Full (GraphiQL-friendly) | Rejected (AI-first, compact `describe_*`) |
 
 ## In 30 seconds
+
+**The query surface** — entities become a GraphQL and MCP query interface:
 
 ```python
 from sqlmodel import SQLModel, Field, Relationship, select
@@ -71,8 +89,7 @@ GraphQLHandler(base=SQLModel, session_factory=session)
 create_simple_mcp_server(base=SQLModel, name="Blog", session_factory=session)
 ```
 
-When logic spans entities, a `UseCaseService` becomes the single source — one
-class → REST + MCP + GraphQL + CLI:
+**The business-logic surface** — one service class becomes REST + MCP:
 
 ```python
 from nexusx import (
@@ -93,8 +110,8 @@ create_use_case_graphql_mcp_server(apps=[cfg]).run()   # MCP for AI agents
 
 ## When to reach for it
 
+- You want a **friendlier query interface** over a SQLModel database than writing SQL — graph-shaped reads, N+1-proof, selection-driven.
 - You need **more than one transport** from one codebase — REST + GraphQL, or app + AI agent.
-- You want **N+1 prevention and column pruning for free**, driven by what the client actually selects.
 - You have **non-ORM relations** (Redis, search, external APIs) that should flow through the same loader / DTO / diagram plumbing as native ones.
 
 ## When *not* to
@@ -116,6 +133,7 @@ Requires Python ≥ 3.10.
 - [Quick Start](docs/guide/quick_start.md) — entities, DTOs, the UseCase layer
 - [Feature highlights](docs/feature-highlights.md) — the design decisions, in depth
 - [Voyager visualization](docs/advanced/voyager.md) — interactive ER + service diagrams
+- [Auto query](docs/guide/graphql_auto_query.md) — `by_id` / `by_filter` without writing `@query`
 - [Clean Architecture comparison](docs/clean-architecture-comparison.md)
 - [Changelog](docs/changelog.md)
 - Demos: `bash start_all.sh` · [4-phase AI skill](skills/nexusx-4phase/)
