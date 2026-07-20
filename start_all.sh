@@ -1,13 +1,18 @@
 #!/bin/bash
-# Start all demo services for nexusx
-# Press Ctrl+C to stop all services
+# Start all nexusx demo services, grouped by the README's two-pillar model:
+#   1. Query surface       — SQLModel entities → GraphQL / MCP
+#   2. Core API            — DefineSubset DTOs + Resolver (REST)
+#   3. Business-logic      — UseCaseService → REST / MCP
+#   4. Visualization       — Voyager (ER + service graphs)
+#
+# Press Ctrl+C to stop all services.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Colors
+# ── Colors ────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -15,76 +20,118 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Ports
-PORT_DEMO=8000
+# ── Ports (numbers kept stable; names now reflect the README pillars) ─────
+# Query surface (SQLModel entities)
+PORT_BLOG_GQL=8000          # Blog GraphQL — entity query surface
+PORT_BLOG_GQL_PAG=8005      # Blog GraphQL — pagination enabled
+PORT_AUTH_GQL=8002          # Auth GraphQL — entities + FromContext
+PORT_AUTH_MCP=8003          # entity → single-app MCP
+PORT_MULTI_MCP=8004         # entity → multi-app MCP gateway
+# Core API (DefineSubset DTOs + Resolver)
 PORT_CORE_API=8001
-PORT_AUTH_GQL=8002
-PORT_AUTH_MCP=8003
-PORT_MULTI_MCP=8004
-PORT_PAG=8005
-PORT_RPC_MCP=8006
-PORT_RPC_FASTAPI=8007
-PORT_RPC_VOYAGER=8008
-PORT_ENTERPRISE_VOYAGER=8009
+# Business-logic surface (UseCaseService)
+PORT_USECASE_REST=8007      # UseCaseService → FastAPI REST + OpenAPI
+PORT_USECASE_MCP=8006       # UseCaseService → MCP (4-layer)
+# Visualization (Voyager)
+PORT_VOYAGER_USECASE=8008   # Voyager — UseCase service graph
+PORT_VOYAGER_ER=8009        # Voyager — ER + enterprise schema
 
-ALL_PORTS=($PORT_DEMO $PORT_CORE_API $PORT_AUTH_GQL $PORT_AUTH_MCP $PORT_MULTI_MCP $PORT_PAG $PORT_RPC_MCP $PORT_RPC_FASTAPI $PORT_RPC_VOYAGER $PORT_ENTERPRISE_VOYAGER)
+# ── Group titles (README pillars) ─────────────────────────────────────────
+GROUP_ORDER=("query" "core_api" "business" "viz")
+declare -A GROUP_TITLE=(
+  [query]="Query surface (SQLModel entities → GraphQL / MCP)"
+  [core_api]="Core API (DefineSubset DTOs + Resolver)"
+  [business]="Business-logic surface (UseCaseService → REST / MCP)"
+  [viz]="Visualization (Voyager)"
+)
+
+# ── Service registry ──────────────────────────────────────────────────────
+# Each record: group | name | port | url path | start command (%PORT% → port)
+# Add a demo by appending one line here; start/wait/table all derive from this.
+SERVICES=(
+  # ── Query surface: SQLModel entities exposed as GraphQL / MCP ──
+  "query|Blog GraphQL|$PORT_BLOG_GQL|/graphql|uv run uvicorn demo.blog.app:app --port %PORT%"
+  "query|Blog GraphQL (paginated)|$PORT_BLOG_GQL_PAG|/graphql|uv run uvicorn demo.blog.app_paginated:app --port %PORT%"
+  "query|Auth GraphQL|$PORT_AUTH_GQL|/graphql|uv run uvicorn demo.auth.app:app --port %PORT%"
+  "query|Auth MCP (entity → MCP)|$PORT_AUTH_MCP|/mcp|PORT=%PORT% uv run python -m demo.auth.mcp_server"
+  "query|Multi-app MCP (gateway)|$PORT_MULTI_MCP|/mcp|PORT=%PORT% uv run python -m demo.multi_app.mcp_server"
+  # ── Core API: DefineSubset DTOs + Resolver served via REST ──
+  "core_api|Core API REST|$PORT_CORE_API|/api/sprints|uv run uvicorn demo.core_api.app:app --port %PORT%"
+  # ── Business-logic: one UseCaseService signature → REST / MCP ──
+  "business|UseCase REST (FastAPI + OpenAPI)|$PORT_USECASE_REST|/api/sprints|uv run uvicorn demo.use_case.fastapi:app --port %PORT%"
+  "business|UseCase MCP (4-layer)|$PORT_USECASE_MCP|/mcp|PORT=%PORT% uv run --with fastmcp python -m demo.use_case.mcp_server --http"
+  # ── Visualization: Voyager ──
+  "viz|Voyager — UseCase service graph|$PORT_VOYAGER_USECASE|/voyager|uv run uvicorn demo.use_case.voyager_demo:app --port %PORT%"
+  "viz|Voyager — ER + enterprise schema|$PORT_VOYAGER_ER|/voyager|uv run uvicorn demo.enterprise_voyager.voyager_demo:app --port %PORT%"
+)
+
+# Derive ALL_PORTS from the registry (single source of truth).
+ALL_PORTS=()
+for record in "${SERVICES[@]}"; do
+  ALL_PORTS+=("$(printf '%s' "$record" | cut -d'|' -f3)")
+done
 
 PIDS=()
 
+# ── Helpers ───────────────────────────────────────────────────────────────
 clear_existing_ports() {
-    echo -e "${YELLOW}Checking existing listeners on demo ports...${NC}"
-    for port in "${ALL_PORTS[@]}"; do
-        local existing
-        existing=$(lsof -ti:"$port" 2>/dev/null || true)
-        if [ -n "$existing" ]; then
-            echo -e "  ${YELLOW}Port $port in use, stopping old process(es):${NC} $existing"
-            kill $existing 2>/dev/null || true
-            sleep 0.3
-            lsof -ti:"$port" 2>/dev/null | xargs kill -9 2>/dev/null || true
-        fi
-    done
+  echo -e "${YELLOW}Freeing demo ports...${NC}"
+  for port in "${ALL_PORTS[@]}"; do
+    local existing
+    existing=$(lsof -ti:"$port" 2>/dev/null || true)
+    if [ -n "$existing" ]; then
+      echo -e "  ${YELLOW}Port $port in use, stopping old process(es):${NC} $existing"
+      kill "$existing" 2>/dev/null || true
+      sleep 0.3
+      lsof -ti:"$port" 2>/dev/null | xargs kill -9 2>/dev/null || true
+    fi
+  done
 }
 
 cleanup() {
-    echo ""
-    echo -e "${BLUE}Stopping all services...${NC}"
-
-    for pid in "${PIDS[@]}"; do
-        if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null || true
-        fi
-    done
-
-    for port in "${ALL_PORTS[@]}"; do
-        lsof -ti:"$port" 2>/dev/null | xargs kill -9 2>/dev/null || true
-    done
-
-    wait 2>/dev/null
-    echo -e "${GREEN}All services stopped.${NC}"
+  echo ""
+  echo -e "${BLUE}Stopping all services...${NC}"
+  for pid in "${PIDS[@]}"; do
+    kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null || true
+  done
+  for port in "${ALL_PORTS[@]}"; do
+    lsof -ti:"$port" 2>/dev/null | xargs kill -9 2>/dev/null || true
+  done
+  wait 2>/dev/null
+  echo -e "${GREEN}All services stopped.${NC}"
 }
 
 trap cleanup SIGINT EXIT
 
 wait_for_port() {
-    local port=$1
-    local name=$2
-    local max_attempts=40
-    local attempt=0
-
-    echo -n "  Waiting for $name on :$port"
-    while [ $attempt -lt $max_attempts ]; do
-        if lsof -i:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-            echo -e " ${GREEN}OK${NC}"
-            return 0
-        fi
-        echo -n "."
-        sleep 0.5
-        attempt=$((attempt + 1))
-    done
-    echo -e " ${RED}TIMEOUT${NC}"
-    return 1
+  local port=$1
+  local name=$2
+  local max_attempts=40
+  local attempt=0
+  printf "  %-38s :%s" "$name" "$port"
+  while [ $attempt -lt $max_attempts ]; do
+    if lsof -i:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+      echo -e " ${GREEN}OK${NC}"
+      return 0
+    fi
+    printf "."
+    sleep 0.5
+    attempt=$((attempt + 1))
+  done
+  echo -e " ${RED}TIMEOUT${NC}"
+  return 1
 }
 
+start_service() {
+  # args: group name port command-template
+  local name="$2" port="$3" cmd="$4"
+  local resolved="${cmd//\%PORT\%/$port}"
+  printf "  ${BLUE}▶${NC} %-36s ${YELLOW}(:%s)${NC}\n" "$name" "$port"
+  eval "$resolved &"
+  PIDS+=($!)
+}
+
+# ── Boot ──────────────────────────────────────────────────────────────────
 echo "=============================================="
 echo -e "${CYAN}nexusx Demo Services${NC}"
 echo "=============================================="
@@ -93,80 +140,38 @@ echo ""
 clear_existing_ports
 echo ""
 
-# Start services
-echo -e "${BLUE}Starting${NC} demo GraphQL on port $PORT_DEMO"
-uv run uvicorn demo.blog.app:app --port $PORT_DEMO &
-PIDS+=($!)
-
-echo -e "${BLUE}Starting${NC} demo CoreAPI on port $PORT_CORE_API"
-uv run uvicorn demo.core_api.app:app --port $PORT_CORE_API &
-PIDS+=($!)
-
-echo -e "${BLUE}Starting${NC} auth GraphQL on port $PORT_AUTH_GQL"
-uv run uvicorn demo.auth.app:app --port $PORT_AUTH_GQL &
-PIDS+=($!)
-
-echo -e "${BLUE}Starting${NC} auth MCP on port $PORT_AUTH_MCP"
-PORT=$PORT_AUTH_MCP uv run python -m demo.auth.mcp_server &
-PIDS+=($!)
-
-echo -e "${BLUE}Starting${NC} multi-app MCP on port $PORT_MULTI_MCP"
-PORT=$PORT_MULTI_MCP uv run python -m demo.multi_app.mcp_server &
-PIDS+=($!)
-
-echo -e "${BLUE}Starting${NC} demo GraphQL (paginated) on port $PORT_PAG"
-uv run uvicorn demo.blog.app_paginated:app --port $PORT_PAG &
-PIDS+=($!)
-
-echo -e "${BLUE}Starting${NC} demo RPC MCP on port $PORT_RPC_MCP"
-PORT=$PORT_RPC_MCP uv run --with fastmcp python -m demo.use_case.mcp_server --http &
-PIDS+=($!)
-
-echo -e "${BLUE}Starting${NC} demo RPC FastAPI on port $PORT_RPC_FASTAPI"
-uv run uvicorn demo.use_case.fastapi:app --port $PORT_RPC_FASTAPI &
-PIDS+=($!)
-
-echo -e "${BLUE}Starting${NC} demo RPC Voyager on port $PORT_RPC_VOYAGER"
-uv run uvicorn demo.use_case.voyager_demo:app --port $PORT_RPC_VOYAGER &
-PIDS+=($!)
-
-echo -e "${BLUE}Starting${NC} enterprise Voyager on port $PORT_ENTERPRISE_VOYAGER"
-uv run uvicorn demo.enterprise_voyager.voyager_demo:app --port $PORT_ENTERPRISE_VOYAGER &
-PIDS+=($!)
-
+current_group=""
+for record in "${SERVICES[@]}"; do
+  IFS='|' read -r group name port url cmd <<< "$record"
+  if [ "$group" != "$current_group" ]; then
+    current_group="$group"
+    echo -e "${CYAN}── ${GROUP_TITLE[$group]} ──${NC}"
+  fi
+  start_service "$group" "$name" "$port" "$cmd"
+done
 echo ""
 
-# Wait for all services to be ready
+# ── Wait for readiness ────────────────────────────────────────────────────
 echo -e "${YELLOW}Waiting for services to be ready...${NC}"
-wait_for_port $PORT_DEMO "demo GraphQL"    || true
-wait_for_port $PORT_CORE_API "demo CoreAPI" || true
-wait_for_port $PORT_AUTH_GQL "auth GraphQL" || true
-wait_for_port $PORT_AUTH_MCP "auth MCP"     || true
-wait_for_port $PORT_MULTI_MCP "multi-app MCP" || true
-wait_for_port $PORT_PAG "demo paginated"     || true
-wait_for_port $PORT_RPC_MCP "demo RPC MCP"   || true
-wait_for_port $PORT_RPC_FASTAPI "demo RPC FastAPI" || true
-wait_for_port $PORT_RPC_VOYAGER "demo RPC Voyager" || true
-wait_for_port $PORT_ENTERPRISE_VOYAGER "enterprise Voyager" || true
-
+for record in "${SERVICES[@]}"; do
+  IFS='|' read -r group name port url cmd <<< "$record"
+  wait_for_port "$port" "$name" || true
+done
 echo ""
 
-# Print status table
+# ── Status table (grouped) ────────────────────────────────────────────────
 echo "=============================================="
 echo -e "${CYAN}Service Status${NC}"
 echo "=============================================="
-printf "  %-20s %-8s %s\n" "SERVICE" "PORT" "URL"
-echo "  ---------------------------------------------------"
-printf "  %-20s %-8s %s\n" "demo GraphQL" "$PORT_DEMO" "http://localhost:$PORT_DEMO/graphql"
-printf "  %-20s %-8s %s\n" "demo CoreAPI" "$PORT_CORE_API" "http://localhost:$PORT_CORE_API/api/sprints"
-printf "  %-20s %-8s %s\n" "auth GraphQL" "$PORT_AUTH_GQL" "http://localhost:$PORT_AUTH_GQL/graphql"
-printf "  %-20s %-8s %s\n" "auth MCP" "$PORT_AUTH_MCP" "http://localhost:$PORT_AUTH_MCP/mcp"
-printf "  %-20s %-8s %s\n" "multi-app MCP" "$PORT_MULTI_MCP" "http://localhost:$PORT_MULTI_MCP/mcp"
-printf "  %-20s %-8s %s\n" "demo paginated" "$PORT_PAG" "http://localhost:$PORT_PAG/graphql"
-printf "  %-20s %-8s %s\n" "demo RPC MCP" "$PORT_RPC_MCP" "http://localhost:$PORT_RPC_MCP/mcp"
-printf "  %-20s %-8s %s\n" "demo RPC FastAPI" "$PORT_RPC_FASTAPI" "http://localhost:$PORT_RPC_FASTAPI/api/sprints"
-printf "  %-20s %-8s %s\n" "demo RPC Voyager" "$PORT_RPC_VOYAGER" "http://localhost:$PORT_RPC_VOYAGER/voyager"
-printf "  %-20s %-8s %s\n" "enterprise Voyager" "$PORT_ENTERPRISE_VOYAGER" "http://localhost:$PORT_ENTERPRISE_VOYAGER/voyager"
+current_group=""
+for record in "${SERVICES[@]}"; do
+  IFS='|' read -r group name port url cmd <<< "$record"
+  if [ "$group" != "$current_group" ]; then
+    current_group="$group"
+    echo -e "${CYAN}── ${GROUP_TITLE[$group]} ──${NC}"
+  fi
+  printf "  %-36s :%-5s http://localhost:%s%s\n" "$name" "$port" "$port" "$url"
+done
 echo "=============================================="
 echo ""
 echo -e "${YELLOW}Press Ctrl+C to stop all services${NC}"
