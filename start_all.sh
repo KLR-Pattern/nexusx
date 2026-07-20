@@ -54,7 +54,7 @@ declare -A GROUP_TITLE=(
 SERVICES=(
   # ── Query surface: SQLModel entities exposed as GraphQL / MCP ──
   "query|Blog GraphQL|$PORT_BLOG_GQL|GraphQL|/graphql,/schema|uv run uvicorn demo.blog.app:app --port %PORT%"
-  "query|Blog GraphQL (paginated)|$PORT_BLOG_GQL_PAG|GraphQL|/graphql,/schema|uv run uvicorn demo.blog.app_paginated:app --port %PORT%"
+  "query|Blog GraphQL (paginated)|$PORT_BLOG_GQL_PAG|GraphQL, MCP|/graphql,/schema,/mcp/mcp|uv run --with fastmcp uvicorn demo.blog.app_paginated:app --port %PORT%"
   "query|Auth GraphQL|$PORT_AUTH_GQL|GraphQL|/graphql,/schema|uv run uvicorn demo.auth.app:app --port %PORT%"
   "query|Auth MCP (entity → MCP)|$PORT_AUTH_MCP|MCP|/mcp|PORT=%PORT% uv run python -m demo.auth.mcp_server"
   "query|Multi-app MCP (gateway)|$PORT_MULTI_MCP|MCP|/mcp|PORT=%PORT% uv run python -m demo.multi_app.mcp_server"

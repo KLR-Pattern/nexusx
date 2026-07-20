@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from demo.blog.database import async_session, init_db
 from demo.blog.models import BaseEntity
 from nexusx import AutoQueryConfig, GraphQLHandler
+from nexusx.mcp import create_simple_mcp_server
 
 
 class GraphQLRequest(BaseModel):
@@ -35,11 +36,26 @@ handler = GraphQLHandler(
 )
 
 
+# Build the MCP app before the FastAPI app so its lifespan can be composed in.
+# FastMCP's streamable-http session manager initializes inside its lifespan;
+# if that lifespan isn't run by the parent app, every /mcp request 500s with
+# "Task group is not initialized".
+mcp_server = create_simple_mcp_server(
+    base=BaseEntity,
+    name="nexusx Blog (Paginated) MCP",
+    desc="Blog system — query users/posts/comments (paginated GraphQL)",
+    allow_mutation=True,
+    session_factory=async_session,
+)
+mcp_app = mcp_server.http_app()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize database on startup."""
-    await init_db()
-    yield
+    """Start the MCP session manager and initialize the database."""
+    async with mcp_app.lifespan(app):
+        await init_db()
+        yield
 
 
 app = FastAPI(
@@ -147,6 +163,13 @@ query {
             },
         ],
     }
+
+
+# MCP interface on the same port — exposes the blog entities to AI agents via
+# 3 tools (get_schema, graphql_query, graphql_mutation). FastMCP's
+# streamable-http app is mounted at /mcp; its endpoint lives at /mcp/mcp
+# (FastMCP hosts the streamable handler one level under the mount prefix).
+app.mount("/mcp", mcp_app)
 
 
 if __name__ == "__main__":
