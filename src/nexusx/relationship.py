@@ -108,9 +108,13 @@ def get_custom_relationships(entity: type) -> list[Relationship]:
             f"got {type(raw).__name__}"
         )
     for i, item in enumerate(raw):
-        if not isinstance(item, Relationship):
+        # Local import to avoid a top-level dependency cycle (federation.relationship
+        # itself imports nothing from this module).
+        from nexusx.federation.relationship import RemoteRelationship
+
+        if not isinstance(item, Relationship | RemoteRelationship):
             raise TypeError(
-                f"{entity.__name__}.__relationships__[{i}] must be a Relationship, "
-                f"got {type(item).__name__}"
+                f"{entity.__name__}.__relationships__[{i}] must be a Relationship or "
+                f"RemoteRelationship, got {type(item).__name__}"
             )
     return list(raw)

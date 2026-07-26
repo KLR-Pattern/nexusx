@@ -387,34 +387,44 @@ class QueryExecutor:
 
     async def _load_field_batch(self, job: _FieldJob) -> list:
         """Batch load a non-paginated relationship field."""
-        from nexusx.loader.query_meta import (
-            generate_query_meta_from_selection,
-            generate_type_key_from_selection,
-            merge_query_meta,
-            set_query_meta,
-        )
-
         rel_info = job.rel_info
         child_sel = job.child_sel
 
-        # Build FK lookup from target entity's registered relationships
-        target_rels = self._registry.get_relationships(rel_info.target_entity)
-        fk_lookup = {name: info.fk_field for name, info in target_rels.items()}
+        is_remote = getattr(rel_info, "target_service", None) is not None
+        if is_remote:
+            # Federated relationship: inject the FieldSelection (the loader
+            # builds & issues the nested gql query itself); no SQL column
+            # pruning applies.
+            from nexusx.federation.remote_loader import set_remote_selection
 
-        # Generate type_key for split mode (None in default mode)
-        type_key = generate_type_key_from_selection(
-            child_sel, rel_info.target_entity, fk_lookup=fk_lookup,
-        )
-        loader = self._registry.get_loader(rel_info.loader, type_key=type_key)
-
-        # Inject _query_meta for SQL column pruning
-        meta = generate_query_meta_from_selection(
-            child_sel, rel_info.target_entity, fk_lookup=fk_lookup,
-        )
-        if type_key is not None and self._registry._split_mode:
-            set_query_meta(loader, meta)
+            loader = self._registry.get_loader(rel_info.loader)
+            set_remote_selection(loader, child_sel)
         else:
-            merge_query_meta(loader, meta)
+            from nexusx.loader.query_meta import (
+                generate_query_meta_from_selection,
+                generate_type_key_from_selection,
+                merge_query_meta,
+                set_query_meta,
+            )
+
+            # Build FK lookup from target entity's registered relationships
+            target_rels = self._registry.get_relationships(rel_info.target_entity)
+            fk_lookup = {name: info.fk_field for name, info in target_rels.items()}
+
+            # Generate type_key for split mode (None in default mode)
+            type_key = generate_type_key_from_selection(
+                child_sel, rel_info.target_entity, fk_lookup=fk_lookup,
+            )
+            loader = self._registry.get_loader(rel_info.loader, type_key=type_key)
+
+            # Inject _query_meta for SQL column pruning
+            meta = generate_query_meta_from_selection(
+                child_sel, rel_info.target_entity, fk_lookup=fk_lookup,
+            )
+            if type_key is not None and self._registry._split_mode:
+                set_query_meta(loader, meta)
+            else:
+                merge_query_meta(loader, meta)
 
         fk_values = [getattr(p, rel_info.fk_field) for p in job.parents]
         results = await loader.load_many(fk_values)

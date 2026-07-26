@@ -34,6 +34,7 @@ class AutoQueryConfig:
         generate_by_id: bool = True,
         generate_by_filter: bool = True,
         enabled: bool = True,
+        batch_keys: dict[str, list[str]] | None = None,
     ):
         """Initialize the auto query configuration.
 
@@ -42,11 +43,16 @@ class AutoQueryConfig:
             generate_by_id: Whether to generate by_id query.
             generate_by_filter: Whether to generate by_filter query.
             enabled: Whether standard queries are enabled.
+            batch_keys: Per-entity batch lookup fields for federation, mapping
+                ``{EntityName: [field, ...]}``. For each field a
+                ``by_<field>_in(values: list)`` batch query root is generated
+                (``where field.in_(values)``). Generally useful beyond federation.
         """
         self.default_limit = default_limit
         self.generate_by_id = generate_by_id
         self.generate_by_filter = generate_by_filter
         self.enabled = enabled
+        self.batch_keys = batch_keys or {}
 
 
 async def _create_session_context(session_factory: Any) -> Any:
@@ -215,6 +221,48 @@ def _create_by_filter_query(
     return by_filter
 
 
+def _create_by_keys_in_query(
+    entity: type[SQLModel],
+    session_factory: Any,
+    field_name: str,
+    field_type: type,
+) -> Any:
+    """Create a ``by_<field>_in`` batch query root (``where field.in_(values)``)."""
+
+    arg_name = f"{field_name}_list"
+    method_name = f"by_{field_name}_in"
+
+    @query
+    async def by_field_in(cls, **kwargs: Any) -> Any:
+        """Batch-fetch entities where ``field`` is in the provided list."""
+        if arg_name not in kwargs:
+            msg = f"Missing required argument: {arg_name}"
+            raise TypeError(msg)
+        values = kwargs[arg_name]
+        session_context = await _create_session_context(session_factory)
+        async with session_context as session:
+            stmt = select(cls).where(getattr(cls, field_name).in_(values))
+            result = await session.exec(stmt)
+            return list(result.all())
+
+    func = by_field_in.__func__ if hasattr(by_field_in, "__func__") else by_field_in
+    func.__annotations__[arg_name] = list[field_type]
+    by_field_in.__annotations__["return"] = list[entity]
+    func.__signature__ = inspect.Signature(
+        parameters=[
+            inspect.Parameter("cls", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+            inspect.Parameter(
+                arg_name,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                annotation=list[field_type],
+            ),
+        ],
+        return_annotation=list[entity],
+    )
+    func.__name__ = method_name
+    return by_field_in
+
+
 def add_standard_queries(
     entities: list[type[SQLModel]],
     config: AutoQueryConfig,
@@ -248,3 +296,21 @@ def add_standard_queries(
                 filter_input_type,
             )
             entity.by_filter = by_filter_method
+
+        # Batch lookup roots (by_<key>_in) — used by federation RemoteLoader.
+        for field_name in config.batch_keys.get(entity.__name__, []):
+            method_name = f"by_{field_name}_in"
+            if hasattr(entity, method_name):
+                continue
+            if field_name not in entity.model_fields:
+                msg = (
+                    f"AutoQueryConfig.batch_keys field {field_name!r} is not a "
+                    f"column on {entity.__name__}"
+                )
+                raise ValueError(msg)
+            field_type = _unwrap_optional_type(entity.model_fields[field_name].annotation)
+            setattr(
+                entity,
+                method_name,
+                _create_by_keys_in_query(entity, session_factory, field_name, field_type),
+            )

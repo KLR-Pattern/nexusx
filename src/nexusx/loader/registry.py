@@ -16,6 +16,7 @@ from aiodataloader import DataLoader
 from pydantic import BaseModel
 from sqlmodel import SQLModel
 
+from nexusx.federation.relationship import RemoteRelationship
 from nexusx.loader.factories import (
     create_many_to_many_loader,
     create_many_to_one_loader,
@@ -43,6 +44,8 @@ class RelationshipInfo:
     default_page_size: int = 20
     max_page_size: int = 100
     description: str | None = None  # documentation string surfaced in voyager/ER diagram
+    # Owning service prefix for a remote (federated) relationship; None for local.
+    target_service: str | None = None
 
 
 def _expect_single_pair(pairs: Any, message: str) -> tuple[Any, Any]:
@@ -323,6 +326,7 @@ class ErManager:
         entities: list[type[SQLModel]] | None = None,
         enable_pagination: bool = False,
         split_loader_by_type: bool = False,
+        service_name: str | None = None,
     ):
         if base is not None and entities is not None:
             raise ValueError("base and entities are mutually exclusive")
@@ -336,6 +340,11 @@ class ErManager:
         self._session_factory = session_factory
         self._enable_pagination = enable_pagination
         self._split_mode = split_loader_by_type
+        # Federation state (no-op when federation is unused).
+        self.service_name: str | None = service_name
+        self._mounted_services: dict[str, str] = {}
+        self._pending_remote_rels: list[tuple[type, Any]] = []
+        self._fed_registry: Any = None
         # entity -> {rel_name -> RelationshipInfo}. Keys may be SQLModel
         # classes (registered via __init__) OR plain BaseModel classes
         # (registered via add_virtual_entities). The dict shape is uniform;
@@ -365,7 +374,11 @@ class ErManager:
                         f"Custom relationship '{rel.name}' on {entity.__name__} "
                         f"conflicts with an existing relationship name"
                     )
-                entity_rels[rel.name] = _build_custom_relationship_info(rel)
+                if isinstance(rel, RemoteRelationship):
+                    # Federated relationship: defer wiring to federate().
+                    self._pending_remote_rels.append((entity, rel))
+                else:
+                    entity_rels[rel.name] = _build_custom_relationship_info(rel)
 
         if enable_pagination:
             self._validate_pagination()
@@ -434,7 +447,10 @@ class ErManager:
                         f"{entity.__name__} conflicts with another "
                         f"relationship name on the same class."
                     )
-                entity_rels[rel.name] = _build_custom_relationship_info(rel)
+                if isinstance(rel, RemoteRelationship):
+                    self._pending_remote_rels.append((entity, rel))
+                else:
+                    entity_rels[rel.name] = _build_custom_relationship_info(rel)
             self._registry[entity] = entity_rels
 
     @property
@@ -585,6 +601,31 @@ class ErManager:
         if rel_info is None:
             return None
         return self.get_loader(rel_info.loader, type_key=type_key)
+
+    async def federate(
+        self,
+        services: dict[str, str],
+        *,
+        remote_edges: list[Any] | None = None,
+        transport: Any | None = None,
+        service_name: str | None = None,
+    ) -> None:
+        """Mount other nexusx services into this ErManager (federation).
+
+        Async (HTTP) — call during application startup (e.g. FastAPI lifespan),
+        before this ErManager serves queries. No-op-equivalent when never called
+        (local-only behavior is unchanged). See nexusx.federation.manager.federate
+        for the orchestration and fail-fast validation.
+        """
+        from nexusx.federation.manager import federate as _federate
+
+        await _federate(
+            self,
+            services,
+            remote_edges=remote_edges,
+            transport=transport,
+            service_name=service_name,
+        )
 
     def create_resolver(self) -> type:
         """Create a Resolver class pre-wired with this ErManager.

@@ -44,6 +44,7 @@ class GraphQLHandler:
         mutation_description: str | None = None,
         auto_query_config: AutoQueryConfig | None = None,
         enable_pagination: bool = False,
+        service_name: str | None = None,
     ):
         """Initialize the GraphQL handler.
 
@@ -85,6 +86,7 @@ class GraphQLHandler:
             entities=self.entities,
             session_factory=session_factory,
             enable_pagination=enable_pagination,
+            service_name=service_name,
         )
 
         # Initialize SDL generator
@@ -165,6 +167,22 @@ class GraphQLHandler:
             HTML string for GraphiQL playground.
         """
         return GRAPHIQL_HTML.replace("{graphql_url}", endpoint)
+
+    async def federate(
+        self,
+        services: dict[str, str],
+        *,
+        remote_edges: list[Any] | None = None,
+        transport: Any | None = None,
+    ) -> None:
+        """Mount other nexusx services into this handler (federation).
+
+        Async (HTTP) — call during startup (e.g. FastAPI lifespan) before this
+        handler serves queries. See nexusx.federation.manager.federate.
+        """
+        await self._er_manager.federate(
+            services, remote_edges=remote_edges, transport=transport
+        )
 
     async def execute(
         self,
