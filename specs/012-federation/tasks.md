@@ -149,7 +149,7 @@ description: "Task list for nexusx 多服务联邦(federation)"
 
 ### Implementation for User Story 4
 
-- [ ] T028 [US4] Add ownership badge/label(规范名 `srv.typename`,不揉进类型名)to remote nodes in ER diagram in src/nexusx/voyager/er_diagram_dot.py(+ 渲染层若有需要)
+- [x] T028 [US4] Add ownership badge/label(规范名 `srv.typename`,不揉进类型名)to remote nodes in ER diagram in src/nexusx/voyager/er_diagram_dot.py(+ 渲染层若有需要)
 
 **Checkpoint**:联邦图可视化,归属可辨。
 
@@ -159,10 +159,10 @@ description: "Task list for nexusx 多服务联邦(federation)"
 
 **Purpose**:跨故事收尾。
 
-- [ ] T029 [P] Export federation public API(`RemoteRelationship`、`RemoteEdge`、`federate`、`by_<key>_in` 经 `AutoQueryConfig`)in src/nexusx/__init__.py
-- [ ] T030 Run `ruff check` + `mypy --strict` on src/nexusx + tests;修复所有告警
-- [ ] T031 Run full regression `pytest -q`:SC-005(未启用 federate 时既有 nexusx 全量测试零回归)
-- [ ] T032 [P] Run quickstart.md validation(V1–V7:启动/单跳/多跳透明/无过度取数/schema 渲染/fail-fast/单体零回归)
+- [x] T029 [P] Export federation public API(`RemoteRelationship`、`RemoteEdge`、`federate`、`by_<key>_in` 经 `AutoQueryConfig`)in src/nexusx/__init__.py
+- [x] T030 Run `ruff check` + `mypy --strict` on src/nexusx + tests;修复所有告警
+- [x] T031 Run full regression `pytest -q`:SC-005(未启用 federate 时既有 nexusx 全量测试零回归)
+- [x] T032 [P] Run quickstart.md validation(V1–V7:启动/单跳/多跳透明/无过度取数/schema 渲染/fail-fast/单体零回归)
 - [ ] T033 [P] Docs:add federation guide to docs/ + README 一段说明(同构 nexusx 联邦,非通用 gateway)
 
 ---

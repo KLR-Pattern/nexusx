@@ -147,10 +147,18 @@ class ErDiagramDotBuilder:
             # Signals DiagramRenderer to apply Contract 3 visual distinction
             # (yellow fill, «virtual» stereotype, cluster_virtual grouping).
             is_virtual = is_virtual_entity(entity_kls)
+            # Federated (materialized remote) types: tag with the owning service
+            # via the qualified name so Voyager shows ownership (FR-016).
+            module = entity_kls.__module__
+            fed_reg = getattr(self.er_manager, "_fed_registry", None)
+            if fed_reg is not None:
+                fed_qn = fed_reg.qualified_of(entity_kls)
+                if fed_qn:
+                    module = fed_qn
 
             self.node_set[full_name] = SchemaNode(
                 id=full_name,
-                module=entity_kls.__module__,
+                module=module,
                 name=entity_kls.__name__,
                 fields=fields,
                 queries=queries,
