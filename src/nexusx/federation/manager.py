@@ -108,6 +108,7 @@ async def federate(
                 queue.append(child_qn)
 
     # 3. Materialize remote types (bare __name__; qualified identity in registry).
+    _check_no_cross_service_barename_dup(fragments)
     fed_registry = FederatedTypeRegistry()
     fed_registry.materialize(fragments)
     er_manager._fed_registry = fed_registry
@@ -164,6 +165,21 @@ def _validate_declarations(
 ) -> None:
     for _src, rrel in er_manager._pending_remote_rels:
         _check_target(rrel.target, rrel.join_remote, services, fragments)
+
+
+def _check_no_cross_service_barename_dup(fragments: dict[str, EntityFragment]) -> None:
+    """FR-013f: two different services must not expose the same bare typename."""
+    owner_of: dict[str, str] = {}
+    for qn, frag in fragments.items():
+        srv = parse_qualified_name(qn)[0]
+        prev = owner_of.get(frag.typename)
+        if prev is not None and prev != srv:
+            raise FederationError(
+                f"Cross-service bare-name duplicate: type {frag.typename!r} exposed "
+                f"by both service {prev!r} and service {srv!r}. GraphQL forbids two "
+                f"types with the same name in one schema."
+            )
+        owner_of.setdefault(frag.typename, srv)
 
 
 def _check_target(

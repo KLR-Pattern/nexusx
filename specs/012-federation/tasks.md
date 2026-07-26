@@ -131,11 +131,11 @@ description: "Task list for nexusx 多服务联邦(federation)"
 
 ### Tests for User Story 3
 
-- [ ] T026 [P] [US3] Write test_federation_validation.py:七类 fail-fast(未知 srv / typename 缺失 / join 字段缺失或不兼容 / 缺 by_<key>_in root / 前缀重复 / 跨服务裸名重复 / 不可终止环)in tests/test_federation_validation.py
+- [x] T026 [P] [US3] Write test_federation_validation.py:七类 fail-fast(未知 srv / typename 缺失 / join 字段缺失或不兼容 / 缺 by_<key>_in root / 前缀重复 / 跨服务裸名重复 / 不可终止环)in tests/test_federation_validation.py
 
 ### Implementation for User Story 3
 
-- [ ] T027 [US3] Implement seven fail-fast checks in `federate()` in src/nexusx/federation/manager.py(depends T019):(a) srv 已注册 (b) typename 存在 (c) join_remote 字段存在且类型与 join_local 兼容 (d) by_<join_remote>_in root 存在 (e) 前缀唯一 (f) 跨服务裸名不重复 (g) 传递式拉取检出不可终止环
+- [x] T027 [US3] Implement seven fail-fast checks in `federate()` in src/nexusx/federation/manager.py(depends T019):(a) srv 已注册 (b) typename 存在 (c) join_remote 字段存在且类型与 join_local 兼容 (d) by_<join_remote>_in root 存在 (e) 前缀唯一 (f) 跨服务裸名不重复 (g) 传递式拉取检出不可终止环
 
 **Checkpoint**:联邦错配启动期全捕获。
 
