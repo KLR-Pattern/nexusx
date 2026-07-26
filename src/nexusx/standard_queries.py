@@ -18,11 +18,18 @@ from nexusx.decorator import query
 
 
 class AutoQueryConfig:
-    """Configuration for auto-generated standard queries."""
+    """Configuration for auto-generated standard queries.
+
+    Pure policy: holds toggles and limits only. The async ``session_factory``
+    used to execute ``by_id``/``by_filter`` is owned by the container
+    (``Application`` / ``GraphQLHandler`` / MCP builder) and passed to
+    :func:`add_standard_queries` separately — the config deliberately does not
+    own a database connection. This lets one config be reused across apps that
+    point at different databases.
+    """
 
     def __init__(
         self,
-        session_factory,
         default_limit: int = 10,
         generate_by_id: bool = True,
         generate_by_filter: bool = True,
@@ -31,13 +38,11 @@ class AutoQueryConfig:
         """Initialize the auto query configuration.
 
         Args:
-            session_factory: Factory that creates async database session.
             default_limit: Default limit for by_filter queries.
             generate_by_id: Whether to generate by_id query.
             generate_by_filter: Whether to generate by_filter query.
             enabled: Whether standard queries are enabled.
         """
-        self.session_factory = session_factory
         self.default_limit = default_limit
         self.generate_by_id = generate_by_id
         self.generate_by_filter = generate_by_filter
@@ -210,19 +215,27 @@ def _create_by_filter_query(
     return by_filter
 
 
-def add_standard_queries(entities: list[type[SQLModel]], config: AutoQueryConfig) -> None:
+def add_standard_queries(
+    entities: list[type[SQLModel]],
+    config: AutoQueryConfig,
+    session_factory: Any,
+) -> None:
     """Add standard queries (by_id, by_filter) to entities.
 
     Args:
         entities: List of SQLModel entity classes.
-        config: AutoQueryConfig.
+        config: AutoQueryConfig (policy only — toggles and limits).
+        session_factory: Async session factory from the owning container
+            (Application / GraphQLHandler / MCP builder). Used by the generated
+            by_id / by_filter to actually query the database; the config no
+            longer carries it.
     """
     if not config.enabled:
         return
 
     for entity in entities:
         if config.generate_by_id and not hasattr(entity, "by_id"):
-            by_id_method = _create_by_id_query(entity, config.session_factory)
+            by_id_method = _create_by_id_query(entity, session_factory)
             if by_id_method is not None:
                 entity.by_id = by_id_method
 
@@ -230,7 +243,7 @@ def add_standard_queries(entities: list[type[SQLModel]], config: AutoQueryConfig
             filter_input_type = _create_filter_input_type(entity)
             by_filter_method = _create_by_filter_query(
                 entity,
-                config.session_factory,
+                session_factory,
                 config.default_limit,
                 filter_input_type,
             )

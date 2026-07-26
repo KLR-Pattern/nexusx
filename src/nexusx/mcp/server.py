@@ -17,6 +17,25 @@ from nexusx.mcp.tools.multi_app_tools import register_multi_app_tools
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
+    from nexusx.handler import GraphQLHandler
+    from nexusx.standard_queries import AutoQueryConfig
+
+
+def _ensure_operations(handler: GraphQLHandler, context: str) -> None:
+    """Raise ValueError if the handler discovered no GraphQL operations.
+
+    Guards MCP server builders against standing up a server whose schema has
+    nothing to query (no @query/@mutation methods and no auto_query_config),
+    which would otherwise silently serve an empty schema.
+    """
+    if not handler.has_operations:
+        raise ValueError(
+            f"{context}: GraphQL schema has no operations. "
+            "Define @query/@mutation methods on your entities, "
+            "or pass auto_query_config=AutoQueryConfig(...) to "
+            "auto-generate by_id/by_filter queries."
+        )
+
 
 def create_mcp_server(
     apps: list[Application | dict[str, Any]],
@@ -61,6 +80,10 @@ def create_mcp_server(
         A configured FastMCP server instance. Its ``lifespan`` is wired so that
         ``manager.dispose()`` runs on shutdown, releasing any engines owned by
         ``Application(url=...)`` instances.
+
+    Raises:
+        ValueError: If any application's schema has no operations (no
+            @query/@mutation methods and no auto_query_config).
 
     Example:
         ```python
@@ -117,6 +140,11 @@ def create_mcp_server(
     # Create the multi-app manager
     manager = MultiAppManager(apps)
 
+    # Fail fast if any app's schema has no operations (no @query/@mutation
+    # and no auto_query_config) — otherwise the MCP serves an empty schema.
+    for app_name, resources in manager.apps.items():
+        _ensure_operations(resources.handler, f"create_mcp_server (app '{app_name}')")
+
     # Wire lifespan so manager.dispose() runs on server shutdown,
     # releasing any engines owned by Applications constructed with url=.
     @asynccontextmanager
@@ -141,6 +169,8 @@ def create_simple_mcp_server(
     desc: str | None = None,
     allow_mutation: bool = False,
     session_factory: Callable | None = None,
+    enable_pagination: bool = False,
+    auto_query_config: AutoQueryConfig | None = None,
 ) -> FastMCP:
     """Create a simplified MCP server for single-app scenarios.
 
@@ -167,9 +197,17 @@ def create_simple_mcp_server(
             Mutation type in schema. Default is False (read-only mode).
         session_factory: Async session factory for DataLoader relationship
             loading. Required if queries return entities with relationships.
+        enable_pagination: When True, list relationships return Result types
+            with { items, pagination } wrapping. Default False.
+        auto_query_config: Optional AutoQueryConfig for auto-generating
+            by_id/by_filter queries. Default None.
 
     Returns:
         A configured FastMCP server instance with 2-3 simplified tools.
+
+    Raises:
+        ValueError: If the schema has no operations (no @query/@mutation
+            methods and no auto_query_config).
 
     Example:
         ```python
@@ -219,7 +257,14 @@ def create_simple_mcp_server(
     from nexusx.mcp.tools.simple_tools import register_simple_tools
 
     # Create the single-app manager
-    manager = SingleAppManager(base=base, description=desc, session_factory=session_factory)
+    manager = SingleAppManager(
+        base=base,
+        description=desc,
+        session_factory=session_factory,
+        enable_pagination=enable_pagination,
+        auto_query_config=auto_query_config,
+    )
+    _ensure_operations(manager.handler, "create_simple_mcp_server")
 
     # Create the FastMCP server
     mcp = FastMCP(name)

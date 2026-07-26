@@ -11,6 +11,8 @@ from nexusx.mcp.builders.type_tracer import TypeTracer
 if TYPE_CHECKING:
     from sqlmodel import SQLModel
 
+    from nexusx.standard_queries import AutoQueryConfig
+
 
 class SingleAppManager:
     """Manages a single GraphQL application without multi-app overhead.
@@ -29,6 +31,8 @@ class SingleAppManager:
         base: type[SQLModel],
         description: str | None = None,
         session_factory: Callable | None = None,
+        enable_pagination: bool = False,
+        auto_query_config: AutoQueryConfig | None = None,
     ):
         """Initialize the single-app manager.
 
@@ -38,6 +42,10 @@ class SingleAppManager:
             description: Optional description for the GraphQL schema
                         (used for both Query and Mutation type descriptions)
             session_factory: Async session factory for DataLoader relationship loading
+            enable_pagination: When True, list relationships return Result types
+                with { items, pagination } wrapping.
+            auto_query_config: Optional AutoQueryConfig for auto-generating
+                standard queries (by_id, by_filter).
 
         Example:
             ```python
@@ -62,6 +70,8 @@ class SingleAppManager:
             session_factory=session_factory,
             query_description=description,
             mutation_description=description,
+            enable_pagination=enable_pagination,
+            auto_query_config=auto_query_config,
         )
 
         # Create type tracer for schema introspection

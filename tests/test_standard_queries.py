@@ -60,8 +60,8 @@ def test_standard_queries_functionality():
         age: int | None = None
 
     # Add standard queries
-    config = AutoQueryConfig(session_factory=_session_factory({}))
-    add_standard_queries([TestUser], config)
+    config = AutoQueryConfig()
+    add_standard_queries([TestUser], config, _session_factory({}))
 
     # Verify methods exist
     assert hasattr(TestUser, "by_id")
@@ -93,11 +93,8 @@ def test_disable_standard_queries():
         email: str
 
     # Add standard queries with disabled
-    config = AutoQueryConfig(
-        session_factory=_session_factory({}),
-        enabled=False,
-    )
-    add_standard_queries([TestUser2], config)
+    config = AutoQueryConfig(enabled=False)
+    add_standard_queries([TestUser2], config, _session_factory({}))
 
     # Verify methods not added
     assert not hasattr(TestUser2, "by_id")
@@ -115,11 +112,8 @@ def test_only_generate_by_filter():
         email: str
 
     # Add standard queries with only by_filter
-    config = AutoQueryConfig(
-        session_factory=_session_factory({}),
-        generate_by_id=False,
-    )
-    add_standard_queries([TestUser3], config)
+    config = AutoQueryConfig(generate_by_id=False)
+    add_standard_queries([TestUser3], config, _session_factory({}))
 
     # Verify methods
     assert not hasattr(TestUser3, "by_id")
@@ -145,8 +139,8 @@ def test_dont_override_existing_methods():
             return "existing filter"
 
     # Add standard queries
-    config = AutoQueryConfig(session_factory=_session_factory({}))
-    add_standard_queries([TestUser4], config)
+    config = AutoQueryConfig()
+    add_standard_queries([TestUser4], config, _session_factory({}))
 
     # Verify existing methods are preserved
     assert TestUser4.by_id() == "existing method"
@@ -165,7 +159,8 @@ def test_auto_query_config_discovers_entities_without_existing_methods():
 
     handler = GraphQLHandler(
         base=TestBase5,
-        auto_query_config=AutoQueryConfig(session_factory=_session_factory({})),
+        session_factory=_session_factory({}),
+        auto_query_config=AutoQueryConfig(),
     )
     sdl = handler.get_sdl()
 
@@ -190,7 +185,8 @@ async def test_by_filter_execution_uses_input_model_values():
     state: dict[str, object] = {}
     handler = GraphQLHandler(
         base=TestBase6,
-        auto_query_config=AutoQueryConfig(session_factory=_session_factory(state)),
+        session_factory=_session_factory(state),
+        auto_query_config=AutoQueryConfig(),
     )
 
     result = await handler.execute(
@@ -216,7 +212,8 @@ def test_filter_input_includes_inherited_fields():
 
     add_standard_queries(
         [TenantUser],
-        AutoQueryConfig(session_factory=_session_factory({})),
+        AutoQueryConfig(),
+        _session_factory({}),
     )
 
     handler = GraphQLHandler(base=TenantBase)
@@ -240,7 +237,8 @@ async def test_by_id_uses_actual_primary_key_name_and_type():
     state: dict[str, object] = {}
     handler = GraphQLHandler(
         base=TestBase7,
-        auto_query_config=AutoQueryConfig(session_factory=_session_factory(state)),
+        session_factory=_session_factory(state),
+        auto_query_config=AutoQueryConfig(),
     )
     sdl = handler.get_sdl()
 
@@ -270,7 +268,8 @@ async def test_by_id_ignores_non_primary_id_field():
     state: dict[str, object] = {}
     handler = GraphQLHandler(
         base=TestBase7B,
-        auto_query_config=AutoQueryConfig(session_factory=_session_factory(state)),
+        session_factory=_session_factory(state),
+        auto_query_config=AutoQueryConfig(),
     )
     sdl = handler.get_sdl()
 
@@ -301,10 +300,8 @@ def test_existing_custom_filter_input_is_not_overridden_in_sdl():
 
     add_standard_queries(
         [TestUser8],
-        AutoQueryConfig(
-            session_factory=_session_factory({}),
-            generate_by_filter=False,
-        ),
+        AutoQueryConfig(generate_by_filter=False),
+        _session_factory({}),
     )
 
     handler = GraphQLHandler(base=TestBase8)

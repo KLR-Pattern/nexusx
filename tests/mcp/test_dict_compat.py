@@ -14,6 +14,7 @@ import warnings
 import pytest
 from sqlmodel import Field, SQLModel
 
+from nexusx import query
 from nexusx.mcp import create_mcp_server
 
 
@@ -24,6 +25,10 @@ class _CompatBase(SQLModel):
 class _Widget(_CompatBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
+
+    @query
+    async def list_all(cls) -> list[_Widget]:
+        return []
 
 
 class TestDictCompatPath:

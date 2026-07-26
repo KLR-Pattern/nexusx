@@ -13,10 +13,9 @@ def test_demo_with_standard_queries():
     """Test adding standard queries to demo models."""
     # Add standard queries to all demo entities
     config = AutoQueryConfig(
-        session_factory=async_session,
         default_limit=20,
     )
-    add_standard_queries([User, Post, Comment], config)
+    add_standard_queries([User, Post, Comment], config, async_session)
 
     # Verify methods exist
     assert hasattr(User, "by_id")
@@ -27,7 +26,9 @@ def test_demo_with_standard_queries():
     assert hasattr(Comment, "by_filter")
 
     # Generate SDL
-    handler = GraphQLHandler(base=BaseEntity, auto_query_config=config)
+    handler = GraphQLHandler(
+        base=BaseEntity, session_factory=async_session, auto_query_config=config
+    )
     sdl = handler.get_sdl()
 
     print("=== Generated SDL with Standard Queries ===\n")
@@ -59,11 +60,12 @@ def test_demo_with_standard_queries():
 def test_graphql_handler_with_auto_config():
     """Test using auto_query_config directly in GraphQLHandler."""
     config = AutoQueryConfig(
-        session_factory=async_session,
         default_limit=20,
     )
 
-    handler = GraphQLHandler(base=BaseEntity, auto_query_config=config)
+    handler = GraphQLHandler(
+        base=BaseEntity, session_factory=async_session, auto_query_config=config
+    )
     sdl = handler.get_sdl()
 
     # Verify SDL contains expected queries (grouped by entity at the GraphQL root)

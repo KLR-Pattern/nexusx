@@ -5,7 +5,6 @@ from demo.blog.models import BaseEntity
 from nexusx import AutoQueryConfig, GraphQLHandler
 
 config = AutoQueryConfig(
-    session_factory=async_session,
     default_limit=20,
 )
 

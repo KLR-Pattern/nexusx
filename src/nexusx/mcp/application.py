@@ -28,6 +28,8 @@ from nexusx.mcp.managers.app_resources import AppResources
 if TYPE_CHECKING:
     from sqlmodel import SQLModel
 
+    from nexusx.standard_queries import AutoQueryConfig
+
 
 def _redact_url(url: str) -> str:
     """把 URL 中的密码字段替换为 ``***``，用于日志/错误消息/``__repr__``。
@@ -73,6 +75,8 @@ class Application:
         mutation_description: str | None = None,
         aliases: list[str] | None = None,
         engine_kwargs: dict[str, Any] | None = None,
+        enable_pagination: bool = False,
+        auto_query_config: AutoQueryConfig | None = None,
     ) -> None:
         # ── 必填字段 ────────────────────────────────────────────────────
         if not name or not isinstance(name, str):
@@ -122,6 +126,8 @@ class Application:
         self._query_description = query_description
         self._mutation_description = mutation_description
         self._aliases: list[str] = self._validate_aliases(aliases, name)
+        self._enable_pagination = enable_pagination
+        self._auto_query_config = auto_query_config
 
         # ── eager 构造 AppResources（全同步） ───────────────────────────
         self._resources = self._build_resources()
@@ -219,6 +225,8 @@ class Application:
             session_factory=self._session_factory,
             query_description=self._query_description,
             mutation_description=self._mutation_description,
+            enable_pagination=self._enable_pagination,
+            auto_query_config=self._auto_query_config,
         )
         introspection_data = handler.get_introspection_data()
         entity_names = {e.__name__ for e in handler.entities}
@@ -273,6 +281,8 @@ def _coerce_to_application(
             query_description=app.get("query_description"),
             mutation_description=app.get("mutation_description"),
             aliases=app.get("aliases"),
+            enable_pagination=app.get("enable_pagination", False),
+            auto_query_config=app.get("auto_query_config"),
         )
     raise TypeError(
         f"App at index {index} must be Application or AppConfig dict, "

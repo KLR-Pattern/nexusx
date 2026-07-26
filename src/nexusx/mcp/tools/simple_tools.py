@@ -64,7 +64,7 @@ def register_simple_tools(
             }
         """
         try:
-            sdl = manager.sdl_generator.generate(include_mutations=allow_mutation)
+            sdl = manager.handler.get_sdl(include_mutations=allow_mutation)
             return create_success_response({"sdl": sdl})
         except Exception as e:
             return create_error_response(str(e), MCPErrors.INTERNAL_ERROR)
