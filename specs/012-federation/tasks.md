@@ -89,13 +89,13 @@ description: "Task list for nexusx 多服务联邦(federation)"
 
 ### Tests for User Story 2
 
-- [ ] T018 [P] [US2] Write test_federation_materialization.py:两遍物化、传递式 ER 拉取、跨远程引用 `model_rebuild` 解析、visited-set 去环 in tests/test_federation_materialization.py
+- [x] T018 [P] [US2] Write test_federation_materialization.py:两遍物化、传递式 ER 拉取、跨远程引用 `model_rebuild` 解析、visited-set 去环 in tests/test_federation_materialization.py
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] Extend `federate()`/`FederatedTypeRegistry`:传递式 ER 拉取(visited-set 去环)+ `RemoteEdge`(远程→远程边配置式声明,因不拥有远程类)in src/nexusx/federation/manager.py + src/nexusx/federation/registry.py(depends T014)
-- [ ] T020 [US2] Extend RemoteLoader:嵌套子选区整体转发(被挂服务自解析其组合子图,含其自身挂载的下游)in src/nexusx/federation/remote_loader.py(depends T011)
-- [ ] T021 [US2] Extend test_federation_e2e.py(多跳 catalog+reviews+users):SC-002(无前缀 + catalog 对 reviews 一条,author 由 reviews 内部解析)in tests/test_federation_e2e.py(depends T019, T020)
+- [x] T019 [US2] Extend `federate()`/`FederatedTypeRegistry`:传递式 ER 拉取(visited-set 去环)+ `RemoteEdge`(远程→远程边配置式声明,因不拥有远程类)in src/nexusx/federation/manager.py + src/nexusx/federation/registry.py(depends T014)
+- [x] T020 [US2] Extend RemoteLoader:嵌套子选区整体转发(被挂服务自解析其组合子图,含其自身挂载的下游)in src/nexusx/federation/remote_loader.py(depends T011)
+- [x] T021 [US2] Extend test_federation_e2e.py(多跳 catalog+reviews+users):SC-002(无前缀 + catalog 对 reviews 一条,author 由 reviews 内部解析)in tests/test_federation_e2e.py(depends T019, T020)
 
 **Checkpoint**:US1 + US2 均独立可测——多跳透明端到端。
 
@@ -111,13 +111,13 @@ description: "Task list for nexusx 多服务联邦(federation)"
 
 ### Tests for User Story 5
 
-- [ ] T022 [P] [US5] Write test_federation_schema_render.py:SDL + Introspection 含远程类型/字段(裸名);渲染字段集 = executor 经注册表可解析字段集(逐类型一致)in tests/test_federation_schema_render.py
+- [x] T022 [P] [US5] Write test_federation_schema_render.py:SDL + Introspection 含远程类型/字段(裸名);渲染字段集 = executor 经注册表可解析字段集(逐类型一致)in tests/test_federation_schema_render.py
 
 ### Implementation for User Story 5
 
-- [ ] T023 [US5] Make `SDLGenerator` registry-driven:`_generate_type` 关系字段来源从 `get_type_hints` 改为 `loader_registry.get_relationships`;`generate()` 实体来源改为 `get_all_entities()`;远程目标经 `FederatedTypeRegistry` 解析为裸名 in src/nexusx/sdl_generator.py(depends T010)
-- [ ] T024 [US5] Make `IntrospectionGenerator` registry-driven:`_build_entity_type` 同步改造(关系字段读注册表、实体读 `get_all_entities()`、远程目标裸名)in src/nexusx/introspection.py(depends T010)
-- [ ] T025 [US5] Wire materialized remote entities into SDL/Introspection entity source(物化后让两 generator 覆盖 `get_all_entities()`)in src/nexusx/handler.py(depends T016, T023, T024)
+- [x] T023 [US5] Make `SDLGenerator` registry-driven:`_generate_type` 关系字段来源从 `get_type_hints` 改为 `loader_registry.get_relationships`;`generate()` 实体来源改为 `get_all_entities()`;远程目标经 `FederatedTypeRegistry` 解析为裸名 in src/nexusx/sdl_generator.py(depends T010)
+- [x] T024 [US5] Make `IntrospectionGenerator` registry-driven:`_build_entity_type` 同步改造(关系字段读注册表、实体读 `get_all_entities()`、远程目标裸名)in src/nexusx/introspection.py(depends T010)
+- [x] T025 [US5] Wire materialized remote entities into SDL/Introspection entity source(物化后让两 generator 覆盖 `get_all_entities()`)in src/nexusx/handler.py(depends T016, T023, T024)
 
 **Checkpoint**:客户端可经 SDL/`__schema` 发现完整联邦图;渲染与执行同源。
 

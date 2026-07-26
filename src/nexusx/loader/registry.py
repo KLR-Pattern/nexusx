@@ -46,6 +46,11 @@ class RelationshipInfo:
     description: str | None = None  # documentation string surfaced in voyager/ER diagram
     # Owning service prefix for a remote (federated) relationship; None for local.
     target_service: str | None = None
+    # True for relationships on a materialized remote type whose data is resolved
+    # by the owning service within the parent fetch (β coalescing). The executor
+    # does NOT BFS-traverse these (data already on the instance); the serializer
+    # reads them from the instance attribute.
+    coalesced: bool = False
 
 
 def _expect_single_pair(pairs: Any, message: str) -> tuple[Any, Any]:

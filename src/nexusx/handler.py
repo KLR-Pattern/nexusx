@@ -70,6 +70,8 @@ class GraphQLHandler:
 
         self.session_factory = session_factory
         self.enable_pagination = enable_pagination
+        self._query_description = query_description
+        self._mutation_description = mutation_description
 
         # Discover entities with decorators and their related entities
         discovery = EntityDiscovery(base)
@@ -182,6 +184,26 @@ class GraphQLHandler:
         """
         await self._er_manager.federate(
             services, remote_edges=remote_edges, transport=transport
+        )
+        # Rebuild schema generators so SDL / __schema introspection include the
+        # materialized remote types (FR-017): the generators snapshot their
+        # entity set + converter at construction, so re-create them with the
+        # now-expanded registry. The executor reads the registry live and needs
+        # no rebuild.
+        entities = self._er_manager.get_all_entities()
+        self._sdl_generator = SDLGenerator(
+            entities,
+            query_description=self._query_description,
+            mutation_description=self._mutation_description,
+        )
+        self._introspection_generator = IntrospectionGenerator(
+            entities=entities,
+            query_methods=self._query_methods,
+            mutation_methods=self._mutation_methods,
+            query_description=self._query_description,
+            mutation_description=self._mutation_description,
+            enable_pagination=self.enable_pagination,
+            loader_registry=self._er_manager,
         )
 
     async def execute(

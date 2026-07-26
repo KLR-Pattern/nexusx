@@ -353,6 +353,7 @@ class SDLGenerator:
             fields.append(f"  {field_name}: {gql_type}")
 
         # Get relationship fields from type hints
+        rendered_rel_names: set[str] = set()
         hints = get_type_hints(entity)
         for field_name, hint in hints.items():
             if field_name in entity.model_fields:
@@ -370,6 +371,23 @@ class SDLGenerator:
                     )
                 else:
                     fields.append(f"  {field_name}: {gql_type}")
+                rendered_rel_names.add(field_name)
+
+        # Registry-only relationships (custom + federated RemoteRelationship, and
+        # relationships on create_model'd remote types): not present as type
+        # hints. Source of truth = the loader registry (FR-017). Target typename
+        # is the materialized class's bare __name__ (no service prefix).
+        if self._loader_registry is not None:
+            rels = self._loader_registry.get_relationships(entity)
+            for rel_name, rel_info in rels.items():
+                if rel_name in rendered_rel_names:
+                    continue
+                target_entity = getattr(rel_info, "target_entity", None)
+                if target_entity is None or not hasattr(target_entity, "__name__"):
+                    continue
+                target = target_entity.__name__
+                gql_type = f"[{target}!]!" if rel_info.is_list else target
+                fields.append(f"  {rel_name}: {gql_type}")
 
         # Build type definition with optional description
         type_def = f"type {entity.__name__} {{\n{chr(10).join(fields)}\n}}"

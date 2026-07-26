@@ -332,6 +332,11 @@ class QueryExecutor:
             if rel_info is None:
                 continue
 
+            # Coalesced (β): data already resolved by the owning service within
+            # the parent fetch and preserved on the instance — no BFS job.
+            if getattr(rel_info, "coalesced", False):
+                continue
+
             if not child_sel.sub_fields:
                 continue
 
@@ -543,7 +548,12 @@ class QueryExecutor:
             rel_info = entity_rels.get(field_name)
 
             if rel_info is not None:
-                value = self._retrieve(item, field_name)
+                if getattr(rel_info, "coalesced", False):
+                    # β: nested data already resolved by the owning service and
+                    # preserved on the instance (extra="allow").
+                    value = getattr(item, field_name, None)
+                else:
+                    value = self._retrieve(item, field_name)
                 result[field_name] = self._serialize_relationship_value(
                     value, rel_info, child_sel
                 )

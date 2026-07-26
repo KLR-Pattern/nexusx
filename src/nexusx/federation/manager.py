@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from aiodataloader import DataLoader
+
 from nexusx.federation.contract import EntityFragment, ERIntrospectionResponse
 from nexusx.federation.http import GraphQLTransport
 from nexusx.federation.introspect import fetch_er_introspection, find_fragment
@@ -124,11 +126,35 @@ async def federate(
     for edge in remote_edges:
         _wire_remote_edge(er_manager, edge, services, fed_registry, transport)
 
-    # 7. Register every materialized type in the registry so get_relationships
-    #    works on it (FR-019 minimal: leaf types get empty rel maps). Deeper
-    #    relationship registration (β nested forwarding) is US2.
+    # 7. Register every materialized type + its (coalesced) relationships. Each
+    #    relationship on a remote type is resolved by the owning service within
+    #    the parent fetch (β coalescing): registered so SDL renders the field and
+    #    the serializer passes the preserved nested data through, but the executor
+    #    does NOT BFS-traverse it (coalesced=True).
     for cls in fed_registry.all_classes():
-        er_manager._registry.setdefault(cls, {})
+        qualified = fed_registry.qualified_of(cls)
+        if qualified is None:
+            continue
+        srv, _tname = parse_qualified_name(qualified)
+        frag = fragments[qualified]
+        rels_map = er_manager._registry.setdefault(cls, {})
+        for rel in frag.relationships:
+            if rel.name in rels_map:
+                continue
+            owner = rel.target_service or srv
+            target_qn = f"{owner}.{rel.target_typename}"
+            if not fed_registry.has(target_qn):
+                continue
+            rels_map[rel.name] = RelationshipInfo(
+                name=rel.name,
+                direction=rel.direction,
+                fk_field=rel.fk_field,
+                target_entity=fed_registry.get(target_qn),
+                is_list=rel.is_list,
+                loader=DataLoader,  # placeholder; never invoked (coalesced skips BFS)
+                target_service=owner,
+                coalesced=True,
+            )
 
 
 def _validate_declarations(

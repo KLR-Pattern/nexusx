@@ -239,6 +239,7 @@ class IntrospectionGenerator:
         except Exception:
             hints = {}
 
+        rel_names_done: set[str] = set()
         for field_name, hint in hints.items():
             if field_name in entity.model_fields:
                 continue  # Already processed
@@ -246,6 +247,20 @@ class IntrospectionGenerator:
             # Only include if it's a relationship to another entity
             if self._is_entity_relationship(hint):
                 all_fields.append((field_name, hint, None))
+                rel_names_done.add(field_name)
+
+        # Registry-only relationships (custom + federated RemoteRelationship, and
+        # relationships on create_model'd remote types): synthesize a type hint
+        # so _build_field renders them. Source of truth = the loader registry.
+        if self._loader_registry is not None:
+            for rel_name, rel_info in self._loader_registry.get_relationships(entity).items():
+                if rel_name in rel_names_done:
+                    continue
+                target_entity = getattr(rel_info, "target_entity", None)
+                if target_entity is None or not hasattr(target_entity, "__name__"):
+                    continue
+                synth = list[target_entity] if rel_info.is_list else target_entity
+                all_fields.append((rel_name, synth, None))
 
         # Group fields by type (scalar vs object)
         for field_name, type_hint, description in all_fields:

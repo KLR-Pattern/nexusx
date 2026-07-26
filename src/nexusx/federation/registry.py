@@ -15,7 +15,7 @@ import decimal
 import uuid
 from typing import Any, cast
 
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, ConfigDict, create_model
 
 from nexusx.federation.contract import EntityFragment
 
@@ -71,7 +71,13 @@ class FederatedTypeRegistry:
             py_type = _resolve_type(fd.type_name)
             # Optional[Any] default so construction from partial JSON is robust.
             field_defs[fd.name] = (py_type | None, None)
-        model = cast("type[BaseModel]", create_model(typename, **field_defs))
+        # extra="allow" preserves nested relationship data returned by the owning
+        # service (β coalescing): the parent fetch resolves the subgraph and the
+        # extra keys (e.g. `author`) are kept on the instance for the serializer.
+        model = cast(
+            "type[BaseModel]",
+            create_model(typename, __config__=ConfigDict(extra="allow"), **field_defs),
+        )
         model.__name__ = typename  # bare name, no prefix
         model.__qualname__ = typename
         return model
