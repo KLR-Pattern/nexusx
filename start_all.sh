@@ -44,14 +44,16 @@ PORT_FED_REVIEWS=8021       # reviews service (mounts users; mounted by catalog)
 PORT_FED_CATALOG=8022       # catalog service (entry; mounts reviews) — query this one
 
 # ── Group titles (README pillars) ─────────────────────────────────────────
-GROUP_ORDER=("query" "core_api" "business" "viz" "federation")
-declare -A GROUP_TITLE=(
-  [query]="Query surface (SQLModel entities → GraphQL / MCP)"
-  [core_api]="Core API (DefineSubset DTOs + Resolver)"
-  [business]="Business-logic surface (UseCaseService → REST / MCP)"
-  [viz]="Visualization (Voyager)"
-  [federation]="Federation (nexusx-to-nexusx; relative composition)"
-)
+# Portable lookup via `case` — macOS ships Bash 3.2, which has no `declare -A`.
+group_title() {
+  case "$1" in
+    query)      echo "Query surface (SQLModel entities → GraphQL / MCP)" ;;
+    core_api)   echo "Core API (DefineSubset DTOs + Resolver)" ;;
+    business)   echo "Business-logic surface (UseCaseService → REST / MCP)" ;;
+    viz)        echo "Visualization (Voyager)" ;;
+    federation) echo "Federation (nexusx-to-nexusx; relative composition)" ;;
+  esac
+}
 
 # ── Service registry ──────────────────────────────────────────────────────
 # Each record: group | name | port | url path | start command (%PORT% → port)
@@ -157,7 +159,7 @@ for record in "${SERVICES[@]}"; do
   IFS='|' read -r group name port tags paths cmd <<< "$record"
   if [ "$group" != "$current_group" ]; then
     current_group="$group"
-    echo -e "${CYAN}── ${GROUP_TITLE[$group]} ──${NC}"
+    echo -e "${CYAN}── $(group_title "$group") ──${NC}"
   fi
   start_service "$group" "$name" "$port" "$tags" "$paths" "$cmd"
 done
@@ -180,7 +182,7 @@ for record in "${SERVICES[@]}"; do
   IFS='|' read -r group name port tags paths cmd <<< "$record"
   if [ "$group" != "$current_group" ]; then
     current_group="$group"
-    echo -e "${CYAN}── ${GROUP_TITLE[$group]} ──${NC}"
+    echo -e "${CYAN}── $(group_title "$group") ──${NC}"
   fi
   printf "  %-34s :%-5s  ${CYAN}[%s]${NC}\n" "$name" "$port" "$tags"
   IFS=',' read -ra path_list <<< "$paths"

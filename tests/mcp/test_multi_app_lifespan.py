@@ -8,8 +8,8 @@ from __future__ import annotations
 import pytest
 from sqlmodel import Field, SQLModel
 
-from nexusx.mcp import Application, MultiAppManager, create_mcp_server
 from nexusx import query
+from nexusx.mcp import Application, MultiAppManager, create_mcp_server
 
 
 class _TestBase(SQLModel):
