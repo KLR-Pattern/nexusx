@@ -12,8 +12,8 @@ from sqlmodel import Field, SQLModel
 
 from nexusx.federation import RemoteRelationship
 from nexusx.federation.contract import (
-    ERIntrospectionResponse,
     EntityFragment,
+    ERIntrospectionResponse,
     FieldDescriptor,
     RelDescriptor,
 )
@@ -117,7 +117,7 @@ async def test_missing_batch_root_rejected():
     services = {"reviews": "http://reviews"}
     resp = _resp(
         "reviews",
-        _entity("Review", [("id", "int"), ("product_id", "int")], batch_roots=[]),  # no by_product_id_in
+        _entity("Review", [("id", "int"), ("product_id", "int")], batch_roots=[]),
     )
     with pytest.raises(FederationError, match="does not expose batch root 'by_product_id_in'"):
         await _federate(er, services, {"reviews": resp})

@@ -69,6 +69,12 @@ async def federate(
         targets.add(edge.target)
 
     # 2. Transitive fetch (visited-set prevents cycles/non-termination).
+    #    `endpoints` is self-extending: it starts with the user-declared mounts
+    #    and grows as remote relationships reveal their target_endpoint — so
+    #    mounting one service transitively reaches everything it mounted
+    #    (FR-005), without the caller having to mount each transitively-reachable
+    #    service explicitly.
+    endpoints: dict[str, str] = dict(services)
     fragments: dict[str, EntityFragment] = {}
     service_responses: dict[str, ERIntrospectionResponse] = {}
     visited: set[str] = set()
@@ -79,16 +85,16 @@ async def federate(
             continue
         visited.add(qn)
         srv, typename = parse_qualified_name(qn)
-        if srv not in services:
+        if srv not in endpoints:
             raise FederationError(
-                f"Unknown service prefix {srv!r} (referenced by {qn!r}); not in "
-                f"federate(services=...). Registered: {sorted(services)}"
+                f"Unknown service prefix {srv!r} (referenced by {qn!r}); no endpoint "
+                f"declared and none discovered transitively. Known: {sorted(endpoints)}"
             )
         if srv not in service_responses:
-            resp = await fetch_er_introspection(transport, services[srv])
+            resp = await fetch_er_introspection(transport, endpoints[srv])
             if resp.service_name != srv:
                 raise FederationError(
-                    f"Service at {services[srv]!r} declares name "
+                    f"Service at {endpoints[srv]!r} declares name "
                     f"{resp.service_name!r}, expected {srv!r}"
                 )
             service_responses[srv] = resp
@@ -103,6 +109,9 @@ async def federate(
         # target's owning service is target_service if set, else this service.
         for rel in frag.relationships:
             owner = rel.target_service or srv
+            # Transitive discovery: learn the owner's endpoint from the fragment.
+            if rel.target_service and rel.target_endpoint and owner not in endpoints:
+                endpoints[owner] = rel.target_endpoint
             child_qn = f"{owner}.{rel.target_typename}"
             if child_qn not in visited:
                 queue.append(child_qn)

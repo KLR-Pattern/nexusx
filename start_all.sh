@@ -38,14 +38,19 @@ PORT_USECASE_MCP=8006       # UseCaseService → MCP (4-layer)
 # Visualization (Voyager)
 PORT_VOYAGER_USECASE=8008   # Voyager — UseCase service graph
 PORT_VOYAGER_ER=8009        # Voyager — ER + enterprise schema
+# Federation (nexusx-to-nexusx; relative composition)
+PORT_FED_USERS=8020         # users service (leaf; mounted by reviews)
+PORT_FED_REVIEWS=8021       # reviews service (mounts users; mounted by catalog)
+PORT_FED_CATALOG=8022       # catalog service (entry; mounts reviews) — query this one
 
 # ── Group titles (README pillars) ─────────────────────────────────────────
-GROUP_ORDER=("query" "core_api" "business" "viz")
+GROUP_ORDER=("query" "core_api" "business" "viz" "federation")
 declare -A GROUP_TITLE=(
   [query]="Query surface (SQLModel entities → GraphQL / MCP)"
   [core_api]="Core API (DefineSubset DTOs + Resolver)"
   [business]="Business-logic surface (UseCaseService → REST / MCP)"
   [viz]="Visualization (Voyager)"
+  [federation]="Federation (nexusx-to-nexusx; relative composition)"
 )
 
 # ── Service registry ──────────────────────────────────────────────────────
@@ -66,6 +71,10 @@ SERVICES=(
   # ── Visualization: Voyager ──
   "viz|Voyager — UseCase service graph|$PORT_VOYAGER_USECASE|Voyager, REST|/voyager,/api/users,/api/sprints|uv run uvicorn demo.use_case.voyager_demo:app --port %PORT%"
   "viz|Voyager — ER + enterprise schema|$PORT_VOYAGER_ER|Voyager|/voyager|uv run uvicorn demo.enterprise_voyager.voyager_demo:app --port %PORT%"
+  # ── Federation: nexusx-to-nexusx (start order is tolerated via in-process retry) ──
+  "federation|Fed — users (leaf)|$PORT_FED_USERS|GraphQL|/graphql,/nexusx/er-introspection|uv run uvicorn demo.federation.users_app:app --port %PORT%"
+  "federation|Fed — reviews (mounts users)|$PORT_FED_REVIEWS|GraphQL|/graphql,/nexusx/er-introspection|uv run uvicorn demo.federation.reviews_app:app --port %PORT%"
+  "federation|Fed — catalog (entry; mounts reviews) ★|$PORT_FED_CATALOG|GraphQL|/graphql,/nexusx/er-introspection|uv run uvicorn demo.federation.catalog_app:app --port %PORT%"
 )
 
 # Derive ALL_PORTS from the registry (single source of truth).
