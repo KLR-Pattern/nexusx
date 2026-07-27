@@ -69,6 +69,7 @@ nav:
     - UseCase Service: ./advanced/use_case_service.md
     - UseCase + FastAPI: ./advanced/use_case_fastapi.md
     - Voyager Visualization: ./advanced/voyager.md
+    - Federation: ./advanced/federation.md
   - Articles:
     - Design Highlights: ./feature-highlights.md
     - Clean Architecture Comparison: ./clean-architecture-comparison.md
@@ -127,6 +128,7 @@ plugins:
             "UseCase Service": "UseCase 服务"
             "UseCase + FastAPI": "UseCase + FastAPI"
             "Voyager Visualization": "Voyager 可视化"
+            "Federation": "联邦"
             "Articles": "文集"
             "Design Highlights": "设计亮点"
             "Clean Architecture Comparison": "Clean Architecture 对比"

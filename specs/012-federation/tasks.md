@@ -163,7 +163,7 @@ description: "Task list for nexusx 多服务联邦(federation)"
 - [x] T030 Run `ruff check` + `mypy --strict` on src/nexusx + tests;修复所有告警
 - [x] T031 Run full regression `pytest -q`:SC-005(未启用 federate 时既有 nexusx 全量测试零回归)
 - [x] T032 [P] Run quickstart.md validation(V1–V7:启动/单跳/多跳透明/无过度取数/schema 渲染/fail-fast/单体零回归)
-- [ ] T033 [P] Docs:add federation guide to docs/ + README 一段说明(同构 nexusx 联邦,非通用 gateway)
+- [x] T033 [P] Docs:add federation guide to docs/ + README 一段说明(同构 nexusx 联邦,非通用 gateway)
 
 ---
 
