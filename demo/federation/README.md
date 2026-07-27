@@ -58,6 +58,26 @@ result. No service prefix leaks to the client; each service is called once.
 | β nested fetch | one gql per service returns multi-level nested data |
 | `by_<key>_in` entry roots | `AutoQueryConfig(batch_keys=...)` on each member |
 
+## UseCase projection over federation data (DefineSubset)
+
+`catalog` also exposes a **UseCaseService** that consumes the federated graph
+and projects it via `DefineSubset` — composing the federated GraphQL surface
+(`handler.execute`) with the UseCase / Core-API surface (DefineSubset DTOs):
+
+```bash
+curl -X POST http://localhost:8022/api/catalog_service/product_summaries \
+  -H 'Content-Type: application/json' -d '{}'
+# [{"id":1,"name":"Widget","review_count":2,"avg_rating":4.0,"top_reviewer":"Bob"}, ...]
+```
+
+`ProductSummary` is a `DefineSubset` sourced from the **local** `Product`
+(`__subset__ = (Product, ("id", "name"))`) with computed fields
+(`review_count`, `avg_rating`, `top_reviewer`) derived from the **remote**
+reviews/users data fetched through the federated query. The remote types are
+dynamic (materialized at `federate`-time), so the remote-derived bits live as
+computed fields on a DTO subsetted from the local entry entity — the working
+pattern for "federation data → DefineSubset shaping".
+
 ## Files
 
 - `users_app.py` — leaf service (`User` + `by_id_in`).

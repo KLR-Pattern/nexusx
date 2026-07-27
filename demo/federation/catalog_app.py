@@ -16,7 +16,15 @@ from sqlmodel import Field, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from demo.federation._common import federate_with_retry, make_app
-from nexusx import AutoQueryConfig, GraphQLHandler
+from nexusx import (
+    AutoQueryConfig,
+    DefineSubset,
+    GraphQLHandler,
+    UseCaseAppConfig,
+    UseCaseService,
+    create_use_case_router,
+    query,
+)
 from nexusx.federation import RemoteRelationship
 
 REVIEWS_URL = "http://localhost:8021"  # base URL of the reviews service
@@ -70,3 +78,59 @@ async def on_startup() -> None:
 
 
 app = make_app(handler, on_startup=on_startup, title="Fed demo — catalog (mounts reviews)")
+
+
+# ── UseCaseService: federation data → DefineSubset projection ────────────
+# Demonstrates composing the federated GraphQL surface (handler.execute) with
+# the UseCase / Core-API surface (DefineSubset): the service queries the
+# cross-service graph, then projects it into a DefineSubset DTO sourced from
+# the LOCAL Product, with computed fields derived from the REMOTE reviews/users
+# data (the "post"-style transform). The remote types themselves are dynamic
+# (materialized at federate-time), so the remote-derived bits live as computed
+# fields on a DTO subsetted from the local entry entity.
+
+
+class ProductSummary(DefineSubset):
+    """Projected view of a Product plus federation-derived aggregates."""
+
+    __subset__ = (Product, ("id", "name"))
+    review_count: int = 0
+    avg_rating: float = 0.0
+    top_reviewer: str | None = None
+
+
+class CatalogService(UseCaseService):
+    """Business-logic surface over the federated graph."""
+
+    @query
+    async def product_summaries(cls) -> list[ProductSummary]:
+        """Per-product review aggregates, projected from the federated graph."""
+        res = await handler.execute(
+            "{ Product { by_filter { id name reviews { rating author { name } } } } }"
+        )
+        products = (
+            ((res.get("data") or {}).get("Product") or {}).get("by_filter") or []
+        )
+        out: list[ProductSummary] = []
+        for p in products:
+            reviews = p.get("reviews") or []
+            ratings = [r["rating"] for r in reviews]
+            reviewers = [r["author"]["name"] for r in reviews if r.get("author")]
+            out.append(
+                ProductSummary(
+                    id=p["id"],
+                    name=p["name"],
+                    review_count=len(reviews),
+                    avg_rating=round(sum(ratings) / len(ratings), 2) if ratings else 0.0,
+                    top_reviewer=(
+                        max(set(reviewers), key=reviewers.count) if reviewers else None
+                    ),
+                )
+            )
+        return out
+
+
+# Expose the UseCase service as REST alongside the GraphQL surface.
+app.include_router(
+    create_use_case_router(UseCaseAppConfig(name="catalog", services=[CatalogService]))
+)
