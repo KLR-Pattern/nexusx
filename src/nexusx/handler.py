@@ -205,6 +205,11 @@ class GraphQLHandler:
             enable_pagination=self.enable_pagination,
             loader_registry=self._er_manager,
         )
+        # The executor holds its own introspection_generator reference for
+        # `__schema` / `__type` query dispatch — re-point it at the rebuilt one
+        # so GraphiQL (which POSTs an introspection query through execute())
+        # sees the materialized remote types, not the pre-federate generator.
+        self._executor._introspection_generator = self._introspection_generator
 
     async def execute(
         self,

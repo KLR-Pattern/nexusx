@@ -71,6 +71,35 @@ async def test_render_matches_registry_relationships():
         await client.aclose()
 
 
+@pytest.mark.asyncio
+async def test_introspection_query_path_shows_federated_types():
+    """Introspection via the QUERY path (execute → executor → __schema).
+
+    GraphiQL POSTs an introspection query, which goes through the executor's
+    introspection_generator — NOT get_introspection_data(). After federate()
+    rebuilds the handler's generator, the executor must be re-pointed at it,
+    else the query path serves the stale pre-federate generator and federated
+    types/fields vanish (regression: reviews rendered as [String!]!).
+    """
+    catalog_handler, _transport, client = await _build_catalog_and_transport()
+    try:
+        res = await catalog_handler.execute(
+            "{ __schema { types { name fields { name type { name kind "
+            "ofType { name kind ofType { name } } } } } } }"
+        )
+        assert not res.get("errors"), res
+        types = {t["name"]: t for t in res["data"]["__schema"]["types"]}
+        assert "FedReview" in types
+        review = types["FedReview"]
+        assert "title" in {f["name"] for f in (review.get("fields") or [])}
+        # FedProduct.reviews must reference FedReview (not fall back to String).
+        product = types["FedProduct"]
+        reviews_field = next(f for f in product["fields"] if f["name"] == "reviews")
+        assert "FedReview" in _collect_type_names(reviews_field["type"])
+    finally:
+        await client.aclose()
+
+
 def _collect_type_names(type_ref: dict) -> set[str]:
     """Walk an introspection type-ref and collect named type names."""
     names: set[str] = set()
