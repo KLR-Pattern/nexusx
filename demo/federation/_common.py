@@ -46,10 +46,11 @@ def make_app(
     async def er_introspection_endpoint() -> dict[str, Any]:
         return serialize_er_introspection(handler._er_manager).model_dump()
 
-    # GraphiQL HTML at / for interactive querying.
+    # GraphiQL at GET /graphql (matches the other demos so the URL printed by
+    # start_all.sh — http://localhost:PORT/graphql — opens the playground).
     from fastapi.responses import HTMLResponse
 
-    @app.get("/", response_class=HTMLResponse)
+    @app.get("/graphql", response_class=HTMLResponse)
     async def graphiql_page() -> str:
         return handler.get_graphiql_html(endpoint="/graphql")
 
