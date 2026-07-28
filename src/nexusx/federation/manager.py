@@ -121,6 +121,12 @@ async def federate(
     fed_registry.materialize(fragments)
     er_manager._fed_registry = fed_registry
 
+    # 3b. Resolve deferred DefineSubset classes (those with RemoteRef sources).
+    #     After materialization, the source classes exist — replace placeholders
+    #     with real DefineSubset classes.
+    from nexusx.federation.remote_ref import resolve_deferred_subsets
+    resolve_deferred_subsets(fed_registry)
+
     # 4. Validate declared remote relationships (correctness subset; full
     #    7-check suite incl. prefix/bare-name/cycle in US3).
     _validate_declarations(er_manager, services, fragments)

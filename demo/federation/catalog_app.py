@@ -81,52 +81,37 @@ async def on_startup() -> None:
 app = make_app(handler, on_startup=on_startup, title="Fed demo — catalog (mounts reviews)")
 
 
-# ── UseCaseService: DefineSubset + Resolver over federated schema ────────
-# Remote types are materialized as first-class pydantic schema (from ER
-# introspection). DefineSubset targets them; Resolver auto-loads the cross-
-# service tree via RemoteLoaders. model_dump serializes everything (relationships
-# are proper model_fields). No gql string, no for-loop, no manual serialization.
+# ── DefineSubset DTOs: RemoteRef for remote types ───────────────────────
+# Declare DTOs at module load. RemoteRef marks remote types — DefineSubset
+# defers them. federate() resolves RemoteRef → materialized pydantic class.
+# After federate, these are normal DefineSubset DTOs — no dynamic type(),
+# no __annotations__, no ceremony.
 
 from nexusx import DefineSubset
+from nexusx.federation import RemoteRef
+
+
+class UserDTO(DefineSubset):
+    """Subset of the remote users.User (resolved at federate time)."""
+
+    __subset__ = (RemoteRef("users.User"), ("name",))
+
+
+class ReviewDTO(DefineSubset):
+    """Subset of the remote reviews.Review + nested author (resolved at federate)."""
+
+    __subset__ = (RemoteRef("reviews.Review"), ("title", "rating", "author_id"))
+    author: RemoteRef("users.User") | None = None
+
+
+class ProductDTO(DefineSubset):
+    """Subset of the local Product + nested reviews (forward-ref to ReviewDTO)."""
+
+    __subset__ = (Product, ("id", "name"))
+    reviews: list["ReviewDTO"] = []
+
 
 _resolver_cls = None
-_dto_tree = None  # (ProductDTO, ReviewDTO) built dynamically post-federate
-
-
-def _build_dto_tree():
-    """Build DefineSubset DTOs over materialized types (first-class pydantic schema).
-
-    Materialized types exist only after federate() (dynamic create_model), so the
-    DTOs are built lazily. Once built, they behave exactly like normal DefineSubset
-    DTOs — the Resolver auto-loads, model_dump serializes, everything works.
-    """
-    global _dto_tree
-    if _dto_tree is not None:
-        return _dto_tree
-
-    fed = handler._er_manager._fed_registry
-    fed_review = fed.get("reviews.Review")
-    fed_user = fed.get("users.User")
-
-    # DefineSubset over the REMOTE Review — picks title + rating + author_id
-    # (author_id is the join key the Resolver reads to auto-load author).
-    ReviewDTO = type("ReviewDTO", (DefineSubset,), {
-        "__subset__": (fed_review, ("title", "rating", "author_id")),
-        "author": None,
-        "__annotations__": {"author": fed_user | None},
-        "__module__": __name__,
-    })
-
-    # DefineSubset over the LOCAL Product — picks id + name, adds reviews.
-    ProductDTO = type("ProductDTO", (DefineSubset,), {
-        "__subset__": (Product, ("id", "name")),
-        "reviews": [],
-        "__annotations__": {"reviews": list[ReviewDTO]},
-        "__module__": __name__,
-    })
-
-    _dto_tree = (ProductDTO, ReviewDTO)
-    return _dto_tree
 
 
 class CatalogService(UseCaseService):
@@ -136,21 +121,18 @@ class CatalogService(UseCaseService):
     async def composed_tree(cls) -> list[dict]:
         """DefineSubset + Resolver over federated schema.
 
-        DTOs are built from materialized types (first-class pydantic schema).
-        The Resolver auto-loads reviews (→ reviews svc) and author (→ users svc)
-        via RemoteLoaders. model_dump serializes the full tree (relationships
-        are model_fields). No gql string, no for-loop.
+        DTOs declared at module load with RemoteRef — federate resolves them.
+        Resolver auto-loads the cross-service tree via RemoteLoaders.
+        model_dump serializes everything (relationships are model_fields).
+        No gql string, no for-loop, no dynamic type().
         """
         global _resolver_cls
-        ProductDTO, _ReviewDTO = _build_dto_tree()
         if _resolver_cls is None:
             _resolver_cls = handler._er_manager.create_resolver()
         async with async_session() as s:
             products = (await s.exec(select(Product))).all()
-        # Build root DTOs (just scalars — Resolver fills relationships).
         dtos = [ProductDTO(id=p.id, name=p.name) for p in products]
         resolved = await _resolver_cls().resolve(dtos)
-        # model_dump now includes relationships (they're model_fields)!
         return [p.model_dump(mode="json") for p in resolved]
 
 

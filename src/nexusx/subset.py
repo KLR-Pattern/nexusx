@@ -522,6 +522,18 @@ class SubsetMeta(type):
                 f"Class {name} must define {SUBSET_DEFINITION} = (Entity, fields)"
             )
 
+        # ── RemoteRef detection: defer if source is a RemoteRef ──────────
+        # When __subset__[0] is a RemoteRef, the materialized source class
+        # doesn't exist yet (it's created during federate). Create a minimal
+        # placeholder and register for later resolution.
+        source_candidate = (
+            subset_info[0]
+            if isinstance(subset_info, tuple) and len(subset_info) == 2
+            else None
+        )
+        if source_candidate is not None and type(source_candidate).__name__ == "RemoteRef":
+            return cls._create_deferred_class(name, source_candidate, subset_info[1], namespace)
+
         entity_kls, subset_fields, auto_excluded = cls._resolve_subset_info(subset_info)
         field_definitions, extra_fields, override_annotations = cls._build_field_definitions(
             entity_kls, subset_fields, namespace, auto_excluded, subset_info,
@@ -541,6 +553,51 @@ class SubsetMeta(type):
             name, field_definitions, subset_fields, entity_kls, namespace,
             auto_excluded,
         )
+
+    @staticmethod
+    def _create_deferred_class(
+        name: str,
+        source_ref: Any,
+        field_names: Any,
+        namespace: dict[str, Any],
+    ) -> type[BaseModel]:
+        """Create a placeholder for a RemoteRef-sourced DefineSubset.
+
+        The real class is created at federate time by
+        ``resolve_deferred_subsets``. The placeholder is a valid pydantic
+        BaseModel with body-declared fields (RemoteRef annotations replaced
+        with ``Any``) so other classes can reference it via forward-refs.
+        """
+        from pydantic import ConfigDict
+
+        # Register for later resolution.
+        try:
+            from nexusx.federation.remote_ref import register_pending_subset
+            register_pending_subset(
+                name, None, source_ref, list(field_names), dict(namespace),
+            )
+        except ImportError:
+            pass  # federation not installed; class stays as placeholder
+
+        # Build placeholder: body fields only, RemoteRef → Any.
+        annotations = _get_namespace_annotations(namespace)
+        field_names_set = set(field_names) if isinstance(field_names, (list, tuple)) else set()
+        placeholder_annotations: dict[str, Any] = {}
+        placeholder_ns: dict[str, Any] = {
+            "__module__": namespace.get("__module__", "__main__"),
+            "model_config": ConfigDict(arbitrary_types_allowed=True),
+        }
+        for fname, anno in annotations.items():
+            if fname == SUBSET_DEFINITION:
+                continue
+            # All annotations become Any (RemoteRef can't be a pydantic type yet).
+            placeholder_annotations[fname] = Any
+            placeholder_ns[fname] = namespace.get(fname, None)
+        placeholder_ns["__annotations__"] = placeholder_annotations
+
+        placeholder = type(name, (BaseModel,), placeholder_ns)
+        placeholder.__nexusx_deferred__ = True  # mark for identification
+        return placeholder
 
     @staticmethod
     def _resolve_subset_info(

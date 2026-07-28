@@ -14,5 +14,6 @@ from nexusx.federation.relationship import (
     RemoteRelationship,
     parse_qualified_name,
 )
+from nexusx.federation.remote_ref import RemoteRef
 
-__all__ = ["RemoteRelationship", "RemoteEdge", "parse_qualified_name"]
+__all__ = ["RemoteRelationship", "RemoteEdge", "parse_qualified_name", "RemoteRef"]
