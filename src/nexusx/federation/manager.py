@@ -13,8 +13,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from aiodataloader import DataLoader
-
 from nexusx.federation.contract import EntityFragment, ERIntrospectionResponse
 from nexusx.federation.http import GraphQLTransport
 from nexusx.federation.introspect import fetch_er_introspection, find_fragment
@@ -139,9 +137,10 @@ async def federate(
 
     # 7. Register every materialized type + its (coalesced) relationships. Each
     #    relationship on a remote type is resolved by the owning service within
-    #    the parent fetch (β coalescing): registered so SDL renders the field and
-    #    the serializer passes the preserved nested data through, but the executor
-    #    does NOT BFS-traverse it (coalesced=True).
+    #    the parent fetch (β coalescing): the executor skips these (coalesced
+    #    flag) and uses the nested-forwarded data. But the Resolver path DOES
+    #    call the loader (it doesn't check coalesced) — so attach a REAL
+    #    RemoteLoader, not a placeholder.
     for cls in fed_registry.all_classes():
         qualified = fed_registry.qualified_of(cls)
         if qualified is None:
@@ -156,13 +155,24 @@ async def federate(
             target_qn = f"{owner}.{rel.target_typename}"
             if not fed_registry.has(target_qn):
                 continue
+            target_cls = fed_registry.get(target_qn)
+            target_frag = fragments.get(target_qn)
+            target_pk = (target_frag.pk_field if target_frag and target_frag.pk_field else "id")
+            loader_cls = create_remote_loader(
+                typename=rel.target_typename,
+                join_remote=target_pk,
+                endpoint=endpoints[owner],
+                target_cls=target_cls,
+                transport=transport,
+                is_list=rel.is_list,
+            )
             rels_map[rel.name] = RelationshipInfo(
                 name=rel.name,
                 direction=rel.direction,
                 fk_field=rel.fk_field,
-                target_entity=fed_registry.get(target_qn),
+                target_entity=target_cls,
                 is_list=rel.is_list,
-                loader=DataLoader,  # placeholder; never invoked (coalesced skips BFS)
+                loader=loader_cls,
                 target_service=owner,
                 coalesced=True,
             )

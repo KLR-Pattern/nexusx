@@ -145,6 +145,18 @@ def create_remote_loader(
     class _RemoteLoader(DataLoader):  # type: ignore[type-arg]
         async def batch_load_fn(self, keys: list[Any]) -> list[Any]:
             selection = getattr(self, "_remote_selection", None)
+            if selection is None:
+                # Default selection: all SCALAR fields (exclude relationship
+                # fields which are BaseModel-typed and need sub-selections).
+                from pydantic import BaseModel as _BM
+
+                from nexusx.query_parser import FieldSelection
+                sub = {
+                    fname: FieldSelection(name=fname)
+                    for fname, fi in target_cls.model_fields.items()
+                    if not (isinstance(fi.annotation, type) and issubclass(fi.annotation, _BM))
+                }
+                selection = FieldSelection(name=typename, sub_fields=sub)
             query = build_gql_query(
                 typename=typename,
                 entry=entry,

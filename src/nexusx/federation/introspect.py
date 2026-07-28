@@ -55,6 +55,18 @@ def _type_expr(anno: Any) -> str:
     return getattr(anno, "__name__", str(anno))
 
 
+def _pk_field(entity: type) -> str | None:
+    """Extract the primary key field name from a SQLModel entity."""
+    from sqlalchemy import inspect as sa_inspect
+    try:
+        mapper = sa_inspect(entity)
+        if mapper.primary_key:
+            return mapper.primary_key[0].name
+    except Exception:
+        pass
+    return None
+
+
 def _batch_roots(entity: type) -> list[str]:
     """Names of generated ``by_<key>_in`` batch query roots on ``entity``."""
     roots: list[str] = []
@@ -118,6 +130,7 @@ def serialize_er_introspection(er_manager: Any) -> ERIntrospectionResponse:
         entities.append(
             EntityFragment(
                 typename=entity.__name__,
+                pk_field=_pk_field(entity),
                 scalar_fields=scalar_fields,
                 relationships=rels,
                 batch_roots=_batch_roots(entity),

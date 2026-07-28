@@ -342,9 +342,18 @@ class SDLGenerator:
         fields: list[str] = []
 
         # Get scalar fields from model_fields
+        registry_rels = (
+            self._loader_registry.get_relationships(entity)
+            if self._loader_registry is not None
+            else {}
+        )
         for field_name, field_info in entity.model_fields.items():
             # Skip FK fields from output
             if self._is_fk_field(field_info):
+                continue
+            # Skip relationship fields (model_fields on materialized remote
+            # types) — rendered by the registry-driven path below.
+            if field_name in registry_rels:
                 continue
             gql_type = self._field_info_to_graphql(field_info)
             # Add field description if available
@@ -354,7 +363,14 @@ class SDLGenerator:
 
         # Get relationship fields from type hints
         rendered_rel_names: set[str] = set()
-        hints = get_type_hints(entity)
+        try:
+            hints = get_type_hints(entity)
+        except Exception:
+            # Materialized remote types have dynamic forward-ref annotations
+            # (e.g. "FedUser | None") that Python's get_type_hints can't
+            # resolve from module globals — their rels are handled by the
+            # registry-driven path below.
+            hints = {}
         for field_name, hint in hints.items():
             if field_name in entity.model_fields:
                 continue  # Already processed
