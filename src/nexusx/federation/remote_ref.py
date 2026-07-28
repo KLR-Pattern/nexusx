@@ -161,8 +161,25 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
     resolved: list[type] = []
     replacements: dict[type, type] = {}
 
+    available = sorted(
+        getattr(fed_registry, "_qualified_to_class", {}).keys()
+    )
+
+    def _resolve_ref(ref: RemoteRef, context: str) -> type:
+        """Resolve a RemoteRef to a materialized class with a clear error."""
+        qn = ref.qualified_name
+        if not fed_registry.has(qn):
+            msg = (
+                f"{context}: remote type {qn!r} does not match any type "
+                f"from ER introspection. Available: {available}"
+            )
+            raise ValueError(msg)
+        return fed_registry.get(qn)
+
     for name, deferred_cls, source_ref, field_names, namespace in get_pending_subsets():
-        materialized = fed_registry.get(source_ref.qualified_name)
+        materialized = _resolve_ref(
+            source_ref, f"{name}.__subset__"
+        )
 
         module_name = namespace.get("__module__", "__main__")
         module = sys.modules.get(module_name)
@@ -173,7 +190,7 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
         for fname, anno in namespace.get("__annotations__", {}).items():
             ref = _contains_remote_ref(anno)
             if ref is not None:
-                target = fed_registry.get(ref.qualified_name)
+                target = _resolve_ref(ref, f"{name}.{fname}")
                 if isinstance(anno, _RemoteRefOptional):
                     resolved_annotations[fname] = target | None
                 elif isinstance(anno, RemoteRef):
