@@ -85,6 +85,12 @@ class Application:
         self._base = base
 
         # ── 连接信息互斥校验（至多一个） ────────────────────────────────
+        # Backward compat: AutoQueryConfig may carry a deprecated session_factory.
+        if session_factory is None and auto_query_config is not None:
+            session_factory = getattr(
+                auto_query_config, "_deprecated_session_factory", None
+            )
+
         provided = sum(1 for x in (url, engine, session_factory) if x is not None)
         if provided > 1:
             raise ValueError(
