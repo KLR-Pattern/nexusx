@@ -11,6 +11,7 @@ A single query to catalog traverses catalog → reviews → users transparently;
 each mounted service receives exactly one nested gql query.
 """
 
+from pydantic import ConfigDict
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -99,6 +100,30 @@ class ProductSummary(DefineSubset):
     top_reviewer: str | None = None
 
 
+# DefineSubset a REMOTE type: the materialized reviews.Review only exists AFTER
+# handler.federate() runs (it's create_model'd at startup), so the DTO cannot be
+# declared at module load. Build it lazily on first use from the materialized
+# class held in the FederatedTypeRegistry.
+_review_summary_type: type | None = None
+
+
+def _review_summary() -> type:
+    """A DefineSubset over the REMOTE reviews.Review (dynamic, post-federate)."""
+    global _review_summary_type
+    if _review_summary_type is None:
+        fed_review = handler._er_manager._fed_registry.get("reviews.Review")
+        _review_summary_type = type(
+            "ReviewSummary",
+            (DefineSubset,),
+            {
+                "__subset__": (fed_review, ("title", "rating")),
+                "model_config": ConfigDict(extra="ignore"),
+                "__module__": __name__,
+            },
+        )
+    return _review_summary_type
+
+
 class CatalogService(UseCaseService):
     """Business-logic surface over the federated graph."""
 
@@ -127,6 +152,25 @@ class CatalogService(UseCaseService):
                     ),
                 )
             )
+        return out
+
+    @query
+    async def review_summaries(cls) -> list[dict]:
+        """Project the REMOTE reviews.Review via a dynamic DefineSubset.
+
+        Unlike ``product_summaries`` (which subsets the LOCAL Product), this
+        subsets a type OWNED BY ANOTHER SERVICE — reviews.Review — using the
+        materialized class obtained post-federate. Demonstrates DefineSubset
+        over a remote schema.
+        """
+        review_summary = _review_summary()
+        res = await handler.execute(
+            "{ Product { by_filter { reviews { title rating } } } }"
+        )
+        out: list[dict] = []
+        for p in ((res.get("data") or {}).get("Product") or {}).get("by_filter") or []:
+            for r in p.get("reviews") or []:
+                out.append(review_summary.model_validate(r).model_dump())
         return out
 
 

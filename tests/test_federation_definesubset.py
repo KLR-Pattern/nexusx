@@ -43,6 +43,7 @@ class DSReview(_RB, table=True):
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     author_id: int
+    title: str
     rating: int
     __relationships__ = [
         RemoteRelationship(
@@ -114,9 +115,9 @@ async def test_definesubset_projection_over_federated_data():
             s.add(DSUser(id=2, name="Bob"))
             await s.commit()
         async with sf("r")() as s:
-            s.add(DSReview(id=1, product_id=1, author_id=1, rating=5))
-            s.add(DSReview(id=2, product_id=1, author_id=2, rating=3))
-            s.add(DSReview(id=3, product_id=2, author_id=1, rating=2))
+            s.add(DSReview(id=1, product_id=1, author_id=1, title="Great", rating=5))
+            s.add(DSReview(id=2, product_id=1, author_id=2, title="Okay", rating=3))
+            s.add(DSReview(id=3, product_id=2, author_id=1, title="Mediocre", rating=2))
             await s.commit()
         async with sf("c")() as s:
             s.add(DSProduct(id=1, name="Widget"))
@@ -147,10 +148,7 @@ async def test_definesubset_projection_over_federated_data():
         await rh.federate({"users": "http://test/users"}, transport=transport)
         await ch.federate({"reviews": "http://test/reviews"}, transport=transport)
 
-        try:
-            summaries = await _project(ch)
-        finally:
-            await client.aclose()
+        summaries = await _project(ch)
 
         by_name = {s.name: s for s in summaries}
         # Widget: 2 reviews (5, 3) across Alice + Bob.
@@ -163,6 +161,33 @@ async def test_definesubset_projection_over_federated_data():
         assert by_name["Gadget"].top_reviewer == "Alice"
         # DefineSubset sourced from the LOCAL entity (not a remote/dynamic type).
         assert ProductSummary.__nexusx_subset_source__ is DSProduct
+
+        # ── DefineSubset a REMOTE type (reviews.DSReview) ──────────────────
+        # The materialized remote class only exists post-federate, so the DTO is
+        # built dynamically from the FederatedTypeRegistry, not at module load.
+        from pydantic import ConfigDict
+
+        fed_review = ch._er_manager._fed_registry.get("reviews.DSReview")
+        assert fed_review is not None
+        ReviewSummary = type(
+            "ReviewSummary",
+            (DefineSubset,),
+            {
+                "__subset__": (fed_review, ("title", "rating")),
+                "model_config": ConfigDict(extra="ignore"),
+                "__module__": __name__,
+            },
+        )
+        assert list(ReviewSummary.model_fields) == ["title", "rating"]
+        assert ReviewSummary.__nexusx_subset_source__ is fed_review  # subset of the REMOTE type
+        # Project the federated reviews (selecting only the subset's fields).
+        res2 = await ch.execute(
+            "{ DSProduct { by_filter { reviews { title rating } } } }"
+        )
+        sample = res2["data"]["DSProduct"]["by_filter"][0]["reviews"][0]
+        projected = ReviewSummary.model_validate(sample).model_dump()
+        assert projected == {"title": sample["title"], "rating": sample["rating"]}
     finally:
+        await client.aclose()
         for e in engines.values():
             await e.dispose()

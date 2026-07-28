@@ -78,6 +78,32 @@ dynamic (materialized at `federate`-time), so the remote-derived bits live as
 computed fields on a DTO subsetted from the local entry entity — the working
 pattern for "federation data → DefineSubset shaping".
 
+### DefineSubset a REMOTE type
+
+`review_summaries` subsets a type **owned by another service** — `reviews.Review`
+— not a local entity:
+
+```bash
+curl -X POST http://localhost:8022/api/catalog_service/review_summaries \
+  -H 'Content-Type: application/json' -d '{}'
+# [{"title":"Great widget","rating":5},{"title":"Works okay","rating":3}, ...]
+```
+
+The materialized remote class only exists after `handler.federate()` runs, so
+the DTO cannot be declared at module load. `_review_summary()` builds it lazily
+on first use from the `FederatedTypeRegistry`:
+
+```python
+fed_review = handler._er_manager._fed_registry.get("reviews.Review")
+ReviewSummary = type("ReviewSummary", (DefineSubset,), {
+    "__subset__": (fed_review, ("title", "rating")),  # subset of the REMOTE schema
+})
+```
+
+This is the pattern for "DefineSubset a type from another service's schema":
+subset the local entry entity at module load; subset a remote type dynamically
+post-federate, then `model_validate` the federated result into it.
+
 ## Files
 
 - `users_app.py` — leaf service (`User` + `by_id_in`).
