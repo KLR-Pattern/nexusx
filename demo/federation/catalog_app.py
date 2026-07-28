@@ -11,7 +11,7 @@ A single query to catalog traverses catalog → reviews → users transparently;
 each mounted service receives exactly one nested gql query.
 """
 
-from pydantic import ConfigDict
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -124,6 +124,21 @@ def _review_summary() -> type:
     return _review_summary_type
 
 
+class ProductReviewView(BaseModel):
+    """Composed view joining data across all three services into one flat row.
+
+    Spans multiple sources (so NOT a single-source DefineSubset): ``product_name``
+    from the LOCAL Product, ``title``/``rating`` from reviews (reviews service),
+    ``author_name`` from users (users service) — composed by flattening the
+    federated nested result. This is cross-service data composition.
+    """
+
+    product_name: str
+    title: str
+    rating: int
+    author_name: str | None = None
+
+
 class CatalogService(UseCaseService):
     """Business-logic surface over the federated graph."""
 
@@ -171,6 +186,30 @@ class CatalogService(UseCaseService):
         for p in ((res.get("data") or {}).get("Product") or {}).get("by_filter") or []:
             for r in p.get("reviews") or []:
                 out.append(review_summary.model_validate(r).model_dump())
+        return out
+
+    @query
+    async def composed_review_views(cls) -> list[ProductReviewView]:
+        """Compose data across catalog + reviews + users into flat rows.
+
+        Cross-service data composition (not single-source projection): each row
+        joins Product.name (local) + Review.title/rating (reviews svc) +
+        User.name (users svc), flattening the federated nested result.
+        """
+        res = await handler.execute(
+            "{ Product { by_filter { name reviews { title rating author { name } } } } }"
+        )
+        out: list[ProductReviewView] = []
+        for p in ((res.get("data") or {}).get("Product") or {}).get("by_filter") or []:
+            for r in p.get("reviews") or []:
+                out.append(
+                    ProductReviewView(
+                        product_name=p["name"],
+                        title=r["title"],
+                        rating=r["rating"],
+                        author_name=(r.get("author") or {}).get("name"),
+                    )
+                )
         return out
 
 

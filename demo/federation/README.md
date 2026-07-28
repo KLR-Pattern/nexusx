@@ -104,6 +104,25 @@ This is the pattern for "DefineSubset a type from another service's schema":
 subset the local entry entity at module load; subset a remote type dynamically
 post-federate, then `model_validate` the federated result into it.
 
+### Cross-service data composition
+
+`composed_review_views` joins data from **all three services** into flat rows —
+not a single-source projection, but a composition that flattens the federated
+nested result (`Product → Review → User`):
+
+```bash
+curl -X POST http://localhost:8022/api/catalog_service/composed_review_views \
+  -H 'Content-Type: application/json' -d '{}'
+# [{"product_name":"Widget","title":"Great widget","rating":5,"author_name":"Alice"},
+#  {"product_name":"Widget","title":"Works okay","rating":3,"author_name":"Bob"},
+#  {"product_name":"Gadget","title":"Mediocre","rating":2,"author_name":"Alice"}]
+```
+
+Each row composes `product_name` (local Product) + `title`/`rating` (reviews
+service) + `author_name` (users service). Use `DefineSubset` for single-source
+projection; use a plain `BaseModel` like this for cross-source composition that
+flattens the nested federated graph.
+
 ## Files
 
 - `users_app.py` — leaf service (`User` + `by_id_in`).

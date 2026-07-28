@@ -8,6 +8,7 @@ entity, with computed fields derived from the REMOTE data.
 
 import httpx
 import pytest
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -187,6 +188,36 @@ async def test_definesubset_projection_over_federated_data():
         sample = res2["data"]["DSProduct"]["by_filter"][0]["reviews"][0]
         projected = ReviewSummary.model_validate(sample).model_dump()
         assert projected == {"title": sample["title"], "rating": sample["rating"]}
+
+        # ── Cross-service data composition (join local + reviews + users) ────
+        # A composed view is NOT a single-source DefineSubset — it flattens the
+        # federated nested result (Product → Review → User) into rows that each
+        # carry fields from all three services.
+        class _ProductReviewView(BaseModel):
+            product_name: str
+            title: str
+            rating: int
+            author_name: str | None = None
+
+        res3 = await ch.execute(
+            "{ DSProduct { by_filter { name reviews { title rating author { name } } } } }"
+        )
+        composed = [
+            _ProductReviewView(
+                product_name=p["name"],
+                title=r["title"],
+                rating=r["rating"],
+                author_name=(r.get("author") or {}).get("name"),
+            )
+            for p in ((res3.get("data") or {}).get("DSProduct") or {}).get("by_filter") or []
+            for r in p.get("reviews") or []
+        ]
+        # 3 reviews total: Widget(Great/Alice, Okay/Bob) + Gadget(Mediocre/Alice).
+        assert len(composed) == 3
+        widget = [c for c in composed if c.product_name == "Widget"]
+        assert {c.title for c in widget} == {"Great", "Okay"}
+        assert {c.author_name for c in widget} == {"Alice", "Bob"}
+        assert [c.title for c in composed if c.product_name == "Gadget"] == ["Mediocre"]
     finally:
         await client.aclose()
         for e in engines.values():
