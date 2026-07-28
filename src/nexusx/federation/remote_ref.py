@@ -1,40 +1,44 @@
-"""RemoteRef — explicit marker for remote type references in DefineSubset.
+"""RemoteService + RemoteRef — explicit markers for remote type references.
 
-Eliminates the ambiguity of bare strings: ``RemoteRef("reviews.Review")``
-clearly signals "this is a deferred reference to a remote nexusx service's
-type, resolved at federate time."
+``RemoteService("users")`` creates a namespace-like object; ``users.User``
+returns a ``RemoteRef("users.User")``. This separates service identity from
+type identity and reads like importing a type from a module::
 
-Usage::
+    from nexusx.federation import RemoteService
 
-    from nexusx.federation import RemoteRef
+    users = RemoteService("users")
+    reviews = RemoteService("reviews")
 
     class ReviewDTO(DefineSubset):
-        __subset__ = (RemoteRef("reviews.Review"), ("title", "rating", "author_id"))
-        author: RemoteRef("users.User") | None = None
+        __subset__ = (reviews.Review, ("title", "rating"))
+        author: users.User | None = None
 
-DefineSubset detects RemoteRef and defers processing. ``resolve_deferred_subsets``
-(called during federate) resolves each RemoteRef to the materialized pydantic
-class and completes the DTO.
+DefineSubset detects RemoteRef in ``__subset__`` (or annotations) and defers
+processing. ``resolve_deferred_subsets`` (called during ``federate``) resolves
+each RemoteRef to the materialized pydantic class and completes the DTO.
 """
 
 from __future__ import annotations
 
+import logging
 import sys
 import types
 import typing
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 
 class RemoteRef:
-    """Marker: a deferred reference to a remote type (``"srv.typename"``).
+    """A deferred reference to a remote type (``"srv.typename"``).
 
-    Wraps the qualified name string. DefineSubset checks
-    ``isinstance(source, RemoteRef)`` — if True, defers; if False (a real
-    class), processes immediately. This eliminates string ambiguity.
+    Normally created via ``RemoteService("srv").TypeName`` — not called
+    directly by users. DefineSubset checks ``isinstance(source, RemoteRef)``
+    to decide whether to defer.
 
     Supports ``| None`` so it can be used directly in annotations::
 
-        author: RemoteRef("users.User") | None = None
+        author: users.User | None = None
     """
 
     __slots__ = ("qualified_name",)
@@ -52,24 +56,18 @@ class RemoteRef:
         return f"RemoteRef({self.qualified_name!r})"
 
     def __or__(self, other: Any) -> _RemoteRefOptional:
-        """Support ``RemoteRef("X") | None`` for Optional annotations."""
         if other is None or other is type(None):  # noqa: PLR0124
             return _RemoteRefOptional(self)
         return NotImplemented
 
     def __ror__(self, other: Any) -> _RemoteRefOptional:
-        """Support ``None | RemoteRef("X")`` (rare, but symmetric)."""
         if other is None or other is type(None):  # noqa: PLR0124
             return _RemoteRefOptional(self)
         return NotImplemented
 
 
 class _RemoteRefOptional:
-    """Result of ``RemoteRef("X") | None`` — an Optional remote reference.
-
-    Carries the inner RemoteRef. ``resolve_deferred_subsets`` detects this
-    in annotations and resolves it to ``MaterializedType | None``.
-    """
+    """Result of ``RemoteRef | None`` — an Optional remote reference."""
 
     __slots__ = ("inner",)
 
@@ -80,21 +78,47 @@ class _RemoteRefOptional:
         return f"{self.inner} | None"
 
 
-def _contains_remote_ref(annotation: Any) -> RemoteRef | None:
-    """Check if an annotation contains a RemoteRef (directly or in a union).
+class RemoteService:
+    """A remote nexusx service — access its types like a namespace.
 
-    Returns the RemoteRef if found, None otherwise. Handles:
-    - ``RemoteRef("X")`` directly
-    - ``RemoteRef("X") | None`` → ``_RemoteRefOptional``
-    - ``list[RemoteRef("X")]`` → GenericAlias with RemoteRef arg
-    - ``None`` / plain types → no RemoteRef
+    Usage::
+
+        users = RemoteService("users")
+        users.User          # → RemoteRef("users.User")
+        users.User | None   # → _RemoteRefOptional(RemoteRef("users.User"))
+
+    The service name (prefix) is declared **once** and reused for every type
+    on that service — cleaner than repeating ``RemoteRef("users.User")``.
     """
+
+    __slots__ = ("_name",)
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    def __getattr__(self, typename: str) -> RemoteRef:
+        if typename.startswith("_"):
+            raise AttributeError(typename)
+        return RemoteRef(f"{self._name}.{typename}")
+
+    def __repr__(self) -> str:
+        return f"RemoteService({self._name!r})"
+
+
+# ── Helpers ─────────────────────────────────────────────────────────────
+
+
+def _contains_remote_ref(annotation: Any) -> RemoteRef | None:
+    """Check if an annotation contains a RemoteRef (directly, in a union, or
+    in a generic alias). Returns the RemoteRef if found, None otherwise."""
     if isinstance(annotation, RemoteRef):
         return annotation
     if isinstance(annotation, _RemoteRefOptional):
         return annotation.inner
-    # Check generic aliases (list[RemoteRef(...)] etc.)
-    import typing
     origin = typing.get_origin(annotation)
     if origin is not None:
         for arg in typing.get_args(annotation):
@@ -106,7 +130,6 @@ def _contains_remote_ref(annotation: Any) -> RemoteRef | None:
 
 # ── Deferred DefineSubset registry ──────────────────────────────────────
 
-# Classes pending resolution: {class_name: (cls, RemoteRef_source, field_names, body_namespace)}
 _pending_subsets: list[tuple[str, type, RemoteRef, list[str], dict[str, Any]]] = []
 
 
@@ -117,31 +140,22 @@ def register_pending_subset(
     field_names: list[str],
     namespace: dict[str, Any],
 ) -> None:
-    """Register a deferred DefineSubset for later resolution."""
     _pending_subsets.append((name, cls, source_ref, field_names, namespace))
 
 
 def get_pending_subsets() -> list[tuple[str, type, RemoteRef, list[str], dict[str, Any]]]:
-    """Return all pending subsets (for resolve_deferred_subsets)."""
     return list(_pending_subsets)
 
 
 def clear_pending_subsets() -> None:
-    """Clear the registry (after resolution)."""
     _pending_subsets.clear()
 
 
 def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
     """Resolve all pending DefineSubset classes with materialized types.
 
-    Called during ``federate()`` after materialization. For each pending class:
-    1. Resolve RemoteRef → materialized class from FederatedTypeRegistry.
-    2. Create a new DefineSubset with the resolved source.
-    3. Replace the deferred class in its module namespace.
-
-    Returns the list of resolved classes.
+    Called during ``federate()`` after materialization.
     """
-
     from nexusx.subset import DefineSubset
 
     resolved: list[type] = []
@@ -150,13 +164,12 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
     for name, deferred_cls, source_ref, field_names, namespace in get_pending_subsets():
         materialized = fed_registry.get(source_ref.qualified_name)
 
-        # Capture the placeholder BEFORE replacing it.
         module_name = namespace.get("__module__", "__main__")
         module = sys.modules.get(module_name)
         old_cls = getattr(module, name, None) if module else None
 
-        # Build resolved annotations: replace RemoteRef/_RemoteRefOptional with real types.
-        resolved_annotations = {}
+        # Build resolved annotations.
+        resolved_annotations: dict[str, Any] = {}
         for fname, anno in namespace.get("__annotations__", {}).items():
             ref = _contains_remote_ref(anno)
             if ref is not None:
@@ -170,8 +183,7 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
             else:
                 resolved_annotations[fname] = anno
 
-        # Build the new class via DefineSubset's metaclass.
-        new_namespace = {
+        new_namespace: dict[str, Any] = {
             "__subset__": (materialized, tuple(field_names)),
             "__annotations__": resolved_annotations,
             "__module__": module_name,
@@ -182,7 +194,6 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
 
         new_cls = type(name, (DefineSubset,), new_namespace)
 
-        # Replace in module namespace + track for updating referencing classes.
         if module is not None:
             setattr(module, name, new_cls)
         if old_cls is not None and old_cls is not new_cls:
@@ -192,21 +203,18 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
 
     clear_pending_subsets()
 
-    # Update existing DefineSubset classes: directly replace placeholder refs
-    # in BOTH __annotations__ AND model_fields[].annotation (pydantic v2's
-    # model_rebuild does NOT re-read __annotations__ to update FieldInfo.annotation,
-    # so we must mutate it directly).
+    # Update existing DefineSubset classes: replace placeholder refs in BOTH
+    # __annotations__ AND model_fields[].annotation (pydantic v2 model_rebuild
+    # does NOT re-read __annotations__ to update FieldInfo.annotation).
     from nexusx.subset import _subset_registry
     for dto_cls in list(_subset_registry.keys()):
         changed = False
-        # Update __annotations__.
-        new_annotations = {}
+        new_annotations: dict[str, Any] = {}
         for fname, anno in dto_cls.__annotations__.items():
             replaced = _replace_classes_in_annotation(anno, replacements)
             new_annotations[fname] = replaced
             if replaced is not anno:
                 changed = True
-        # Update model_fields[].annotation directly.
         for fname, field_info in dto_cls.model_fields.items():
             replaced = _replace_classes_in_annotation(field_info.annotation, replacements)
             if replaced is not field_info.annotation:
@@ -224,7 +232,6 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
 
 def _replace_classes_in_annotation(annotation: Any, replacements: dict[type, type]) -> Any:
     """Recursively replace placeholder classes in a type annotation."""
-    # Direct match.
     if isinstance(annotation, type) and annotation in replacements:
         return replacements[annotation]
 
@@ -235,9 +242,8 @@ def _replace_classes_in_annotation(annotation: Any, replacements: dict[type, typ
 
     new_args = tuple(_replace_classes_in_annotation(a, replacements) for a in args)
     if new_args == args:
-        return annotation  # no change
+        return annotation
 
-    # Reconstruct: list[X], X | None, etc.
     if origin is list and len(new_args) == 1:
         return list[new_args[0]]
     if origin is types.UnionType:
@@ -253,20 +259,20 @@ def _replace_classes_in_annotation(annotation: Any, replacements: dict[type, typ
 
 def _replace_remote_ref(annotation: Any, fed_registry: Any) -> Any:
     """Recursively replace RemoteRef in a generic annotation with real types."""
-    import typing
-
-
     ref = _contains_remote_ref(annotation)
     if ref is not None and not isinstance(annotation, (RemoteRef, _RemoteRefOptional)):
-        # Generic alias containing RemoteRef (e.g. list[RemoteRef("X")]).
         origin = typing.get_origin(annotation)
         args = typing.get_args(annotation)
         new_args = tuple(
-            fed_registry.get(r.qualified_name) if isinstance(a, (RemoteRef, _RemoteRefOptional))
+            fed_registry.get(r.qualified_name)
+            if isinstance(a, (RemoteRef, _RemoteRefOptional))
             else _replace_remote_ref(a, fed_registry)
             for a in args
         )
         if origin is list and len(new_args) == 1:
             return list[new_args[0]]
-        return annotation  # fallback: leave as-is
+        try:
+            return origin[new_args] if len(new_args) > 1 else origin[new_args[0]]
+        except Exception:
+            return annotation
     return annotation

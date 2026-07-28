@@ -88,20 +88,24 @@ app = make_app(handler, on_startup=on_startup, title="Fed demo — catalog (moun
 # no __annotations__, no ceremony.
 
 from nexusx import DefineSubset
-from nexusx.federation import RemoteRef
+from nexusx.federation import RemoteService
+
+# Remote service references — declared once, used like namespaces.
+users = RemoteService("users")
+reviews = RemoteService("reviews")
 
 
 class UserDTO(DefineSubset):
     """Subset of the remote users.User (resolved at federate time)."""
 
-    __subset__ = (RemoteRef("users.User"), ("name",))
+    __subset__ = (users.User, ("name",))
 
 
 class ReviewDTO(DefineSubset):
     """Subset of the remote reviews.Review + nested author (resolved at federate)."""
 
-    __subset__ = (RemoteRef("reviews.Review"), ("title", "rating", "author_id"))
-    author: RemoteRef("users.User") | None = None
+    __subset__ = (reviews.Review, ("title", "rating", "author_id"))
+    author: users.User | None = None
 
 
 class ProductDTO(DefineSubset):
