@@ -58,70 +58,54 @@ result. No service prefix leaks to the client; each service is called once.
 | β nested fetch | one gql per service returns multi-level nested data |
 | `by_<key>_in` entry roots | `AutoQueryConfig(batch_keys=...)` on each member |
 
-## UseCase projection over federation data (DefineSubset)
+## UseCase composition over federated data (DefineSubset)
 
-`catalog` also exposes a **UseCaseService** that consumes the federated graph
-and projects it via `DefineSubset` — composing the federated GraphQL surface
-(`handler.execute`) with the UseCase / Core-API surface (DefineSubset DTOs):
+`catalog` also exposes a **UseCaseService** that composes the cross-service
+graph into a nested DTO tree — declaratively, **no manual per-row assembly**.
 
-```bash
-curl -X POST http://localhost:8022/api/catalog_service/product_summaries \
-  -H 'Content-Type: application/json' -d '{}'
-# [{"id":1,"name":"Widget","review_count":2,"avg_rating":4.0,"top_reviewer":"Bob"}, ...]
-```
-
-`ProductSummary` is a `DefineSubset` sourced from the **local** `Product`
-(`__subset__ = (Product, ("id", "name"))`) with computed fields
-(`review_count`, `avg_rating`, `top_reviewer`) derived from the **remote**
-reviews/users data fetched through the federated query. The remote types are
-dynamic (materialized at `federate`-time), so the remote-derived bits live as
-computed fields on a DTO subsetted from the local entry entity — the working
-pattern for "federation data → DefineSubset shaping".
-
-### DefineSubset a REMOTE type
-
-`review_summaries` subsets a type **owned by another service** — `reviews.Review`
-— not a local entity:
+The split: **federation fetches** (one nested gql per service — β), and
+**DefineSubset shapes** (`model_validate` recurses the nested result).
 
 ```bash
-curl -X POST http://localhost:8022/api/catalog_service/review_summaries \
+curl -X POST http://localhost:8022/api/catalog_service/composed_tree \
   -H 'Content-Type: application/json' -d '{}'
-# [{"title":"Great widget","rating":5},{"title":"Works okay","rating":3}, ...]
+# [{"id":1,"name":"Widget","reviews":[
+#    {"title":"Great widget","rating":5,"author":{"name":"Alice"}},
+#    {"title":"Works okay","rating":3,"author":{"name":"Bob"}}]},
+#  {"id":2,"name":"Gadget","reviews":[
+#    {"title":"Mediocre","rating":2,"author":{"name":"Alice"}}]}]
 ```
 
-The materialized remote class only exists after `handler.federate()` runs, so
-the DTO cannot be declared at module load. `_review_summary()` builds it lazily
-on first use from the `FederatedTypeRegistry`:
+The DTO tree mirrors the graph — `ProductDTO` (DefineSubset of the local
+`Product`) → `reviews: list[ReviewDTO]` → `author: UserDTO`:
 
 ```python
-fed_review = handler._er_manager._fed_registry.get("reviews.Review")
-ReviewSummary = type("ReviewSummary", (DefineSubset,), {
-    "__subset__": (fed_review, ("title", "rating")),  # subset of the REMOTE schema
-})
+class UserDTO(BaseModel):
+    name: str
+
+class ReviewDTO(BaseModel):
+    title: str
+    rating: int
+    author: UserDTO | None = None
+
+class ProductDTO(DefineSubset):
+    __subset__ = (Product, ("id", "name"))
+    reviews: list[ReviewDTO] = Field(default_factory=list)
+
+
+res = await handler.execute(
+    "{ Product { by_filter { id name reviews { title rating author { name } } } } }"
+)
+tree = [ProductDTO.model_validate(p) for p in res["data"]["Product"]["by_filter"]]
 ```
 
-This is the pattern for "DefineSubset a type from another service's schema":
-subset the local entry entity at module load; subset a remote type dynamically
-post-federate, then `model_validate` the federated result into it.
-
-### Cross-service data composition
-
-`composed_review_views` joins data from **all three services** into flat rows —
-not a single-source projection, but a composition that flattens the federated
-nested result (`Product → Review → User`):
-
-```bash
-curl -X POST http://localhost:8022/api/catalog_service/composed_review_views \
-  -H 'Content-Type: application/json' -d '{}'
-# [{"product_name":"Widget","title":"Great widget","rating":5,"author_name":"Alice"},
-#  {"product_name":"Widget","title":"Works okay","rating":3,"author_name":"Bob"},
-#  {"product_name":"Gadget","title":"Mediocre","rating":2,"author_name":"Alice"}]
-```
-
-Each row composes `product_name` (local Product) + `title`/`rating` (reviews
-service) + `author_name` (users service). Use `DefineSubset` for single-source
-projection; use a plain `BaseModel` like this for cross-source composition that
-flattens the nested federated graph.
+`model_validate` recurses through the nested `BaseModel` fields, so the whole
+`Product → Review → User` tree is built with **one root-level comprehension** —
+no for-loop over children. The remote levels are plain `BaseModel` (the
+materialized remote types are dynamic, so they're shaped by field selection,
+not `DefineSubset` over a source class). For `post_*`-style transforms, run
+`Resolver().resolve(tree)` afterwards — relationships are already filled, so the
+Resolver only runs the hooks (it is not the fetcher here — federation is).
 
 ## Files
 

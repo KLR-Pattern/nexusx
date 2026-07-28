@@ -11,7 +11,7 @@ A single query to catalog traverses catalog → reviews → users transparently;
 each mounted service receives exactly one nested gql query.
 """
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -81,136 +81,52 @@ async def on_startup() -> None:
 app = make_app(handler, on_startup=on_startup, title="Fed demo — catalog (mounts reviews)")
 
 
-# ── UseCaseService: federation data → DefineSubset projection ────────────
-# Demonstrates composing the federated GraphQL surface (handler.execute) with
-# the UseCase / Core-API surface (DefineSubset): the service queries the
-# cross-service graph, then projects it into a DefineSubset DTO sourced from
-# the LOCAL Product, with computed fields derived from the REMOTE reviews/users
-# data (the "post"-style transform). The remote types themselves are dynamic
-# (materialized at federate-time), so the remote-derived bits live as computed
-# fields on a DTO subsetted from the local entry entity.
+# ── UseCaseService: declarative cross-service composition ────────────────
+# federation fetches the cross-service graph with ONE nested gql per service
+# (β); DefineSubset + pydantic's model_validate then shape the nested result
+# into a DTO tree — NO manual per-row assembly, NO for-loop over children.
+# federation = fetch layer; DefineSubset = shaping layer.
 
 
-class ProductSummary(DefineSubset):
-    """Projected view of a Product plus federation-derived aggregates."""
+class UserDTO(BaseModel):
+    """Subset of the remote users.User."""
 
-    __subset__ = (Product, ("id", "name"))
-    review_count: int = 0
-    avg_rating: float = 0.0
-    top_reviewer: str | None = None
+    name: str
 
 
-# DefineSubset a REMOTE type: the materialized reviews.Review only exists AFTER
-# handler.federate() runs (it's create_model'd at startup), so the DTO cannot be
-# declared at module load. Build it lazily on first use from the materialized
-# class held in the FederatedTypeRegistry.
-_review_summary_type: type | None = None
+class ReviewDTO(BaseModel):
+    """Subset of the remote reviews.Review, plus nested author (users service)."""
 
-
-def _review_summary() -> type:
-    """A DefineSubset over the REMOTE reviews.Review (dynamic, post-federate)."""
-    global _review_summary_type
-    if _review_summary_type is None:
-        fed_review = handler._er_manager._fed_registry.get("reviews.Review")
-        _review_summary_type = type(
-            "ReviewSummary",
-            (DefineSubset,),
-            {
-                "__subset__": (fed_review, ("title", "rating")),
-                "model_config": ConfigDict(extra="ignore"),
-                "__module__": __name__,
-            },
-        )
-    return _review_summary_type
-
-
-class ProductReviewView(BaseModel):
-    """Composed view joining data across all three services into one flat row.
-
-    Spans multiple sources (so NOT a single-source DefineSubset): ``product_name``
-    from the LOCAL Product, ``title``/``rating`` from reviews (reviews service),
-    ``author_name`` from users (users service) — composed by flattening the
-    federated nested result. This is cross-service data composition.
-    """
-
-    product_name: str
     title: str
     rating: int
-    author_name: str | None = None
+    author: UserDTO | None = None
+
+
+class ProductDTO(DefineSubset):
+    """Local Product subset + nested reviews (remote)."""
+
+    __subset__ = (Product, ("id", "name"))
+    reviews: list[ReviewDTO] = Field(default_factory=list)
 
 
 class CatalogService(UseCaseService):
     """Business-logic surface over the federated graph."""
 
     @query
-    async def product_summaries(cls) -> list[ProductSummary]:
-        """Per-product review aggregates, projected from the federated graph."""
+    async def composed_tree(cls) -> list[ProductDTO]:
+        """Declarative cross-service composition: Product → Review → author.
+
+        One nested gql fetches the whole Product → Review → User subtree across
+        all three services (β); ``model_validate`` recurses it into the DTO tree.
+        DefineSubset + pydantic do the shaping — no manual per-row assembly.
+        """
         res = await handler.execute(
-            "{ Product { by_filter { id name reviews { rating author { name } } } } }"
+            "{ Product { by_filter { id name reviews { title rating author { name } } } } }"
         )
         products = (
             ((res.get("data") or {}).get("Product") or {}).get("by_filter") or []
         )
-        out: list[ProductSummary] = []
-        for p in products:
-            reviews = p.get("reviews") or []
-            ratings = [r["rating"] for r in reviews]
-            reviewers = [r["author"]["name"] for r in reviews if r.get("author")]
-            out.append(
-                ProductSummary(
-                    id=p["id"],
-                    name=p["name"],
-                    review_count=len(reviews),
-                    avg_rating=round(sum(ratings) / len(ratings), 2) if ratings else 0.0,
-                    top_reviewer=(
-                        max(set(reviewers), key=reviewers.count) if reviewers else None
-                    ),
-                )
-            )
-        return out
-
-    @query
-    async def review_summaries(cls) -> list[dict]:
-        """Project the REMOTE reviews.Review via a dynamic DefineSubset.
-
-        Unlike ``product_summaries`` (which subsets the LOCAL Product), this
-        subsets a type OWNED BY ANOTHER SERVICE — reviews.Review — using the
-        materialized class obtained post-federate. Demonstrates DefineSubset
-        over a remote schema.
-        """
-        review_summary = _review_summary()
-        res = await handler.execute(
-            "{ Product { by_filter { reviews { title rating } } } }"
-        )
-        out: list[dict] = []
-        for p in ((res.get("data") or {}).get("Product") or {}).get("by_filter") or []:
-            for r in p.get("reviews") or []:
-                out.append(review_summary.model_validate(r).model_dump())
-        return out
-
-    @query
-    async def composed_review_views(cls) -> list[ProductReviewView]:
-        """Compose data across catalog + reviews + users into flat rows.
-
-        Cross-service data composition (not single-source projection): each row
-        joins Product.name (local) + Review.title/rating (reviews svc) +
-        User.name (users svc), flattening the federated nested result.
-        """
-        res = await handler.execute(
-            "{ Product { by_filter { name reviews { title rating author { name } } } } }"
-        )
-        out: list[ProductReviewView] = []
-        for p in ((res.get("data") or {}).get("Product") or {}).get("by_filter") or []:
-            for r in p.get("reviews") or []:
-                out.append(
-                    ProductReviewView(
-                        product_name=p["name"],
-                        title=r["title"],
-                        rating=r["rating"],
-                        author_name=(r.get("author") or {}).get("name"),
-                    )
-                )
-        return out
+        return [ProductDTO.model_validate(p) for p in products]
 
 
 # Expose the UseCase service as REST alongside the GraphQL surface.
