@@ -29,6 +29,11 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+class _NotResolvable(Exception):
+    """Internal signal: this RemoteRef belongs to a different fed_registry
+    (a service not mounted by the current federate() call). Skip silently."""
+
+
 class RemoteRef:
     """A deferred reference to a remote type (``"srv.typename"``).
 
@@ -152,15 +157,22 @@ def clear_pending_subsets() -> None:
 
 
 def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
-    """Resolve all pending DefineSubset classes with materialized types.
+    """Resolve pending DefineSubset classes whose RemoteRef targets types in
+    THIS fed_registry.
 
-    Called during ``federate()`` after materialization.
+    Called during ``federate()`` after materialization. Only resolves subsets
+    whose source RemoteRef points to a type this fed_registry actually has;
+    unresolvable subsets stay pending for a subsequent ``federate()`` call
+    (supports multiple ErManagers in one process each mounting different
+    services). Raises on RemoteRef whose service IS mounted but whose type
+    name doesn't match (clear configuration error).
     """
     from nexusx.subset import DefineSubset
 
     resolved: list[type] = []
     replacements: dict[type, type] = {}
 
+    all_pending = get_pending_subsets()
     available = sorted(
         getattr(fed_registry, "_qualified_to_class", {}).keys()
     )
@@ -169,17 +181,43 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
         """Resolve a RemoteRef to a materialized class with a clear error."""
         qn = ref.qualified_name
         if not fed_registry.has(qn):
-            msg = (
-                f"{context}: remote type {qn!r} does not match any type "
-                f"from ER introspection. Available: {available}"
-            )
-            raise ValueError(msg)
-        return fed_registry.get(qn)
+            srv = qn.split(".")[0]
+            # Is the service mounted but the type name wrong?
+            has_any_from_srv = any(k.startswith(f"{srv}.") for k in available)
+            if has_any_from_srv:
+                # Service is mounted — type name is a genuine typo.
+                from_this = [k for k in available if k.startswith(f"{srv}.")]
+                msg = (
+                    f"{context}: remote type {qn!r} does not match any type "
+                    f"from service {srv!r}. Available from {srv!r}: {from_this}"
+                )
+                raise ValueError(msg)
+            else:
+                # Service not mounted by THIS fed_registry — skip (maybe
+                # belongs to a different ErManager's federate() call).
+                raise _NotResolvable(srv)
 
-    for name, deferred_cls, source_ref, field_names, namespace in get_pending_subsets():
-        materialized = _resolve_ref(
-            source_ref, f"{name}.__subset__"
-        )
+    resolvable: list[tuple] = []
+    still_pending: list[tuple] = []
+
+    for entry in all_pending:
+        name, _cls, source_ref, _fields, _ns = entry
+        srv = source_ref.qualified_name.split(".")[0]
+        # Quick filter: does this fed_registry have ANY type from this service?
+        if any(k.startswith(f"{srv}.") for k in available):
+            resolvable.append(entry)
+        else:
+            still_pending.append(entry)
+
+    for name, deferred_cls, source_ref, field_names, namespace in resolvable:
+        try:
+            materialized = _resolve_ref(source_ref, f"{name}.__subset__")
+        except _NotResolvable:
+            # Source service not in this fed_registry — defer to next federate().
+            still_pending.append(
+                (name, deferred_cls, source_ref, field_names, namespace)
+            )
+            continue
 
         module_name = namespace.get("__module__", "__main__")
         module = sys.modules.get(module_name)
@@ -187,18 +225,25 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
 
         # Build resolved annotations.
         resolved_annotations: dict[str, Any] = {}
-        for fname, anno in namespace.get("__annotations__", {}).items():
-            ref = _contains_remote_ref(anno)
-            if ref is not None:
-                target = _resolve_ref(ref, f"{name}.{fname}")
-                if isinstance(anno, _RemoteRefOptional):
-                    resolved_annotations[fname] = target | None
-                elif isinstance(anno, RemoteRef):
-                    resolved_annotations[fname] = target
+        try:
+            for fname, anno in namespace.get("__annotations__", {}).items():
+                ref = _contains_remote_ref(anno)
+                if ref is not None:
+                    target = _resolve_ref(ref, f"{name}.{fname}")
+                    if isinstance(anno, _RemoteRefOptional):
+                        resolved_annotations[fname] = target | None
+                    elif isinstance(anno, RemoteRef):
+                        resolved_annotations[fname] = target
+                    else:
+                        resolved_annotations[fname] = _replace_remote_ref(anno, fed_registry)
                 else:
-                    resolved_annotations[fname] = _replace_remote_ref(anno, fed_registry)
-            else:
-                resolved_annotations[fname] = anno
+                    resolved_annotations[fname] = anno
+        except _NotResolvable:
+            # An annotation references a service not in this fed_registry.
+            still_pending.append(
+                (name, deferred_cls, source_ref, field_names, namespace)
+            )
+            continue
 
         new_namespace: dict[str, Any] = {
             "__subset__": (materialized, tuple(field_names)),
@@ -218,7 +263,9 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
 
         resolved.append(new_cls)
 
-    clear_pending_subsets()
+    # Only remove resolved subsets; keep unresolvable ones for a subsequent
+    # federate() call (supports multiple ErManagers in one process).
+    _pending_subsets[:] = still_pending
 
     # Update existing DefineSubset classes: replace placeholder refs in BOTH
     # __annotations__ AND model_fields[].annotation (pydantic v2 model_rebuild
