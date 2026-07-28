@@ -76,7 +76,7 @@ SERVICES=(
   # ── Federation: nexusx-to-nexusx (start order is tolerated via in-process retry) ──
   "federation|Fed — users (leaf)|$PORT_FED_USERS|GraphQL|/graphql,/nexusx/er-introspection|uv run uvicorn demo.federation.users_app:app --port %PORT%"
   "federation|Fed — reviews (mounts users)|$PORT_FED_REVIEWS|GraphQL|/graphql,/nexusx/er-introspection|uv run uvicorn demo.federation.reviews_app:app --port %PORT%"
-  "federation|Fed — catalog (entry; mounts reviews) ★|$PORT_FED_CATALOG|GraphQL|/graphql,/nexusx/er-introspection|uv run uvicorn demo.federation.catalog_app:app --port %PORT%"
+  "federation|Fed — catalog (entry; mounts reviews) ★|$PORT_FED_CATALOG|GraphQL, REST|/graphql,/nexusx/er-introspection,/api/catalog_service/product_summaries|uv run uvicorn demo.federation.catalog_app:app --port %PORT%"
 )
 
 # Derive ALL_PORTS from the registry (single source of truth).
