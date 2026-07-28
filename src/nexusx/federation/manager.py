@@ -43,6 +43,7 @@ async def federate(
     remote_edges: list[RemoteEdge] | None = None,
     transport: GraphQLTransport | None = None,
     service_name: str | None = None,
+    extra_types: dict[str, type] | None = None,
 ) -> None:
     """Mount ``services`` (name → endpoint) into ``er_manager``.
 
@@ -118,7 +119,7 @@ async def federate(
 
     # 3. Materialize remote types (bare __name__; qualified identity in registry).
     _check_no_cross_service_barename_dup(fragments)
-    fed_registry = FederatedTypeRegistry()
+    fed_registry = FederatedTypeRegistry(extra_types=extra_types)
     fed_registry.materialize(fragments)
     er_manager._fed_registry = fed_registry
 

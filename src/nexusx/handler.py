@@ -176,14 +176,20 @@ class GraphQLHandler:
         *,
         remote_edges: list[Any] | None = None,
         transport: Any | None = None,
+        extra_types: dict[str, type] | None = None,
     ) -> None:
         """Mount other nexusx services into this handler (federation).
 
         Async (HTTP) — call during startup (e.g. FastAPI lifespan) before this
         handler serves queries. See nexusx.federation.manager.federate.
+
+        Args:
+            extra_types: Extra type names to recognize when materializing remote
+                scalar fields (shared enums / project custom scalars).
         """
         await self._er_manager.federate(
-            services, remote_edges=remote_edges, transport=transport
+            services, remote_edges=remote_edges, transport=transport,
+            extra_types=extra_types,
         )
         # Rebuild schema generators so SDL / __schema introspection include the
         # materialized remote types (FR-017): the generators snapshot their

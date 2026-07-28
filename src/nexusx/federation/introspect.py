@@ -26,13 +26,30 @@ from nexusx.federation.contract import (
 from nexusx.federation.http import GraphQLTransport
 
 
-def _type_name(anno: Any) -> str:
-    """Reduce a Python annotation to a simple wire type-name."""
+def _type_expr(anno: Any) -> str:
+    """Render a Python annotation as a LOSSLESS type-expression string.
+
+    The mounter reconstructs the precise type from this string via
+    ``create_model`` + ``model_rebuild`` against a shared type namespace, so
+    ``list[str]`` / ``Optional[int]`` / ``UUID`` / enums round-trip exactly
+    (instead of degrading to a bare name that loses generics). Unions render as
+    ``A | B``; parameterized generics as ``list[X]`` / ``dict[K, V]``.
+    """
     origin = typing.get_origin(anno)
-    if origin in (types.UnionType, Union):
-        args = [a for a in typing.get_args(anno) if a is not type(None)]
-        if len(args) == 1:
-            anno = args[0]
+    args = typing.get_args(anno)
+    # Union / Optional (PEP 604 X | Y, incl. X | None)
+    if origin in (Union, types.UnionType):
+        return " | ".join(_type_expr(a) for a in args)
+    # Parameterized generics: list[str], dict[K, V], set[X], tuple[...], ...
+    if origin is not None:
+        name = getattr(origin, "__name__", None) or str(origin)
+        if args:
+            return f"{name}[{', '.join(_type_expr(a) for a in args)}]"
+        return name
+    # NoneType
+    if anno is type(None):
+        return "None"
+    # Bare type (int, str, UUID, enum class, custom scalar)
     if isinstance(anno, type):
         return anno.__name__
     return getattr(anno, "__name__", str(anno))
@@ -95,7 +112,7 @@ def serialize_er_introspection(er_manager: Any) -> ERIntrospectionResponse:
             if fname in rel_names:
                 continue
             scalar_fields.append(
-                FieldDescriptor(name=fname, type_name=_type_name(finfo.annotation))
+                FieldDescriptor(name=fname, type_name=_type_expr(finfo.annotation))
             )
 
         entities.append(

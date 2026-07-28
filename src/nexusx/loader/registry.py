@@ -614,6 +614,7 @@ class ErManager:
         remote_edges: list[Any] | None = None,
         transport: Any | None = None,
         service_name: str | None = None,
+        extra_types: dict[str, type] | None = None,
     ) -> None:
         """Mount other nexusx services into this ErManager (federation).
 
@@ -621,6 +622,12 @@ class ErManager:
         before this ErManager serves queries. No-op-equivalent when never called
         (local-only behavior is unchanged). See nexusx.federation.manager.federate
         for the orchestration and fail-fast validation.
+
+        Args:
+            extra_types: Extra type names the mounter should recognize when
+                materializing remote scalar fields (e.g. shared enums or project
+                custom scalars referenced by remote types). Unregistered names
+                fall back to ``Any``.
         """
         from nexusx.federation.manager import federate as _federate
 
@@ -630,6 +637,7 @@ class ErManager:
             remote_edges=remote_edges,
             transport=transport,
             service_name=service_name,
+            extra_types=extra_types,
         )
 
     def create_resolver(self) -> type:

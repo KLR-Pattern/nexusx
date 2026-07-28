@@ -45,6 +45,7 @@
 
 ## 不变量
 
+- **`type_name` 是完整类型表达式字符串**(如 `"int"`、`"list[str]"`、`"UUID"`、`"int | None"`、`"Status"`)。成员经 `introspect._type_expr`(无损渲染)产出;挂载方经 `create_model` + `model_rebuild(_types_namespace=...)` 精确重建——`list`/`Optional`/已知标量/枚举无损往返,而非降级成 `Any`。未知名(未在挂载方注册的自定义类型)回退 `Any` + 警告;用 `federate(extra_types={...})` 注册项目公共类型/枚举以获得精确物化。
 - **来源**:`ErManager.get_all_entities()` + `get_all_relationships()`(`RelationshipInfo`),与 Voyager 同源(spec 决定 1)。
 - **loader 不序列化**:`RelationshipInfo.loader` 是代码对象(非数据),不进 wire。
 - **远程关系**(`target_service != None`)必须携带 `target_service` + `target_endpoint`,使挂载方能传递式发现可达子图(FR-005)。
