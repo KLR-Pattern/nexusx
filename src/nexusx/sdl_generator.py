@@ -172,7 +172,12 @@ class SDLGenerator:
         enums: dict[str, type[Enum]] = {}
 
         for entity in self.entities:
-            hints = get_type_hints(entity)
+            try:
+                hints = get_type_hints(entity)
+            except Exception:
+                # Materialized remote types have dynamic ForwardRef annotations
+                # that get_type_hints can't resolve from module globals.
+                hints = {}
             for field_type in hints.values():
                 if isinstance(field_type, type) and issubclass(field_type, Enum):
                     enums[field_type.__name__] = field_type
