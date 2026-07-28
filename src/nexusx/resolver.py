@@ -313,13 +313,17 @@ def _get_class_meta(kls: type) -> _ClassMeta:
     return meta
 
 
-def _compute_should_traverse(kls: type) -> bool:
+def _compute_should_traverse(kls: type, registry: Any = None) -> bool:
     """Determine if a class or any of its BaseModel descendants needs traversal.
 
     A class needs traversal if it has resolve/post methods, ExposeAs/SendTo
     annotations, Collector parameters, or any descendant that does.
     Handles self-referencing types by using a sentinel value.
     Result is cached in ``_ClassMeta.should_traverse``.
+
+    When ``registry`` (an ErManager) is provided, ALSO checks ErManager-
+    registered relationships — so materialized remote types (which have rels
+    in the ErManager but not as model_fields) are recognized as traversable.
     """
     meta = _get_class_meta(kls)
 
@@ -338,7 +342,12 @@ def _compute_should_traverse(kls: type) -> bool:
     # Check descendants
     for field_info in kls.model_fields.values():
         child_cls = Resolver._do_extract_dto_cls(field_info.annotation)
-        if child_cls is not None and _compute_should_traverse(child_cls):
+        if child_cls is not None and _compute_should_traverse(child_cls, registry):
+            return True
+
+    # Check ErManager-registered relationships (materialized remote types).
+    if registry is not None and hasattr(registry, 'has_entity') and registry.has_entity(kls):
+        if hasattr(registry, 'get_relationships') and registry.get_relationships(kls):
             return True
 
     meta.should_traverse = False
@@ -616,6 +625,20 @@ class Resolver:
             # DTO must be compatible with the relationship's target entity
             if is_compatible_type(dto_cls, rel_info.target_entity):
                 results.append((field_name, field_name, rel_info, field_info))
+
+        # Also auto-load ErManager rels NOT in model_fields — but ONLY when
+        # the node IS the source entity (materialized types, not DefineSubset
+        # DTOs whose source is a different entity). For materialized types the
+        # class has no model_field for its rels (they're in the ErManager only),
+        # so the Resolver must discover them here.
+        if source_entity is node_type:
+            for rel_name, rel_info in entity_rels.items():
+                if rel_name in node_type.model_fields:
+                    continue  # already handled above
+                if rel_name in resolve_field_names or rel_name in subset_field_names:
+                    continue
+                # field_info=None signals: construct target_entity instances directly.
+                results.append((rel_name, rel_name, rel_info, None))
 
         self._auto_load_cache[node_type] = results
         return results
@@ -1098,8 +1121,18 @@ class Resolver:
             if extracted is None:
                 continue
             dto_cls, is_list = extracted
-            if _compute_should_traverse(dto_cls):
+            if _compute_should_traverse(dto_cls, self._registry):
                 result.append((field_name, is_list))
+
+        # Also include ErManager-registered relationships that are NOT
+        # model_fields — but ONLY for materialized types (source == node_type),
+        # not DefineSubset DTOs whose source is a different entity.
+        if self._registry is not None:
+            source = self._resolve_source(node_type)
+            if source is not None and source is node_type:
+                for rel_name, rel_info in self._registry.get_relationships(source).items():
+                    if rel_name not in node_type.model_fields:
+                        result.append((rel_name, rel_info.is_list))
 
         self._traversable_fields_cache[node_type] = result
         return result
@@ -1334,7 +1367,7 @@ class Resolver:
                 continue
 
             for field_name, rel_name, rel_info, field_info in auto_load_entries:
-                dto_cls = self._extract_dto_cls(field_info)
+                dto_cls = self._extract_dto_cls(field_info) if field_info is not None else None
                 groups.setdefault((type(node), rel_name), []).append(
                     (idx, node, field_name, rel_info, field_info, dto_cls)
                 )
