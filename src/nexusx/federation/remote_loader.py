@@ -13,7 +13,9 @@ side-channel pattern as ``loader._query_meta``.
 
 from __future__ import annotations
 
+import decimal
 import json
+import uuid
 from typing import Any
 
 from aiodataloader import DataLoader
@@ -35,6 +37,8 @@ def _render_value(v: Any) -> str:
         return "null"
     if isinstance(v, (list, tuple)):
         return "[" + ", ".join(_render_value(x) for x in v) + "]"
+    if isinstance(v, (uuid.UUID, decimal.Decimal)):
+        return json.dumps(str(v))
     return str(v)
 
 
