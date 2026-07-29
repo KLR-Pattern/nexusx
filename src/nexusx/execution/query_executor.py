@@ -397,12 +397,23 @@ class QueryExecutor:
 
         is_remote = getattr(rel_info, "target_service", None) is not None
         if is_remote:
-            # Federated relationship: inject the FieldSelection (the loader
-            # builds & issues the nested gql query itself); no SQL column
-            # pruning applies.
             from nexusx.federation.remote_loader import set_remote_selection
+            from nexusx.loader.query_meta import generate_type_key_from_selection
 
-            loader = self._registry.get_loader(rel_info.loader)
+            # Compute type_key from selection so distinct selections get
+            # distinct loader instances (reuses the existing split-by-type_key
+            # mechanism). force_split ensures isolation regardless of the
+            # global _split_mode setting — prevents _remote_selection races
+            # when two concurrent jobs at the same BFS level query the same
+            # remote relationship with different field selections.
+            target_rels = self._registry.get_relationships(rel_info.target_entity)
+            fk_lookup = {name: info.fk_field for name, info in target_rels.items()}
+            type_key = generate_type_key_from_selection(
+                child_sel, rel_info.target_entity, fk_lookup=fk_lookup,
+            )
+            loader = self._registry.get_loader(
+                rel_info.loader, type_key=type_key, force_split=True,
+            )
             set_remote_selection(loader, child_sel)
         else:
             from nexusx.loader.query_meta import (
