@@ -56,6 +56,7 @@ async def federate(
         er_manager.service_name = service_name
     er_manager._mounted_services.update(services)
     transport = transport or GraphQLTransport()
+    er_manager._federation_transport = transport
     remote_edges = remote_edges or []
 
     # 1. Seed the fetch queue from declared remote relationships + edges.
@@ -129,17 +130,18 @@ async def federate(
 
     # 4. Validate declared remote relationships (correctness subset; full
     #    7-check suite incl. prefix/bare-name/cycle in US3).
-    _validate_declarations(er_manager, services, fragments)
+    _validate_declarations(er_manager, services, fragments, remote_edges)
 
     # 5. Wire declared remote relationships (on local source entities).
     for source_entity, rrel in er_manager._pending_remote_rels:
         _wire_remote_relationship(
-            er_manager, source_entity, rrel, services, fed_registry, transport
+            er_manager, source_entity, rrel, endpoints, fed_registry, transport
         )
+    er_manager._pending_remote_rels.clear()  # M7: prevent double-wiring on re-federate
 
     # 6. Wire remote edges (on materialized source types).
     for edge in remote_edges:
-        _wire_remote_edge(er_manager, edge, services, fed_registry, transport)
+        _wire_remote_edge(er_manager, edge, endpoints, fed_registry, transport)
 
     # 7. Register every materialized type + its (coalesced) relationships. Each
     #    relationship on a remote type is resolved by the owning service within
@@ -188,9 +190,14 @@ def _validate_declarations(
     er_manager: ErManager,
     services: dict[str, str],
     fragments: dict[str, EntityFragment],
+    remote_edges: list[RemoteEdge],
 ) -> None:
+    # Validate pending RemoteRelationship declarations.
     for _src, rrel in er_manager._pending_remote_rels:
         _check_target(rrel.target, rrel.join_remote, services, fragments)
+    # Validate remote_edge declarations (same checks — previously skipped).
+    for edge in remote_edges:
+        _check_target(edge.target, edge.join_remote, services, fragments)
 
 
 def _check_no_cross_service_barename_dup(fragments: dict[str, EntityFragment]) -> None:
@@ -238,7 +245,7 @@ def _wire_remote_relationship(
     er_manager: ErManager,
     source_entity: type,
     rrel: RemoteRelationship,
-    services: dict[str, str],
+    endpoints: dict[str, str],
     fed_registry: FederatedTypeRegistry,
     transport: Any,
 ) -> None:
@@ -247,7 +254,7 @@ def _wire_remote_relationship(
     loader_cls = create_remote_loader(
         typename=typename,
         join_remote=rrel.join_remote,
-        endpoint=services[srv],
+        endpoint=endpoints[srv],
         target_cls=target_cls,
         transport=transport,
         is_list=rrel.is_list,
@@ -268,7 +275,7 @@ def _wire_remote_relationship(
 def _wire_remote_edge(
     er_manager: ErManager,
     edge: RemoteEdge,
-    services: dict[str, str],
+    endpoints: dict[str, str],
     fed_registry: FederatedTypeRegistry,
     transport: Any,
 ) -> None:
@@ -279,7 +286,7 @@ def _wire_remote_edge(
     loader_cls = create_remote_loader(
         typename=ttypename,
         join_remote=edge.join_remote,
-        endpoint=services[tsrv],
+        endpoint=endpoints[tsrv],
         target_cls=target_cls,
         transport=transport,
         is_list=edge.is_list,

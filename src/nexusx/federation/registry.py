@@ -101,7 +101,25 @@ class FederatedTypeRegistry:
         for cls in self._class_to_qualified:
             ok = cls.model_rebuild(_types_namespace=extended_ns)
             if not ok:
-                logger.warning("model_rebuild failed for %s", cls.__name__)
+                unresolved = [
+                    fname for fname, fi in cls.model_fields.items()
+                    if isinstance(fi.annotation, str)
+                ]
+                if unresolved:
+                    msg = (
+                        f"model_rebuild failed for {cls.__name__}. "
+                        f"Unresolved fields: {unresolved}. "
+                        f"Register the types via federate(extra_types=...) "
+                        f"or check that all referenced types were introspected."
+                    )
+                    raise RuntimeError(msg)
+                # Fallback (Any types): rebuild technically failed but all
+                # fields are resolved (just to Any). Keep the model as-is.
+                logger.warning(
+                    "model_rebuild returned False for %s but all fields "
+                    "resolved (likely Any fallback); continuing.",
+                    cls.__name__,
+                )
 
     @staticmethod
     def _create_model(frag: EntityFragment, namespace: dict[str, type]) -> type[BaseModel]:

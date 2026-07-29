@@ -18,6 +18,22 @@ import json
 import uuid
 from typing import Any
 
+
+class RemoteQueryError(RuntimeError):
+    """A remote gql query returned errors or an unexpected response shape.
+
+    Attributes:
+        typename: The remote type that was queried.
+        gql_errors: The raw errors list from the remote response.
+    """
+
+    def __init__(self, typename: str, gql_errors: Any) -> None:
+        self.typename = typename
+        self.gql_errors = gql_errors
+        super().__init__(
+            f"Remote {typename} query failed: {gql_errors}"
+        )
+
 from aiodataloader import DataLoader
 from pydantic import BaseModel
 
@@ -172,8 +188,7 @@ def create_remote_loader(
             )
             resp = await transport.post_json(gql_url, {"query": query})
             if resp.get("errors"):
-                msg = f"Remote {typename} query failed: {resp['errors']}"
-                raise RuntimeError(msg)
+                raise RemoteQueryError(typename, resp["errors"])
             data = resp.get("data") or {}
             group = (data.get(typename) or {}).get(entry) or []
             rows = [_to_dict(r) for r in group]

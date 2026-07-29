@@ -597,6 +597,21 @@ class SubsetMeta(type):
 
         placeholder = type(name, (BaseModel,), placeholder_ns)
         placeholder.__nexusx_deferred__ = True  # mark for identification
+
+        # Make the placeholder raise on instantiation if federate() hasn't run.
+        _frozen_name = name
+        _orig_init = placeholder.__init__
+
+        def _guarded_init(self, *args, **kwargs):
+            if getattr(type(self), "__nexusx_deferred__", False):
+                msg = (
+                    f"{_frozen_name} is a deferred DefineSubset — call "
+                    f"er.federate(...) before using it."
+                )
+                raise RuntimeError(msg)
+            return _orig_init(self, *args, **kwargs)
+
+        placeholder.__init__ = _guarded_init
         return placeholder
 
     @staticmethod

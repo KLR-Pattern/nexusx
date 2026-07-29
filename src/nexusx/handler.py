@@ -224,6 +224,12 @@ class GraphQLHandler:
         # sees the materialized remote types, not the pre-federate generator.
         self._executor._introspection_generator = self._introspection_generator
 
+    async def aclose(self) -> None:
+        """Close federation resources (httpx.AsyncClient). Call on shutdown."""
+        transport = getattr(self._er_manager, "_federation_transport", None)
+        if transport is not None:
+            await transport.close()
+
     async def execute(
         self,
         query: str,
