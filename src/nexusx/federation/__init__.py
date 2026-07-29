@@ -15,5 +15,13 @@ from nexusx.federation.relationship import (
     parse_qualified_name,
 )
 from nexusx.federation.remote_ref import RemoteRef, RemoteService
+from nexusx.federation.transport import FederationTransport
 
-__all__ = ["RemoteRelationship", "RemoteEdge", "parse_qualified_name", "RemoteRef", "RemoteService"]
+__all__ = [
+    "RemoteRelationship",
+    "RemoteEdge",
+    "parse_qualified_name",
+    "RemoteRef",
+    "RemoteService",
+    "FederationTransport",
+]

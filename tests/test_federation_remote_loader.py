@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from pydantic import create_model
+from sqlmodel import Field, SQLModel
 
 from nexusx.federation.remote_loader import (
     create_remote_loader,
@@ -126,3 +129,73 @@ async def test_remote_loader_batches_multiple_loads_into_one_query():
     vals = await asyncio.gather(*(loader.load(p) for p in (1, 2, 3, 4, 5)))
     assert [v.title for v in vals] == ["R1", "R2", "R3", "R4", "R5"]
     assert len(transport.posts) == 1  # SC-003: one query for N keys
+
+
+@pytest.mark.asyncio
+async def test_remote_loader_aligns_uuid_join_key():
+    """P0: UUID join keys align even though the remote echoes them as strings.
+
+    Before normalization, ``buckets`` was keyed by the remote's string form
+    while the lookup used the local UUID instance → silent miss → None.
+    """
+    u1, u2 = uuid.uuid4(), uuid.uuid4()
+    target_cls = create_model(
+        "Thing", id=(int | None, None), owner_id=(str | None, None), name=(str | None, None)
+    )
+    data = {"Thing": {"by_owner_id_in": [
+        {"id": 1, "owner_id": str(u1), "name": "A"},
+        {"id": 2, "owner_id": str(u2), "name": "B"},
+    ]}}
+    transport = FakeTransport(data)
+    loader_cls = create_remote_loader(
+        typename="Thing", join_remote="owner_id", endpoint="http://things",
+        target_cls=target_cls, transport=transport, is_list=False,
+    )
+    loader = loader_cls()
+    set_remote_selection(loader, FieldSelection(name="t", sub_fields={"name": FieldSelection(name="name")}))
+
+    results = await loader.load_many([u1, u2])
+    assert results[0].name == "A"
+    assert results[1].name == "B"
+
+    # Outbound: UUIDs rendered as quoted strings in the gql literal.
+    q = transport.posts[0][1]["query"]
+    assert f'"{u1}"' in q and f'"{u2}"' in q
+
+
+@pytest.mark.asyncio
+async def test_remote_loader_uses_explicit_arg_name():
+    """P1a: arg_name from the contract is used instead of the <key>_list convention."""
+    target_cls = create_model(
+        "Review", id=(int | None, None), product_id=(int | None, None), title=(str | None, None)
+    )
+    transport = FakeTransport(
+        {"Review": {"by_product_id_in": [{"product_id": 1, "title": "R1"}]}}
+    )
+    loader_cls = create_remote_loader(
+        typename="Review", join_remote="product_id", endpoint="http://reviews",
+        target_cls=target_cls, transport=transport, is_list=False,
+        arg_name="product_ids",  # member renamed the argument
+    )
+    loader = loader_cls()
+    set_remote_selection(loader, _selection("title"))
+    await loader.load_many([1])
+    q = transport.posts[0][1]["query"]
+    assert "by_product_id_in(product_ids: [1])" in q
+
+
+def test_batch_roots_introspect_arg_contract():
+    """P1a: _batch_roots reads the real arg name/type from the generated root."""
+    from nexusx.federation.introspect import _batch_roots
+    from nexusx.standard_queries import AutoQueryConfig, add_standard_queries
+
+    class T(SQLModel, table=True):
+        __tablename__ = "fed_p1a_argroots"
+        id: int | None = Field(default=None, primary_key=True)
+        product_id: int
+
+    add_standard_queries([T], AutoQueryConfig(batch_keys={"T": ["product_id"]}), lambda: None)
+    roots = {r.name: r for r in _batch_roots(T)}
+    br = roots["by_product_id_in"]
+    assert br.arg_name == "product_id_list"
+    assert br.arg_type == "list[int]"

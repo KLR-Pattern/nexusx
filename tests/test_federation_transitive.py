@@ -115,6 +115,10 @@ async def test_transitive_discovery_reaches_users_through_reviews(_engines):
         base=_ReviewsBase, session_factory=reviews_sf,
         auto_query_config=AutoQueryConfig(batch_keys={"TransReview": ["product_id", "author_id"]}),
         service_name="reviews",
+        # Opt in so catalog can discover users' endpoint transitively through
+        # reviews' introspection payload (suppressed by default to avoid leaking
+        # internal topology).
+        expose_mounted_endpoints=True,
     )
     catalog_h = GraphQLHandler(
         base=_CatalogBase, session_factory=catalog_sf,
@@ -146,5 +150,33 @@ async def test_transitive_discovery_reaches_users_through_reviews(_engines):
         # mounts (it was discovered transitively, inside federate()).
         assert "users" not in catalog_h._er_manager._mounted_services
         assert set(catalog_h._er_manager._mounted_services) == {"reviews"}
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_introspection_endpoint_respects_auth_dependency():
+    """P1b: build_federable_app(dependencies=...) gates BOTH routes.
+
+    The introspection endpoint exposes the full ER topology (and internal URLs
+    when expose_mounted_endpoints=True), so production deployments must protect
+    it. The ``dependencies`` seam applies to /graphql and /nexusx/er-introspection.
+    """
+    from fastapi import Depends, HTTPException
+
+    def deny() -> None:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    class _FakeHandler:
+        async def execute(self, *_args, **_kwargs):
+            return {"data": None}
+
+    app = build_federable_app(_FakeHandler(), dependencies=[Depends(deny)])
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+    try:
+        res = await client.get("/nexusx/er-introspection")
+        assert res.status_code == 403
+        res2 = await client.post("/graphql", json={"query": "{ __typename }"})
+        assert res2.status_code == 403
     finally:
         await client.aclose()

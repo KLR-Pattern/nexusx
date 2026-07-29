@@ -119,6 +119,7 @@ async def test_composed_tree_via_beta_fetch_and_model_validate():
             base=_RB, session_factory=sf("r"),
             auto_query_config=AutoQueryConfig(batch_keys={"DSReview": ["product_id", "author_id"]}),
             service_name="reviews",
+            expose_mounted_endpoints=True,
         )
         catalog_h = GraphQLHandler(
             base=_CB, session_factory=sf("c"),

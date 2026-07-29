@@ -14,7 +14,14 @@ if TYPE_CHECKING:
 
 
 class GraphQLTransport:
-    """Thin async JSON-over-HTTP wrapper around an ``httpx.AsyncClient``."""
+    """Default :class:`FederationTransport` — a thin httpx.AsyncClient wrapper.
+
+    This is one implementation of the pluggable transport seam; implement
+    :class:`~nexusx.federation.transport.FederationTransport` yourself to plug in
+    mTLS, request signing, per-host credentials, etc. Pass a pre-configured
+    ``client`` to reuse connection pooling or an ASGI transport (tests), or to
+    hand the sidecar/mesh a client tuned to your environment.
+    """
 
     def __init__(self, client: Any | None = None, timeout: float = 30.0) -> None:
         self._client = client

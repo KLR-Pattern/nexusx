@@ -62,6 +62,11 @@ handler = GraphQLHandler(
     # entry reviews itself drives when resolving `author` against users.
     auto_query_config=AutoQueryConfig(batch_keys={"Review": ["product_id", "author_id"]}),
     service_name="reviews",
+    # reviews is itself mounted by catalog AND mounts users — opting in lets
+    # catalog discover users' endpoint transitively through reviews. Leaf
+    # services (users) and root services (catalog) don't need this. In production
+    # also guard /nexusx/er-introspection with auth (build_federable_app(dependencies=...)).
+    expose_mounted_endpoints=True,
 )
 
 

@@ -11,9 +11,10 @@ privileged router. The orchestrator of a query is the service it enters.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
-from nexusx.federation.contract import EntityFragment, ERIntrospectionResponse
+from nexusx.federation.contract import BatchRoot, EntityFragment, ERIntrospectionResponse
 from nexusx.federation.http import GraphQLTransport
 from nexusx.federation.introspect import fetch_er_introspection, find_fragment
 from nexusx.federation.registry import FederatedTypeRegistry
@@ -24,10 +25,13 @@ from nexusx.federation.relationship import (
     parse_qualified_name,
 )
 from nexusx.federation.remote_loader import create_remote_loader
+from nexusx.federation.transport import FederationTransport
 from nexusx.loader.registry import RelationshipInfo
 
 if TYPE_CHECKING:
     from nexusx.loader.registry import ErManager
+
+logger = logging.getLogger(__name__)
 
 
 class FederationError(RuntimeError):
@@ -39,7 +43,7 @@ async def federate(
     services: dict[str, str],
     *,
     remote_edges: list[RemoteEdge] | None = None,
-    transport: GraphQLTransport | None = None,
+    transport: FederationTransport | None = None,
     service_name: str | None = None,
     extra_types: dict[str, type] | None = None,
 ) -> None:
@@ -87,8 +91,10 @@ async def federate(
         srv, typename = parse_qualified_name(qn)
         if srv not in endpoints:
             raise FederationError(
-                f"Unknown service prefix {srv!r} (referenced by {qn!r}); no endpoint "
-                f"declared and none discovered transitively. Known: {sorted(endpoints)}"
+                f"Service prefix {srv!r} (referenced by {qn!r}) has no endpoint. "
+                f"Either pass it explicitly in services={{'{srv}': '<url>'}}, or enable "
+                f"expose_mounted_endpoints=True on the member that advertises it so its "
+                f"endpoint is discovered transitively. Known: {sorted(endpoints)}"
             )
         if srv not in service_responses:
             resp = await fetch_er_introspection(transport, endpoints[srv])
@@ -130,18 +136,18 @@ async def federate(
 
     # 4. Validate declared remote relationships (correctness subset; full
     #    7-check suite incl. prefix/bare-name/cycle in US3).
-    _validate_declarations(er_manager, services, fragments, remote_edges)
+    _validate_declarations(er_manager, endpoints, fragments, remote_edges)
 
     # 5. Wire declared remote relationships (on local source entities).
     for source_entity, rrel in er_manager._pending_remote_rels:
         _wire_remote_relationship(
-            er_manager, source_entity, rrel, endpoints, fed_registry, transport
+            er_manager, source_entity, rrel, endpoints, fed_registry, fragments, transport
         )
     er_manager._pending_remote_rels.clear()  # M7: prevent double-wiring on re-federate
 
     # 6. Wire remote edges (on materialized source types).
     for edge in remote_edges:
-        _wire_remote_edge(er_manager, edge, endpoints, fed_registry, transport)
+        _wire_remote_edge(er_manager, edge, endpoints, fed_registry, fragments, transport)
 
     # 7. Register every materialized type + its (coalesced) relationships. Each
     #    relationship on a remote type is resolved by the owning service within
@@ -166,6 +172,19 @@ async def federate(
             target_cls = fed_registry.get(target_qn)
             target_frag = fragments.get(target_qn)
             target_pk = (target_frag.pk_field if target_frag and target_frag.pk_field else "id")
+            # Arg name from the contract when the member exposes the batch root;
+            # fall back to the convention otherwise (the β gql path doesn't need
+            # this loader — the owning service resolves the edge internally — so
+            # a missing root only affects direct Resolver traversal of this edge).
+            br = _find_batch_root(target_frag, target_pk) if target_frag else None
+            if br is None:
+                logger.warning(
+                    "Coalesced relationship %s.%s → %s: target exposes no "
+                    "by_%s_in batch root; direct Resolver traversal of this "
+                    "edge will fail. Member should add it via "
+                    "AutoQueryConfig.batch_keys.",
+                    cls.__name__, rel.name, target_qn, target_pk,
+                )
             loader_cls = create_remote_loader(
                 typename=rel.target_typename,
                 join_remote=target_pk,
@@ -173,6 +192,7 @@ async def federate(
                 target_cls=target_cls,
                 transport=transport,
                 is_list=rel.is_list,
+                arg_name=br.arg_name if br else None,
             )
             rels_map[rel.name] = RelationshipInfo(
                 name=rel.name,
@@ -188,16 +208,25 @@ async def federate(
 
 def _validate_declarations(
     er_manager: ErManager,
-    services: dict[str, str],
+    endpoints: dict[str, str],
     fragments: dict[str, EntityFragment],
     remote_edges: list[RemoteEdge],
 ) -> None:
     # Validate pending RemoteRelationship declarations.
     for _src, rrel in er_manager._pending_remote_rels:
-        _check_target(rrel.target, rrel.join_remote, services, fragments)
+        _check_target(rrel.target, rrel.join_remote, endpoints, fragments)
     # Validate remote_edge declarations (same checks — previously skipped).
     for edge in remote_edges:
-        _check_target(edge.target, edge.join_remote, services, fragments)
+        _check_target(edge.target, edge.join_remote, endpoints, fragments)
+
+
+def _find_batch_root(frag: EntityFragment, join_remote: str) -> BatchRoot | None:
+    """Look up the ``by_<join_remote>_in`` batch root on a fragment, if exposed."""
+    entry = f"by_{join_remote}_in"
+    for br in frag.batch_roots:
+        if br.name == entry:
+            return br
+    return None
 
 
 def _check_no_cross_service_barename_dup(fragments: dict[str, EntityFragment]) -> None:
@@ -220,7 +249,14 @@ def _check_target(
     join_remote: str,
     services: dict[str, str],
     fragments: dict[str, EntityFragment],
-) -> None:
+) -> BatchRoot:
+    """Validate a declared remote target; return its batch root for wiring.
+
+    Checks (fail-fast at ``federate()``): service known, type exists, join field
+    is a scalar, the ``by_<join_remote>_in`` batch root is exposed, AND its
+    argument name is introspectable — so the mounter sends the argument name the
+    member actually declared instead of guessing the ``<key>_list`` convention.
+    """
     srv, _typename = parse_qualified_name(target)
     if srv not in services:
         raise FederationError(f"Unknown service prefix {srv!r} in target {target!r}")
@@ -234,11 +270,18 @@ def _check_target(
             f"(needed as join key). Fields: {sorted(scalar_names)}"
         )
     entry = f"by_{join_remote}_in"
-    if entry not in frag.batch_roots:
+    br = _find_batch_root(frag, join_remote)
+    if br is None:
         raise FederationError(
             f"Type {target!r} does not expose batch root {entry!r}; "
             f"member must generate it (AutoQueryConfig.batch_keys)."
         )
+    if not br.arg_name:
+        raise FederationError(
+            f"Batch root {entry!r} on {target!r} has no determinable argument "
+            f"name; the member must generate it via AutoQueryConfig.batch_keys."
+        )
+    return br
 
 
 def _wire_remote_relationship(
@@ -247,10 +290,12 @@ def _wire_remote_relationship(
     rrel: RemoteRelationship,
     endpoints: dict[str, str],
     fed_registry: FederatedTypeRegistry,
-    transport: Any,
+    fragments: dict[str, EntityFragment],
+    transport: FederationTransport,
 ) -> None:
     srv, typename = parse_qualified_name(rrel.target)
     target_cls = fed_registry.get(rrel.target)
+    br = _check_target(rrel.target, rrel.join_remote, endpoints, fragments)
     loader_cls = create_remote_loader(
         typename=typename,
         join_remote=rrel.join_remote,
@@ -258,6 +303,7 @@ def _wire_remote_relationship(
         target_cls=target_cls,
         transport=transport,
         is_list=rrel.is_list,
+        arg_name=br.arg_name,
     )
     rel_info = RelationshipInfo(
         name=rrel.name,
@@ -277,12 +323,14 @@ def _wire_remote_edge(
     edge: RemoteEdge,
     endpoints: dict[str, str],
     fed_registry: FederatedTypeRegistry,
-    transport: Any,
+    fragments: dict[str, EntityFragment],
+    transport: FederationTransport,
 ) -> None:
     ssrv, stname, field = parse_edge_source(edge.source)
     source_cls = fed_registry.get(f"{ssrv}.{stname}")
     target_cls = fed_registry.get(edge.target)
     tsrv, ttypename = parse_qualified_name(edge.target)
+    br = _check_target(edge.target, edge.join_remote, endpoints, fragments)
     loader_cls = create_remote_loader(
         typename=ttypename,
         join_remote=edge.join_remote,
@@ -290,6 +338,7 @@ def _wire_remote_edge(
         target_cls=target_cls,
         transport=transport,
         is_list=edge.is_list,
+        arg_name=br.arg_name,
     )
     rel_info = RelationshipInfo(
         name=field,

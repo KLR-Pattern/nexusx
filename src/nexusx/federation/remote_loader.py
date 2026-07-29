@@ -37,6 +37,8 @@ class RemoteQueryError(RuntimeError):
 from aiodataloader import DataLoader
 from pydantic import BaseModel
 
+from nexusx.federation.transport import FederationTransport
+
 
 def set_remote_selection(loader: Any, selection: Any) -> None:
     """Stash the current FieldSelection onto a loader (side-channel)."""
@@ -56,6 +58,20 @@ def _render_value(v: Any) -> str:
     if isinstance(v, (uuid.UUID, decimal.Decimal)):
         return json.dumps(str(v))
     return str(v)
+
+
+def _normalize_join_key(v: Any) -> Any:
+    """Coerce a LOCAL join key into the wire form the remote echoes back.
+
+    Symmetric with outbound ``_render_value``: UUID/Decimal travel as strings
+    over JSON, so the member's response carries the join key as a plain string.
+    Without this, a local ``UUID`` key would miss a string-keyed bucket
+    (``UUID("x") != "x"``) and silently resolve to ``None``/``[]``. int/str/bool
+    already match their JSON form and pass through unchanged.
+    """
+    if isinstance(v, (uuid.UUID, decimal.Decimal)):
+        return str(v)
+    return v
 
 
 def _render_keys(keys: list[Any]) -> str:
@@ -150,16 +166,25 @@ def create_remote_loader(
     join_remote: str,
     endpoint: str,
     target_cls: type[BaseModel],
-    transport: Any,
+    transport: FederationTransport,
     is_list: bool,
+    arg_name: str | None = None,
 ) -> type[DataLoader]:  # type: ignore[type-arg]
     """Build a DataLoader subclass that fetches from a mounted service.
 
     Config (typename / join key / endpoint / target class / transport) is baked
     into the class — same pattern as ErManager's ``_CustomLoader``.
+
+    Args:
+        arg_name: The GraphQL argument name the member's ``by_<join_remote>_in``
+            root expects, taken from the introspection contract (BatchRoot).
+            Defaults to the ``<join_remote>_list`` convention when unknown —
+            callers should pass the contract's value so a member that renamed
+            the argument is caught at ``federate()``, not at query time.
     """
     entry = f"by_{join_remote}_in"
-    arg_name = f"{join_remote}_list"
+    if not arg_name:
+        arg_name = f"{join_remote}_list"
     gql_url = endpoint.rstrip("/") + "/graphql"
 
     class _RemoteLoader(DataLoader):  # type: ignore[type-arg]
@@ -201,7 +226,7 @@ def create_remote_loader(
 
             aligned: list[Any] = []
             for key in keys:
-                matches = buckets.get(key, [])
+                matches = buckets.get(_normalize_join_key(key), [])
                 if is_list:
                     aligned.append([target_cls.model_validate(r) for r in matches])
                 else:

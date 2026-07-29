@@ -13,6 +13,7 @@ from nexusx.execution.query_executor import QueryExecutor
 from nexusx.graphiql import GRAPHIQL_HTML
 from nexusx.introspection import IntrospectionGenerator
 from nexusx.loader.registry import ErManager
+from nexusx.federation.transport import FederationTransport
 from nexusx.query_parser import QueryParser
 from nexusx.sdl_generator import SDLGenerator
 from nexusx.standard_queries import AutoQueryConfig, add_standard_queries
@@ -45,6 +46,7 @@ class GraphQLHandler:
         auto_query_config: AutoQueryConfig | None = None,
         enable_pagination: bool = False,
         service_name: str | None = None,
+        expose_mounted_endpoints: bool = False,
     ):
         """Initialize the GraphQL handler.
 
@@ -60,6 +62,14 @@ class GraphQLHandler:
                                standard queries (by_id, by_filter).
             enable_pagination: When True, list relationships return Result types
                 with { items, pagination } wrapping.
+            service_name: This service's own name (prefix); required for a
+                federable member (its ER-introspection payload carries it).
+            expose_mounted_endpoints: When True, this member advertises the
+                endpoints of services it itself mounts (enables transitive
+                discovery by services that mount THIS one). Defaults to False —
+                internal URLs are suppressed from the introspection payload
+                (they leak network topology); mounters must resolve transitive
+                services from their own ``services=`` map instead.
         """
         if auto_query_config is not None and session_factory is None:
             # Backward compat: fall back to deprecated session_factory from config.
@@ -96,6 +106,7 @@ class GraphQLHandler:
             session_factory=session_factory,
             enable_pagination=enable_pagination,
             service_name=service_name,
+            expose_mounted_endpoints=expose_mounted_endpoints,
         )
 
         # Initialize SDL generator
@@ -182,7 +193,7 @@ class GraphQLHandler:
         services: dict[str, str],
         *,
         remote_edges: list[Any] | None = None,
-        transport: Any | None = None,
+        transport: FederationTransport | None = None,
         extra_types: dict[str, type] | None = None,
     ) -> None:
         """Mount other nexusx services into this handler (federation).

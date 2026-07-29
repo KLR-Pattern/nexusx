@@ -13,17 +13,20 @@ tests (with httpx ASGITransport).
 
 from __future__ import annotations
 
+import inspect
 import types
 import typing
+from collections.abc import Sequence
 from typing import Any, Union
 
 from nexusx.federation.contract import (
+    BatchRoot,
     EntityFragment,
     ERIntrospectionResponse,
     FieldDescriptor,
     RelDescriptor,
 )
-from nexusx.federation.http import GraphQLTransport
+from nexusx.federation.transport import FederationTransport
 
 
 def _type_expr(anno: Any) -> str:
@@ -67,25 +70,54 @@ def _pk_field(entity: type) -> str | None:
     return None
 
 
-def _batch_roots(entity: type) -> list[str]:
-    """Names of generated ``by_<key>_in`` batch query roots on ``entity``."""
-    roots: list[str] = []
+def _batch_root_arg(method: Any) -> tuple[str, str]:
+    """Extract ``(arg_name, arg_type_expr)`` from a ``by_<key>_in`` method.
+
+    Tries the (possibly bound classmethod) attribute first, then its underlying
+    ``__func__`` — the generated root sets an explicit ``__signature__`` there.
+    Returns ``("", "")`` if no argument can be determined (the mounter rejects
+    such roots at validation).
+    """
+    for target in (method, getattr(method, "__func__", None)):
+        if target is None:
+            continue
+        try:
+            sig = inspect.signature(target)
+        except (TypeError, ValueError):
+            continue
+        for pname, param in sig.parameters.items():
+            if pname in ("cls", "self"):
+                continue
+            ann = param.annotation
+            arg_type = _type_expr(ann) if ann is not inspect.Parameter.empty else ""
+            return pname, arg_type
+        # Signature had only cls/self or was empty → try the next target.
+    return "", ""
+
+
+def _batch_roots(entity: type) -> list[BatchRoot]:
+    """Generated ``by_<key>_in`` batch roots on ``entity`` with their arg contract."""
+    roots: list[BatchRoot] = []
     for attr_name in dir(entity):
         if not (attr_name.startswith("by_") and attr_name.endswith("_in")):
             continue
-        # Avoid matching plain by_id/by_filter (they don't end in _in).
         attr = getattr(entity, attr_name, None)
-        if callable(attr):
-            roots.append(attr_name)
-    return sorted(roots)
+        if not callable(attr):
+            continue
+        arg_name, arg_type = _batch_root_arg(attr)
+        roots.append(BatchRoot(name=attr_name, arg_name=arg_name, arg_type=arg_type))
+    return sorted(roots, key=lambda r: r.name)
 
 
 def serialize_er_introspection(er_manager: Any) -> ERIntrospectionResponse:
     """Serialize an ErManager's full ER graph into the federation wire payload.
 
     loader callables are NOT serialized (code, not data). Remote relationships
-    carry ``target_service`` + ``target_endpoint`` (from the member's own mount
-    registry) so the mounter can discover the reachable subgraph transitively.
+    carry ``target_service`` so the mounter knows a type lives on another
+    service. They carry ``target_endpoint`` (the URL) ONLY when the member has
+    ``expose_mounted_endpoints=True`` — otherwise the URL is suppressed (it
+    leaks internal topology) and the mounter must resolve the service from its
+    own ``services=`` map.
     """
     service_name = getattr(er_manager, "service_name", None)
     if not service_name:
@@ -96,6 +128,13 @@ def serialize_er_introspection(er_manager: Any) -> ERIntrospectionResponse:
         )
         raise ValueError(msg)
     mounted: dict[str, str] = getattr(er_manager, "_mounted_services", {}) or {}
+    # When False (default), the member does NOT advertise the endpoints of
+    # services it itself has mounted — only their names. Internal URLs are
+    # strictly more sensitive than type names (they reveal network topology
+    # usable for lateral movement), so they are suppressed unless the operator
+    # opts in. The mounter then resolves such services from its own `services=`
+    # map, or fails fast with an actionable error.
+    expose = getattr(er_manager, "_expose_mounted_endpoints", False)
 
     entities: list[EntityFragment] = []
     for entity in er_manager.get_all_entities():
@@ -114,7 +153,9 @@ def serialize_er_introspection(er_manager: Any) -> ERIntrospectionResponse:
                     is_list=r_info.is_list,
                     sort_field=getattr(r_info, "sort_field", None),
                     target_service=target_service,
-                    target_endpoint=(mounted.get(target_service) if target_service else None),
+                    target_endpoint=(
+                        mounted.get(target_service) if (target_service and expose) else None
+                    ),
                 )
             )
 
@@ -150,7 +191,7 @@ def find_fragment(resp: ERIntrospectionResponse, typename: str) -> EntityFragmen
 
 
 async def fetch_er_introspection(
-    transport: GraphQLTransport, base_url: str
+    transport: FederationTransport, base_url: str
 ) -> ERIntrospectionResponse:
     """Mounter-side: GET ``<base_url>/nexusx/er-introspection`` and parse."""
     url = base_url.rstrip("/") + "/nexusx/er-introspection"
@@ -158,15 +199,27 @@ async def fetch_er_introspection(
     return ERIntrospectionResponse.model_validate(raw)
 
 
-def build_federable_app(handler: Any) -> Any:
+def build_federable_app(
+    handler: Any,
+    *,
+    dependencies: Sequence[Any] | None = None,
+) -> Any:
     """Build a FastAPI app exposing the two routes a federable member needs.
 
     Routes:
       - ``POST /graphql`` → ``{data, errors}`` (wraps ``handler.execute``)
       - ``GET  /nexusx/er-introspection`` → ER introspection payload
 
-    Members may instead wire these routes into their own app; this helper is the
-    canonical minimal surface (and what tests use with ASGITransport).
+    Args:
+        dependencies: Optional FastAPI dependencies (e.g.
+            ``[Depends(verify_token)]``) applied to BOTH routes. The
+            introspection endpoint exposes the full ER topology (and, when
+            ``expose_mounted_endpoints=True``, internal service URLs), so
+            production deployments MUST protect it — pass an auth dependency
+            here, or wire the routes into your own app with your own guards.
+            Members may instead wire these routes into their own app; this
+            helper is the canonical minimal surface (and what tests use with
+            ASGITransport).
     """
     from fastapi import FastAPI
 
@@ -174,7 +227,7 @@ def build_federable_app(handler: Any) -> Any:
 
     app = FastAPI()
 
-    @app.post("/graphql")
+    @app.post("/graphql", dependencies=dependencies)
     async def graphql_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         query = payload.get("query", "")
         variables = payload.get("variables")
@@ -182,7 +235,7 @@ def build_federable_app(handler: Any) -> Any:
         result = await handler.execute(query, variables, operation_name)
         return result if isinstance(result, dict) else {"data": None}
 
-    @app.get("/nexusx/er-introspection")
+    @app.get("/nexusx/er-introspection", dependencies=dependencies)
     async def er_introspection_endpoint() -> dict[str, Any]:
         return serialize_er_introspection(handler._er_manager).model_dump()
 

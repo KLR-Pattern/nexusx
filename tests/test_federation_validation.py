@@ -89,7 +89,7 @@ async def test_unknown_service_prefix_rejected():
     er = _er_with("ghost.Review")
     services = {"reviews": "http://reviews"}
     resp = _resp("reviews", _entity("Review", [("id", "int"), ("product_id", "int")]))
-    with pytest.raises(FederationError, match="Unknown service prefix 'ghost'"):
+    with pytest.raises(FederationError, match=r"Service prefix 'ghost'.*has no endpoint"):
         await _federate(er, services, {"reviews": resp})
 
 
@@ -155,6 +155,88 @@ async def test_cross_service_barename_duplicate_rejected():
     resp_b = _resp("svcB", _entity("Shared", [("id", "int")], batch_roots=["by_id_in"]))
     with pytest.raises(FederationError, match="Cross-service bare-name duplicate"):
         await _federate(er, services, {"http://a": resp_a, "http://b": resp_b})
+
+
+@pytest.mark.asyncio
+async def test_batch_root_without_arg_name_rejected():
+    """P1a: a batch root whose arg name can't be introspected fails fast."""
+    er = _er_with("reviews.Review")
+    services = {"reviews": "http://reviews"}
+    frag = _entity(
+        "Review", [("id", "int"), ("product_id", "int")],
+        batch_roots=[{"name": "by_product_id_in", "arg_name": "", "arg_type": ""}],
+    )
+    resp = _resp("reviews", frag)
+    with pytest.raises(FederationError, match="no determinable argument name"):
+        await _federate(er, services, {"reviews": resp})
+
+
+def test_introspection_suppresses_target_endpoint_unless_exposed():
+    """P1b: the target_endpoint URL is suppressed unless expose_mounted_endpoints=True."""
+    from aiodataloader import DataLoader
+
+    from nexusx.federation.introspect import serialize_er_introspection
+    from nexusx.loader.registry import ErManager, RelationshipInfo
+
+    class _L(DataLoader):
+        async def batch_load_fn(self, keys):
+            return keys
+
+    class E(SQLModel, table=True):
+        __tablename__ = "fed_p1b_expose"
+        id: int | None = Field(default=None, primary_key=True)
+
+    er = ErManager(entities=[E], session_factory=lambda: None, service_name="svc")
+    er._mounted_services = {"users": "http://secret-users:8020"}
+    er._registry[E]["author"] = RelationshipInfo(
+        name="author", direction="MANYTOONE", fk_field="author_id",
+        target_entity=E, is_list=False, loader=_L, target_service="users",
+    )
+
+    payload = serialize_er_introspection(er).model_dump()
+    rel = payload["entities"][0]["relationships"][0]
+    assert rel["target_service"] == "users"  # name still carried
+    assert rel["target_endpoint"] is None    # URL suppressed by default
+
+    er._expose_mounted_endpoints = True
+    payload2 = serialize_er_introspection(er).model_dump()
+    rel2 = payload2["entities"][0]["relationships"][0]
+    assert rel2["target_endpoint"] == "http://secret-users:8020"
+
+
+@pytest.mark.asyncio
+async def test_custom_transport_is_pluggable():
+    """federate() accepts ANY FederationTransport impl, not just GraphQLTransport.
+
+    Locks in that nexusx depends on the transport Protocol, not on httpx — so a
+    user can plug in mTLS / signing / per-host creds without nexusx knowing.
+    """
+    from nexusx.federation.transport import FederationTransport
+
+    calls = {"gets": 0}
+
+    class MyTransport:
+        async def post_json(self, url, body):
+            return {"data": {}}
+
+        async def get_json(self, url):
+            calls["gets"] += 1
+            return _resp(
+                "reviews",
+                _entity(
+                    "Review", [("id", "int"), ("product_id", "int")],
+                    batch_roots=["by_product_id_in"],
+                ),
+            )
+
+        async def close(self):
+            pass
+
+    transport = MyTransport()
+    assert isinstance(transport, FederationTransport)  # structurally conforms
+    er = _er_with("reviews.Review")
+    await federate(er, {"reviews": "http://reviews"}, transport=transport)
+    assert calls["gets"] >= 1  # our transport actually drove the introspection fetch
 
 
 @pytest.mark.asyncio

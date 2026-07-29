@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from sqlmodel import SQLModel
 
 from nexusx.federation.relationship import RemoteRelationship
+from nexusx.federation.transport import FederationTransport
 from nexusx.loader.factories import (
     create_many_to_many_loader,
     create_many_to_one_loader,
@@ -332,6 +333,7 @@ class ErManager:
         enable_pagination: bool = False,
         split_loader_by_type: bool = False,
         service_name: str | None = None,
+        expose_mounted_endpoints: bool = False,
     ):
         if base is not None and entities is not None:
             raise ValueError("base and entities are mutually exclusive")
@@ -347,6 +349,12 @@ class ErManager:
         self._split_mode = split_loader_by_type
         # Federation state (no-op when federation is unused).
         self.service_name: str | None = service_name
+        # When True, this member advertises the endpoints of services it itself
+        # has mounted in its ER-introspection payload (enables transitive
+        # discovery). Defaults to False: internal URLs are suppressed (they leak
+        # network topology); the mounter resolves such services from its own
+        # services= map instead.
+        self._expose_mounted_endpoints: bool = expose_mounted_endpoints
         self._mounted_services: dict[str, str] = {}
         self._pending_remote_rels: list[tuple[type, Any]] = []
         self._fed_registry: Any = None
@@ -620,7 +628,7 @@ class ErManager:
         services: dict[str, str],
         *,
         remote_edges: list[Any] | None = None,
-        transport: Any | None = None,
+        transport: FederationTransport | None = None,
         service_name: str | None = None,
         extra_types: dict[str, type] | None = None,
     ) -> None:
