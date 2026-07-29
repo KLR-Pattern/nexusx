@@ -131,11 +131,15 @@ class FederatedTypeRegistry:
             field_defs[fd.name] = (f"({ann}) | None", None)
         # Relationship fields: ForwardRef to target typename (resolved in pass 2).
         # These become first-class model_fields so DefineSubset, Resolver, SDL,
-        # and Voyager all treat them as proper schema relationships.
+        # and Voyager all treat them as proper schema relationships. Respect
+        # is_list: a one-to-many relationship materializes as list[Target], not
+        # a scalar Target (else validating the remote's list response fails).
         for rel in frag.relationships:
             if rel.name in field_defs:
                 continue
-            field_defs[rel.name] = (f"{rel.target_typename} | None", None)
+            target = rel.target_typename
+            ann = f"list[{target}]" if rel.is_list else target
+            field_defs[rel.name] = (f"{ann} | None", None)
         # keys (e.g. `author`) stay on the instance for the serializer.
         model = cast(
             "type[BaseModel]",
