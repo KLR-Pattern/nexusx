@@ -12,11 +12,14 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from demo.federation._common import federate_with_retry, make_app
+from demo.federation._common import initialize_with_retry, make_app
 from nexusx import AutoQueryConfig, GraphQLHandler
-from nexusx.federation import RemoteRelationship
+from nexusx.federation import RemoteRelationship, RemoteService
 
 USERS_URL = "http://localhost:8020"  # base URL of the users service
+
+# Remote service root — declared once, referenced in the relationship below.
+users = RemoteService("users", url=USERS_URL)
 
 
 class ReviewsBase(SQLModel):
@@ -34,7 +37,7 @@ class Review(ReviewsBase, table=True):
     # Cross-service relationship: author is owned by the users service.
     __relationships__ = [
         RemoteRelationship(
-            name="author", target="users.User",
+            name="author", target=users.User,
             join_local="author_id", join_remote="id", is_list=False,
         ),
     ]
@@ -73,7 +76,7 @@ handler = GraphQLHandler(
 async def on_startup() -> None:
     await init_db()
     # reviews mounts users — relative composition (every nexusx service can mount).
-    await federate_with_retry(handler, {"users": USERS_URL})
+    await initialize_with_retry(handler)
 
 
 app = make_app(handler, on_startup=on_startup, title="Fed demo — reviews (mounts users)")

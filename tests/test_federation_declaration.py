@@ -4,10 +4,18 @@ from __future__ import annotations
 
 import pytest
 
-from nexusx.federation import RemoteRelationship, parse_qualified_name
+from nexusx.federation import (
+    RemoteEdge,
+    RemoteRelationship,
+    RemoteService,
+    parse_qualified_name,
+)
 from nexusx.federation.relationship import parse_edge_source
 from nexusx.loader.registry import ErManager, RelationshipInfo
 from nexusx.relationship import get_custom_relationships
+
+# Remote service root — referenced by the declarations below.
+reviews = RemoteService("reviews")
 
 
 def test_parse_qualified_name_roundtrip():
@@ -26,11 +34,40 @@ def test_parse_edge_source_roundtrip():
 
 def test_remote_relationship_dataclass_fields():
     r = RemoteRelationship(
-        name="reviews", target="reviews.Review",
+        name="reviews", target=reviews.Review,
         join_local="id", join_remote="product_id", is_list=True,
     )
+    # RemoteRef input is normalized to the "srv.typename" marker string.
     assert r.target == "reviews.Review"
     assert r.is_list is True
+
+
+def test_remote_edge_normalizes_remote_ref_target():
+    """RemoteEdge.target takes a RemoteRef too; source stays a 3-part string."""
+    e = RemoteEdge(
+        source="reviews.Review.author", target=reviews.User,
+        join_local="author_id", join_remote="id", is_list=False,
+    )
+    assert e.target == "reviews.User"
+    assert e.source == "reviews.Review.author"
+
+
+def test_remote_relationship_captures_service_url():
+    """RemoteRelationship carries the service url from RemoteService, so
+    federation can derive endpoints from the declarations alone."""
+    with_url = RemoteService("reviews", url="http://reviews:8021")
+    no_url = RemoteService("ghost")
+    r1 = RemoteRelationship(
+        name="reviews", target=with_url.Review,
+        join_local="id", join_remote="product_id",
+    )
+    r2 = RemoteRelationship(
+        name="g", target=no_url.Missing,
+        join_local="id", join_remote="id",
+    )
+    assert r1.target_url == "http://reviews:8021"
+    assert r1.target == "reviews.Review"
+    assert r2.target_url is None  # no url → transitive-only / unmounted
 
 
 def test_get_custom_relationships_returns_remote_entries(tmp_module):
@@ -75,7 +112,7 @@ class _LocalEntity(SQLModel, table=True):
     name: str
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target="reviews.Review",
+            name="reviews", target=reviews.Review,
             join_local="id", join_remote="product_id", is_list=True,
         ),
     ]

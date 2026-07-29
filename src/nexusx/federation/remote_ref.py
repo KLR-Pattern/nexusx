@@ -46,9 +46,9 @@ class RemoteRef:
         author: users.User | None = None
     """
 
-    __slots__ = ("qualified_name",)
+    __slots__ = ("qualified_name", "url")
 
-    def __init__(self, qualified_name: str) -> None:
+    def __init__(self, qualified_name: str, url: str | None = None) -> None:
         if not isinstance(qualified_name, str) or qualified_name.count(".") != 1:
             msg = (
                 f"RemoteRef expects 'srv.typename' (exactly one dot), "
@@ -56,6 +56,9 @@ class RemoteRef:
             )
             raise ValueError(msg)
         self.qualified_name = qualified_name
+        # Inherited from the parent RemoteService so federation can derive the
+        # service endpoint from the declaration alone (no explicit services= arg).
+        self.url = url
 
     def __repr__(self) -> str:
         return f"RemoteRef({self.qualified_name!r})"
@@ -84,34 +87,41 @@ class _RemoteRefOptional:
 
 
 class RemoteService:
-    """A remote nexusx service — access its types like a namespace.
+    """A remote nexusx service — name + url, types accessed like a namespace.
 
     Usage::
 
-        users = RemoteService("users")
-        users.User          # → RemoteRef("users.User")
-        users.User | None   # → _RemoteRefOptional(RemoteRef("users.User"))
+        reviews = RemoteService("reviews", url="http://reviews:8021")
+        reviews.Review        # → RemoteRef("reviews.Review"), url carried along
+        await handler.initialize()   # federation derives services from declarations
 
-    The service name (prefix) is declared **once** and reused for every type
-    on that service — cleaner than repeating ``RemoteRef("users.User")``.
+    The service (name + url) is declared **once** and reused for every type on
+    that service — ``url`` is the mounter-side deployment address federation
+    calls. A RemoteService used only for type references (not mounted by this
+    service, e.g. reached only transitively) may omit ``url``.
     """
 
-    __slots__ = ("_name",)
+    __slots__ = ("_name", "_url")
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, url: str | None = None) -> None:
         self._name = name
+        self._url = url
 
     @property
     def name(self) -> str:
         return self._name
 
+    @property
+    def url(self) -> str | None:
+        return self._url
+
     def __getattr__(self, typename: str) -> RemoteRef:
         if typename.startswith("_"):
             raise AttributeError(typename)
-        return RemoteRef(f"{self._name}.{typename}")
+        return RemoteRef(f"{self._name}.{typename}", url=self._url)
 
     def __repr__(self) -> str:
-        return f"RemoteService({self._name!r})"
+        return f"RemoteService({self._name!r}, url={self._url!r})"
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
@@ -250,7 +260,7 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
             "__annotations__": resolved_annotations,
             "__module__": module_name,
         }
-        for fname, anno in resolved_annotations.items():
+        for fname, _anno in resolved_annotations.items():
             if fname not in field_names:
                 new_namespace[fname] = namespace.get(fname, None)
 
@@ -279,7 +289,7 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
             new_annotations[fname] = replaced
             if replaced is not anno:
                 changed = True
-        for fname, field_info in dto_cls.model_fields.items():
+        for _fname, field_info in dto_cls.model_fields.items():
             replaced = _replace_classes_in_annotation(field_info.annotation, replacements)
             if replaced is not field_info.annotation:
                 field_info.annotation = replaced
@@ -328,8 +338,8 @@ def _replace_remote_ref(annotation: Any, fed_registry: Any) -> Any:
         origin = typing.get_origin(annotation)
         args = typing.get_args(annotation)
         new_args = tuple(
-            fed_registry.get(r.qualified_name)
-            if isinstance(a, (RemoteRef, _RemoteRefOptional))
+            fed_registry.get(_contains_remote_ref(a).qualified_name)
+            if _contains_remote_ref(a) is not None
             else _replace_remote_ref(a, fed_registry)
             for a in args
         )

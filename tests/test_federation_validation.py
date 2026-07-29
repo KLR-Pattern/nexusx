@@ -10,15 +10,22 @@ from __future__ import annotations
 import pytest
 from sqlmodel import Field, SQLModel
 
-from nexusx.federation import RemoteRelationship
+from nexusx.federation import RemoteRelationship, RemoteService
 from nexusx.federation.contract import (
     EntityFragment,
     ERIntrospectionResponse,
     FieldDescriptor,
     RelDescriptor,
 )
-from nexusx.federation.manager import FederationError, federate
+from nexusx.federation.manager import FederationError
 from nexusx.loader.registry import ErManager
+
+# Remote service roots — referenced by the declarations below. `ghost` is the
+# deliberately-unmounted service (no url) in the unknown-prefix test.
+reviews = RemoteService("reviews", url="http://reviews")
+ghost = RemoteService("ghost")
+svcA = RemoteService("svcA", url="http://a")
+svcB = RemoteService("svcB", url="http://b")
 
 
 class FakeTransport:
@@ -60,7 +67,7 @@ class ValProduct(SQLModel, table=True):
 _er_with_counter = 0
 
 
-def _er_with(rrel_target, join_remote="product_id"):
+def _er_with(target_ref, join_remote="product_id"):
     """Build an ErManager whose entity has a pending RemoteRelationship."""
     global _er_with_counter
     _er_with_counter += 1
@@ -72,7 +79,7 @@ def _er_with(rrel_target, join_remote="product_id"):
         name: str
         __relationships__ = [
             RemoteRelationship(
-                name="reviews", target=rrel_target,
+                name="reviews", target=target_ref,
                 join_local="id", join_remote=join_remote, is_list=True,
             ),
         ]
@@ -80,57 +87,52 @@ def _er_with(rrel_target, join_remote="product_id"):
     return ErManager(entities=[P], session_factory=lambda: None)
 
 
-async def _federate(er, services, responses):
-    await federate(er, services, transport=FakeTransport(responses))
+async def _federate(er, responses):
+    await er.initialize(transport=FakeTransport(responses))
 
 
 @pytest.mark.asyncio
 async def test_unknown_service_prefix_rejected():
-    er = _er_with("ghost.Review")
-    services = {"reviews": "http://reviews"}
+    er = _er_with(ghost.Review)
     resp = _resp("reviews", _entity("Review", [("id", "int"), ("product_id", "int")]))
     with pytest.raises(FederationError, match=r"Service prefix 'ghost'.*has no endpoint"):
-        await _federate(er, services, {"reviews": resp})
+        await _federate(er, {"reviews": resp})
 
 
 @pytest.mark.asyncio
 async def test_missing_typename_rejected():
-    er = _er_with("reviews.Review")
-    services = {"reviews": "http://reviews"}
+    er = _er_with(reviews.Review)
     resp = _resp("reviews", _entity("Comment", [("id", "int")]))  # no Review type
     with pytest.raises(FederationError, match="no type"):
-        await _federate(er, services, {"reviews": resp})
+        await _federate(er, {"reviews": resp})
 
 
 @pytest.mark.asyncio
 async def test_missing_join_field_rejected():
-    er = _er_with("reviews.Review", join_remote="product_id")
-    services = {"reviews": "http://reviews"}
+    er = _er_with(reviews.Review, join_remote="product_id")
     resp = _resp("reviews", _entity("Review", [("id", "int"), ("title", "str")]))  # no product_id
     with pytest.raises(FederationError, match="no scalar field 'product_id'"):
-        await _federate(er, services, {"reviews": resp})
+        await _federate(er, {"reviews": resp})
 
 
 @pytest.mark.asyncio
 async def test_missing_batch_root_rejected():
-    er = _er_with("reviews.Review")
-    services = {"reviews": "http://reviews"}
+    er = _er_with(reviews.Review)
     resp = _resp(
         "reviews",
         _entity("Review", [("id", "int"), ("product_id", "int")], batch_roots=[]),
     )
     with pytest.raises(FederationError, match="does not expose batch root 'by_product_id_in'"):
-        await _federate(er, services, {"reviews": resp})
+        await _federate(er, {"reviews": resp})
 
 
 @pytest.mark.asyncio
 async def test_service_name_mismatch_rejected():
     """FR-013e: mounted service's self-declared name must match the prefix key."""
-    er = _er_with("reviews.Review")
-    services = {"reviews": "http://reviews"}
+    er = _er_with(reviews.Review)
     resp = _resp("NOT_reviews", _entity("Review", [("id", "int"), ("product_id", "int")]))
     with pytest.raises(FederationError, match="declares name"):
-        await _federate(er, services, {"reviews": resp})
+        await _federate(er, {"reviews": resp})
 
 
 @pytest.mark.asyncio
@@ -141,34 +143,32 @@ async def test_cross_service_barename_duplicate_rejected():
         __tablename__ = "fed_val_p1"
         id: int | None = Field(default=None, primary_key=True)
         __relationships__ = [RemoteRelationship(
-            name="a", target="svcA.Shared", join_local="id", join_remote="id")]
+            name="a", target=svcA.Shared, join_local="id", join_remote="id")]
 
     class P2(SQLModel, table=True):
         __tablename__ = "fed_val_p2"
         id: int | None = Field(default=None, primary_key=True)
         __relationships__ = [RemoteRelationship(
-            name="b", target="svcB.Shared", join_local="id", join_remote="id")]
+            name="b", target=svcB.Shared, join_local="id", join_remote="id")]
 
     er = ErManager(entities=[P1, P2], session_factory=lambda: None)
-    services = {"svcA": "http://a", "svcB": "http://b"}
     resp_a = _resp("svcA", _entity("Shared", [("id", "int")], batch_roots=["by_id_in"]))
     resp_b = _resp("svcB", _entity("Shared", [("id", "int")], batch_roots=["by_id_in"]))
     with pytest.raises(FederationError, match="Cross-service bare-name duplicate"):
-        await _federate(er, services, {"http://a": resp_a, "http://b": resp_b})
+        await _federate(er, {"http://a": resp_a, "http://b": resp_b})
 
 
 @pytest.mark.asyncio
 async def test_batch_root_without_arg_name_rejected():
     """P1a: a batch root whose arg name can't be introspected fails fast."""
-    er = _er_with("reviews.Review")
-    services = {"reviews": "http://reviews"}
+    er = _er_with(reviews.Review)
     frag = _entity(
         "Review", [("id", "int"), ("product_id", "int")],
         batch_roots=[{"name": "by_product_id_in", "arg_name": "", "arg_type": ""}],
     )
     resp = _resp("reviews", frag)
     with pytest.raises(FederationError, match="no determinable argument name"):
-        await _federate(er, services, {"reviews": resp})
+        await _federate(er, {"reviews": resp})
 
 
 def test_introspection_suppresses_target_endpoint_unless_exposed():
@@ -234,8 +234,8 @@ async def test_custom_transport_is_pluggable():
 
     transport = MyTransport()
     assert isinstance(transport, FederationTransport)  # structurally conforms
-    er = _er_with("reviews.Review")
-    await federate(er, {"reviews": "http://reviews"}, transport=transport)
+    er = _er_with(reviews.Review)
+    await er.initialize(transport=transport)
     assert calls["gets"] >= 1  # our transport actually drove the introspection fetch
 
 
@@ -245,11 +245,14 @@ async def test_cycle_terminates_via_visited_set():
     class P(SQLModel, table=True):
         __tablename__ = "fed_val_pcyc"
         id: int | None = Field(default=None, primary_key=True)
-        __relationships__ = [RemoteRelationship(
-            name="a", target="svcA.A", join_local="id", join_remote="id", is_list=False)]
+        # Declare both cycle members so initialize() derives both endpoints
+        # (svcA and svcB carry their urls via RemoteService).
+        __relationships__ = [
+            RemoteRelationship(name="a", target=svcA.A, join_local="id", join_remote="id", is_list=False),
+            RemoteRelationship(name="b", target=svcB.B, join_local="id", join_remote="id", is_list=False),
+        ]
 
     er = ErManager(entities=[P], session_factory=lambda: None)
-    services = {"svcA": "http://a", "svcB": "http://b"}
     a_rel = RelDescriptor(
         name="toB", direction="MANYTOONE", fk_field="id",
         target_typename="B", target_service="svcB")
@@ -259,4 +262,4 @@ async def test_cycle_terminates_via_visited_set():
     resp_a = _resp("svcA", _entity("A", [("id", "int")], batch_roots=["by_id_in"], rels=(a_rel,)))
     resp_b = _resp("svcB", _entity("B", [("id", "int")], batch_roots=["by_id_in"], rels=(b_rel,)))
     # Should complete without hanging (visited-set caps the traversal).
-    await _federate(er, services, {"http://a": resp_a, "http://b": resp_b})
+    await _federate(er, {"http://a": resp_a, "http://b": resp_b})

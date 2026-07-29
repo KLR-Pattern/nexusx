@@ -16,9 +16,13 @@ from starlette.applications import Starlette
 from starlette.routing import Mount
 
 from nexusx import AutoQueryConfig, GraphQLHandler
-from nexusx.federation import RemoteRelationship
+from nexusx.federation import RemoteRelationship, RemoteService
 from nexusx.federation.http import GraphQLTransport
 from nexusx.federation.introspect import build_federable_app
+
+# Remote service roots — name + url, declared once, referenced below.
+users = RemoteService("users", url="http://test/users")
+reviews = RemoteService("reviews", url="http://test/reviews")
 
 # Module-level entities with unique names → no SQLAlchemy clsregistry clashes
 # with other test modules' Review/Product/User classes.
@@ -50,7 +54,7 @@ class TransReview(_ReviewsBase, table=True):
     title: str
     __relationships__ = [
         RemoteRelationship(
-            name="author", target="users.TransUser",
+            name="author", target=users.TransUser,
             join_local="author_id", join_remote="id", is_list=False,
         ),
     ]
@@ -62,7 +66,7 @@ class TransProduct(_CatalogBase, table=True):
     name: str
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target="reviews.TransReview",
+            name="reviews", target=reviews.TransReview,
             join_local="id", join_remote="product_id", is_list=True,
         ),
     ]
@@ -133,8 +137,8 @@ async def test_transitive_discovery_reaches_users_through_reviews(_engines):
     transport = GraphQLTransport(client=client)
 
     # reviews mounts users; catalog mounts ONLY reviews.
-    await reviews_h.federate({"users": "http://test/users"}, transport=transport)
-    await catalog_h.federate({"reviews": "http://test/reviews"}, transport=transport)
+    await reviews_h.er.initialize(transport=transport)
+    await catalog_h.er.initialize(transport=transport)
 
     try:
         res = await catalog_h.execute(

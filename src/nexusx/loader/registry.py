@@ -16,7 +16,7 @@ from aiodataloader import DataLoader
 from pydantic import BaseModel
 from sqlmodel import SQLModel
 
-from nexusx.federation.relationship import RemoteRelationship
+from nexusx.federation.relationship import RemoteRelationship, parse_qualified_name
 from nexusx.federation.transport import FederationTransport
 from nexusx.loader.factories import (
     create_many_to_many_loader,
@@ -358,6 +358,9 @@ class ErManager:
         self._mounted_services: dict[str, str] = {}
         self._pending_remote_rels: list[tuple[type, Any]] = []
         self._fed_registry: Any = None
+        # Bumped whenever the entity/relationship set changes (add_virtual_entities,
+        # initialize/federation). GraphQL views keyed on it to refresh lazily.
+        self._version: int = 0
         # entity -> {rel_name -> RelationshipInfo}. Keys may be SQLModel
         # classes (registered via __init__) OR plain BaseModel classes
         # (registered via add_virtual_entities). The dict shape is uniform;
@@ -465,6 +468,7 @@ class ErManager:
                 else:
                     entity_rels[rel.name] = _build_custom_relationship_info(rel)
             self._registry[entity] = entity_rels
+        self._version += 1  # entity set changed; invalidate GraphQL views
 
     @property
     def frozen(self) -> bool:
@@ -623,38 +627,54 @@ class ErManager:
             return None
         return self.get_loader(rel_info.loader, type_key=type_key)
 
-    async def federate(
+    async def initialize(
         self,
-        services: dict[str, str],
         *,
-        remote_edges: list[Any] | None = None,
         transport: FederationTransport | None = None,
-        service_name: str | None = None,
         extra_types: dict[str, type] | None = None,
+        remote_edges: list[Any] | None = None,
     ) -> None:
-        """Mount other nexusx services into this ErManager (federation).
+        """Bring up the ER diagram: run federation for declared remote relationships.
 
-        Async (HTTP) — call during application startup (e.g. FastAPI lifespan),
-        before this ErManager serves queries. No-op-equivalent when never called
-        (local-only behavior is unchanged). See nexusx.federation.manager.federate
-        for the orchestration and fail-fast validation.
+        The services to mount (and their endpoints) are **derived from the
+        declarations** — each ``RemoteRelationship`` carries its service url via
+        ``RemoteService(url=…)``. No ``services`` argument. Services referenced
+        only transitively, or whose ``RemoteService`` has no url, are skipped
+        here (transitive ones are discovered during the fetch).
+
+        Call once at startup (app lifespan), before serving. Bumps ``_version``
+        so any GraphQL view built off this ErManager (SDL / ``__schema``)
+        refreshes to include the materialized remote types.
 
         Args:
-            extra_types: Extra type names the mounter should recognize when
-                materializing remote scalar fields (e.g. shared enums or project
-                custom scalars referenced by remote types). Unregistered names
+            transport: Injectable HTTP transport (tests pass ASGITransport/fakes).
+            extra_types: Extra type names to recognize when materializing remote
+                scalar fields (shared enums / custom scalars). Unregistered names
                 fall back to ``Any``.
+            remote_edges: Cross-service edges on remote (materialized) types.
         """
-        from nexusx.federation.manager import federate as _federate
+        # Endpoints come only from declarations whose RemoteService has a url.
+        # Targets whose service has no url are still fetched (queued inside
+        # federate from _pending_remote_rels) and resolved transitively — or
+        # fail fast with "no endpoint" if neither applies.
+        services_map: dict[str, str] = {}
+        for _src, rrel in self._pending_remote_rels:
+            target_url = getattr(rrel, "target_url", None)
+            if target_url:
+                srv = parse_qualified_name(rrel.target)[0]
+                services_map.setdefault(srv, target_url)
 
-        await _federate(
-            self,
-            services,
-            remote_edges=remote_edges,
-            transport=transport,
-            service_name=service_name,
-            extra_types=extra_types,
-        )
+        if self._pending_remote_rels or remote_edges:
+            from nexusx.federation.manager import federate as _federate
+
+            await _federate(
+                self,
+                services_map,
+                remote_edges=remote_edges,
+                transport=transport,
+                extra_types=extra_types,
+            )
+        self._version += 1
 
     def create_resolver(self) -> type:
         """Create a Resolver class pre-wired with this ErManager.

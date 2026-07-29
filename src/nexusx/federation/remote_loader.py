@@ -18,6 +18,11 @@ import json
 import uuid
 from typing import Any
 
+from aiodataloader import DataLoader
+from pydantic import BaseModel
+
+from nexusx.federation.transport import FederationTransport
+
 
 class RemoteQueryError(RuntimeError):
     """A remote gql query returned errors or an unexpected response shape.
@@ -33,11 +38,6 @@ class RemoteQueryError(RuntimeError):
         super().__init__(
             f"Remote {typename} query failed: {gql_errors}"
         )
-
-from aiodataloader import DataLoader
-from pydantic import BaseModel
-
-from nexusx.federation.transport import FederationTransport
 
 
 def set_remote_selection(loader: Any, selection: Any) -> None:

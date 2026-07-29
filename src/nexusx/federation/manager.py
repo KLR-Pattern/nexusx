@@ -12,7 +12,7 @@ privileged router. The orchestrator of a query is the service it enters.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nexusx.federation.contract import BatchRoot, EntityFragment, ERIntrospectionResponse
 from nexusx.federation.http import GraphQLTransport
@@ -49,12 +49,10 @@ async def federate(
 ) -> None:
     """Mount ``services`` (name → endpoint) into ``er_manager``.
 
-    Args:
-        services: Mapping of mounted service name (prefix) → base URL.
-        remote_edges: Cross-service edges on remote (materialized) types.
-        transport: Injectable HTTP transport (tests pass ASGITransport client).
-        service_name: This service's own name (prefix); set on the ErManager so
-            its own ER introspection exposes it.
+    Internal orchestrator. The public entry is ``ErManager.initialize()``, which
+    derives this mapping from the declared ``RemoteRelationship``s (each carries
+    its service url via ``RemoteService``). Tests may call this directly with a
+    hand-built map + fake transport.
     """
     if service_name is not None:
         er_manager.service_name = service_name

@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from demo.federation._common import federate_with_retry, make_app
+from demo.federation._common import initialize_with_retry, make_app
 from nexusx import (
     AutoQueryConfig,
     GraphQLHandler,
@@ -25,9 +25,14 @@ from nexusx import (
     create_use_case_router,
     query,
 )
-from nexusx.federation import RemoteRelationship
+from nexusx.federation import RemoteRelationship, RemoteService
 
 REVIEWS_URL = "http://localhost:8021"  # base URL of the reviews service
+
+# Remote service roots — declared once, used everywhere (relationships + DTOs).
+# `reviews` is mounted by catalog, so it carries its url; `users` is reached
+# only transitively (through reviews), so it needs no url here.
+reviews = RemoteService("reviews", url=REVIEWS_URL)
 
 
 class CatalogBase(SQLModel):
@@ -43,7 +48,7 @@ class Product(CatalogBase, table=True):
     # reviews live on the reviews service, joined by Product.id ↔ Review.product_id.
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target="reviews.Review",
+            name="reviews", target=reviews.Review,
             join_local="id", join_remote="product_id", is_list=True,
         ),
     ]
@@ -75,7 +80,8 @@ async def on_startup() -> None:
     await init_db()
     # catalog mounts reviews. Reviews itself mounts users, so catalog transitively
     # reaches users through reviews — one nested gql per service per traversal.
-    await federate_with_retry(handler, {"reviews": REVIEWS_URL})
+    # initialize() derives services from the RemoteRelationship declarations.
+    await initialize_with_retry(handler)
 
 
 app = make_app(handler, on_startup=on_startup, title="Fed demo — catalog (mounts reviews)")
@@ -88,11 +94,9 @@ app = make_app(handler, on_startup=on_startup, title="Fed demo — catalog (moun
 # no __annotations__, no ceremony.
 
 from nexusx import DefineSubset
-from nexusx.federation import RemoteService
 
-# Remote service references — declared once, used like namespaces.
+# `reviews` declared at top; `users` is used by the DTOs below.
 users = RemoteService("users")
-reviews = RemoteService("reviews")
 
 
 class UserDTO(DefineSubset):

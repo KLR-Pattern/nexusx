@@ -581,13 +581,12 @@ class SubsetMeta(type):
 
         # Build placeholder: body fields only, RemoteRef → Any.
         annotations = _get_namespace_annotations(namespace)
-        field_names_set = set(field_names) if isinstance(field_names, (list, tuple)) else set()
         placeholder_annotations: dict[str, Any] = {}
         placeholder_ns: dict[str, Any] = {
             "__module__": namespace.get("__module__", "__main__"),
             "model_config": ConfigDict(arbitrary_types_allowed=True),
         }
-        for fname, anno in annotations.items():
+        for fname, _anno in annotations.items():
             if fname == SUBSET_DEFINITION:
                 continue
             # All annotations become Any (RemoteRef can't be a pydantic type yet).
@@ -606,7 +605,7 @@ class SubsetMeta(type):
             if getattr(type(self), "__nexusx_deferred__", False):
                 msg = (
                     f"{_frozen_name} is a deferred DefineSubset — call "
-                    f"er.federate(...) before using it."
+                    f"er.initialize() before using it."
                 )
                 raise RuntimeError(msg)
             return _orig_init(self, *args, **kwargs)

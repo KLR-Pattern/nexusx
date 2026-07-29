@@ -17,9 +17,13 @@ from starlette.applications import Starlette
 from starlette.routing import Mount
 
 from nexusx import AutoQueryConfig, DefineSubset, GraphQLHandler
-from nexusx.federation import RemoteRelationship
+from nexusx.federation import RemoteRelationship, RemoteService
 from nexusx.federation.http import GraphQLTransport
 from nexusx.federation.introspect import build_federable_app
+
+# Remote service roots — name + url, declared once, referenced below.
+users = RemoteService("users", url="http://test/users")
+reviews = RemoteService("reviews", url="http://test/reviews")
 
 
 class _UB(SQLModel):
@@ -49,7 +53,7 @@ class DSReview(_RB, table=True):
     rating: int
     __relationships__ = [
         RemoteRelationship(
-            name="author", target="users.DSUser",
+            name="author", target=users.DSUser,
             join_local="author_id", join_remote="id",
         ),
     ]
@@ -61,7 +65,7 @@ class DSProduct(_CB, table=True):
     name: str
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target="reviews.DSReview",
+            name="reviews", target=reviews.DSReview,
             join_local="id", join_remote="product_id", is_list=True,
         ),
     ]
@@ -132,8 +136,8 @@ async def test_composed_tree_via_beta_fetch_and_model_validate():
         ])
         client = httpx.AsyncClient(transport=httpx.ASGITransport(app=composite), base_url="http://test")
         transport = GraphQLTransport(client=client)
-        await reviews_h.federate({"users": "http://test/users"}, transport=transport)
-        await catalog_h.federate({"reviews": "http://test/reviews"}, transport=transport)
+        await reviews_h.er.initialize(transport=transport)
+        await catalog_h.er.initialize(transport=transport)
 
         try:
             # β fetch: one nested gql returns Product → Review → author.

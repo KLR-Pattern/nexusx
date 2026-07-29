@@ -27,10 +27,13 @@ from starlette.applications import Starlette
 from starlette.routing import Mount
 
 from nexusx import GraphQLHandler
-from nexusx.federation import RemoteRelationship
+from nexusx.federation import RemoteRelationship, RemoteService
 from nexusx.federation.http import GraphQLTransport
 from nexusx.federation.introspect import build_federable_app
 from nexusx.standard_queries import AutoQueryConfig
+
+# Remote service root — name + url, referenced by FedProduct below.
+reviews = RemoteService("reviews", url="http://test/reviews")
 
 # ── Module-level entities (single registration) ─────────────────────────
 
@@ -65,7 +68,7 @@ class FedProduct(CatalogBase, table=True):
     name: str
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target="reviews.FedReview",
+            name="reviews", target=reviews.FedReview,
             join_local="id", join_remote="product_id", is_list=True,
         ),
     ]
@@ -150,7 +153,7 @@ async def _build_catalog_and_transport():
         transport=httpx.ASGITransport(app=composite), base_url="http://test",
     )
     transport = CountingTransport(client=client)
-    await catalog_handler.federate({"reviews": "http://test/reviews"}, transport=transport)
+    await catalog_handler.er.initialize(transport=transport)
     return catalog_handler, transport, client
 
 

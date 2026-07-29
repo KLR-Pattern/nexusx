@@ -13,12 +13,24 @@ from nexusx.execution.query_executor import QueryExecutor
 from nexusx.graphiql import GRAPHIQL_HTML
 from nexusx.introspection import IntrospectionGenerator
 from nexusx.loader.registry import ErManager
-from nexusx.federation.transport import FederationTransport
 from nexusx.query_parser import QueryParser
 from nexusx.sdl_generator import SDLGenerator
 from nexusx.standard_queries import AutoQueryConfig, add_standard_queries
 
 logger = logging.getLogger(__name__)
+
+
+class _LiveIntrospection:
+    """Adapter so the executor's ``__schema``/``__type`` dispatch always reads the
+    handler's current (version-cached) introspection generator. Reflects a
+    federated ER graph after ``er.initialize()`` without re-pointing the executor.
+    """
+
+    def __init__(self, handler: GraphQLHandler) -> None:
+        self._handler = handler
+
+    def execute_field(self, selection: Any, variables: Any) -> Any:
+        return self._handler._introspection_generator.execute_field(selection, variables)
 
 
 class GraphQLHandler:
@@ -109,12 +121,11 @@ class GraphQLHandler:
             expose_mounted_endpoints=expose_mounted_endpoints,
         )
 
-        # Initialize SDL generator
-        self._sdl_generator = SDLGenerator(
-            self.entities,
-            query_description=query_description,
-            mutation_description=mutation_description,
-        )
+        # SDL / introspection generators are built LAZILY off the live ErManager,
+        # version-cached: they refresh automatically after er.initialize() adds
+        # materialized remote types, with no handler-side rebuild.
+        self._sdl_cache: tuple[int, SDLGenerator] | None = None
+        self._intro_cache: tuple[int, IntrospectionGenerator] | None = None
 
         # Parse queries for field selection
         self._query_parser = QueryParser()
@@ -125,22 +136,12 @@ class GraphQLHandler:
         self._scanner = MethodScanner()
         self._query_methods, self._mutation_methods = self._scanner.scan(self.entities)
 
-        # Initialize introspection generator
-        self._introspection_generator = IntrospectionGenerator(
-            entities=self.entities,
-            query_methods=self._query_methods,
-            mutation_methods=self._mutation_methods,
-            query_description=query_description,
-            mutation_description=mutation_description,
-            enable_pagination=enable_pagination,
-            loader_registry=self._er_manager,
-        )
-
-        # Initialize executor with DataLoader support
+        # Initialize executor with DataLoader support. The introspection adapter
+        # reads the live (version-cached) generator, so __schema reflects federation.
         self._executor = QueryExecutor(
             loader_registry=self._er_manager,
             enable_pagination=enable_pagination,
-            introspection_generator=self._introspection_generator,
+            introspection_generator=_LiveIntrospection(self),
         )
 
     @property
@@ -152,6 +153,52 @@ class GraphQLHandler:
         no operations (no @query/@mutation and no auto_query_config).
         """
         return bool(self._query_methods) or bool(self._mutation_methods)
+
+    @property
+    def _sdl_generator(self) -> SDLGenerator:
+        """Version-cached SDLGenerator over the live ER graph (all entities).
+
+        Lazy: rebuilds only when ``er._version`` changes (e.g. after
+        ``er.initialize()``), so the SDL reflects materialized remote types with
+        no handler-side rebuild step. Kept under the old name for compatibility.
+        """
+        v = self._er_manager._version
+        if self._sdl_cache is None or self._sdl_cache[0] != v:
+            self._sdl_cache = (
+                v,
+                SDLGenerator(
+                    self._er_manager.get_all_entities(),
+                    query_description=self._query_description,
+                    mutation_description=self._mutation_description,
+                ),
+            )
+        return self._sdl_cache[1]
+
+    @property
+    def _introspection_generator(self) -> IntrospectionGenerator:
+        """Version-cached IntrospectionGenerator over the live ER graph."""
+        v = self._er_manager._version
+        if self._intro_cache is None or self._intro_cache[0] != v:
+            self._intro_cache = (
+                v,
+                IntrospectionGenerator(
+                    entities=self._er_manager.get_all_entities(),
+                    query_methods=self._query_methods,
+                    mutation_methods=self._mutation_methods,
+                    query_description=self._query_description,
+                    mutation_description=self._mutation_description,
+                    enable_pagination=self.enable_pagination,
+                    loader_registry=self._er_manager,
+                ),
+            )
+        return self._intro_cache[1]
+
+    @property
+    def er(self) -> ErManager:
+        """The ER-diagram manager — owns entities, relationships, and federation
+        (``await handler.er.initialize()`` runs it). The handler is a pure
+        GraphQL view over this; federation is the ErManager's concern."""
+        return self._er_manager
 
     def get_sdl(self, include_mutations: bool = True) -> str:
         """Get the GraphQL Schema Definition Language string.
@@ -187,53 +234,6 @@ class GraphQLHandler:
             HTML string for GraphiQL playground.
         """
         return GRAPHIQL_HTML.replace("{graphql_url}", endpoint)
-
-    async def federate(
-        self,
-        services: dict[str, str],
-        *,
-        remote_edges: list[Any] | None = None,
-        transport: FederationTransport | None = None,
-        extra_types: dict[str, type] | None = None,
-    ) -> None:
-        """Mount other nexusx services into this handler (federation).
-
-        Async (HTTP) — call during startup (e.g. FastAPI lifespan) before this
-        handler serves queries. See nexusx.federation.manager.federate.
-
-        Args:
-            extra_types: Extra type names to recognize when materializing remote
-                scalar fields (shared enums / project custom scalars).
-        """
-        await self._er_manager.federate(
-            services, remote_edges=remote_edges, transport=transport,
-            extra_types=extra_types,
-        )
-        # Rebuild schema generators so SDL / __schema introspection include the
-        # materialized remote types (FR-017): the generators snapshot their
-        # entity set + converter at construction, so re-create them with the
-        # now-expanded registry. The executor reads the registry live and needs
-        # no rebuild.
-        entities = self._er_manager.get_all_entities()
-        self._sdl_generator = SDLGenerator(
-            entities,
-            query_description=self._query_description,
-            mutation_description=self._mutation_description,
-        )
-        self._introspection_generator = IntrospectionGenerator(
-            entities=entities,
-            query_methods=self._query_methods,
-            mutation_methods=self._mutation_methods,
-            query_description=self._query_description,
-            mutation_description=self._mutation_description,
-            enable_pagination=self.enable_pagination,
-            loader_registry=self._er_manager,
-        )
-        # The executor holds its own introspection_generator reference for
-        # `__schema` / `__type` query dispatch — re-point it at the rebuilt one
-        # so GraphiQL (which POSTs an introspection query through execute())
-        # sees the materialized remote types, not the pre-federate generator.
-        self._executor._introspection_generator = self._introspection_generator
 
     async def aclose(self) -> None:
         """Close federation resources (httpx.AsyncClient). Call on shutdown."""

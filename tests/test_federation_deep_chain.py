@@ -25,9 +25,13 @@ from starlette.applications import Starlette
 from starlette.routing import Mount
 
 from nexusx import AutoQueryConfig, GraphQLHandler
-from nexusx.federation import RemoteRelationship
+from nexusx.federation import RemoteRelationship, RemoteService
 from nexusx.federation.http import GraphQLTransport
 from nexusx.federation.introspect import build_federable_app
+
+# Remote service roots — name + url, declared once, referenced below.
+users = RemoteService("users", url="http://test/users")
+reviews = RemoteService("reviews", url="http://test/reviews")
 
 
 # ── users service: User (1) ── UserConfig (local one-to-one) ──────────────
@@ -63,7 +67,7 @@ class DCComment(DCReviewsBase, table=True):
     text: str
     __relationships__ = [
         RemoteRelationship(
-            name="author", target="users.DCUser",
+            name="author", target=users.DCUser,
             join_local="author_id", join_remote="id", is_list=False,
         ),
     ]
@@ -88,7 +92,7 @@ class DCProduct(DCCatalogBase, table=True):
     name: str
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target="reviews.DCReview",
+            name="reviews", target=reviews.DCReview,
             join_local="id", join_remote="product_id", is_list=True,
         ),
     ]
@@ -156,8 +160,8 @@ async def test_deep_multibranch_chain_traverses_all_services(_engines):
     transport = GraphQLTransport(client=client)
 
     # reviews mounts users; catalog mounts ONLY reviews (users reached transitively).
-    await reviews_h.federate({"users": "http://test/users"}, transport=transport)
-    await catalog_h.federate({"reviews": "http://test/reviews"}, transport=transport)
+    await reviews_h.er.initialize(transport=transport)
+    await catalog_h.er.initialize(transport=transport)
 
     try:
         res = await catalog_h.execute(

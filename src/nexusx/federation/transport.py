@@ -43,7 +43,7 @@ Example — a transport that signs every request::
         async def close(self):
             await self._client.aclose()
 
-    await handler.federate(services={"reviews": "..."}, transport=SigningTransport(secret))
+    await handler.initialize(transport=SigningTransport(secret))
 """
 
 from __future__ import annotations
