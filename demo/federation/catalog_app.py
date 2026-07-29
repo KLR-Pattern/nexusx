@@ -3,12 +3,15 @@
 Run: uv run uvicorn demo.federation.catalog_app:app --port 8022
 
 This is the service clients talk to. Open http://localhost:8022/ for GraphiQL
-and try:
+and try the deep multi-branch chain:
 
-    { Product { by_filter { id name reviews { title rating author { name } } } } }
+    { Product { by_filter { id name
+        reviews { title rating comments { text author { name config { theme } } } } } } }
 
-A single query to catalog traverses catalog → reviews → users transparently;
-each mounted service receives exactly one nested gql query.
+A single query to catalog traverses catalog → reviews → users transparently:
+Product → Review → Comment (local to reviews) → User (remote to users) →
+UserConfig (local to users). Each mounted service receives exactly one nested
+gql query and resolves its own subgraph.
 """
 
 
@@ -92,31 +95,27 @@ app = make_app(handler, on_startup=on_startup, title="Fed demo — catalog (moun
 # defers them. federate() resolves RemoteRef → materialized pydantic class.
 # After federate, these are normal DefineSubset DTOs — no dynamic type(),
 # no __annotations__, no ceremony.
+#
+# Scope note: the Resolver (γ) path traverses CROSS-SERVICE edges (Product →
+# Review). Edges LOCAL to a member (Review → Comment, User → UserConfig) are
+# resolved within that member's own gql response — the gql (β) path above
+# traverses the full nested chain; the Resolver tree below is the cross-service
+# projection. (See specs/012-federation for the β/γ distinction.)
 
 from nexusx import DefineSubset
 
-# `reviews` declared at top; `users` is used by the DTOs below.
-users = RemoteService("users")
-
-
-class UserDTO(DefineSubset):
-    """Subset of the remote users.User (resolved at federate time)."""
-
-    __subset__ = (users.User, ("name",))
-
 
 class ReviewDTO(DefineSubset):
-    """Subset of the remote reviews.Review + nested author (resolved at federate)."""
+    """Subset of the remote reviews.Review (resolved at federate time)."""
 
-    __subset__ = (reviews.Review, ("title", "rating", "author_id"))
-    author: users.User | None = None
+    __subset__ = (reviews.Review, ("title", "rating"))
 
 
 class ProductDTO(DefineSubset):
-    """Subset of the local Product + nested reviews (forward-ref to ReviewDTO)."""
+    """Subset of the local Product + nested reviews (cross-service, via Resolver)."""
 
     __subset__ = (Product, ("id", "name"))
-    reviews: list["ReviewDTO"] = []
+    reviews: list[ReviewDTO] = Field(default_factory=list)
 
 
 _resolver_cls = None
