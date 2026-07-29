@@ -70,6 +70,53 @@ def test_remote_relationship_captures_service_url():
     assert r2.target_url is None  # no url → transitive-only / unmounted
 
 
+def test_resolve_deferred_subset_returns_materialized_class():
+    """Regression: _resolve_ref must return the materialized class when the
+    source resolves — it used to fall through to None, raising
+    'Source entity must be a BaseModel class, got None' (broke the catalog demo,
+    which declares DefineSubset DTOs over resolved remote types).
+
+    Isolated: snapshots/restores the process-global pending-subset registry so
+    it neither pollutes other tests nor is polluted by them.
+    """
+    from nexusx.federation.contract import EntityFragment, FieldDescriptor
+    from nexusx.federation.registry import FederatedTypeRegistry
+    from nexusx.federation.remote_ref import (
+        clear_pending_subsets,
+        get_pending_subsets,
+        register_pending_subset,
+        resolve_deferred_subsets,
+    )
+    from nexusx.subset import DefineSubset
+
+    saved = list(get_pending_subsets())
+    clear_pending_subsets()
+    try:
+        reg = FederatedTypeRegistry()
+        reg.materialize({
+            "reviews.Review": EntityFragment(
+                typename="Review",
+                scalar_fields=[
+                    FieldDescriptor(name="title", type_name="str"),
+                    FieldDescriptor(name="rating", type_name="int"),
+                ],
+            )
+        })
+        register_pending_subset(
+            "RDTO", DefineSubset, reviews.Review, ["title", "rating"],
+            {"__module__": __name__, "__annotations__": {}},
+        )
+
+        resolved = resolve_deferred_subsets(reg)
+        cls = next(c for c in resolved if c.__name__ == "RDTO")
+        inst = cls(title="x", rating=5)
+        assert inst.title == "x" and inst.rating == 5
+    finally:
+        clear_pending_subsets()
+        for entry in saved:
+            register_pending_subset(*entry)
+
+
 def test_get_custom_relationships_returns_remote_entries(tmp_module):
     """__relationships__ with a RemoteRelationship is recognized (not rejected)."""
     rels = get_custom_relationships(tmp_module.LocalEntity)

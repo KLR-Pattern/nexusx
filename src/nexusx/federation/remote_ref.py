@@ -206,6 +206,7 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
                 # Service not mounted by THIS fed_registry — skip (maybe
                 # belongs to a different ErManager's federate() call).
                 raise _NotResolvable(srv)
+        return fed_registry.get(qn)
 
     resolvable: list[tuple] = []
     still_pending: list[tuple] = []
