@@ -7,18 +7,6 @@ from dataclasses import dataclass, field
 # Default primary color (used for all frameworks in this context)
 DEFAULT_PRIMARY = '#009485'
 
-# Deterministic palette for federated (remote-service) clusters — assigned by
-# sorted service name so colors are stable across runs. Used by the ER builder
-# to auto-color each remote service's cluster (user-provided module_color wins).
-FEDERATED_PALETTE: list[str] = [
-    '#3b82f6',  # blue
-    '#10b981',  # green
-    '#f59e0b',  # amber
-    '#8b5cf6',  # violet
-    '#ef4444',  # red
-    '#06b6d4',  # cyan
-]
-
 
 @dataclass
 class ColorScheme:

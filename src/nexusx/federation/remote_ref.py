@@ -46,9 +46,11 @@ class RemoteRef:
         author: users.User | None = None
     """
 
-    __slots__ = ("qualified_name", "url")
+    __slots__ = ("qualified_name", "url", "color")
 
-    def __init__(self, qualified_name: str, url: str | None = None) -> None:
+    def __init__(
+        self, qualified_name: str, url: str | None = None, color: str | None = None
+    ) -> None:
         if not isinstance(qualified_name, str) or qualified_name.count(".") != 1:
             msg = (
                 f"RemoteRef expects 'srv.typename' (exactly one dot), "
@@ -59,6 +61,9 @@ class RemoteRef:
         # Inherited from the parent RemoteService so federation can derive the
         # service endpoint from the declaration alone (no explicit services= arg).
         self.url = url
+        # Optional cluster color for voyager (opt-in, declared on RemoteService).
+        # None ⇒ the remote service renders with no special color (still dashed).
+        self.color = color
 
     def __repr__(self) -> str:
         return f"RemoteRef({self.qualified_name!r})"
@@ -101,11 +106,14 @@ class RemoteService:
     service, e.g. reached only transitively) may omit ``url``.
     """
 
-    __slots__ = ("_name", "_url")
+    __slots__ = ("_name", "_url", "_color")
 
-    def __init__(self, name: str, url: str | None = None) -> None:
+    def __init__(
+        self, name: str, url: str | None = None, color: str | None = None
+    ) -> None:
         self._name = name
         self._url = url
+        self._color = color
 
     @property
     def name(self) -> str:
@@ -115,10 +123,16 @@ class RemoteService:
     def url(self) -> str | None:
         return self._url
 
+    @property
+    def color(self) -> str | None:
+        return self._color
+
     def __getattr__(self, typename: str) -> RemoteRef:
         if typename.startswith("_"):
             raise AttributeError(typename)
-        return RemoteRef(f"{self._name}.{typename}", url=self._url)
+        return RemoteRef(
+            f"{self._name}.{typename}", url=self._url, color=self._color
+        )
 
     def __repr__(self) -> str:
         return f"RemoteService({self._name!r}, url={self._url!r})"
@@ -141,6 +155,20 @@ def _contains_remote_ref(annotation: Any) -> RemoteRef | None:
             if ref is not None:
                 return ref
     return None
+
+
+def _record_service_color(fed_registry: Any, ref: RemoteRef) -> None:
+    """Record a RemoteRef's declared cluster color onto the registry.
+
+    The color is opt-in (set on ``RemoteService(color=...)`` and carried on the
+    ref). Only services this registry actually mounts get colored — call this
+    after a successful ``_resolve_ref`` so unresolvable refs (belonging to a
+    different ErManager) contribute nothing.
+    """
+    color = getattr(ref, "color", None)
+    if color:
+        srv = ref.qualified_name.split(".", 1)[0]
+        fed_registry.record_service_color(srv, color)
 
 
 # ── Deferred DefineSubset registry ──────────────────────────────────────
@@ -236,6 +264,10 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
             )
             continue
 
+        # Record the source service's declared cluster color (opt-in) now that
+        # the ref resolved against this registry.
+        _record_service_color(fed_registry, source_ref)
+
         module_name = namespace.get("__module__", "__main__")
         module = sys.modules.get(module_name)
         old_cls = getattr(module, name, None) if module else None
@@ -247,6 +279,7 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
                 ref = _contains_remote_ref(anno)
                 if ref is not None:
                     target = _resolve_ref(ref, f"{name}.{fname}")
+                    _record_service_color(fed_registry, ref)
                     if isinstance(anno, _RemoteRefOptional):
                         resolved_annotations[fname] = target | None
                     elif isinstance(anno, RemoteRef):

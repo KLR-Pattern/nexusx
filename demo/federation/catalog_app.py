@@ -39,7 +39,7 @@ REVIEWS_URL = "http://localhost:8021"  # base URL of the reviews service
 # Remote service roots — declared once, used everywhere (relationships + DTOs).
 # `reviews` is mounted by catalog, so it carries its url; `users` is reached
 # only transitively (through reviews), so it needs no url here.
-reviews = RemoteService("reviews", url=REVIEWS_URL)
+reviews = RemoteService("reviews", url=REVIEWS_URL, color="#3b82f6")
 
 
 class CatalogBase(SQLModel):
@@ -131,7 +131,7 @@ async def root() -> dict:
 
 # `reviews` declared at top; `users` is reached only transitively (via reviews),
 # so it needs no url here — its types are still referenceable for DTOs.
-users = RemoteService("users")
+users = RemoteService("users", color="#10b981")
 
 
 class UserConfigDTO(DefineSubset):

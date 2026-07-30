@@ -76,6 +76,9 @@ class FederatedTypeRegistry:
         self._qualified_to_class: dict[str, type] = {}
         self._class_to_qualified: dict[type, str] = {}
         self._namespace: dict[str, type] = {**_BASE_NAMESPACE, **(extra_types or {})}
+        # Opt-in voyager cluster colors per remote service, collected from
+        # RemoteService(color=...) declarations during federate().
+        self._service_colors: dict[str, str] = {}
 
     def materialize(self, fragments: dict[str, EntityFragment]) -> None:
         """Create pydantic models from ER fragments — first-class schema types.
@@ -162,3 +165,15 @@ class FederatedTypeRegistry:
 
     def all_classes(self) -> list[type]:
         return list(self._class_to_qualified.keys())
+
+    def color_of(self, service: str) -> str | None:
+        """Declared voyager cluster color for ``service``, or None if unset."""
+        return self._service_colors.get(service)
+
+    def record_service_color(self, service: str, color: str) -> None:
+        """Record a service's declared cluster color (first-writer wins)."""
+        self._service_colors.setdefault(service, color)
+
+    def service_colors(self) -> dict[str, str]:
+        """Snapshot of the declared ``service -> color`` map."""
+        return dict(self._service_colors)

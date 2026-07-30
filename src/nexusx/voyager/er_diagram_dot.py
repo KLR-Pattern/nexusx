@@ -11,7 +11,6 @@ from nexusx.federation.relationship import parse_qualified_name
 from nexusx.loader.registry import ErManager, RelationshipInfo
 from nexusx.relationship import is_virtual_entity
 from nexusx.voyager.render import DiagramRenderer
-from nexusx.voyager.render_style import FEDERATED_PALETTE
 from nexusx.voyager.type import (
     PK,
     FieldInfo,
@@ -97,7 +96,6 @@ class ErDiagramDotBuilder:
         edge_minlen: int = 3,
         show_methods: bool = True,
         hide_reverse_relationships: bool = False,
-        module_color: dict[str, str] | None = None,
     ):
         self.er_manager = er_manager
         self.nodes: list[SchemaNode] = []
@@ -113,9 +111,6 @@ class ErDiagramDotBuilder:
         self.edge_minlen = edge_minlen
         self.show_methods = show_methods
         self.hide_reverse_relationships = hide_reverse_relationships
-        # User-provided cluster colors; merged with auto-generated federated
-        # service colors in _federation_styling (user entries win).
-        self.module_color = module_color or {}
 
     def _generate_node_head(self, link_name: str) -> str:
         return f'{link_name}::{PK}'
@@ -262,10 +257,11 @@ class ErDiagramDotBuilder:
     def _federation_styling(self) -> tuple[dict[str, str], set[str]]:
         """Derive (module_color, federated_modules) for remote-service clusters.
 
-        Auto-assigns a palette color to each remote service (sorted for stable
-        ordering across runs); user-provided ``module_color`` entries override.
-        ``federated_modules`` is the set of service names whose clusters the
-        renderer should draw with a dashed border.
+        Colors come ONLY from declared ``RemoteService(color=...)`` (collected
+        into the fed_registry during federate) — opt-in, no auto-palette. A
+        service without a declared color renders dashed but uncolored.
+        ``federated_modules`` is the set of ALL remote service names — every
+        remote cluster is dashed to mark the service boundary.
         """
         fed_reg = getattr(self.er_manager, "_fed_registry", None)
         services: set[str] = set()
@@ -275,11 +271,8 @@ class ErDiagramDotBuilder:
                 if qn:
                     services.add(parse_qualified_name(qn)[0])
 
-        merged: dict[str, str] = {}
-        for i, srv in enumerate(sorted(services)):
-            merged[srv] = FEDERATED_PALETTE[i % len(FEDERATED_PALETTE)]
-        merged.update(self.module_color)  # user colors win
-        return merged, services
+        module_color = fed_reg.service_colors() if fed_reg is not None else {}
+        return module_color, services
 
     def render_dot(self) -> str:
         """Render the ER diagram as DOT format."""

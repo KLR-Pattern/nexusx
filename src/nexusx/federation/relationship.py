@@ -86,6 +86,8 @@ class RemoteRelationship:
         ref, is_list = _unwrap_target(self.target, "RemoteRelationship")
         self.is_list = is_list
         self.target_url = getattr(ref, "url", None)
+        # Optional voyager cluster color, carried the same way as target_url.
+        self.target_color = getattr(ref, "color", None)
         self.target = ref.qualified_name
 
 

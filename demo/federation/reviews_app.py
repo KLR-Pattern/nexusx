@@ -19,7 +19,7 @@ from nexusx.federation import RemoteRelationship, RemoteService
 USERS_URL = "http://localhost:8020"  # base URL of the users service
 
 # Remote service root — declared once, referenced in the relationship below.
-users = RemoteService("users", url=USERS_URL)
+users = RemoteService("users", url=USERS_URL, color="#10b981")
 
 
 class ReviewsBase(SQLModel):

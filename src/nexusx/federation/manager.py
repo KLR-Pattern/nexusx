@@ -57,8 +57,16 @@ async def federate(
 
     # 1. Seed the fetch queue from declared remote relationships.
     targets: set[str] = set()
+    declared_colors: dict[str, str] = {}
     for _src, rrel in er_manager._pending_remote_rels:
         targets.add(rrel.target)
+        # Collect opt-in voyager cluster colors (RemoteService(color=...)) for
+        # the target service; applied to the registry once it exists (step 3).
+        target_color = getattr(rrel, "target_color", None)
+        if target_color:
+            declared_colors.setdefault(
+                parse_qualified_name(rrel.target)[0], target_color
+            )
 
     # 2. Transitive fetch (visited-set prevents cycles/non-termination).
     #    `endpoints` is self-extending: it starts with the user-declared mounts
@@ -115,6 +123,9 @@ async def federate(
     fed_registry = FederatedTypeRegistry(extra_types=extra_types)
     fed_registry.materialize(fragments)
     er_manager._fed_registry = fed_registry
+    # Apply relationship-declared cluster colors (collected in step 1).
+    # DefineSubset-declared colors are added by resolve_deferred_subsets below.
+    fed_registry._service_colors.update(declared_colors)
 
     # 3b. Resolve deferred DefineSubset classes (those with RemoteRef sources).
     #     After materialization, the source classes exist — replace placeholders
