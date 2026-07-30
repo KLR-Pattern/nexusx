@@ -148,10 +148,6 @@ def _render_selection(sel: Any, indent: int = 6) -> str:
     return "\n".join(lines)
 
 
-def _scalar_field_names(target_cls: type) -> list[str]:
-    return list(getattr(target_cls, "model_fields", {}).keys())
-
-
 def build_gql_query(
     *,
     typename: str,

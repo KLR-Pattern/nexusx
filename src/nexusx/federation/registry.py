@@ -166,10 +166,6 @@ class FederatedTypeRegistry:
     def all_classes(self) -> list[type]:
         return list(self._class_to_qualified.keys())
 
-    def color_of(self, service: str) -> str | None:
-        """Declared voyager cluster color for ``service``, or None if unset."""
-        return self._service_colors.get(service)
-
     def record_service_color(self, service: str, color: str) -> None:
         """Record a service's declared cluster color (first-writer wins)."""
         self._service_colors.setdefault(service, color)

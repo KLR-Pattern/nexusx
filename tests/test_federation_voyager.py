@@ -191,7 +191,7 @@ async def test_declared_remote_service_color_renders():
     try:
         er = cat_h._er_manager
         # Color collected from RemoteRelationship.target_color during federate.
-        assert er._fed_registry.color_of("creviews") == "#3b82f6"
+        assert er._fed_registry.service_colors()["creviews"] == "#3b82f6"
 
         builder = ErDiagramDotBuilder(er, show_module=True)
         builder.analysis()
