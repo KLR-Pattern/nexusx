@@ -2,8 +2,6 @@ from typing import Optional
 
 from sqlmodel import Field, Relationship, SQLModel
 
-from nexusx import Relationship as CustomRelationship
-
 
 class Calendar(SQLModel, table=True):
     """日历实体。

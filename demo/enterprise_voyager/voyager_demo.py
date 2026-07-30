@@ -15,7 +15,6 @@ from demo.enterprise_voyager.database import ALL_ENTITIES, async_session, init_d
 from nexusx import ErManager
 from nexusx.voyager import create_use_case_voyager
 
-
 er = ErManager(entities=ALL_ENTITIES, session_factory=async_session)
 voyager_app = create_use_case_voyager(
     services=[],

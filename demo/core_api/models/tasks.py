@@ -22,6 +22,7 @@ class Comment(SQLModel, table=True):
 
 async def _tags_by_task_loader(task_ids: list[int]) -> list[list[Tag]]:
     from sqlmodel import select
+
     from demo.core_api.database import async_session
 
     async with async_session() as session:

@@ -2,8 +2,6 @@ from typing import Optional
 
 from sqlmodel import Field, Relationship, SQLModel
 
-from nexusx import Relationship as CustomRelationship
-
 
 class Vendor(SQLModel, table=True):
     """供应商实体。
