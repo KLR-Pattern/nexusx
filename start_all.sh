@@ -152,6 +152,13 @@ echo "=============================================="
 echo ""
 
 clear_existing_ports
+
+# Federation demo uses file-based sqlite (fed_*.db) that persists across runs.
+# The demo seeds only when a table is empty, so a stale DB from an older schema
+# (e.g. before Comment was added) leaves new tables unseeded → empty results.
+# Clear them so every start_all begins from a fresh, fully-seeded dataset.
+rm -f fed_users.db fed_reviews.db fed_catalog.db
+echo -e "${YELLOW}Cleared federation demo databases (fed_*.db) for a fresh seed.${NC}"
 echo ""
 
 current_group=""
