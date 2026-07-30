@@ -52,7 +52,7 @@ nexusx 已有的零件覆盖了大部分:每关系一个 DataLoader、custom rel
 
 1. **Given** catalog 挂 reviews;reviews 挂 users 并声明 `Review.author → users.User`,**When** 客户端经 catalog 查 `{ product { reviews { author { name } } } }`,**Then** 返回完整嵌套结果;catalog 对 reviews 发**一条** gql 查询,选区含 `reviews { ... author { name } }`,reviews 自行解析 author(必要时 reviews 内部向 users 发其自己的 gql 查询)。
 2. **Given** 同一查询,**When** 检查客户端 GraphQL 文档与对外 schema,**Then** 只有裸类型名(`Product`/`Review`/`User`),不含 `reviews.`/`users.` 前缀。
-3. **Given** router 不拥有 `Review` 类(远程物化),**When** 需在远程类型 `Review` 上挂出边(`author`),**Then** 该边在拥有 `Review` 的那一侧(reviews)声明(远程→远程边配置式声明,不要求 co-location 到不拥有的类)。
+3. **Given** 挂载方不拥有 `Review` 类(远程物化),**When** 组合图需要 `Review.author → users.User` 这条出边,**Then** 该边由拥有 `Review` 的服务(reviews)在自己的 `__relationships__` 上用 `RemoteRelationship` 声明;挂载方通过传递式 ER 拉取自动继承,挂载方**不**在它不拥有的远程类型上声明边(封装边界:每个 app 只维护自有类型的出边)。
 
 ---
 
@@ -127,7 +127,7 @@ nexusx 已有的零件覆盖了大部分:每关系一个 DataLoader、custom rel
 - **FR-001**(声明 API):系统 MUST 提供新的 `RemoteRelationship` 数据类,与现有 `Relationship` 并列声明于 `__relationships__`,携带 `name`、`target`、`join_local`、`join_remote`,且**不内联 loader**(由框架组合时生成)。现有 `Relationship`(target 为类、loader 必填)语义不变。
 - **FR-002**(标记字符串寻址):`RemoteRelationship.target` MUST 取形如 `"<srv>.<typename>"` 的字符串,框架扫描时 parse 为 `("srv","typename")`。该字符串 MUST 仅作声明标记,不参与 Pydantic forward-ref 解析。
 - **FR-003**(服务前缀 + 每服务挂载 registry):每个 nexusx 服务 MUST 暴露自声明的稳定 `name` 作为命名前缀(类比 MCP multi-app 的 `app_name`)。一个挂载方 MUST 维护**自己的** `name → endpoint` 挂载 registry(`er.federate(services={...})`)。前缀 MUST 仅作内部路由/校验/消歧;对外 schema 不含前缀。
-- **FR-004**(远程→远程边声明):系统 MUST 支持在远程(物化)类型上声明出边;因挂载方不拥有远程类,这类边 MUST 在拥有该类型的服务侧以配置式声明。
+- **FR-004**(跨服务边归属):跨服务关系 MUST 由**源类型的拥有者**在其 `__relationships__` 上用 `RemoteRelationship` 声明。挂载方 MUST 通过传递式 ER 拉取自动继承被挂服务声明的边,而**不**在它不拥有的(物化)远程类型上声明边——以此保持 app 之间的封装边界。
 
 #### 组合数据源(schema)
 
@@ -149,7 +149,7 @@ nexusx 已有的零件覆盖了大部分:每关系一个 DataLoader、custom rel
 
 #### 校验(全部 fail-fast,init 期)
 
-- **FR-013**(启动期校验):挂载方初始化时 MUST 对每条 `RemoteRelationship`/远程边逐项校验,任一失败即拒绝启动:(a) `srv` 在挂载 registry 中;(b) 该服务暴露该 `typename`;(c) `join_remote` 字段存在且类型与本地 `join_local` 兼容;(d) 该服务暴露按 `join_remote` 的 `by_<key>_in` root;(e) 任意两个被挂服务 `name` 不重复;(f) 任意两个不同服务不暴露同名裸类型;(g) 传递式 ER 拉取检出挂载图成环即拒绝。
+- **FR-013**(启动期校验):挂载方初始化时 MUST 对每条 `RemoteRelationship` 逐项校验,任一失败即拒绝启动:(a) `srv` 在挂载 registry 中;(b) 该服务暴露该 `typename`;(c) `join_remote` 字段存在且类型与本地 `fk` 兼容;(d) 该服务暴露按 `join_remote` 的 `by_<key>_in` root;(e) 任意两个被挂服务 `name` 不重复;(f) 任意两个不同服务不暴露同名裸类型;(g) 传递式 ER 拉取检出挂载图成环即拒绝。
 
 #### 透明性 / 渲染 / 角色
 

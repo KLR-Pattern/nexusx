@@ -1,4 +1,11 @@
+from typing import TYPE_CHECKING
+
 from sqlmodel import Field, Relationship, SQLModel
+
+if TYPE_CHECKING:
+    # Forward-only: Task lives in .tasks; resolved by SQLAlchemy's registry at
+    # mapper-configure time (the package __init__ imports every model).
+    from .tasks import Task
 
 
 class Tag(SQLModel, table=True):

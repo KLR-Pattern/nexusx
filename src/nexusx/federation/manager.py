@@ -18,9 +18,7 @@ from nexusx.federation.http import GraphQLTransport
 from nexusx.federation.introspect import fetch_er_introspection, find_fragment
 from nexusx.federation.registry import FederatedTypeRegistry
 from nexusx.federation.relationship import (
-    RemoteEdge,
     RemoteRelationship,
-    parse_edge_source,
     parse_qualified_name,
 )
 from nexusx.federation.remote_loader import create_remote_loader
@@ -40,7 +38,6 @@ async def federate(
     er_manager: ErManager,
     services: dict[str, str],
     *,
-    remote_edges: list[RemoteEdge] | None = None,
     transport: FederationTransport | None = None,
     service_name: str | None = None,
     extra_types: dict[str, type] | None = None,
@@ -57,16 +54,11 @@ async def federate(
     er_manager._mounted_services.update(services)
     transport = transport or GraphQLTransport()
     er_manager._federation_transport = transport
-    remote_edges = remote_edges or []
 
-    # 1. Seed the fetch queue from declared remote relationships + edges.
+    # 1. Seed the fetch queue from declared remote relationships.
     targets: set[str] = set()
     for _src, rrel in er_manager._pending_remote_rels:
         targets.add(rrel.target)
-    for edge in remote_edges:
-        ssrv, stname, _ = parse_edge_source(edge.source)
-        targets.add(f"{ssrv}.{stname}")
-        targets.add(edge.target)
 
     # 2. Transitive fetch (visited-set prevents cycles/non-termination).
     #    `endpoints` is self-extending: it starts with the user-declared mounts
@@ -132,7 +124,7 @@ async def federate(
 
     # 4. Validate declared remote relationships (correctness subset; full
     #    7-check suite incl. prefix/bare-name/cycle in US3).
-    _validate_declarations(er_manager, endpoints, fragments, remote_edges)
+    _validate_declarations(er_manager, endpoints, fragments)
 
     # 5. Wire declared remote relationships (on local source entities).
     for source_entity, rrel in er_manager._pending_remote_rels:
@@ -141,11 +133,7 @@ async def federate(
         )
     er_manager._pending_remote_rels.clear()  # M7: prevent double-wiring on re-federate
 
-    # 6. Wire remote edges (on materialized source types).
-    for edge in remote_edges:
-        _wire_remote_edge(er_manager, edge, endpoints, fed_registry, fragments, transport)
-
-    # 7. Register every materialized type + its (coalesced) relationships.
+    # 6. Register every materialized type + its (coalesced) relationships.
     #    Relationships on a remote type are resolved within the owning service's
     #    nested fetch (β) — both the executor and the Resolver skip loading them
     #    and read the result off the instance (the nested fetch via
@@ -183,14 +171,10 @@ def _validate_declarations(
     er_manager: ErManager,
     endpoints: dict[str, str],
     fragments: dict[str, EntityFragment],
-    remote_edges: list[RemoteEdge],
 ) -> None:
     # Validate pending RemoteRelationship declarations.
     for _src, rrel in er_manager._pending_remote_rels:
         _check_target(rrel.target, rrel.join_remote, endpoints, fragments)
-    # Validate remote_edge declarations (same checks — previously skipped).
-    for edge in remote_edges:
-        _check_target(edge.target, edge.join_remote, endpoints, fragments)
 
 
 def _find_batch_root(frag: EntityFragment, join_remote: str) -> BatchRoot | None:
@@ -281,7 +265,7 @@ def _wire_remote_relationship(
     rel_info = RelationshipInfo(
         name=rrel.name,
         direction="ONETOMANY" if rrel.is_list else "MANYTOONE",
-        fk_field=rrel.join_local,
+        fk_field=rrel.fk,
         target_entity=target_cls,
         is_list=rrel.is_list,
         loader=loader_cls,
@@ -290,36 +274,3 @@ def _wire_remote_relationship(
     )
     er_manager._registry.setdefault(source_entity, {})[rrel.name] = rel_info
 
-
-def _wire_remote_edge(
-    er_manager: ErManager,
-    edge: RemoteEdge,
-    endpoints: dict[str, str],
-    fed_registry: FederatedTypeRegistry,
-    fragments: dict[str, EntityFragment],
-    transport: FederationTransport,
-) -> None:
-    ssrv, stname, field = parse_edge_source(edge.source)
-    source_cls = fed_registry.get(f"{ssrv}.{stname}")
-    target_cls = fed_registry.get(edge.target)
-    tsrv, ttypename = parse_qualified_name(edge.target)
-    br = _check_target(edge.target, edge.join_remote, endpoints, fragments)
-    loader_cls = create_remote_loader(
-        typename=ttypename,
-        join_remote=edge.join_remote,
-        endpoint=endpoints[tsrv],
-        target_cls=target_cls,
-        transport=transport,
-        is_list=edge.is_list,
-        arg_name=br.arg_name,
-    )
-    rel_info = RelationshipInfo(
-        name=field,
-        direction="ONETOMANY" if edge.is_list else "MANYTOONE",
-        fk_field=edge.join_local,
-        target_entity=target_cls,
-        is_list=edge.is_list,
-        loader=loader_cls,
-        target_service=tsrv,
-    )
-    er_manager._registry.setdefault(source_cls, {})[field] = rel_info

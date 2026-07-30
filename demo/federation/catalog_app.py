@@ -22,6 +22,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from demo.federation._common import initialize_with_retry, make_app
 from nexusx import (
     AutoQueryConfig,
+    DefineSubset,
     GraphQLHandler,
     UseCaseAppConfig,
     UseCaseService,
@@ -51,8 +52,8 @@ class Product(CatalogBase, table=True):
     # reviews live on the reviews service, joined by Product.id ↔ Review.product_id.
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target=reviews.Review,
-            join_local="id", join_remote="product_id", is_list=True,
+            fk="id", target=list[reviews.Review],
+            name="reviews", join_remote="product_id",
         ),
     ]
 
@@ -101,8 +102,6 @@ app = make_app(handler, on_startup=on_startup, title="Fed demo — catalog (moun
 # resolved within that member's own gql response — the gql (β) path above
 # traverses the full nested chain; the Resolver tree below is the cross-service
 # projection. (See specs/012-federation for the β/γ distinction.)
-
-from nexusx import DefineSubset
 
 # `reviews` declared at top; `users` is reached only transitively (via reviews),
 # so it needs no url here — its types are still referenceable for DTOs.

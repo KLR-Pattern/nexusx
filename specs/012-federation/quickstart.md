@@ -37,6 +37,8 @@ users_handler = GraphQLHandler(base=UsersBase, session_factory=users_session, au
 reviews 在自己的实体上声明 `Review.author → users.User`(见 [remote-relationship.md](./contracts/remote-relationship.md)):
 
 ```python
+users = RemoteService("users")
+
 class Review(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
@@ -44,8 +46,8 @@ class Review(SQLModel, table=True):
     title: str
     rating: int
     __relationships__ = [
-        RemoteRelationship(name="author", target="users.User",
-                           join_local="author_id", join_remote="id", is_list=False),
+        RemoteRelationship(fk="author_id", target=users.User,
+                           name="author", join_remote="id"),
     ]
 ```
 
@@ -54,12 +56,14 @@ class Review(SQLModel, table=True):
 catalog 声明 `Product.reviews → reviews.Review`,并在启动期 `federate`:
 
 ```python
+reviews = RemoteService("reviews")
+
 class Product(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
     __relationships__ = [
-        RemoteRelationship(name="reviews", target="reviews.Review",
-                           join_local="id", join_remote="product_id", is_list=True),
+        RemoteRelationship(fk="id", target=list[reviews.Review],
+                           name="reviews", join_remote="product_id"),
     ]
 
 # 启动期(FastAPI lifespan 或 Application 启动钩子):

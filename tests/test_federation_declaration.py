@@ -5,12 +5,10 @@ from __future__ import annotations
 import pytest
 
 from nexusx.federation import (
-    RemoteEdge,
     RemoteRelationship,
     RemoteService,
     parse_qualified_name,
 )
-from nexusx.federation.relationship import parse_edge_source
 from nexusx.loader.registry import ErManager, RelationshipInfo
 from nexusx.relationship import get_custom_relationships
 
@@ -28,28 +26,15 @@ def test_parse_qualified_name_rejects_malformed(bad):
         parse_qualified_name(bad)
 
 
-def test_parse_edge_source_roundtrip():
-    assert parse_edge_source("reviews.Review.author") == ("reviews", "Review", "author")
-
-
 def test_remote_relationship_dataclass_fields():
     r = RemoteRelationship(
-        name="reviews", target=reviews.Review,
-        join_local="id", join_remote="product_id", is_list=True,
+        fk="id", target=list[reviews.Review],
+        name="reviews", join_remote="product_id",
     )
-    # RemoteRef input is normalized to the "srv.typename" marker string.
+    # RemoteRef input is normalized to the "srv.typename" marker string;
+    # is_list is derived from the list[...] wrapping (mirrors Relationship).
     assert r.target == "reviews.Review"
     assert r.is_list is True
-
-
-def test_remote_edge_normalizes_remote_ref_target():
-    """RemoteEdge.target takes a RemoteRef too; source stays a 3-part string."""
-    e = RemoteEdge(
-        source="reviews.Review.author", target=reviews.User,
-        join_local="author_id", join_remote="id", is_list=False,
-    )
-    assert e.target == "reviews.User"
-    assert e.source == "reviews.Review.author"
 
 
 def test_remote_relationship_captures_service_url():
@@ -58,12 +43,12 @@ def test_remote_relationship_captures_service_url():
     with_url = RemoteService("reviews", url="http://reviews:8021")
     no_url = RemoteService("ghost")
     r1 = RemoteRelationship(
-        name="reviews", target=with_url.Review,
-        join_local="id", join_remote="product_id",
+        fk="id", target=with_url.Review,
+        name="reviews", join_remote="product_id",
     )
     r2 = RemoteRelationship(
-        name="g", target=no_url.Missing,
-        join_local="id", join_remote="id",
+        fk="id", target=no_url.Missing,
+        name="g", join_remote="id",
     )
     assert r1.target_url == "http://reviews:8021"
     assert r1.target == "reviews.Review"
@@ -159,8 +144,8 @@ class _LocalEntity(SQLModel, table=True):
     name: str
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target=reviews.Review,
-            join_local="id", join_remote="product_id", is_list=True,
+            fk="id", target=list[reviews.Review],
+            name="reviews", join_remote="product_id",
         ),
     ]
 

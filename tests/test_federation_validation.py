@@ -79,8 +79,8 @@ def _er_with(target_ref, join_remote="product_id"):
         name: str
         __relationships__ = [
             RemoteRelationship(
-                name="reviews", target=target_ref,
-                join_local="id", join_remote=join_remote, is_list=True,
+                fk="id", target=list[target_ref],
+                name="reviews", join_remote=join_remote,
             ),
         ]
 
@@ -143,13 +143,13 @@ async def test_cross_service_barename_duplicate_rejected():
         __tablename__ = "fed_val_p1"
         id: int | None = Field(default=None, primary_key=True)
         __relationships__ = [RemoteRelationship(
-            name="a", target=svcA.Shared, join_local="id", join_remote="id")]
+            fk="id", target=svcA.Shared, name="a", join_remote="id")]
 
     class P2(SQLModel, table=True):
         __tablename__ = "fed_val_p2"
         id: int | None = Field(default=None, primary_key=True)
         __relationships__ = [RemoteRelationship(
-            name="b", target=svcB.Shared, join_local="id", join_remote="id")]
+            fk="id", target=svcB.Shared, name="b", join_remote="id")]
 
     er = ErManager(entities=[P1, P2], session_factory=lambda: None)
     resp_a = _resp("svcA", _entity("Shared", [("id", "int")], batch_roots=["by_id_in"]))
@@ -248,8 +248,8 @@ async def test_cycle_terminates_via_visited_set():
         # Declare both cycle members so initialize() derives both endpoints
         # (svcA and svcB carry their urls via RemoteService).
         __relationships__ = [
-            RemoteRelationship(name="a", target=svcA.A, join_local="id", join_remote="id", is_list=False),
-            RemoteRelationship(name="b", target=svcB.B, join_local="id", join_remote="id", is_list=False),
+            RemoteRelationship(fk="id", target=svcA.A, name="a", join_remote="id"),
+            RemoteRelationship(fk="id", target=svcB.B, name="b", join_remote="id"),
         ]
 
     er = ErManager(entities=[P], session_factory=lambda: None)

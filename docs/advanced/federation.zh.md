@@ -24,15 +24,17 @@ catalog (Product)  ──reviews──▶  reviews (Review)  ──author──�
 并列。它的 `target` 是 `"服务名.类型名"` **标记字符串**,不是 Python 类型。
 
 ```python
-from nexusx.federation import RemoteRelationship
+from nexusx.federation import RemoteRelationship, RemoteService
+
+reviews = RemoteService("reviews")
 
 class Product(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target="reviews.Review",
-            join_local="id", join_remote="product_id", is_list=True,
+            fk="id", target=list[reviews.Review],
+            name="reviews", join_remote="product_id",
         ),
     ]
 ```

@@ -71,10 +71,23 @@ async def init_db() -> None:
         await session.commit()
         await session.refresh(org)
 
-        workspaces = [Workspace(name="Platform", organization_id=org.id), Workspace(name="Operations", organization_id=org.id)]
-        departments = [Department(name="Engineering", organization_id=org.id), Department(name="Finance", organization_id=org.id), Department(name="HR", organization_id=org.id)]
-        offices = [Office(city="Shanghai", country="CN", organization_id=org.id), Office(city="Singapore", country="SG", organization_id=org.id)]
-        vendors = [Vendor(name="CloudCo", organization_id=org.id), Vendor(name="DeviceHub", organization_id=org.id)]
+        workspaces = [
+            Workspace(name="Platform", organization_id=org.id),
+            Workspace(name="Operations", organization_id=org.id),
+        ]
+        departments = [
+            Department(name="Engineering", organization_id=org.id),
+            Department(name="Finance", organization_id=org.id),
+            Department(name="HR", organization_id=org.id),
+        ]
+        offices = [
+            Office(city="Shanghai", country="CN", organization_id=org.id),
+            Office(city="Singapore", country="SG", organization_id=org.id),
+        ]
+        vendors = [
+            Vendor(name="CloudCo", organization_id=org.id),
+            Vendor(name="DeviceHub", organization_id=org.id),
+        ]
         session.add_all(workspaces + departments + offices + vendors)
         await session.commit()
         for item in workspaces + departments + offices + vendors:
@@ -91,12 +104,30 @@ async def init_db() -> None:
             await session.refresh(item)
 
         employees = [
-            Employee(full_name="Alice Chen", email="alice@acme.io", department_id=departments[0].id, office_id=offices[0].id, team_id=teams[0].id),
-            Employee(full_name="Bob Lin", email="bob@acme.io", department_id=departments[0].id, office_id=offices[0].id, team_id=teams[1].id),
-            Employee(full_name="Cathy Wu", email="cathy@acme.io", department_id=departments[1].id, office_id=offices[1].id, team_id=teams[2].id),
-            Employee(full_name="David Tan", email="david@acme.io", department_id=departments[2].id, office_id=offices[1].id),
-            Employee(full_name="Eva Sun", email="eva@acme.io", department_id=departments[0].id, office_id=offices[0].id, team_id=teams[0].id),
-            Employee(full_name="Frank Gao", email="frank@acme.io", department_id=departments[0].id, office_id=offices[1].id, team_id=teams[1].id),
+            Employee(
+                full_name="Alice Chen", email="alice@acme.io",
+                department_id=departments[0].id, office_id=offices[0].id, team_id=teams[0].id,
+            ),
+            Employee(
+                full_name="Bob Lin", email="bob@acme.io",
+                department_id=departments[0].id, office_id=offices[0].id, team_id=teams[1].id,
+            ),
+            Employee(
+                full_name="Cathy Wu", email="cathy@acme.io",
+                department_id=departments[1].id, office_id=offices[1].id, team_id=teams[2].id,
+            ),
+            Employee(
+                full_name="David Tan", email="david@acme.io",
+                department_id=departments[2].id, office_id=offices[1].id,
+            ),
+            Employee(
+                full_name="Eva Sun", email="eva@acme.io",
+                department_id=departments[0].id, office_id=offices[0].id, team_id=teams[0].id,
+            ),
+            Employee(
+                full_name="Frank Gao", email="frank@acme.io",
+                department_id=departments[0].id, office_id=offices[1].id, team_id=teams[1].id,
+            ),
         ]
         session.add_all(employees)
         await session.commit()
@@ -107,10 +138,22 @@ async def init_db() -> None:
         employees[5].manager_id = employees[1].id
         await session.commit()
 
-        rooms = [Room(name="Pearl", office_id=offices[0].id), Room(name="Marina", office_id=offices[1].id)]
-        dashboards = [Dashboard(title="Exec Overview", workspace_id=workspaces[0].id), Dashboard(title="Ops Health", workspace_id=workspaces[1].id)]
-        automations = [AutomationRule(name="Escalate blockers", workspace_id=workspaces[0].id), AutomationRule(name="Invoice reminder", workspace_id=workspaces[1].id)]
-        calendars = [Calendar(title="Alice Calendar", owner_id=employees[0].id), Calendar(title="Pearl Room", room_id=1)]
+        rooms = [
+            Room(name="Pearl", office_id=offices[0].id),
+            Room(name="Marina", office_id=offices[1].id),
+        ]
+        dashboards = [
+            Dashboard(title="Exec Overview", workspace_id=workspaces[0].id),
+            Dashboard(title="Ops Health", workspace_id=workspaces[1].id),
+        ]
+        automations = [
+            AutomationRule(name="Escalate blockers", workspace_id=workspaces[0].id),
+            AutomationRule(name="Invoice reminder", workspace_id=workspaces[1].id),
+        ]
+        calendars = [
+            Calendar(title="Alice Calendar", owner_id=employees[0].id),
+            Calendar(title="Pearl Room", room_id=1),
+        ]
         session.add_all(rooms + dashboards + automations + calendars)
         await session.commit()
         for item in rooms + dashboards + automations + calendars:
@@ -126,31 +169,79 @@ async def init_db() -> None:
         for item in projects:
             await session.refresh(item)
 
-        epics = [Epic(title="Identity", project_id=projects[0].id), Epic(title="Payments", project_id=projects[1].id), Epic(title="Onboarding", project_id=projects[2].id)]
+        epics = [
+            Epic(title="Identity", project_id=projects[0].id),
+            Epic(title="Payments", project_id=projects[1].id),
+            Epic(title="Onboarding", project_id=projects[2].id),
+        ]
         session.add_all(epics)
         await session.commit()
         for item in epics:
             await session.refresh(item)
 
-        stories = [Story(title="SSO login", epic_id=epics[0].id), Story(title="Invoice workflow", epic_id=epics[1].id), Story(title="HR checklist", epic_id=epics[2].id)]
-        sprints = [Sprint(name="Portal Sprint 1", project_id=projects[0].id), Sprint(name="Billing Sprint 1", project_id=projects[1].id), Sprint(name="Hub Sprint 1", project_id=projects[2].id)]
-        milestones = [Milestone(title="Portal Beta", project_id=projects[0].id), Milestone(title="Finance GoLive", project_id=projects[1].id)]
-        docs = [Document(title="Portal ADR", project_id=projects[0].id), Document(title="Billing SOP", project_id=projects[1].id)]
-        contracts = [Contract(code="CC-2026-01", vendor_id=vendors[0].id), Contract(code="DH-2026-02", vendor_id=vendors[1].id)]
-        labels = [Label(name="backend", color="#3498db"), Label(name="urgent", color="#e74c3c"), Label(name="finance", color="#2ecc71")]
-        notifications = [Notification(title="Task assigned", recipient_id=employees[0].id), Notification(title="Approval pending", recipient_id=employees[2].id)]
-        articles = [KnowledgeArticle(title="Runbook: SSO incident", author_id=employees[0].id), KnowledgeArticle(title="How to approve invoice", author_id=employees[2].id)]
-        session.add_all(stories + sprints + milestones + docs + contracts + labels + notifications + articles)
+        stories = [
+            Story(title="SSO login", epic_id=epics[0].id),
+            Story(title="Invoice workflow", epic_id=epics[1].id),
+            Story(title="HR checklist", epic_id=epics[2].id),
+        ]
+        sprints = [
+            Sprint(name="Portal Sprint 1", project_id=projects[0].id),
+            Sprint(name="Billing Sprint 1", project_id=projects[1].id),
+            Sprint(name="Hub Sprint 1", project_id=projects[2].id),
+        ]
+        milestones = [
+            Milestone(title="Portal Beta", project_id=projects[0].id),
+            Milestone(title="Finance GoLive", project_id=projects[1].id),
+        ]
+        docs = [
+            Document(title="Portal ADR", project_id=projects[0].id),
+            Document(title="Billing SOP", project_id=projects[1].id),
+        ]
+        contracts = [
+            Contract(code="CC-2026-01", vendor_id=vendors[0].id),
+            Contract(code="DH-2026-02", vendor_id=vendors[1].id),
+        ]
+        labels = [
+            Label(name="backend", color="#3498db"),
+            Label(name="urgent", color="#e74c3c"),
+            Label(name="finance", color="#2ecc71"),
+        ]
+        notifications = [
+            Notification(title="Task assigned", recipient_id=employees[0].id),
+            Notification(title="Approval pending", recipient_id=employees[2].id),
+        ]
+        articles = [
+            KnowledgeArticle(title="Runbook: SSO incident", author_id=employees[0].id),
+            KnowledgeArticle(title="How to approve invoice", author_id=employees[2].id),
+        ]
+        session.add_all(
+            stories + sprints + milestones + docs + contracts + labels + notifications + articles
+        )
         await session.commit()
         for item in stories + sprints + milestones + docs + contracts + labels + articles:
             await session.refresh(item)
 
         tasks = [
-            Task(title="Design identity schema", sprint_id=sprints[0].id, story_id=stories[0].id, assignee_id=employees[0].id, creator_id=employees[2].id),
-            Task(title="Implement SSO callback", sprint_id=sprints[0].id, story_id=stories[0].id, assignee_id=employees[4].id, creator_id=employees[0].id),
-            Task(title="Map invoice states", sprint_id=sprints[1].id, story_id=stories[1].id, assignee_id=employees[2].id, creator_id=employees[2].id),
-            Task(title="Automate HR onboarding", sprint_id=sprints[2].id, story_id=stories[2].id, assignee_id=employees[3].id, creator_id=employees[1].id),
-            Task(title="Build employee dashboard", sprint_id=sprints[2].id, story_id=stories[2].id, assignee_id=employees[1].id, creator_id=employees[3].id),
+            Task(
+                title="Design identity schema", sprint_id=sprints[0].id, story_id=stories[0].id,
+                assignee_id=employees[0].id, creator_id=employees[2].id,
+            ),
+            Task(
+                title="Implement SSO callback", sprint_id=sprints[0].id, story_id=stories[0].id,
+                assignee_id=employees[4].id, creator_id=employees[0].id,
+            ),
+            Task(
+                title="Map invoice states", sprint_id=sprints[1].id, story_id=stories[1].id,
+                assignee_id=employees[2].id, creator_id=employees[2].id,
+            ),
+            Task(
+                title="Automate HR onboarding", sprint_id=sprints[2].id, story_id=stories[2].id,
+                assignee_id=employees[3].id, creator_id=employees[1].id,
+            ),
+            Task(
+                title="Build employee dashboard", sprint_id=sprints[2].id, story_id=stories[2].id,
+                assignee_id=employees[1].id, creator_id=employees[3].id,
+            ),
         ]
         session.add_all(tasks)
         await session.commit()
@@ -173,8 +264,14 @@ async def init_db() -> None:
             Approval(task_id=tasks[2].id, approver_id=employees[2].id, status="approved"),
             Timesheet(week_label="2026-W27", employee_id=employees[0].id),
             Timesheet(week_label="2026-W27", employee_id=employees[2].id),
-            Ceremony(name="Sprint planning", team_id=teams[0].id, sprint_id=sprints[0].id, room_id=rooms[0].id),
-            Ceremony(name="Finance standup", team_id=teams[2].id, sprint_id=sprints[1].id, room_id=rooms[1].id),
+            Ceremony(
+                name="Sprint planning", team_id=teams[0].id,
+                sprint_id=sprints[0].id, room_id=rooms[0].id,
+            ),
+            Ceremony(
+                name="Finance standup", team_id=teams[2].id,
+                sprint_id=sprints[1].id, room_id=rooms[1].id,
+            ),
             CalendarEvent(title="Portal planning", calendar_id=calendars[0].id),
             CalendarEvent(title="Room booking", calendar_id=calendars[1].id),
             DocumentRevision(version="v1", document_id=docs[0].id),

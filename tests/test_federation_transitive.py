@@ -54,8 +54,8 @@ class TransReview(_ReviewsBase, table=True):
     title: str
     __relationships__ = [
         RemoteRelationship(
-            name="author", target=users.TransUser,
-            join_local="author_id", join_remote="id", is_list=False,
+            fk="author_id", target=users.TransUser,
+            name="author", join_remote="id",
         ),
     ]
 
@@ -66,8 +66,8 @@ class TransProduct(_CatalogBase, table=True):
     name: str
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target=reviews.TransReview,
-            join_local="id", join_remote="product_id", is_list=True,
+            fk="id", target=list[reviews.TransReview],
+            name="reviews", join_remote="product_id",
         ),
     ]
 

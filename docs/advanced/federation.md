@@ -27,15 +27,17 @@ catalog (Product)  ──reviews──▶  reviews (Review)  ──author──�
 not a Python type.
 
 ```python
-from nexusx.federation import RemoteRelationship
+from nexusx.federation import RemoteRelationship, RemoteService
+
+reviews = RemoteService("reviews")
 
 class Product(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target="reviews.Review",
-            join_local="id", join_remote="product_id", is_list=True,
+            fk="id", target=list[reviews.Review],
+            name="reviews", join_remote="product_id",
         ),
     ]
 ```

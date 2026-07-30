@@ -39,7 +39,7 @@ query {
 ```
 
 - 入口字段名 = `by_<join_remote>_in`(见 [batch-query-root.md](./batch-query-root.md))。
-- 参数名 = `<join_remote>_list`,值为本层父实体的 `join_local` 去重集合。
+- 参数名 = `<join_remote>_list`,值为本层父实体的 `fk` 去重集合。
 - 选区 = `FieldSelection` 子树(标量 + 嵌套关系);**嵌套关系由被挂服务用自己的 executor 解析**(含其自身挂载的下游)。
 
 ## 响应对齐(DataLoader 位置契约)

@@ -68,8 +68,8 @@ class FedProduct(CatalogBase, table=True):
     name: str
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target=reviews.FedReview,
-            join_local="id", join_remote="product_id", is_list=True,
+            fk="id", target=list[reviews.FedReview],
+            name="reviews", join_remote="product_id",
         ),
     ]
 

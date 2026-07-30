@@ -44,8 +44,8 @@ class CycUser(_UsersBase, table=True):
     name: str
     __relationships__ = [
         RemoteRelationship(
-            name="posts", target=svcPosts.CycPost,
-            join_local="id", join_remote="author_id", is_list=True,
+            fk="id", target=list[svcPosts.CycPost],
+            name="posts", join_remote="author_id",
         ),
     ]
 
@@ -61,8 +61,8 @@ class CycPost(_PostsBase, table=True):
     title: str
     __relationships__ = [
         RemoteRelationship(
-            name="author", target=svcUsers.CycUser,
-            join_local="author_id", join_remote="id", is_list=False,
+            fk="author_id", target=svcUsers.CycUser,
+            name="author", join_remote="id",
         ),
     ]
 

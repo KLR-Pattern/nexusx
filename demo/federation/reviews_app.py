@@ -36,8 +36,8 @@ class Comment(ReviewsBase, table=True):
     # Cross-service relationship: the comment's author is owned by the users service.
     __relationships__ = [
         RemoteRelationship(
-            name="author", target=users.User,
-            join_local="author_id", join_remote="id", is_list=False,
+            fk="author_id", target=users.User,
+            name="author", join_remote="id",
         ),
     ]
 

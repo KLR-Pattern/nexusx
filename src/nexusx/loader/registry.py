@@ -635,7 +635,6 @@ class ErManager:
         *,
         transport: FederationTransport | None = None,
         extra_types: dict[str, type] | None = None,
-        remote_edges: list[Any] | None = None,
     ) -> None:
         """Bring up the ER diagram: run federation for declared remote relationships.
 
@@ -654,7 +653,6 @@ class ErManager:
             extra_types: Extra type names to recognize when materializing remote
                 scalar fields (shared enums / custom scalars). Unregistered names
                 fall back to ``Any``.
-            remote_edges: Cross-service edges on remote (materialized) types.
         """
         # Endpoints come only from declarations whose RemoteService has a url.
         # Targets whose service has no url are still fetched (queued inside
@@ -667,13 +665,12 @@ class ErManager:
                 srv = parse_qualified_name(rrel.target)[0]
                 services_map.setdefault(srv, target_url)
 
-        if self._pending_remote_rels or remote_edges:
+        if self._pending_remote_rels:
             from nexusx.federation.manager import federate as _federate
 
             await _federate(
                 self,
                 services_map,
-                remote_edges=remote_edges,
                 transport=transport,
                 extra_types=extra_types,
             )

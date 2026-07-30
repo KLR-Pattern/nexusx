@@ -67,8 +67,8 @@ class DCComment(DCReviewsBase, table=True):
     text: str
     __relationships__ = [
         RemoteRelationship(
-            name="author", target=users.DCUser,
-            join_local="author_id", join_remote="id", is_list=False,
+            fk="author_id", target=users.DCUser,
+            name="author", join_remote="id",
         ),
     ]
 
@@ -92,8 +92,8 @@ class DCProduct(DCCatalogBase, table=True):
     name: str
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target=reviews.DCReview,
-            join_local="id", join_remote="product_id", is_list=True,
+            fk="id", target=list[reviews.DCReview],
+            name="reviews", join_remote="product_id",
         ),
     ]
 

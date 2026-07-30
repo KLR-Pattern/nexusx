@@ -302,7 +302,9 @@ class TestErrorHandling:
         assert "RaisingService.boom raised RuntimeError" in result["errors"][0]["message"]
 
     async def test_malformed_query_returns_parse_error(self, app, schema) -> None:
-        result = await execute_compose_query(app, schema, "{ UserService { list_users")  # missing close
+        result = await execute_compose_query(
+            app, schema, "{ UserService { list_users"  # missing close
+        )
         assert result["data"] is None
         assert "Failed to parse query" in result["errors"][0]["message"]
 

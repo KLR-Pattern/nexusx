@@ -11,7 +11,6 @@ Requires the optional ``nexusx[federation]`` extra (httpx). Calling
 """
 
 from nexusx.federation.relationship import (
-    RemoteEdge,
     RemoteRelationship,
     parse_qualified_name,
 )
@@ -20,7 +19,6 @@ from nexusx.federation.transport import FederationTransport
 
 __all__ = [
     "RemoteRelationship",
-    "RemoteEdge",
     "parse_qualified_name",
     "RemoteRef",
     "RemoteService",

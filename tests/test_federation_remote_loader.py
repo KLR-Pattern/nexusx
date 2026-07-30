@@ -152,7 +152,9 @@ async def test_remote_loader_aligns_uuid_join_key():
         target_cls=target_cls, transport=transport, is_list=False,
     )
     loader = loader_cls()
-    set_remote_selection(loader, FieldSelection(name="t", sub_fields={"name": FieldSelection(name="name")}))
+    set_remote_selection(
+        loader, FieldSelection(name="t", sub_fields={"name": FieldSelection(name="name")})
+    )
 
     results = await loader.load_many([u1, u2])
     assert results[0].name == "A"

@@ -66,8 +66,8 @@ users = RemoteService("users", url="http://localhost:8020")
 class Comment(ReviewsBase, table=True):
     author_id: int
     __relationships__ = [RemoteRelationship(
-        name="author", target=users.User,                 # RemoteRef, not a string
-        join_local="author_id", join_remote="id", is_list=False,
+        fk="author_id", target=users.User,                # RemoteRef, not a string
+        name="author", join_remote="id",
     )]
 
 # at startup — services are derived from the declarations, no services= arg

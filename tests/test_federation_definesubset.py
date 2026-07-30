@@ -53,8 +53,8 @@ class DSReview(_RB, table=True):
     rating: int
     __relationships__ = [
         RemoteRelationship(
-            name="author", target=users.DSUser,
-            join_local="author_id", join_remote="id",
+            fk="author_id", target=users.DSUser,
+            name="author", join_remote="id",
         ),
     ]
 
@@ -65,8 +65,8 @@ class DSProduct(_CB, table=True):
     name: str
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target=reviews.DSReview,
-            join_local="id", join_remote="product_id", is_list=True,
+            fk="id", target=list[reviews.DSReview],
+            name="reviews", join_remote="product_id",
         ),
     ]
 

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel, select
 
@@ -6,6 +6,11 @@ from nexusx import Relationship as CustomRelationship
 from nexusx import mutation, query
 
 from .metadata import Tag, TaskLabel
+
+if TYPE_CHECKING:
+    from .metadata import Label
+    from .planning import Sprint
+    from .users import User
 
 
 class Comment(SQLModel, table=True):

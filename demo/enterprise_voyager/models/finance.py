@@ -1,6 +1,10 @@
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
+
+if TYPE_CHECKING:
+    from .organization import Employee, Organization
+    from .project import Project, Task
 
 
 class Vendor(SQLModel, table=True):

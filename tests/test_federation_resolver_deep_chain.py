@@ -65,8 +65,8 @@ class RCComment(_ReviewsBase, table=True):
     text: str
     __relationships__ = [
         RemoteRelationship(
-            name="author", target=rcusers.RCUser,
-            join_local="author_id", join_remote="id", is_list=False,
+            fk="author_id", target=rcusers.RCUser,
+            name="author", join_remote="id",
         ),
     ]
 
@@ -91,8 +91,8 @@ class RCProduct(_CatalogBase, table=True):
     name: str
     __relationships__ = [
         RemoteRelationship(
-            name="reviews", target=rcreviews.RCReview,
-            join_local="id", join_remote="product_id", is_list=True,
+            fk="id", target=list[rcreviews.RCReview],
+            name="reviews", join_remote="product_id",
         ),
     ]
 

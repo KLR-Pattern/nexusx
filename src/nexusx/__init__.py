@@ -57,7 +57,7 @@ from __future__ import annotations
 from nexusx.context import AutoLoad, Collector, ExposeAs, SendTo
 from nexusx.decorator import mutation, query
 from nexusx.er_diagram import ErDiagram
-from nexusx.federation import RemoteEdge, RemoteRelationship
+from nexusx.federation import RemoteRelationship
 from nexusx.handler import GraphQLHandler
 from nexusx.loader import ErManager
 from nexusx.relationship import Relationship
@@ -105,7 +105,6 @@ __all__ = [
     "Relationship",
     # Federation (cross-service)
     "RemoteRelationship",
-    "RemoteEdge",
     "ErDiagram",
     # Query builder
     "build_dto_select",
