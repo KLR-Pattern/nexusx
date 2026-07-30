@@ -45,6 +45,49 @@ def set_remote_selection(loader: Any, selection: Any) -> None:
     loader._remote_selection = selection
 
 
+async def fetch_remote_subtree(
+    *,
+    registry: Any,
+    rel_info: Any,
+    parents: list[Any],
+    selection: Any,
+) -> list[Any]:
+    """Fetch a federated sub-tree: ONE nested gql to ``rel_info``'s owning
+    service, returning target instances — with the whole sub-tree populated by
+    the member — aligned to ``parents``.
+
+    This is the shared "fetch a federated sub-tree" primitive, consumed by BOTH
+    the gql executor (β path, selection from the parsed query) and the Resolver
+    (γ path, selection built from the DTO/materialized graph). One mechanism
+    instead of two.
+
+    Args:
+        registry: the ErManager (provides ``get_loader`` + ``get_relationships``).
+        rel_info: the RelationshipInfo for the (non-coalesced) service-boundary
+            relationship. Its ``loader``/``fk_field``/``target_entity`` drive the fetch.
+        parents: the source instances whose ``fk_field`` values key the fetch.
+        selection: a FieldSelection over ``rel_info.target_entity`` describing the
+            nested sub-tree to request. The member resolves everything under it
+            (local edges + further cross-service hops).
+    """
+    from nexusx.loader.query_meta import generate_type_key_from_selection
+
+    # type_key from the selection so distinct selections get distinct loader
+    # instances; force_split isolates _remote_selection per selection (prevents
+    # races when two concurrent groups query the same remote rel differently).
+    target_rels = registry.get_relationships(rel_info.target_entity)
+    fk_lookup = {name: info.fk_field for name, info in target_rels.items()}
+    type_key = generate_type_key_from_selection(
+        selection, rel_info.target_entity, fk_lookup=fk_lookup,
+    )
+    loader = registry.get_loader(
+        rel_info.loader, type_key=type_key, force_split=True,
+    )
+    set_remote_selection(loader, selection)
+    fk_values = [getattr(p, rel_info.fk_field) for p in parents]
+    return await loader.load_many(fk_values)
+
+
 def _render_value(v: Any) -> str:
     """Render a Python value as a GraphQL literal."""
     if isinstance(v, str):

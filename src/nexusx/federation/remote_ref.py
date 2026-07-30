@@ -147,6 +147,12 @@ def _contains_remote_ref(annotation: Any) -> RemoteRef | None:
 
 _pending_subsets: list[tuple[str, type, RemoteRef, list[str], dict[str, Any]]] = []
 
+# Accumulates placeholder-class → resolved-class across ALL resolve_deferred_subsets
+# calls. A subset referenced by another DTO may resolve in an earlier federate()
+# call (different ErManager) than the DTO that references it; this map lets a
+# later call's replacement pass still swap the stale placeholder ref.
+_resolved_placeholders: dict[type, type] = {}
+
 
 def register_pending_subset(
     name: str,
@@ -271,6 +277,9 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
             setattr(module, name, new_cls)
         if old_cls is not None and old_cls is not new_cls:
             replacements[old_cls] = new_cls
+            # Record globally so a later federate() call (different ErManager)
+            # can still swap this placeholder in DTOs that reference it.
+            _resolved_placeholders[old_cls] = new_cls
 
         resolved.append(new_cls)
 
@@ -280,18 +289,26 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
 
     # Update existing DefineSubset classes: replace placeholder refs in BOTH
     # __annotations__ AND model_fields[].annotation (pydantic v2 model_rebuild
-    # does NOT re-read __annotations__ to update FieldInfo.annotation).
+    # does NOT re-read __annotations__ to update FieldInfo.annotation). Iterate
+    # the resolved classes too — a deferred DTO that references another deferred
+    # DTO (e.g. ReviewDTO.comments: list[CommentDTO]) keeps the placeholder ref
+    # in its annotation until this pass swaps it for the resolved class.
     from nexusx.subset import _subset_registry
-    for dto_cls in list(_subset_registry.keys()):
+    # Use the global placeholder→resolved map (superset of this call's
+    # replacements) so refs to subsets resolved in earlier federate() calls
+    # are still swapped.
+    all_replacements = {**replacements, **_resolved_placeholders}
+    _all_dto_classes = set(_subset_registry.keys()) | set(resolved)
+    for dto_cls in _all_dto_classes:
         changed = False
         new_annotations: dict[str, Any] = {}
         for fname, anno in dto_cls.__annotations__.items():
-            replaced = _replace_classes_in_annotation(anno, replacements)
+            replaced = _replace_classes_in_annotation(anno, all_replacements)
             new_annotations[fname] = replaced
             if replaced is not anno:
                 changed = True
         for _fname, field_info in dto_cls.model_fields.items():
-            replaced = _replace_classes_in_annotation(field_info.annotation, replacements)
+            replaced = _replace_classes_in_annotation(field_info.annotation, all_replacements)
             if replaced is not field_info.annotation:
                 field_info.annotation = replaced
                 changed = True

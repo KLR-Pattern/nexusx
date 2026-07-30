@@ -39,7 +39,10 @@ class RelationshipInfo:
     fk_field: str  # FK field on the *source* entity used as loader key
     target_entity: type[SQLModel]  # target entity class
     is_list: bool  # True for one-to-many / many-to-many lists
-    loader: type[DataLoader]  # regular DataLoader class
+    # DataLoader class for this relationship. None for coalesced federated rels
+    # (resolved within the owning service's nested fetch — see
+    # fetch_remote_subtree — not loaded per-edge).
+    loader: type[DataLoader] | None = None
     page_loader: type[DataLoader] | None = None  # paginated loader (list only)
     sort_field: str | None = None  # sort column for pagination
     default_page_size: int = 20

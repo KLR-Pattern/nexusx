@@ -11,7 +11,6 @@ privileged router. The orchestrator of a query is the service it enters.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from nexusx.federation.contract import BatchRoot, EntityFragment, ERIntrospectionResponse
@@ -31,7 +30,6 @@ from nexusx.loader.registry import RelationshipInfo
 if TYPE_CHECKING:
     from nexusx.loader.registry import ErManager
 
-logger = logging.getLogger(__name__)
 
 
 class FederationError(RuntimeError):
@@ -147,12 +145,13 @@ async def federate(
     for edge in remote_edges:
         _wire_remote_edge(er_manager, edge, endpoints, fed_registry, fragments, transport)
 
-    # 7. Register every materialized type + its (coalesced) relationships. Each
-    #    relationship on a remote type is resolved by the owning service within
-    #    the parent fetch (β coalescing): the executor skips these (coalesced
-    #    flag) and uses the nested-forwarded data. But the Resolver path DOES
-    #    call the loader (it doesn't check coalesced) — so attach a REAL
-    #    RemoteLoader, not a placeholder.
+    # 7. Register every materialized type + its (coalesced) relationships.
+    #    Relationships on a remote type are resolved within the owning service's
+    #    nested fetch (β) — both the executor and the Resolver skip loading them
+    #    and read the result off the instance (the nested fetch via
+    #    fetch_remote_subtree populates them). So register them with loader=None
+    #    (no per-edge loader / no batch root required); the relationship is still
+    #    registered so SDL / Voyager / traversal discovery see it.
     for cls in fed_registry.all_classes():
         qualified = fed_registry.qualified_of(cls)
         if qualified is None:
@@ -168,37 +167,13 @@ async def federate(
             if not fed_registry.has(target_qn):
                 continue
             target_cls = fed_registry.get(target_qn)
-            target_frag = fragments.get(target_qn)
-            target_pk = (target_frag.pk_field if target_frag and target_frag.pk_field else "id")
-            # Arg name from the contract when the member exposes the batch root;
-            # fall back to the convention otherwise (the β gql path doesn't need
-            # this loader — the owning service resolves the edge internally — so
-            # a missing root only affects direct Resolver traversal of this edge).
-            br = _find_batch_root(target_frag, target_pk) if target_frag else None
-            if br is None:
-                logger.warning(
-                    "Coalesced relationship %s.%s → %s: target exposes no "
-                    "by_%s_in batch root; direct Resolver traversal of this "
-                    "edge will fail. Member should add it via "
-                    "AutoQueryConfig.batch_keys.",
-                    cls.__name__, rel.name, target_qn, target_pk,
-                )
-            loader_cls = create_remote_loader(
-                typename=rel.target_typename,
-                join_remote=target_pk,
-                endpoint=endpoints[owner],
-                target_cls=target_cls,
-                transport=transport,
-                is_list=rel.is_list,
-                arg_name=br.arg_name if br else None,
-            )
             rels_map[rel.name] = RelationshipInfo(
                 name=rel.name,
                 direction=rel.direction,
                 fk_field=rel.fk_field,
                 target_entity=target_cls,
                 is_list=rel.is_list,
-                loader=loader_cls,
+                loader=None,
                 target_service=owner,
                 coalesced=True,
             )

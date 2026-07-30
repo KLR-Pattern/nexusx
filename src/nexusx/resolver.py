@@ -617,6 +617,11 @@ class Resolver:
             # (e.g. field=list[int] vs Relationship(target=list[int])).
             dto_cls = self._extract_dto_cls(field_info)
             rel_info = entity_rels[field_name]
+            # Coalesced rels are resolved within the owning service's nested
+            # fetch (β) — they arrive populated on the instance, not loaded
+            # per-edge here (see fetch_remote_subtree). Mirrors the executor.
+            if getattr(rel_info, "coalesced", False):
+                continue
             if dto_cls is None:
                 if self._is_scalar_rel_field(field_info, rel_info):
                     results.append((field_name, field_name, rel_info, field_info))
@@ -633,6 +638,8 @@ class Resolver:
         # so the Resolver must discover them here.
         if source_entity is node_type:
             for rel_name, rel_info in entity_rels.items():
+                if getattr(rel_info, "coalesced", False):
+                    continue  # populated by the parent fetch's nested selection
                 if rel_name in node_type.model_fields:
                     continue  # already handled above
                 if rel_name in resolve_field_names or rel_name in subset_field_names:
@@ -773,6 +780,29 @@ class Resolver:
         # Pydantic validation will raise — which is the correct signal
         # that the schema needs Optional[...].
         kwargs = {f: getattr(orm_instance, f, None) for f in subset_fields}
+        # Pass through nested relationship fields declared on the DTO but not in
+        # __subset_fields__ (e.g. ``comments: list[CommentDTO]`` on a ReviewDTO
+        # whose __subset__ is Review's scalars). Only for materialized (β-fetch)
+        # sources — those carry the nested data already. For SQLModel sources the
+        # Resolver loads each relationship via its own loader, so touching a
+        # nested attr here would trigger a detached lazy-load.
+        from sqlmodel import SQLModel
+
+        if not isinstance(orm_instance, SQLModel):
+            for fname, fi in dto_cls.model_fields.items():
+                if fname in subset_fields or fname in kwargs:
+                    continue
+                extracted = cls._extract_dto_cls_and_cardinality(fi.annotation)
+                if extracted is None:
+                    continue
+                nested_dto, nested_is_list = extracted
+                raw = getattr(orm_instance, fname, None)
+                if raw is None:
+                    kwargs[fname] = [] if nested_is_list else None
+                elif nested_is_list:
+                    kwargs[fname] = [cls._orm_to_dto(item, nested_dto) for item in raw]
+                else:
+                    kwargs[fname] = cls._orm_to_dto(raw, nested_dto)
         # Pydantic can leave DTO classes with unresolved forward refs when
         # a DTO references another DTO that wasn't yet defined at class
         # creation time (e.g. cross-module cycles, lazy imports). The first
@@ -1137,6 +1167,66 @@ class Resolver:
         self._traversable_fields_cache[node_type] = result
         return result
 
+    def _build_nested_selection(
+        self,
+        target_cls: type[BaseModel],
+        dto_cls: type[BaseModel] | None = None,
+        visited: set[type] | None = None,
+    ) -> Any:
+        """Build a nested ``FieldSelection`` for a federated sub-tree rooted at
+        ``target_cls`` — the shape ``fetch_remote_subtree`` sends to the owning
+        service so the member resolves the whole sub-tree (its local edges +
+        further cross-service hops) in one nested gql.
+
+        ``dto_cls`` (when the field is DTO-typed) drives the projection — only
+        its declared fields are requested; otherwise the materialized
+        ``target_cls``'s full reachable graph is used. ``visited`` guards cycles
+        (re-entry → scalar-only leaf, preserving the field name without looping).
+        """
+        from nexusx.query_parser import FieldSelection
+
+        if visited is None:
+            visited = set()
+        shape_cls = dto_cls if dto_cls is not None else target_cls
+        sub_fields: dict[str, Any] = {}
+
+        # Look up relationships on target_cls (this Resolver's registered type,
+        # i.e. rel_info.target_entity) — NOT the DTO's subset source. When
+        # multiple services federate in one process, a DTO resolved at an earlier
+        # federate references that federate's materialized copy; the Resolver
+        # must use its OWN registry's type so relationship lookups succeed.
+        entity_rels = (
+            self._registry.get_relationships(target_cls) if self._registry else {}
+        )
+
+        recurse = shape_cls not in visited
+        if recurse:
+            visited.add(shape_cls)
+
+        for fname, fi in shape_cls.model_fields.items():
+            rel_info = entity_rels.get(fname)
+            if rel_info is None or not recurse:
+                # Scalar leaf (or cycle stop — keep the name, don't descend).
+                sub_fields[fname] = FieldSelection(name=fname)
+                continue
+            sub_fields[fname] = self._build_nested_selection(
+                rel_info.target_entity,
+                dto_cls=self._extract_dto_cls(fi),
+                visited=visited,
+            )
+
+        # Materialized type with no DTO: also include ErManager rels not present
+        # as model_fields, so the member resolves those edges too.
+        if recurse and dto_cls is None:
+            for rname, rinfo in entity_rels.items():
+                if rname in shape_cls.model_fields:
+                    continue
+                sub_fields[rname] = self._build_nested_selection(
+                    rinfo.target_entity, dto_cls=None, visited=visited,
+                )
+
+        return FieldSelection(name=target_cls.__name__, sub_fields=sub_fields)
+
     def _phase_b_prepare_collectors(
         self,
         levels: list[list[_LevelNode]],
@@ -1377,24 +1467,22 @@ class Resolver:
 
         # Process each relationship group
         for (_node_type, rel_name), entries in groups.items():
-            # Get loader from first entry's node
             first_node = entries[0][1]
             first_dto = entries[0][5]
             first_rel = entries[0][3]
 
-            type_key = generate_type_key_from_dto(first_dto) if first_dto else None
-            loader = self._get_loader(first_node, rel_name, type_key=type_key)
-            if loader is None:
-                continue
-
-            if first_dto is not None and type_key is not None:
-                set_query_meta(loader, generate_query_meta_from_dto(first_dto))
-
             is_custom = getattr(first_rel, "direction", "") == "CUSTOM"
             is_list = first_rel.is_list
             fk_field = first_rel.fk_field
+            # A non-coalesced service-boundary rel: fetch the whole sub-tree via
+            # the shared β primitive (one nested gql to the owning service; the
+            # member resolves its local edges + further cross-service hops).
+            is_remote_entry = (
+                getattr(first_rel, "target_service", None) is not None
+                and not getattr(first_rel, "coalesced", False)
+            )
 
-            # Collect all FK/PK values and dispatch batch load
+            # Collect FK/PK values + valid entries (shared by both paths).
             keys: list[Any] = []
             valid_entries: list[tuple[int, Any, str, type[BaseModel] | None]] = []
             for idx, node, field_name, _rel_info, _field_info, dto_cls in entries:
@@ -1403,10 +1491,29 @@ class Resolver:
                     keys.append(key)
                     valid_entries.append((idx, node, field_name, dto_cls))
 
-            if not keys:
+            if not valid_entries:
                 continue
 
-            results = await loader.load_many(keys)
+            if is_remote_entry:
+                from nexusx.federation.remote_loader import fetch_remote_subtree
+
+                selection = self._build_nested_selection(
+                    target_cls=first_rel.target_entity, dto_cls=first_dto,
+                )
+                results = await fetch_remote_subtree(
+                    registry=self._registry,
+                    rel_info=first_rel,
+                    parents=[ve[1] for ve in valid_entries],
+                    selection=selection,
+                )
+            else:
+                type_key = generate_type_key_from_dto(first_dto) if first_dto else None
+                loader = self._get_loader(first_node, rel_name, type_key=type_key)
+                if loader is None:
+                    continue
+                if first_dto is not None and type_key is not None:
+                    set_query_meta(loader, generate_query_meta_from_dto(first_dto))
+                results = await loader.load_many(keys)
 
             # Map results back to nodes
             for j, (idx, node, field_name, dto_cls) in enumerate(valid_entries):

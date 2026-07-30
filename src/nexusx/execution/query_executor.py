@@ -397,24 +397,17 @@ class QueryExecutor:
 
         is_remote = getattr(rel_info, "target_service", None) is not None
         if is_remote:
-            from nexusx.federation.remote_loader import set_remote_selection
-            from nexusx.loader.query_meta import generate_type_key_from_selection
+            # β path: fetch the whole nested sub-tree via the shared primitive
+            # (one gql to the owning service; the member resolves everything
+            # under it). Same mechanism the Resolver uses — fetch_remote_subtree.
+            from nexusx.federation.remote_loader import fetch_remote_subtree
 
-            # Compute type_key from selection so distinct selections get
-            # distinct loader instances (reuses the existing split-by-type_key
-            # mechanism). force_split ensures isolation regardless of the
-            # global _split_mode setting — prevents _remote_selection races
-            # when two concurrent jobs at the same BFS level query the same
-            # remote relationship with different field selections.
-            target_rels = self._registry.get_relationships(rel_info.target_entity)
-            fk_lookup = {name: info.fk_field for name, info in target_rels.items()}
-            type_key = generate_type_key_from_selection(
-                child_sel, rel_info.target_entity, fk_lookup=fk_lookup,
+            results = await fetch_remote_subtree(
+                registry=self._registry,
+                rel_info=rel_info,
+                parents=job.parents,
+                selection=child_sel,
             )
-            loader = self._registry.get_loader(
-                rel_info.loader, type_key=type_key, force_split=True,
-            )
-            set_remote_selection(loader, child_sel)
         else:
             from nexusx.loader.query_meta import (
                 generate_query_meta_from_selection,
@@ -442,8 +435,8 @@ class QueryExecutor:
             else:
                 merge_query_meta(loader, meta)
 
-        fk_values = [getattr(p, rel_info.fk_field) for p in job.parents]
-        results = await loader.load_many(fk_values)
+            fk_values = [getattr(p, rel_info.fk_field) for p in job.parents]
+            results = await loader.load_many(fk_values)
 
         all_children: list = []
         for parent, result in zip(job.parents, results, strict=True):
