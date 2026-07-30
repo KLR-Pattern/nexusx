@@ -2,8 +2,10 @@
 
 Run: uv run uvicorn demo.federation.catalog_app:app --port 8022
 
-This is the service clients talk to. Open http://localhost:8022/ for GraphiQL
-and try the deep multi-branch chain:
+This is the service clients talk to. Open http://localhost:8022/ for GraphiQL,
+or http://localhost:8022/voyager for the ER diagram of the composed federated
+graph (catalog + materialized reviews/users, tagged by owning service). Try the
+deep multi-branch chain:
 
     { Product { by_filter { id name
         reviews { title rating comments { text author { name config { theme } } } } } } }
@@ -30,6 +32,7 @@ from nexusx import (
     query,
 )
 from nexusx.federation import RemoteRelationship, RemoteService
+from nexusx.voyager import create_use_case_voyager
 
 REVIEWS_URL = "http://localhost:8021"  # base URL of the reviews service
 
@@ -89,6 +92,29 @@ async def on_startup() -> None:
 
 
 app = make_app(handler, on_startup=on_startup, title="Fed demo — catalog (mounts reviews)")
+
+# Voyager ER visualization of the COMPOSED federated graph. catalog is the
+# composition entry, so its er_manager — after the lifespan federates reviews
+# (and transitively users) — holds the full graph with materialized remote
+# types tagged by owning service (FR-016). VoyagerContext keeps er_manager by
+# reference and builds DOT per request, so /voyager reflects the post-federation
+# graph. Open http://localhost:8022/voyager (ER diagram tab).
+voyager_app = create_use_case_voyager(
+    services=[],
+    er_manager=handler._er_manager,
+    name="Fed demo — composed graph",
+)
+app.mount("/voyager", voyager_app)
+
+
+@app.get("/")
+async def root() -> dict:
+    return {
+        "message": "Fed demo — catalog (mounts reviews)",
+        "graphql": "/graphql",
+        "voyager": "/voyager",
+        "er_introspection": "/nexusx/er-introspection",
+    }
 
 
 # ── DefineSubset DTOs: RemoteRef for remote types ───────────────────────

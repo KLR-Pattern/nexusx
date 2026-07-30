@@ -36,6 +36,14 @@ uv run uvicorn demo.federation.catalog_app:app --port 8022 &
 Open **http://localhost:8022/** (GraphiQL on the catalog service) and run the
 deep chain:
 
+> **Voyager (composed-graph ER diagram):** open **http://localhost:8022/voyager**
+> on the catalog service and switch to the **ER diagram** tab. Because catalog is
+> the composition entry, the diagram shows the full federated graph — local
+> `Product` plus materialized `reviews.Review` / `reviews.Comment` /
+> `users.User` / `users.UserConfig`, each tagged with its owning service (FR-016).
+> (Edges currently render uniformly; cross-service edge styling is a planned
+> enhancement.)
+
 ```graphql
 {
   Product {
@@ -84,6 +92,7 @@ await handler.er.initialize()
 | β nested fetch | one gql per service returns the multi-level nested chain |
 | Multi-level members | `Review→Comment` and `User→UserConfig` resolved locally per service |
 | `by_<key>_in` entry roots | `AutoQueryConfig(batch_keys=...)` on each member |
+| Voyager on the composed graph | `http://localhost:8022/voyager` (ER tab) — catalog only |
 
 ## UseCase composition over federated data (DefineSubset + Resolver)
 
@@ -124,6 +133,7 @@ serializes the tree.
 - `users_app.py` — leaf; `User ── UserConfig` (local one-to-one) + `by_id_in`.
 - `reviews_app.py` — mounts users; `Review ── Comment` (local one-to-many),
   `Comment.author → users.User`, + `by_product_id_in`.
-- `catalog_app.py` — entry service clients query; mounts reviews; DefineSubset DTOs.
+- `catalog_app.py` — entry service clients query; mounts reviews; DefineSubset DTOs;
+  mounts Voyager at `/voyager` over the composed federated graph.
 - `_common.py` — shared FastAPI app builder (`/graphql` + ER introspection +
   GraphiQL) and an `initialize`-with-retry helper for boot ordering.
