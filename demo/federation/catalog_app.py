@@ -104,15 +104,40 @@ app = make_app(handler, on_startup=on_startup, title="Fed demo — catalog (moun
 
 from nexusx import DefineSubset
 
+# `reviews` declared at top; `users` is reached only transitively (via reviews),
+# so it needs no url here — its types are still referenceable for DTOs.
+users = RemoteService("users")
+
+
+class UserConfigDTO(DefineSubset):
+    """Subset of the remote users.UserConfig (resolved at federate time)."""
+
+    __subset__ = (users.UserConfig, ("theme",))
+
+
+class UserDTO(DefineSubset):
+    """Subset of the remote users.User + its config (resolved at federate)."""
+
+    __subset__ = (users.User, ("name",))
+    config: UserConfigDTO | None = None
+
+
+class CommentDTO(DefineSubset):
+    """Subset of the remote reviews.Comment + nested author (resolved at federate)."""
+
+    __subset__ = (reviews.Comment, ("text",))
+    author: UserDTO | None = None
+
 
 class ReviewDTO(DefineSubset):
-    """Subset of the remote reviews.Review (resolved at federate time)."""
+    """Subset of the remote reviews.Review + nested comments (resolved at federate)."""
 
     __subset__ = (reviews.Review, ("title", "rating"))
+    comments: list[CommentDTO] = Field(default_factory=list)
 
 
 class ProductDTO(DefineSubset):
-    """Subset of the local Product + nested reviews (cross-service, via Resolver)."""
+    """Subset of the local Product + nested reviews."""
 
     __subset__ = (Product, ("id", "name"))
     reviews: list[ReviewDTO] = Field(default_factory=list)
