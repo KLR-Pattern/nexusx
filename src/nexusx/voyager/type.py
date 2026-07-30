@@ -59,6 +59,9 @@ class SchemaNode(NodeBase):
     fields: list[FieldInfo] = field(default_factory=list)
     is_entity: bool = False
     is_virtual: bool = False
+    # Materialized remote (federated) type — a REAL entity owned by another
+    # service. Parallel to is_virtual: a federated type is never virtual.
+    is_federated: bool = False
     queries: list[MethodInfo] = field(default_factory=list)
     mutations: list[MethodInfo] = field(default_factory=list)
 

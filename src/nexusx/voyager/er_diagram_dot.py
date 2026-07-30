@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import typing
 
+from nexusx.federation.relationship import parse_qualified_name
 from nexusx.loader.registry import ErManager, RelationshipInfo
 from nexusx.relationship import is_virtual_entity
 from nexusx.voyager.render import DiagramRenderer
+from nexusx.voyager.render_style import FEDERATED_PALETTE
 from nexusx.voyager.type import (
     PK,
     FieldInfo,
@@ -95,6 +97,7 @@ class ErDiagramDotBuilder:
         edge_minlen: int = 3,
         show_methods: bool = True,
         hide_reverse_relationships: bool = False,
+        module_color: dict[str, str] | None = None,
     ):
         self.er_manager = er_manager
         self.nodes: list[SchemaNode] = []
@@ -110,6 +113,9 @@ class ErDiagramDotBuilder:
         self.edge_minlen = edge_minlen
         self.show_methods = show_methods
         self.hide_reverse_relationships = hide_reverse_relationships
+        # User-provided cluster colors; merged with auto-generated federated
+        # service colors in _federation_styling (user entries win).
+        self.module_color = module_color or {}
 
     def _generate_node_head(self, link_name: str) -> str:
         return f'{link_name}::{PK}'
@@ -143,18 +149,18 @@ class ErDiagramDotBuilder:
             # Extract fields from model_fields
             fields = self._get_entity_fields(entity_kls)
             queries, mutations = _discover_methods(entity_kls)
-            # Virtual entity = plain BaseModel, not a SQLModel subclass.
-            # Signals DiagramRenderer to apply Contract 3 visual distinction
-            # (yellow fill, «virtual» stereotype, cluster_virtual grouping).
-            is_virtual = is_virtual_entity(entity_kls)
-            # Federated (materialized remote) types: tag with the owning service
-            # via the qualified name so Voyager shows ownership (FR-016).
-            module = entity_kls.__module__
+            # Federation ownership: a materialized remote type has a qualified
+            # name ("srv.TypeName") in the fed_registry; local SQLModel and
+            # genuine virtual entities resolve to None.
             fed_reg = getattr(self.er_manager, "_fed_registry", None)
-            if fed_reg is not None:
-                fed_qn = fed_reg.qualified_of(entity_kls)
-                if fed_qn:
-                    module = fed_qn
+            fed_qn = fed_reg.qualified_of(entity_kls) if fed_reg is not None else None
+            # A materialized remote type is a REAL entity (its table lives in
+            # another service), so it must never render as virtual. Genuine
+            # virtuals (qualified_of is None) keep is_virtual_entity's verdict.
+            is_virtual = is_virtual_entity(entity_kls) and not fed_qn
+            # module = owning service → each remote service clusters as one flat
+            # box (FR-016 ownership, distinct from local Python modules).
+            module = parse_qualified_name(fed_qn)[0] if fed_qn else entity_kls.__module__
 
             self.node_set[full_name] = SchemaNode(
                 id=full_name,
@@ -164,6 +170,7 @@ class ErDiagramDotBuilder:
                 queries=queries,
                 mutations=mutations,
                 is_virtual=is_virtual,
+                is_federated=bool(fed_qn),
             )
         return full_name
 
@@ -252,8 +259,31 @@ class ErDiagramDotBuilder:
             loader_fullname=None,
         ))
 
+    def _federation_styling(self) -> tuple[dict[str, str], set[str]]:
+        """Derive (module_color, federated_modules) for remote-service clusters.
+
+        Auto-assigns a palette color to each remote service (sorted for stable
+        ordering across runs); user-provided ``module_color`` entries override.
+        ``federated_modules`` is the set of service names whose clusters the
+        renderer should draw with a dashed border.
+        """
+        fed_reg = getattr(self.er_manager, "_fed_registry", None)
+        services: set[str] = set()
+        if fed_reg is not None:
+            for cls in fed_reg.all_classes():
+                qn = fed_reg.qualified_of(cls)
+                if qn:
+                    services.add(parse_qualified_name(qn)[0])
+
+        merged: dict[str, str] = {}
+        for i, srv in enumerate(sorted(services)):
+            merged[srv] = FEDERATED_PALETTE[i % len(FEDERATED_PALETTE)]
+        merged.update(self.module_color)  # user colors win
+        return merged, services
+
     def render_dot(self) -> str:
         """Render the ER diagram as DOT format."""
+        module_color, federated_modules = self._federation_styling()
         renderer = DiagramRenderer(
             show_fields=self.show_field,
             show_module=self.show_module,
@@ -261,6 +291,8 @@ class ErDiagramDotBuilder:
             theme_color=self.theme_color,
             edge_minlen=self.edge_minlen,
             show_methods=self.show_methods,
+            module_color=module_color,
+            federated_modules=federated_modules,
         )
         return renderer.render_dot(
             list(self.node_set.values()),
