@@ -138,8 +138,12 @@ class SDLGenerator:
         for entity in self.entities:
             parts.append(self._generate_type(entity))
 
-        # 4. Generate Pagination and Result types (if pagination enabled)
-        if enable_pagination:
+        # 4. Generate Pagination and Result types. Driven by EITHER the local
+        # enable_pagination toggle OR any relationship carrying a page_loader —
+        # the latter covers federated paginated remotes (wiring sets page_loader
+        # without the global toggle), so cross-service pagination renders its
+        # {items, pagination} shape without forcing enable_pagination on the mounter.
+        if enable_pagination or self._has_any_paginated_relationship():
             pag_types = self._generate_pagination_types()
             if pag_types:
                 parts.append(pag_types)
@@ -407,8 +411,16 @@ class SDLGenerator:
                 if target_entity is None or not hasattr(target_entity, "__name__"):
                     continue
                 target = target_entity.__name__
-                gql_type = f"[{target}!]!" if rel_info.is_list else target
-                fields.append(f"  {rel_name}: {gql_type}")
+                if rel_info.is_list and rel_info.page_loader is not None:
+                    # Federated/local paginated to-many via the registry path —
+                    # render as {Target}Result with limit/offset args (mirrors
+                    # the type-hint path's paginated rendering).
+                    fields.append(
+                        f"  {rel_name}(limit: Int, offset: Int = 0): {target}Result!"
+                    )
+                else:
+                    gql_type = f"[{target}!]!" if rel_info.is_list else target
+                    fields.append(f"  {rel_name}: {gql_type}")
 
         # Build type definition with optional description
         type_def = f"type {entity.__name__} {{\n{chr(10).join(fields)}\n}}"
@@ -443,8 +455,7 @@ class SDLGenerator:
             if entity_name:
                 # Check if pagination is enabled for this relationship
                 if (
-                    self._enable_pagination
-                    and entity
+                    entity
                     and field_name
                     and self._is_paginated_relationship(entity, field_name)
                 ):
@@ -475,6 +486,23 @@ class SDLGenerator:
             return False
         rel_info = self._loader_registry.get_relationship(entity, field_name)
         return rel_info is not None and rel_info.page_loader is not None
+
+    def _has_any_paginated_relationship(self) -> bool:
+        """True if any registered relationship carries a ``page_loader``.
+
+        Covers BOTH local paged relations (``enable_pagination`` + ``order_by``)
+        and federated paginated remotes (wiring sets ``page_loader`` from the
+        ``RemoteRelationship.sort_field`` declaration) — so Pagination/Result
+        types are generated whenever a paged relation exists, regardless of the
+        global ``enable_pagination`` toggle.
+        """
+        if not self._loader_registry:
+            return False
+        for entity in self.entities:
+            for rel in self._loader_registry.get_relationships(entity).values():
+                if getattr(rel, "page_loader", None) is not None:
+                    return True
+        return False
 
     def _generate_pagination_types(self) -> str | None:
         """Generate Pagination type and Result types for paginated relationships."""

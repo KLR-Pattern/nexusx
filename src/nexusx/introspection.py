@@ -175,8 +175,13 @@ class IntrospectionGenerator:
         for entity in self.entities:
             types_list.append(self._build_entity_type(entity))
 
-        # 5. Pagination types (Pagination + Result types)
-        if self._enable_pagination and self._loader_registry:
+        # 5. Pagination types (Pagination + Result types). Driven by the local
+        # enable_pagination toggle OR any relationship carrying a page_loader —
+        # the latter covers federated paginated remotes (wiring sets page_loader
+        # without the global toggle).
+        if self._loader_registry and (
+            self._enable_pagination or self._has_any_paginated_relationship()
+        ):
             types_list.extend(self._build_pagination_types())
 
         # 5b. Entity group types ({Entity}Query / {Entity}Mutation)
@@ -560,8 +565,7 @@ class IntrospectionGenerator:
         # Check if this is a paginated list relationship
         args: list[dict] = []
         if (
-            self._enable_pagination
-            and entity is not None
+            entity is not None
             and self._is_paginated_relationship(entity, name, python_type)
         ):
             type_ref = self._build_result_type_ref(python_type)
@@ -738,6 +742,20 @@ class IntrospectionGenerator:
         if self._converter.is_mapped_wrapper(python_type):
             unwrapped = self._converter.unwrap_mapped(python_type)
         return self._converter.is_list_type(unwrapped)
+
+    def _has_any_paginated_relationship(self) -> bool:
+        """True if any registered relationship carries a ``page_loader``.
+
+        Mirrors SDLGenerator: covers local paged relations and federated paginated
+        remotes (wiring sets page_loader), independent of the global toggle.
+        """
+        if not self._loader_registry:
+            return False
+        for entity in self.entities:
+            for rel in self._loader_registry.get_relationships(entity).values():
+                if getattr(rel, "page_loader", None) is not None:
+                    return True
+        return False
 
     def _build_result_type_ref(self, python_type: Any) -> dict:
         """Build a type reference to a Result type for paginated list relationships."""
