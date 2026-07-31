@@ -443,6 +443,12 @@ def _create_by_keys_in_page_query(
         return_annotation=list[dict],
     )
     func_obj.__name__ = method_name
+    # Mark as a federation pagination root so the member's SDL/introspection can
+    # render its per-key package return type ({Entity}PagePackage) instead of the
+    # meaningless list[dict].
+    func_obj._pagination_root = {
+        "entity": entity, "fk_field": field_name, "fk_type": field_type,
+    }
     return by_field_in_page
 
 

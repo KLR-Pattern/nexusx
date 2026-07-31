@@ -65,7 +65,7 @@ description: "Task list for nexusx 联邦分页(federation pagination)"
 - [x] T009 [US1] Implement 分页 RemoteLoader(`build_gql_query` 分页变体 + page_args 从注入的 FieldSelection.arguments 作 batch 级标量透传 + per-key 包按 join key 对齐成 `{items,pagination}`)in src/nexusx/federation/remote_loader.py(depends T007)
 - [x] T010 [US1] Wire mounter:`_wire_remote_relationship` 据 `RemoteRelationship.sort_field` 把分页 RemoteLoader 挂到 `RelationshipInfo.page_loader`(`sort_field` 透传)in src/nexusx/federation/manager.py(depends T001, T009)
 - [x] T011 [US1] Wire mounter β path 分页分流:`_load_field_batch` is_remote 分支检测 `sort_field`→分页 RemoteLoader + `fetch_remote_subtree` 增 `page_args` 透传 in src/nexusx/execution/query_executor.py(depends T009, T010)
-- [ ] T012 [US1] Write test_federation_pagination_e2e.py(catalog+reviews,int key,标量 items,via httpx ASGITransport):SC-001(分页正确)+ SC-002(每服务一条 gql)in tests/test_federation_pagination_e2e.py(depends T008–T011)
+- [x] T012 [US1] Write test_federation_pagination_e2e.py(catalog+reviews,int key,标量 items,via httpx ASGITransport):SC-001(分页正确)+ SC-002(每服务一条 gql)in tests/test_federation_pagination_e2e.py(depends T008–T011)
 
 **Checkpoint**:US1 MVP 独立可测——基础分页端到端跑通,member root 路径识别验证通过(最高风险点的第一半)。
 

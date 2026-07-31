@@ -624,7 +624,12 @@ class QueryExecutor:
             getattr(pag_field, "sub_fields", None) or {}
             if pag_field else {}
         )
-        pagination = pkg.get("pagination") or {}
+        pagination = pkg.get("pagination")
+        if pagination is None:
+            pagination = {}
+        elif hasattr(pagination, "model_dump"):
+            # member side: per-key package carries a Pagination model instance
+            pagination = pagination.model_dump(mode="json")
         if pag_sub:
             result["pagination"] = {
                 k: v for k, v in pagination.items() if k in pag_sub
@@ -662,8 +667,7 @@ class QueryExecutor:
         target = rel_info.target_entity
 
         if (
-            self._enable_pagination
-            and rel_info.is_list
+            rel_info.is_list
             and isinstance(value, dict)
             and "items" in value
         ):

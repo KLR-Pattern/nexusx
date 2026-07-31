@@ -184,6 +184,9 @@ class IntrospectionGenerator:
         ):
             types_list.extend(self._build_pagination_types())
 
+        # 5c. Federation pagination root package types (member-side by_<key>_in_page)
+        types_list.extend(self._build_page_package_types())
+
         # 5b. Entity group types ({Entity}Query / {Entity}Mutation)
         for entity_name, methods in self._query_methods.items():
             if methods:
@@ -437,8 +440,24 @@ class IntrospectionGenerator:
             hints = {}
 
         # Build return type
-        return_type = hints.get("return")
-        type_ref = self._build_type_ref(return_type, is_input=False, required=True)
+        pag_root = getattr(func, "_pagination_root", None)
+        if pag_root:
+            # by_<key>_in_page federation pagination root → [{Entity}PagePackage!]!
+            ent_name = pag_root["entity"].__name__
+            type_ref = {
+                "kind": "NON_NULL", "name": None, "ofType": {
+                    "kind": "LIST", "name": None, "ofType": {
+                        "kind": "NON_NULL", "name": None, "ofType": {
+                            "kind": "OBJECT",
+                            "name": f"{ent_name}PagePackage",
+                            "ofType": None,
+                        },
+                    },
+                },
+            }
+        else:
+            return_type = hints.get("return")
+            type_ref = self._build_type_ref(return_type, is_input=False, required=True)
 
         # Build arguments
         args: list[dict] = []
@@ -756,6 +775,97 @@ class IntrospectionGenerator:
                 if getattr(rel, "page_loader", None) is not None:
                     return True
         return False
+
+    def _build_page_package_types(self) -> list[dict]:
+        """Build ``{Entity}PagePackage`` (+ Pagination) types for ``by_<key>_in_page`` roots.
+
+        A federation pagination root returns a list of per-key packages
+        ``{fk, items:[Entity], pagination}``; this generates the named OBJECT type
+        the member's schema needs so a cross-service ``reviews(limit,offset){items pagination}``
+        query validates on the member side. Also emits the Pagination type when any
+        such root exists (the member may have no local paged relations).
+        """
+        types_list: list[dict] = []
+        seen: set[str] = set()
+        has_any = False
+
+        def _f(name: str, type_ref: dict) -> dict:
+            return {
+                "name": name, "description": None, "args": [], "type": type_ref,
+                "isDeprecated": False, "deprecationReason": None,
+            }
+        for entity in self.entities:
+            for attr_name in dir(entity):
+                if not attr_name.endswith("_in_page"):
+                    continue
+                try:
+                    attr = getattr(entity, attr_name)
+                except Exception:
+                    continue
+                if not callable(attr):
+                    continue
+                func = attr.__func__ if hasattr(attr, "__func__") else attr
+                pag_root = getattr(func, "_pagination_root", None)
+                if not pag_root:
+                    continue
+                has_any = True
+                ent = pag_root["entity"]
+                fk_field = pag_root["fk_field"]
+                fk_type = pag_root["fk_type"]
+                pkg_name = f"{ent.__name__}PagePackage"
+                if pkg_name in seen:
+                    continue
+                seen.add(pkg_name)
+                ent_name = ent.__name__
+                fk_type_ref = self._build_type_ref(fk_type, is_input=False, required=True)
+                items_type_ref = {
+                    "kind": "NON_NULL", "name": None, "ofType": {
+                        "kind": "LIST", "name": None, "ofType": {
+                            "kind": "NON_NULL", "name": None, "ofType": {
+                                "kind": "OBJECT", "name": ent_name, "ofType": None,
+                            },
+                        },
+                    },
+                }
+                pagination_type_ref = {
+                    "kind": "NON_NULL", "name": None,
+                    "ofType": {"kind": "OBJECT", "name": "Pagination", "ofType": None},
+                }
+                types_list.append({
+                    "kind": "OBJECT",
+                    "name": pkg_name,
+                    "description": "Federation pagination per-key package (by_<key>_in_page)",
+                    "fields": [
+                        _f(fk_field, fk_type_ref),
+                        _f("items", items_type_ref),
+                        _f("pagination", pagination_type_ref),
+                    ],
+                    "inputFields": None,
+                    "interfaces": [],
+                    "enumValues": None,
+                    "possibleTypes": None,
+                })
+        if has_any:
+            types_list.append({
+                "kind": "OBJECT",
+                "name": "Pagination",
+                "description": "Pagination information for federation page packages",
+                "fields": [
+                    _f(
+                        "has_more",
+                        {
+                            "kind": "NON_NULL", "name": None,
+                            "ofType": {"kind": "SCALAR", "name": "Boolean", "ofType": None},
+                        },
+                    ),
+                    _f("total_count", {"kind": "SCALAR", "name": "Int", "ofType": None}),
+                ],
+                "inputFields": None,
+                "interfaces": [],
+                "enumValues": None,
+                "possibleTypes": None,
+            })
+        return types_list
 
     def _build_result_type_ref(self, python_type: Any) -> dict:
         """Build a type reference to a Result type for paginated list relationships."""
