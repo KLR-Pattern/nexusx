@@ -124,9 +124,9 @@ description: "Task list for nexusx 联邦分页(federation pagination)"
 
 ### Implementation for User Story 4
 
-- [ ] T021 [US4] Render 分页字段 in SDL(声明 `sort_field` 的远程 to-many 关系→`{items:[...], pagination:{has_more,total_count}}`)in src/nexusx/sdl_generator.py(depends T010)
-- [ ] T022 [US4] Render 分页字段 in Introspection(`__schema` 同步)in src/nexusx/introspection.py(depends T010)
-- [ ] T023 [US4] 混合回归 e2e:同联邦内分页 + 全量关系共存,行为分流正确 in tests/test_federation_pagination_e2e.py(depends T021, T022)
+- [x] T021 [US4] Render 分页字段 in SDL(声明 `sort_field` 的远程 to-many 关系→`{items:[...], pagination:{has_more,total_count}}`)in src/nexusx/sdl_generator.py(depends T010)
+- [x] T022 [US4] Render 分页字段 in Introspection(`__schema` 同步)in src/nexusx/introspection.py(depends T010)
+- [x] T023 [US4] 混合回归 e2e:同联邦内分页 + 全量关系共存,行为分流正确 in tests/test_federation_pagination_e2e.py(depends T021, T022)
 
 **Checkpoint**:US4 独立可测——渲染分页形状 + 既有零回归(SC-004)。
 

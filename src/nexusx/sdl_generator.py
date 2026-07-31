@@ -147,6 +147,11 @@ class SDLGenerator:
             pag_types = self._generate_pagination_types()
             if pag_types:
                 parts.append(pag_types)
+        # Federation pagination roots (member-side by_<key>_in_page): per-key
+        # package types + Pagination, so the member's get_sdl() is complete.
+        pp_types = self._generate_page_package_types()
+        if pp_types:
+            parts.append(pp_types)
 
         # 5. Generate per-entity Query group types + the root Query type
         query_group_blocks, query_root_lines = self._collect_query_groups()
@@ -504,6 +509,56 @@ class SDLGenerator:
                     return True
         return False
 
+    def _generate_page_package_types(self) -> str | None:
+        """Generate ``{Entity}PagePackage`` (+ Pagination) types for by_<key>_in_page roots.
+
+        Mirrors the introspection side: a federation pagination root returns a
+        list of per-key packages ``{fk, items:[Entity], pagination}``; this emits
+        the named OBJECT type so the member's SDL (get_sdl) is complete.
+        """
+        parts: list[str] = []
+        seen: set[str] = set()
+        has_any = False
+        for entity in self.entities:
+            for attr_name in dir(entity):
+                if not attr_name.endswith("_in_page"):
+                    continue
+                try:
+                    attr = getattr(entity, attr_name)
+                except Exception:
+                    continue
+                if not callable(attr):
+                    continue
+                func = attr.__func__ if hasattr(attr, "__func__") else attr
+                pag_root = getattr(func, "_pagination_root", None)
+                if not pag_root:
+                    continue
+                has_any = True
+                ent = pag_root["entity"]
+                fk_field = pag_root["fk_field"]
+                fk_type = pag_root["fk_type"]
+                pkg_name = f"{ent.__name__}PagePackage"
+                if pkg_name in seen:
+                    continue
+                seen.add(pkg_name)
+                fk_gql = _python_type_to_graphql(
+                    fk_type, self._converter, self._entity_names
+                )
+                parts.append(
+                    f"type {pkg_name} {{\n"
+                    f"  {fk_field}: {fk_gql}\n"
+                    f"  items: [{ent.__name__}!]!\n"
+                    f"  pagination: Pagination!\n"
+                    f"}}"
+                )
+        if not has_any:
+            return None
+        parts.insert(
+            0,
+            "type Pagination {\n  has_more: Boolean!\n  total_count: Int\n}",
+        )
+        return "\n\n".join(parts)
+
     def _generate_pagination_types(self) -> str | None:
         """Generate Pagination type and Result types for paginated relationships."""
         if not self._loader_registry:
@@ -664,13 +719,18 @@ class SDLGenerator:
                 params.append(f"{param_name}: String!")
 
         # Get return type
-        return_type = hints.get("return", inspect.Signature.empty)
-        if return_type != inspect.Signature.empty:
-            return_gql_type = _python_type_to_graphql(
-                return_type, self._converter, self._entity_names
-            )
+        pag_root = getattr(func, "_pagination_root", None)
+        if pag_root:
+            # by_<key>_in_page federation pagination root → per-key packages.
+            return_gql_type = f"[{pag_root['entity'].__name__}PagePackage!]!"
         else:
-            return_gql_type = "String!"
+            return_type = hints.get("return", inspect.Signature.empty)
+            if return_type != inspect.Signature.empty:
+                return_gql_type = _python_type_to_graphql(
+                    return_type, self._converter, self._entity_names
+                )
+            else:
+                return_gql_type = "String!"
 
         # Build field definition
         param_str = f"({', '.join(params)})" if params else ""
