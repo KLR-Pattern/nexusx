@@ -100,12 +100,12 @@ description: "Task list for nexusx 联邦分页(federation pagination)"
 
 ### Tests for User Story 3
 
-- [ ] T016 [P] [US3] Extend test_federation_pagination_loader.py:UUID/Decimal join key 的 per-key 包对齐(不因 JSON 字符串化错配)in tests/test_federation_pagination_loader.py
+- [x] T016 [P] [US3] Extend test_federation_pagination_loader.py:UUID/Decimal join key 的 per-key 包对齐(不因 JSON 字符串化错配)in tests/test_federation_pagination_loader.py
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] Apply `_normalize_join_key` to 分页 RemoteLoader 的 per-key 包对齐(UUID/Decimal 桶匹配)in src/nexusx/federation/remote_loader.py(depends T009)
-- [ ] T018 [US3] Extend e2e(多 parent UUID 主键分页)in tests/test_federation_pagination_e2e.py(depends T017)
+- [x] T017 [US3] Apply `_normalize_join_key` to 分页 RemoteLoader 的 per-key 包对齐(UUID/Decimal 桶匹配)in src/nexusx/federation/remote_loader.py(depends T009)
+- [x] T018 [US3] Extend e2e(多 parent UUID 主键分页)in tests/test_federation_pagination_e2e.py(depends T017)
 
 **Checkpoint**:US3 独立可测——UUID/Decimal 对齐正确(SC-003)。
 
@@ -140,11 +140,11 @@ description: "Task list for nexusx 联邦分页(federation pagination)"
 
 ### Tests for User Story 5
 
-- [ ] T024 [P] [US5] Extend test_federation_pagination_decl.py:to-one 声明 `sort_field` 拒、`sort_field` 非合法标量字段拒 in tests/test_federation_pagination_decl.py
+- [x] T024 [P] [US5] Extend test_federation_pagination_decl.py:to-one 声明 `sort_field` 拒、`sort_field` 非合法标量字段拒 in tests/test_federation_pagination_decl.py
 
 ### Implementation for User Story 5
 
-- [ ] T025 [US5] Add 分页 fail-fast checks in `federate()`/wiring:(a) 声明 `sort_field` 的关系是 to-many(FR-002);(b) `sort_field` 是被挂服务该类型的合法标量字段(FR-012b)。任一失败拒绝启动 in src/nexusx/federation/manager.py(depends T001, T003)
+- [x] T025 [US5] Add 分页 fail-fast checks in `federate()`/wiring:(a) 声明 `sort_field` 的关系是 to-many(FR-002);(b) `sort_field` 是被挂服务该类型的合法标量字段(FR-012b)。任一失败拒绝启动 in src/nexusx/federation/manager.py(depends T001, T003)
 
 **Checkpoint**:US5 独立可测——分页错配启动期全捕获(SC-006)。
 

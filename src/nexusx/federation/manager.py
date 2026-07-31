@@ -185,7 +185,16 @@ def _validate_declarations(
 ) -> None:
     # Validate pending RemoteRelationship declarations.
     for _src, rrel in er_manager._pending_remote_rels:
-        _check_target(rrel.target, rrel.join_remote, endpoints, fragments)
+        if rrel.sort_field and not rrel.is_list:
+            raise FederationError(
+                f"RemoteRelationship {rrel.name!r} declares sort_field but its "
+                f"target is to-one (not list[...]); pagination only applies to "
+                f"to-many relationships."
+            )
+        _check_target(
+            rrel.target, rrel.join_remote, endpoints, fragments,
+            sort_field=rrel.sort_field,
+        )
 
 
 def _find_batch_root(frag: EntityFragment, join_remote: str) -> BatchRoot | None:
@@ -217,6 +226,7 @@ def _check_target(
     join_remote: str,
     services: dict[str, str],
     fragments: dict[str, EntityFragment],
+    sort_field: str | None = None,
 ) -> BatchRoot:
     """Validate a declared remote target; return its batch root for wiring.
 
@@ -236,6 +246,11 @@ def _check_target(
         raise FederationError(
             f"Type {target!r} has no scalar field {join_remote!r} "
             f"(needed as join key). Fields: {sorted(scalar_names)}"
+        )
+    if sort_field and sort_field not in scalar_names:
+        raise FederationError(
+            f"Type {target!r} has no scalar field {sort_field!r} "
+            f"(needed as pagination sort_field). Fields: {sorted(scalar_names)}"
         )
     entry = f"by_{join_remote}_in"
     br = _find_batch_root(frag, join_remote)

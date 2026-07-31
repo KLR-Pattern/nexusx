@@ -163,3 +163,47 @@ async def test_paginated_loader_passes_page_args_from_selection():
     assert "limit: 3" in sent
     assert "offset: 10" in sent
     assert 'sort_direction: "desc"' in sent
+
+
+@pytest.mark.asyncio
+async def test_paginated_loader_aligns_uuid_join_key():
+    """US3 (SC-003): UUID join key aligns despite JSON string-ification.
+
+    The member returns the fk as a string over JSON; the mounter holds UUID
+    objects. ``_normalize_join_key`` bridges them so per-key packages map back
+    to the right parent (mirrors the non-paginated RemoteLoader's UUID fix).
+    """
+    import uuid as _uuid
+
+    UuidReview = create_model(
+        "UuidReview",
+        product_id=(_uuid.UUID | None, None),
+        title=(str | None, None),
+    )
+    pk1 = _uuid.UUID("00000000-0000-0000-0000-000000000001")
+    pk2 = _uuid.UUID("00000000-0000-0000-0000-000000000002")
+    fake = FakeTransport({
+        "data": {"UuidReview": {"by_product_id_in_page": [
+            {
+                "product_id": str(pk1),
+                "items": [{"product_id": str(pk1), "title": "U1"}],
+                "pagination": {"has_more": False, "total_count": 1},
+            },
+            {
+                "product_id": str(pk2),
+                "items": [{"product_id": str(pk2), "title": "U2"}],
+                "pagination": {"has_more": False, "total_count": 1},
+            },
+        ]}}
+    })
+    loader_cls = create_paginated_remote_loader(
+        typename="UuidReview", join_remote="product_id", endpoint="http://test",
+        target_cls=UuidReview, transport=fake, arg_name="product_id_list",
+        sort_field="title",
+    )
+    loader = loader_cls()
+    set_remote_selection(loader, _selection(limit=5, offset=0))
+    # UUID objects, out of order — alignment must bridge UUID ↔ string.
+    results = await loader.load_many([pk2, pk1])
+    assert results[0]["items"][0].title == "U2"
+    assert results[1]["items"][0].title == "U1"
