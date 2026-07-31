@@ -13,7 +13,7 @@ import tempfile
 import httpx
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.applications import Starlette
 from starlette.routing import Mount
@@ -41,6 +41,15 @@ class EPReview(EPReviewsBase, table=True):
     product_id: int
     title: str
     rating: int
+    comments: list["EPComment"] = Relationship(back_populates="review")
+
+
+class EPComment(EPReviewsBase, table=True):
+    __tablename__ = "fed_pag_e2e_comment"
+    id: int | None = Field(default=None, primary_key=True)
+    review_id: int = Field(foreign_key="fed_pag_e2e_review.id")
+    text: str
+    review: "EPReview" = Relationship(back_populates="comments")
 
 
 class EPProduct(EPCatalogBase, table=True):
@@ -88,6 +97,9 @@ async def _ensure_seed():
         # Product 2: 2 reviews
         s.add(EPReview(id=10, product_id=2, title="RA", rating=5))
         s.add(EPReview(id=11, product_id=2, title="RB", rating=3))
+        # comments on product 1's first two reviews (for US2 items subtree)
+        s.add(EPComment(id=1, review_id=1, text="C1"))
+        s.add(EPComment(id=2, review_id=2, text="C2"))
         await s.commit()
     _seeded = True
 
@@ -180,3 +192,24 @@ async def test_total_count_optional(federation):
     pagination = res["data"]["EPProduct"]["by_id"]["reviews"]["pagination"]
     assert "total_count" not in pagination
     assert pagination["has_more"] is True
+
+
+@pytest.mark.asyncio
+async def test_items_subtree_resolved(federation):
+    """US2 (SC-005): paginated items' nested relationship (comments) is resolved.
+
+    The member resolves comments inside its by_<key>_in_page response (items
+    subtree recursion on the root path); catalog reads them off the instance.
+    """
+    catalog_handler, _ = federation
+    res = await catalog_handler.execute(
+        "{ EPProduct { by_id(id: 1) { reviews(limit: 2, offset: 0) { "
+        "items { title comments { text } } pagination { has_more } } } } }"
+    )
+    assert not res.get("errors"), res
+    pkg = res["data"]["EPProduct"]["by_id"]["reviews"]
+    # asc by rating → R1 (has C1), R2 (has C2)
+    by_title = {it["title"]: it for it in pkg["items"]}
+    assert [c["text"] for c in by_title["R1"]["comments"]] == ["C1"]
+    assert [c["text"] for c in by_title["R2"]["comments"]] == ["C2"]
+    assert pkg["pagination"]["has_more"] is True  # 7 total, took 2

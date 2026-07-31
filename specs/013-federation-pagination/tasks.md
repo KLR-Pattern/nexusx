@@ -81,12 +81,12 @@ description: "Task list for nexusx 联邦分页(federation pagination)"
 
 ### Tests for User Story 2
 
-- [ ] T013 [P] [US2] Extend test_federation_pagination_root.py:分页包 `items` 内实体递归解析子树(comments)+ `pagination` 不受子树影响 in tests/test_federation_pagination_root.py
+- [x] T013 [P] [US2] Extend test_federation_pagination_root.py:分页包 `items` 内实体递归解析子树(comments)+ `pagination` 不受子树影响 in tests/test_federation_pagination_root.py
 
 ### Implementation for User Story 2
 
-- [ ] T014 [US2] **member executor root 路径对 items 递归**(把分页包 `items` 里的 entity extend 进 BFS 下一层,解析其本地关系 + 进一步跨服务 hop;复用本地分页 `_load_field_paginated` 的 `all_children.extend(items)` 模式)in src/nexusx/execution/query_executor.py(**核心难点 v2**,depends T008)
-- [ ] T015 [US2] Extend test_federation_pagination_e2e.py(分页 reviews 含 comments + 跨服务 author):SC-005 in tests/test_federation_pagination_e2e.py(depends T014)
+- [x] T014 [US2] **member executor root 路径对 items 递归**(把分页包 `items` 里的 entity extend 进 BFS 下一层,解析其本地关系 + 进一步跨服务 hop;复用本地分页 `_load_field_paginated` 的 `all_children.extend(items)` 模式)in src/nexusx/execution/query_executor.py(**核心难点 v2**,depends T008)
+- [x] T015 [US2] Extend test_federation_pagination_e2e.py(分页 reviews 含 comments + 跨服务 author):SC-005 in tests/test_federation_pagination_e2e.py(depends T014)
 
 **Checkpoint**:US1+US2 均独立可测——分页 + 嵌套子树端到端(核心难点全通过)。
 
