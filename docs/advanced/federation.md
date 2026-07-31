@@ -91,5 +91,39 @@ The client sees a flat, un-prefixed schema (`Review`, `User`, `Product.reviews`,
 Open http://localhost:8022/ for GraphiQL on the catalog service and query
 `{ Product { by_filter { id name reviews { title rating author { name } } } } }`.
 
+## Pagination
+
+A cross-service to-many relationship can be paginated by declaring `sort_field`
+on the `RemoteRelationship` — its presence IS the pagination switch (mirrors
+local `Relationship.order_by`). The member generates a paginated batch root
+`by_<key>_in_page` by default (zero-config); the mounter routes to it when
+`sort_field` is declared, and to the plain `by_<key>_in` otherwise.
+
+```python
+RemoteRelationship(
+    fk="id", target=list[reviews.Review],
+    name="reviews", join_remote="product_id",
+    sort_field="rating",           # ← declaring it enables pagination
+    sort_direction="desc",         # optional, default "asc"
+)
+```
+
+Query with `limit`/`offset`; `total_count` is optional (computed only when
+selected):
+
+```graphql
+{ Product { by_filter {
+  reviews(limit: 5, offset: 0) {
+    items { title rating }
+    pagination { has_more total_count }
+  }
+} } }
+```
+
+Pagination happens at the owning member (a window function partitions by join
+key); the mounter sends one gql per mounted service per traversal and aligns
+the per-key packages by join key. `items` subtrees (nested relationships, incl.
+further cross-service hops) are resolved by the member inside that one gql.
+
 See also: [Custom Relationships](../guide/custom_relationship.md),
 [ER Diagram Visualization](voyager.md).

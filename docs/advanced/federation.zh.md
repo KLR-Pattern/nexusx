@@ -88,5 +88,31 @@ await handler.execute("{ Product { by_filter { id reviews { title author { name 
 http://localhost:8022/(catalog 服务的 GraphiQL),查
 `{ Product { by_filter { id name reviews { title rating author { name } } } } }`。
 
+## 分页
+
+跨服务 to-many 关系可通过在 `RemoteRelationship` 上声明 `sort_field` 开启分页——它的存在即分页开关(对称本地 `Relationship.order_by`)。member 默认生成分页批量 root `by_<key>_in_page`(零配置);挂载方在声明了 `sort_field` 时路由到它,否则走普通 `by_<key>_in`。
+
+```python
+RemoteRelationship(
+    fk="id", target=list[reviews.Review],
+    name="reviews", join_remote="product_id",
+    sort_field="rating",           # ← 声明即开启分页
+    sort_direction="desc",         # 可选,默认 "asc"
+)
+```
+
+查询时带 `limit`/`offset`;`total_count` 可选(仅在选择时计算):
+
+```graphql
+{ Product { by_filter {
+  reviews(limit: 5, offset: 0) {
+    items { title rating }
+    pagination { has_more total_count }
+  }
+} } }
+```
+
+分页发生在数据所在的 member(按 join key 的窗口函数);挂载方每次遍历对每个被挂服务发一条 gql,并按 join key 对齐 per-key 分页包。`items` 子树(嵌套关系,含更深的跨服务跳转)由 member 在这一条 gql 内解析。
+
 相关:[自定义关系](../guide/custom_relationship.zh.md)、
 [ER 图可视化](voyager.zh.md)。
