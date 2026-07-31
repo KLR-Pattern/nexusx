@@ -157,7 +157,7 @@ description: "Task list for nexusx 联邦分页(federation pagination)"
 - [ ] T026 [P] Run `ruff check` + `mypy --strict` on src/nexusx + tests;修复所有告警
 - [ ] T027 Run full regression `pytest -q`:SC-004(未声明 `sort_field` 时 012 联邦 + 单体 nexusx 全量测试零回归)
 - [ ] T028 [P] Run quickstart.md validation(场景 1–5:基础分页 / items 子树 / UUID 对齐 / 零回归 / fail-fast)
-- [ ] T029 [P] Docs:`docs/advanced/federation.md` 增分页章节(中英)+ `demo/federation` 演示分页查询(catalog 的 `Product.reviews` 声明 `sort_field`)
+- [x] T029 [P] Docs:`docs/advanced/federation.md` 增分页章节(中英)+ `demo/federation` 演示分页查询(catalog 的 `Product.reviews` 声明 `sort_field`)
 
 ---
 
