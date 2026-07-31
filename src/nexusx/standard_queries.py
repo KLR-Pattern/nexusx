@@ -330,6 +330,21 @@ def _create_by_keys_in_page_query(
         sort_direction = kwargs.get("sort_direction", "asc")
         effective_limit = page_args.effective_limit
 
+        # sort_field arrives from gql args (this root is exposed directly, not
+        # only via the mounter); validate it is a real column so getattr can't
+        # land on a non-column attribute. Defence-in-depth — the mounter already
+        # checks sort_field at federate(), but a client can call the member root
+        # directly and bypass it.
+        from sqlalchemy import inspect as sa_inspect
+
+        try:
+            _col_names = {c.name for c in sa_inspect(cls).columns}
+        except Exception:
+            _col_names = set()
+        if sort_field not in _col_names:
+            msg = f"sort_field {sort_field!r} is not a column on {cls.__name__}"
+            raise ValueError(msg)
+
         if not values:
             return []
 

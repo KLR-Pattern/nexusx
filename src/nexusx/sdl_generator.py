@@ -143,7 +143,11 @@ class SDLGenerator:
         # the latter covers federated paginated remotes (wiring sets page_loader
         # without the global toggle), so cross-service pagination renders its
         # {items, pagination} shape without forcing enable_pagination on the mounter.
-        if enable_pagination or self._has_any_paginated_relationship():
+        if (
+            enable_pagination
+            or self._has_any_paginated_relationship()
+            or self._has_any_pagination_root()
+        ):
             pag_types = self._generate_pagination_types()
             if pag_types:
                 parts.append(pag_types)
@@ -509,6 +513,23 @@ class SDLGenerator:
                     return True
         return False
 
+    def _has_any_pagination_root(self) -> bool:
+        """True if any entity has a by_<key>_in_page federation pagination root."""
+        for entity in self.entities:
+            for attr_name in dir(entity):
+                if not attr_name.endswith("_in_page"):
+                    continue
+                try:
+                    attr = getattr(entity, attr_name)
+                except Exception:
+                    continue
+                if not callable(attr):
+                    continue
+                func = attr.__func__ if hasattr(attr, "__func__") else attr
+                if getattr(func, "_pagination_root", None):
+                    return True
+        return False
+
     def _generate_page_package_types(self) -> str | None:
         """Generate ``{Entity}PagePackage`` (+ Pagination) types for by_<key>_in_page roots.
 
@@ -518,7 +539,6 @@ class SDLGenerator:
         """
         parts: list[str] = []
         seen: set[str] = set()
-        has_any = False
         for entity in self.entities:
             for attr_name in dir(entity):
                 if not attr_name.endswith("_in_page"):
@@ -533,7 +553,6 @@ class SDLGenerator:
                 pag_root = getattr(func, "_pagination_root", None)
                 if not pag_root:
                     continue
-                has_any = True
                 ent = pag_root["entity"]
                 fk_field = pag_root["fk_field"]
                 fk_type = pag_root["fk_type"]
@@ -551,12 +570,10 @@ class SDLGenerator:
                     f"  pagination: Pagination!\n"
                     f"}}"
                 )
-        if not has_any:
+        if not parts:
             return None
-        parts.insert(
-            0,
-            "type Pagination {\n  has_more: Boolean!\n  total_count: Int\n}",
-        )
+        # Pagination itself is emitted by _generate_pagination_types (whose gate
+        # also covers by_<key>_in_page roots) to avoid a duplicate type.
         return "\n\n".join(parts)
 
     def _generate_pagination_types(self) -> str | None:

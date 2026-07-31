@@ -176,11 +176,14 @@ class IntrospectionGenerator:
             types_list.append(self._build_entity_type(entity))
 
         # 5. Pagination types (Pagination + Result types). Driven by the local
-        # enable_pagination toggle OR any relationship carrying a page_loader —
-        # the latter covers federated paginated remotes (wiring sets page_loader
-        # without the global toggle).
+        # enable_pagination toggle, any relationship carrying a page_loader
+        # (federated paginated remotes), OR any by_<key>_in_page root (member
+        # side). The Pagination type is emitted only here so a member with BOTH
+        # a local paged relation and a federation root gets exactly one.
         if self._loader_registry and (
-            self._enable_pagination or self._has_any_paginated_relationship()
+            self._enable_pagination
+            or self._has_any_paginated_relationship()
+            or self._has_any_pagination_root()
         ):
             types_list.extend(self._build_pagination_types())
 
@@ -776,6 +779,23 @@ class IntrospectionGenerator:
                     return True
         return False
 
+    def _has_any_pagination_root(self) -> bool:
+        """True if any entity has a by_<key>_in_page federation pagination root."""
+        for entity in self.entities:
+            for attr_name in dir(entity):
+                if not attr_name.endswith("_in_page"):
+                    continue
+                try:
+                    attr = getattr(entity, attr_name)
+                except Exception:
+                    continue
+                if not callable(attr):
+                    continue
+                func = attr.__func__ if hasattr(attr, "__func__") else attr
+                if getattr(func, "_pagination_root", None):
+                    return True
+        return False
+
     def _build_page_package_types(self) -> list[dict]:
         """Build ``{Entity}PagePackage`` (+ Pagination) types for ``by_<key>_in_page`` roots.
 
@@ -787,7 +807,6 @@ class IntrospectionGenerator:
         """
         types_list: list[dict] = []
         seen: set[str] = set()
-        has_any = False
 
         def _f(name: str, type_ref: dict) -> dict:
             return {
@@ -808,7 +827,6 @@ class IntrospectionGenerator:
                 pag_root = getattr(func, "_pagination_root", None)
                 if not pag_root:
                     continue
-                has_any = True
                 ent = pag_root["entity"]
                 fk_field = pag_root["fk_field"]
                 fk_type = pag_root["fk_type"]
@@ -845,26 +863,10 @@ class IntrospectionGenerator:
                     "enumValues": None,
                     "possibleTypes": None,
                 })
-        if has_any:
-            types_list.append({
-                "kind": "OBJECT",
-                "name": "Pagination",
-                "description": "Pagination information for federation page packages",
-                "fields": [
-                    _f(
-                        "has_more",
-                        {
-                            "kind": "NON_NULL", "name": None,
-                            "ofType": {"kind": "SCALAR", "name": "Boolean", "ofType": None},
-                        },
-                    ),
-                    _f("total_count", {"kind": "SCALAR", "name": "Int", "ofType": None}),
-                ],
-                "inputFields": None,
-                "interfaces": [],
-                "enumValues": None,
-                "possibleTypes": None,
-            })
+        # Pagination itself is emitted by _build_pagination_types (whose gate now
+        # also covers member-side by_<key>_in_page roots) to avoid a duplicate
+        # Pagination type when a member has BOTH a local paged relation and a
+        # federation pagination root.
         return types_list
 
     def _build_result_type_ref(self, python_type: Any) -> dict:
