@@ -39,7 +39,12 @@ class FederationError(RuntimeError):
     """Raised at federation init when a declaration is invalid (fail-fast)."""
 
 
-_SUPPORTED_JOIN_TYPES = frozenset({"str", "int", "float", "bool", "UUID", "Decimal"})
+# Decimal is deliberately excluded: member page_by buckets by the SQL column
+# value, but the wire join key arrives as a JSON string, so non-string-wire
+# types (Decimal) mismatch the bucket and silently resolve empty. UUID passes
+# because SQLite stores UUID columns as strings too. Reject Decimal at federate()
+# rather than letting it fail at query time.
+_SUPPORTED_JOIN_TYPES = frozenset({"str", "int", "float", "bool", "UUID"})
 
 
 async def federate(

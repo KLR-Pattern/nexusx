@@ -12,9 +12,9 @@
 
 两个场景共享一个 member app（挂 EdgeReview + EdgeSession）和一个 catalog app。
 
-注：Decimal join key 未纳入支持（实际项目里用 Decimal 做 join key 的概率极低）。
-member page_by 的分桶（按 SQL 列值）对 wire 字符串 key 存在类型不匹配缺陷，详见
-memory 记录；UUID 之所以能过是因为 UUID 列在 SQLite 也存为 string。
+注：Decimal join key 不受支持——已在 ``federate()`` 声明校验阶段拒绝
+（``_SUPPORTED_JOIN_TYPES`` 不含 Decimal）。根因：member page_by 按 SQL 列值分桶，
+对 wire 字符串 key 存在类型不匹配；UUID 之所以能过是因为 UUID 列在 SQLite 也存为 string。
 """
 
 import os

@@ -252,7 +252,6 @@ def test_nested_selection_preserves_object_field_arguments():
             UUID("12345678-1234-5678-1234-567812345678"),
             '"12345678-1234-5678-1234-567812345678"',
         ),
-        (Decimal, "Decimal", Decimal("12.50"), '"12.50"'),
     ],
 )
 def test_supported_join_key_types_pass_validation_and_render(
@@ -306,6 +305,27 @@ def test_join_contract_rejects_incompatible_batch_argument_type():
             rrel=relationship,
             remote_field_type="int",
             batch_arg_type="list[str]",
+        )
+
+
+def test_join_contract_rejects_decimal_join_key():
+    """Decimal is not a supported federation join-key type: member page_by
+    buckets by the SQL column value, which mismatches the wire string key.
+    Rejected at federate() validation (fail-fast), never at query time."""
+    source = create_model("ReviewDecimalJoinSource", product_id=(Decimal, ...))
+    relationship = RemoteRelationship(
+        fk="product_id",
+        target=review_remote.ReviewRemoteRow,
+        name="review",
+        join_remote="product_id",
+    )
+
+    with pytest.raises(FederationError, match=r"Unsupported.*Decimal"):
+        _check_join_contract(
+            source_entity=source,
+            rrel=relationship,
+            remote_field_type="Decimal",
+            batch_arg_type="list[Decimal]",
         )
 
 

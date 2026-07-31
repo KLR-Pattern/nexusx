@@ -95,7 +95,8 @@ page_by_product_id_in(
 ## Acceptance
 
 - ASC/DESC、多列排序、nullable null ordering、稳定 tie-breaker 的分页结果正确。
-- offset 越界、空 key、最后一页、多个 parent、UUID/Decimal join key 正确。
+- offset 越界、空 key、最后一页、多个 parent、UUID join key 正确。
+- Decimal join key 不支持：mounter 在 `federate()` 声明校验阶段拒绝（根因：member page_by 按 SQL 列值分桶，对 wire 字符串 key 存在类型不匹配）。
 - 同一 remote service 每个 batch 只发一条 GraphQL 请求。
 - `items` 子树继续由 member executor 递归解析。
 - 未配置 pagination 的 remote relationship 保持原全量行为。

@@ -13,7 +13,6 @@ side-channel pattern as ``loader._query_meta``.
 
 from __future__ import annotations
 
-import decimal
 import json
 import uuid
 from typing import Any, cast
@@ -98,7 +97,7 @@ def _render_value(v: Any) -> str:
         return "null"
     if isinstance(v, (list, tuple)):
         return "[" + ", ".join(_render_value(x) for x in v) + "]"
-    if isinstance(v, (uuid.UUID, decimal.Decimal)):
+    if isinstance(v, uuid.UUID):
         return json.dumps(str(v))
     return str(v)
 
@@ -106,13 +105,16 @@ def _render_value(v: Any) -> str:
 def _normalize_join_key(v: Any) -> Any:
     """Coerce a LOCAL join key into the wire form the remote echoes back.
 
-    Symmetric with outbound ``_render_value``: UUID/Decimal travel as strings
-    over JSON, so the member's response carries the join key as a plain string.
+    Symmetric with outbound ``_render_value``: UUID travels as a string over
+    JSON, so the member's response carries the join key as a plain string.
     Without this, a local ``UUID`` key would miss a string-keyed bucket
     (``UUID("x") != "x"``) and silently resolve to ``None``/``[]``. int/str/bool
     already match their JSON form and pass through unchanged.
+
+    Decimal is NOT a supported join-key type — rejected at ``federate()``
+    validation (``_SUPPORTED_JOIN_TYPES``); only UUID needs normalization here.
     """
-    if isinstance(v, (uuid.UUID, decimal.Decimal)):
+    if isinstance(v, uuid.UUID):
         return str(v)
     return v
 

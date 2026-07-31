@@ -28,4 +28,5 @@ query {
 - `pagination.has_more` 必须存在且为 bool；选择 `total_count` 时必须存在且为非负 int。
 - malformed response 抛 `RemoteQueryError`。
 - 合法响应中缺失某个 input key 才映射为空页。
-- UUID/Decimal join key 使用统一 wire normalization 对齐。
+- UUID join key 使用统一 wire normalization 对齐。
+- Decimal join key 不支持（mounter 在 `federate()` 声明校验阶段拒绝）。
