@@ -51,6 +51,37 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 
+class FederationTransportError(RuntimeError):
+    """A cross-service HTTP/JSON operation failed.
+
+    Carries enough context for startup logs and callers to distinguish a
+    transient connectivity problem from an explicit remote rejection.
+    """
+
+    def __init__(
+        self,
+        method: str,
+        url: str,
+        message: str,
+        *,
+        status_code: int | None = None,
+        response_detail: str | None = None,
+    ) -> None:
+        self.method = method
+        self.url = url
+        self.status_code = status_code
+        self.response_detail = response_detail
+        self.retryable = (
+            status_code is None
+            or status_code in {408, 429}
+            or status_code >= 500
+        )
+
+        status = f" returned HTTP {status_code}" if status_code is not None else " failed"
+        detail = f": {response_detail}" if response_detail else f": {message}"
+        super().__init__(f"Federation {method.upper()} {url}{status}{detail}")
+
+
 @runtime_checkable
 class FederationTransport(Protocol):
     """How federation makes cross-service calls. Implement to plug in security.

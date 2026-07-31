@@ -361,6 +361,7 @@ class ErManager:
         self._mounted_services: dict[str, str] = {}
         self._pending_remote_rels: list[tuple[type, Any]] = []
         self._fed_registry: Any = None
+        self._federation_transport: FederationTransport | None = None
         # Bumped whenever the entity/relationship set changes (add_virtual_entities,
         # initialize/federation). GraphQL views keyed on it to refresh lazily.
         self._version: int = 0
@@ -387,12 +388,14 @@ class ErManager:
         for entity in entities:
             custom_rels = get_custom_relationships(entity)
             entity_rels = self._registry.setdefault(entity, {})
+            declared_names = set(entity_rels)
             for rel in custom_rels:
-                if rel.name in entity_rels:
+                if rel.name in declared_names:
                     raise ValueError(
                         f"Custom relationship '{rel.name}' on {entity.__name__} "
                         f"conflicts with an existing relationship name"
                     )
+                declared_names.add(rel.name)
                 if isinstance(rel, RemoteRelationship):
                     # Federated relationship: defer wiring to federate().
                     self._pending_remote_rels.append((entity, rel))
@@ -459,13 +462,15 @@ class ErManager:
             # call — virtual entities have no SQLAlchemy mapper to inspect).
             custom_rels = get_custom_relationships(entity)
             entity_rels: dict[str, RelationshipInfo] = {}
+            declared_names: set[str] = set()
             for rel in custom_rels:
-                if rel.name in entity_rels:
+                if rel.name in declared_names:
                     raise ValueError(
                         f"Custom relationship '{rel.name}' on "
                         f"{entity.__name__} conflicts with another "
                         f"relationship name on the same class."
                     )
+                declared_names.add(rel.name)
                 if isinstance(rel, RemoteRelationship):
                     self._pending_remote_rels.append((entity, rel))
                 else:

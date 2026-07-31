@@ -131,7 +131,10 @@ class FederatedTypeRegistry:
         # Scalar fields: type-expression string (resolved by model_rebuild).
         for fd in frag.scalar_fields:
             ann = _safe_annotation(fd.type_name, namespace)
-            field_defs[fd.name] = (f"({ann}) | None", None)
+            # Keep the member's original annotation so SDL/introspection retain
+            # its nullable/non-null contract. The default remains None because a
+            # remote fetch materializes only the fields selected by the caller.
+            field_defs[fd.name] = (ann, None)
         # Relationship fields: ForwardRef to target typename (resolved in pass 2).
         # These become first-class model_fields so DefineSubset, Resolver, SDL,
         # and Voyager all treat them as proper schema relationships. Respect
