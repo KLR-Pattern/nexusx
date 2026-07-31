@@ -138,11 +138,9 @@ class SDLGenerator:
         for entity in self.entities:
             parts.append(self._generate_type(entity))
 
-        # 4. Generate Pagination and Result types. Driven by EITHER the local
-        # enable_pagination toggle OR any relationship carrying a page_loader —
-        # the latter covers federated paginated remotes (wiring sets page_loader
-        # without the global toggle), so cross-service pagination renders its
-        # {items, pagination} shape without forcing enable_pagination on the mounter.
+        # 4. Generate Pagination and Result types. Local relationships remain
+        # gated by enable_pagination; federated paginated relationships and
+        # member-side by_<key>_in_page roots are independently active.
         if (
             enable_pagination
             or self._has_any_paginated_relationship()
@@ -420,7 +418,7 @@ class SDLGenerator:
                 if target_entity is None or not hasattr(target_entity, "__name__"):
                     continue
                 target = target_entity.__name__
-                if rel_info.is_list and rel_info.page_loader is not None:
+                if self._is_active_paginated_relationship(rel_info):
                     # Federated/local paginated to-many via the registry path —
                     # render as {Target}Result with limit/offset args (mirrors
                     # the type-hint path's paginated rendering).
@@ -490,28 +488,33 @@ class SDLGenerator:
     def _is_paginated_relationship(
         self, entity: type[SQLModel], field_name: str
     ) -> bool:
-        """Check if a relationship has pagination enabled (page_loader configured)."""
+        """Check if a relationship exposes pagination in this schema."""
         if not self._loader_registry:
             return False
         rel_info = self._loader_registry.get_relationship(entity, field_name)
-        return rel_info is not None and rel_info.page_loader is not None
+        return self._is_active_paginated_relationship(rel_info)
 
     def _has_any_paginated_relationship(self) -> bool:
-        """True if any registered relationship carries a ``page_loader``.
-
-        Covers BOTH local paged relations (``enable_pagination`` + ``order_by``)
-        and federated paginated remotes (wiring sets ``page_loader`` from the
-        ``RemoteRelationship.sort_field`` declaration) — so Pagination/Result
-        types are generated whenever a paged relation exists, regardless of the
-        global ``enable_pagination`` toggle.
-        """
+        """True if any registered relationship exposes pagination in this schema."""
         if not self._loader_registry:
             return False
         for entity in self.entities:
             for rel in self._loader_registry.get_relationships(entity).values():
-                if getattr(rel, "page_loader", None) is not None:
+                if self._is_active_paginated_relationship(rel):
                     return True
         return False
+
+    def _is_active_paginated_relationship(self, rel_info: Any) -> bool:
+        """Apply the local toggle without disabling explicit federation pagination."""
+        return (
+            rel_info is not None
+            and rel_info.is_list
+            and rel_info.page_loader is not None
+            and (
+                self._enable_pagination
+                or getattr(rel_info, "target_service", None) is not None
+            )
+        )
 
     def _has_any_pagination_root(self) -> bool:
         """True if any entity has a by_<key>_in_page federation pagination root."""
@@ -596,7 +599,7 @@ class SDLGenerator:
         for entity in self.entities:
             rels = self._loader_registry.get_relationships(entity)
             for _rel_name, rel_info in rels.items():
-                if rel_info.is_list and rel_info.page_loader is not None:
+                if self._is_active_paginated_relationship(rel_info):
                     target_name = rel_info.target_entity.__name__
                     result_type_name = f"{target_name}Result"
                     if result_type_name not in result_type_names:

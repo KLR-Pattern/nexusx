@@ -12,7 +12,7 @@ import tempfile
 import httpx
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.applications import Starlette
 from starlette.routing import Mount
@@ -46,6 +46,10 @@ class RProduct(RProductBase, table=True):
     __tablename__ = "fed_pag_render_product"
     id: int | None = Field(default=None, primary_key=True)
     name: str
+    notes: list["RProductNote"] = Relationship(
+        back_populates="product",
+        sa_relationship_kwargs={"order_by": "RProductNote.id"},
+    )
     __relationships__ = [
         RemoteRelationship(
             fk="id", target=list[reviews.RReview],
@@ -53,6 +57,14 @@ class RProduct(RProductBase, table=True):
             sort_field="rating",  # pagination switch
         ),
     ]
+
+
+class RProductNote(RProductBase, table=True):
+    __tablename__ = "fed_pag_render_product_note"
+    id: int | None = Field(default=None, primary_key=True)
+    product_id: int = Field(foreign_key="fed_pag_render_product.id")
+    text: str
+    product: RProduct | None = Relationship(back_populates="notes")
 
 
 def _engine():
@@ -124,6 +136,11 @@ async def test_sdl_renders_paginated_remote_as_result(catalog):
     assert "type RReviewResult {" in sdl
     assert "items: [RReview!]!" in sdl
     assert "pagination: Pagination!" in sdl
+    # A local ordered relationship stays non-paginated while the global toggle
+    # is off; the remote paginated relationship must not activate it.
+    assert "notes: [RProductNote!]!" in sdl
+    assert "notes(limit:" not in sdl
+    assert "type RProductNoteResult {" not in sdl
 
 
 @pytest.mark.asyncio
@@ -138,3 +155,7 @@ async def test_introspection_renders_paginated_remote_as_result(catalog):
     assert "limit" in arg_names
     assert "offset" in arg_names
     assert _unwrap_type_name(reviews_field["type"]) == "RReviewResult"
+    notes_field = next(f for f in product["fields"] if f["name"] == "notes")
+    assert notes_field["args"] == []
+    assert _unwrap_type_name(notes_field["type"]) == "RProductNote"
+    assert "RProductNoteResult" not in types

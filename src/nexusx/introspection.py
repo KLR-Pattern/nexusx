@@ -175,11 +175,9 @@ class IntrospectionGenerator:
         for entity in self.entities:
             types_list.append(self._build_entity_type(entity))
 
-        # 5. Pagination types (Pagination + Result types). Driven by the local
-        # enable_pagination toggle, any relationship carrying a page_loader
-        # (federated paginated remotes), OR any by_<key>_in_page root (member
-        # side). The Pagination type is emitted only here so a member with BOTH
-        # a local paged relation and a federation root gets exactly one.
+        # 5. Pagination types (Pagination + Result types). Local relationships
+        # remain gated by enable_pagination; federated paginated relationships
+        # and member-side by_<key>_in_page roots are independently active.
         if self._loader_registry and (
             self._enable_pagination
             or self._has_any_paginated_relationship()
@@ -757,7 +755,7 @@ class IntrospectionGenerator:
         if not self._loader_registry:
             return False
         rel_info = self._loader_registry.get_relationship(entity, field_name)
-        if rel_info is None or rel_info.page_loader is None:
+        if not self._is_active_paginated_relationship(rel_info):
             return False
         # Must be a list type — unwrap Mapped first
         unwrapped = python_type
@@ -766,18 +764,26 @@ class IntrospectionGenerator:
         return self._converter.is_list_type(unwrapped)
 
     def _has_any_paginated_relationship(self) -> bool:
-        """True if any registered relationship carries a ``page_loader``.
-
-        Mirrors SDLGenerator: covers local paged relations and federated paginated
-        remotes (wiring sets page_loader), independent of the global toggle.
-        """
+        """True if any registered relationship exposes pagination in this schema."""
         if not self._loader_registry:
             return False
         for entity in self.entities:
             for rel in self._loader_registry.get_relationships(entity).values():
-                if getattr(rel, "page_loader", None) is not None:
+                if self._is_active_paginated_relationship(rel):
                     return True
         return False
+
+    def _is_active_paginated_relationship(self, rel_info: Any) -> bool:
+        """Apply the local toggle without disabling explicit federation pagination."""
+        return (
+            rel_info is not None
+            and rel_info.is_list
+            and rel_info.page_loader is not None
+            and (
+                self._enable_pagination
+                or getattr(rel_info, "target_service", None) is not None
+            )
+        )
 
     def _has_any_pagination_root(self) -> bool:
         """True if any entity has a by_<key>_in_page federation pagination root."""
@@ -946,7 +952,7 @@ class IntrospectionGenerator:
         for entity in self.entities:
             rels = self._loader_registry.get_relationships(entity)
             for _rel_name, rel_info in rels.items():
-                if rel_info.is_list and rel_info.page_loader is not None:
+                if self._is_active_paginated_relationship(rel_info):
                     target_name = rel_info.target_entity.__name__
                     result_type_name = f"{target_name}Result"
                     if result_type_name not in result_type_names:
