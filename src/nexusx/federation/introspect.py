@@ -97,16 +97,39 @@ def _batch_root_arg(method: Any) -> tuple[str, str]:
 
 
 def _batch_roots(entity: type) -> list[BatchRoot]:
-    """Generated ``by_<key>_in`` batch roots on ``entity`` with their arg contract."""
+    """Generated batch roots on ``entity`` with their arg contract.
+
+    Pagination roots carry their semantic capability in ``_pagination_root``
+    metadata; full roots continue to follow ``by_<key>_in``.
+    """
     roots: list[BatchRoot] = []
     for attr_name in dir(entity):
-        if not (attr_name.startswith("by_") and attr_name.endswith("_in")):
+        if not (
+            (attr_name.startswith("by_") and attr_name.endswith("_in"))
+            or (
+                attr_name.startswith("page_by_")
+                and attr_name.endswith("_in")
+            )
+        ):
             continue
         attr = getattr(entity, attr_name, None)
         if not callable(attr):
             continue
+        func = attr.__func__ if hasattr(attr, "__func__") else attr
+        pagination_root = getattr(func, "_pagination_root", None)
         arg_name, arg_type = _batch_root_arg(attr)
-        roots.append(BatchRoot(name=attr_name, arg_name=arg_name, arg_type=arg_type))
+        roots.append(
+            BatchRoot(
+                name=attr_name,
+                arg_name=arg_name,
+                arg_type=arg_type,
+                page=(
+                    pagination_root["page_capability"]
+                    if pagination_root
+                    else None
+                ),
+            )
+        )
     return sorted(roots, key=lambda r: r.name)
 
 
@@ -152,7 +175,11 @@ def serialize_er_introspection(er_manager: Any) -> ERIntrospectionResponse:
                     fk_field=r_info.fk_field,
                     target_typename=r_info.target_entity.__name__,
                     is_list=r_info.is_list,
-                    sort_field=getattr(r_info, "sort_field", None),
+                    pagination=(
+                        r_info.is_list
+                        and getattr(r_info, "pagination", False)
+                        and target_service is not None
+                    ),
                     target_service=target_service,
                     target_endpoint=(
                         mounted.get(target_service) if (target_service and expose) else None

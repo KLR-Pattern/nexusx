@@ -319,3 +319,253 @@ def create_remote_loader(
     _RemoteLoader.__name__ = f"RemoteLoader_{typename}_{join_remote}"
     _RemoteLoader.__qualname__ = _RemoteLoader.__name__
     return _RemoteLoader
+
+
+def build_paginated_gql_query(
+    *,
+    typename: str,
+    entry: str,
+    arg_name: str,
+    join_remote: str,
+    keys: list[Any],
+    items_sel: Any,
+    order: str,
+    limit: int | None = None,
+    offset: int = 0,
+    want_total_count: bool = True,
+) -> str:
+    """Construct the paginated GraphQL query document."""
+    keys_lit = _render_keys(keys)
+    args = [f"{arg_name}: {keys_lit}"]
+    if limit is not None:
+        args.append(f"limit: {_render_value(limit)}")
+    args.append(f"offset: {_render_value(offset)}")
+    args.append(f"order: {order}")
+    items_body = _render_selection(items_sel, indent=6)
+    pag_lines = ["      has_more"]
+    if want_total_count:
+        pag_lines.append("      total_count")
+    pagination_body = "\n".join(pag_lines)
+    return (
+        f"query {{\n"
+        f"  {typename} {{\n"
+        f"    {entry}({', '.join(args)}) {{\n"
+        f"      {join_remote}\n"
+        f"      items {{\n{items_body}\n      }}\n"
+        f"      pagination {{\n{pagination_body}\n      }}\n"
+        f"    }}\n"
+        f"  }}\n"
+        f"}}"
+    )
+
+
+def create_paginated_remote_loader(
+    *,
+    typename: str,
+    join_remote: str,
+    endpoint: str,
+    target_cls: type[BaseModel],
+    transport: FederationTransport,
+    arg_name: str,
+    order: str,
+) -> type[DataLoader]:  # type: ignore[type-arg]
+    """Build a DataLoader that fetches a paginated sub-tree from a mounted service.
+
+    Emits one ``page_by_<join_remote>_in`` gql carrying batch-level
+    ``limit``/``offset`` and a member-defined semantic ``order`` profile, then
+    aligns the per-key packages into ``{items, pagination}`` per parent.
+    """
+
+    entry = f"page_by_{join_remote}_in"
+    gql_url = endpoint.rstrip("/") + "/graphql"
+
+    class _PaginatedRemoteLoader(DataLoader):  # type: ignore[type-arg]
+        async def batch_load_fn(self, keys: list[Any]) -> list[Any]:
+            selection = getattr(self, "_remote_selection", None)
+            items_sel = None
+            want_tc = True
+            sel_args: dict[str, Any] = {}
+            if selection is not None:
+                sub = getattr(selection, "sub_fields", None) or {}
+                items_sel = sub.get("items")
+                pag_field = sub.get("pagination")
+                pag_sub = (
+                    getattr(pag_field, "sub_fields", None) or {}
+                    if pag_field else {}
+                )
+                want_tc = "total_count" in pag_sub
+                sel_args = getattr(selection, "arguments", None) or {}
+            if items_sel is None:
+                from pydantic import BaseModel as _BM
+
+                from nexusx.query_parser import FieldSelection
+
+                items_sel = FieldSelection(
+                    name=typename,
+                    sub_fields={
+                        fname: FieldSelection(name=fname)
+                        for fname, fi in target_cls.model_fields.items()
+                        if not (
+                            isinstance(fi.annotation, type)
+                            and issubclass(fi.annotation, _BM)
+                        )
+                    },
+                )
+            limit = sel_args.get("limit")
+            offset = sel_args.get("offset", 0)
+            query = build_paginated_gql_query(
+                typename=typename, entry=entry, arg_name=arg_name,
+                join_remote=join_remote, keys=list(keys), items_sel=items_sel,
+                order=order,
+                limit=limit, offset=offset, want_total_count=want_tc,
+            )
+            resp = await transport.post_json(gql_url, {"query": query})
+            if not isinstance(resp, dict):
+                raise RemoteQueryError(
+                    typename,
+                    [{"message": f"Expected object response, got {type(resp).__name__}"}],
+                )
+            if resp.get("errors"):
+                raise RemoteQueryError(typename, resp["errors"])
+            data = resp.get("data")
+            if not isinstance(data, dict):
+                raise RemoteQueryError(
+                    typename,
+                    [{"message": "Response is missing an object-valued 'data' field"}],
+                )
+            type_group = data.get(typename)
+            if not isinstance(type_group, dict):
+                raise RemoteQueryError(
+                    typename,
+                    [{"message": f"Response is missing data.{typename}"}],
+                )
+            if entry not in type_group:
+                raise RemoteQueryError(
+                    typename,
+                    [{"message": f"Response is missing data.{typename}.{entry}"}],
+                )
+            packages = type_group[entry]
+            if not isinstance(packages, list):
+                raise RemoteQueryError(
+                    typename,
+                    [{
+                        "message": (
+                            f"Expected data.{typename}.{entry} to be a list, "
+                            f"got {type(packages).__name__}"
+                        )
+                    }],
+                )
+            buckets: dict[Any, Any] = {}
+            expected_keys = {_normalize_join_key(key) for key in keys}
+            for pkg in packages:
+                pkg_d = _to_dict(pkg)
+                if not isinstance(pkg_d, dict):
+                    raise RemoteQueryError(
+                        typename,
+                        [{"message": f"Expected packages in {entry} to be objects"}],
+                    )
+                if join_remote not in pkg_d:
+                    raise RemoteQueryError(
+                        typename,
+                        [{"message": f"Package in {entry} is missing {join_remote!r}"}],
+                    )
+                fk = _normalize_join_key(pkg_d[join_remote])
+                if fk not in expected_keys:
+                    raise RemoteQueryError(
+                        typename,
+                        [{"message": f"Package in {entry} has unexpected key {fk!r}"}],
+                    )
+                if fk in buckets:
+                    raise RemoteQueryError(
+                        typename,
+                        [{"message": f"Package in {entry} repeats key {fk!r}"}],
+                    )
+                items = pkg_d.get("items")
+                if not isinstance(items, list):
+                    raise RemoteQueryError(
+                        typename,
+                        [{"message": f"Package {fk!r} has non-list 'items'"}],
+                    )
+                pagination = pkg_d.get("pagination")
+                if not isinstance(pagination, dict):
+                    raise RemoteQueryError(
+                        typename,
+                        [{"message": f"Package {fk!r} has non-object 'pagination'"}],
+                    )
+                has_more = pagination.get("has_more")
+                if not isinstance(has_more, bool):
+                    raise RemoteQueryError(
+                        typename,
+                        [{"message": f"Package {fk!r} has invalid pagination.has_more"}],
+                    )
+                if want_tc:
+                    total_count = pagination.get("total_count")
+                    if (
+                        not isinstance(total_count, int)
+                        or isinstance(total_count, bool)
+                        or total_count < 0
+                    ):
+                        raise RemoteQueryError(
+                            typename,
+                            [{
+                                "message": (
+                                    f"Package {fk!r} has invalid "
+                                    "pagination.total_count"
+                                )
+                            }],
+                        )
+                buckets[fk] = pkg_d
+            aligned: list[Any] = []
+            for key in keys:
+                pkg_d = buckets.get(_normalize_join_key(key))
+                if pkg_d is None:
+                    empty_pagination = {"has_more": False}
+                    if want_tc:
+                        empty_pagination["total_count"] = 0
+                    aligned.append(
+                        {"items": [], "pagination": empty_pagination}
+                    )
+                else:
+                    items = [
+                        target_cls.model_validate(_to_dict(r))
+                        for r in pkg_d["items"]
+                    ]
+                    aligned.append({
+                        "items": items,
+                        "pagination": pkg_d["pagination"],
+                    })
+            return aligned
+
+    _PaginatedRemoteLoader.__name__ = f"PaginatedRemoteLoader_{typename}_{join_remote}"
+    _PaginatedRemoteLoader.__qualname__ = _PaginatedRemoteLoader.__name__
+    return _PaginatedRemoteLoader
+
+
+async def fetch_remote_subtree_paged(
+    *,
+    registry: Any,
+    rel_info: Any,
+    parents: list[Any],
+    selection: Any,
+) -> list[Any]:
+    """Fetch a paginated federated sub-tree via ``rel_info.page_loader``.
+
+    Like :func:`fetch_remote_subtree` but uses the paginated RemoteLoader
+    (``rel_info.page_loader``), which emits ``page_by_<key>_in`` and aligns
+    per-key packages into ``{items, pagination}``. The client ``limit``/``offset``
+    live in ``selection.arguments``; the resolved semantic order is baked into
+    the loader class during federation initialization.
+    """
+    from nexusx.loader.query_meta import generate_type_key_from_selection
+
+    target_rels = registry.get_relationships(rel_info.target_entity)
+    fk_lookup = {name: info.fk_field for name, info in target_rels.items()}
+    type_key = generate_type_key_from_selection(
+        selection, rel_info.target_entity, fk_lookup=fk_lookup,
+    )
+    loader = registry.get_loader(
+        rel_info.page_loader, type_key=type_key, force_split=True,
+    )
+    set_remote_selection(loader, selection)
+    fk_values = [getattr(p, rel_info.fk_field) for p in parents]
+    return await loader.load_many(fk_values)

@@ -50,10 +50,13 @@ deep chain:
     by_filter {
       id
       name
-      reviews {
-        title
-        rating
-        comments { text author { name config { theme } } }
+      reviews(limit: 5) {
+        items {
+          title
+          rating
+          comments { text author { name config { theme } } }
+        }
+        pagination { has_more total_count }
       }
     }
   }
@@ -92,6 +95,7 @@ await handler.er.initialize()
 | β nested fetch | one gql per service returns the multi-level nested chain |
 | Multi-level members | `Review→Comment` and `User→UserConfig` resolved locally per service |
 | `by_<key>_in` entry roots | `AutoQueryConfig(batch_keys=...)` on each member |
+| Member-owned pagination order | `AutoQueryConfig(batch_pages=...)` on reviews |
 | Voyager on the composed graph | `http://localhost:8022/voyager` (ER tab) — catalog only |
 
 ## UseCase composition over federated data (DefineSubset + Resolver)
@@ -132,7 +136,7 @@ serializes the tree.
 
 - `users_app.py` — leaf; `User ── UserConfig` (local one-to-one) + `by_id_in`.
 - `reviews_app.py` — mounts users; `Review ── Comment` (local one-to-many),
-  `Comment.author → users.User`, + `by_product_id_in`.
+  `Comment.author → users.User`, + full and paginated product batch roots.
 - `catalog_app.py` — entry service clients query; mounts reviews; DefineSubset DTOs;
   mounts Voyager at `/voyager` over the composed federated graph.
 - `_common.py` — shared FastAPI app builder (`/graphql` + ER introspection +

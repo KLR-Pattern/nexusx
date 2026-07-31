@@ -144,8 +144,14 @@ class FederatedTypeRegistry:
             if rel.name in field_defs:
                 continue
             target = rel.target_typename
-            ann = f"list[{target}]" if rel.is_list else target
-            field_defs[rel.name] = (f"{ann} | None", None)
+            if rel.pagination:
+                # The member returns {items, pagination}, not list[Target].
+                # RelationshipInfo remains the schema source of truth, while
+                # Any preserves the already-shaped coalesced payload.
+                field_defs[rel.name] = (Any | None, None)
+            else:
+                ann = f"list[{target}]" if rel.is_list else target
+                field_defs[rel.name] = (f"{ann} | None", None)
         # keys (e.g. `author`) stay on the instance for the serializer.
         model = cast(
             "type[BaseModel]",

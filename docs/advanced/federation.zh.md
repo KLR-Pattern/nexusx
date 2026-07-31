@@ -86,7 +86,62 @@ await handler.execute("{ Product { by_filter { id reviews { title author { name 
 
 `demo/federation/` 跑全部三个服务;`bash start_all.sh` 启动。打开
 http://localhost:8022/(catalog 服务的 GraphiQL),查
-`{ Product { by_filter { id name reviews { title rating author { name } } } } }`。
+`{ Product { by_filter { id name reviews(limit:5) { items { title rating } pagination { has_more } } } } }`。
+
+## 分页
+
+分页和物理排序归数据所在的 member。member 通过 `batch_pages` 显式发布命名的
+语义 order profile，实际列名和方向不跨服务暴露。
+
+```python
+from nexusx import BatchPageConfig, OrderTerm, PageOrder
+
+AutoQueryConfig(
+    batch_keys={"Review": ["product_id"]},
+    batch_pages={
+        "Review": {
+            "product_id": BatchPageConfig(
+                default_order="NEWEST",
+                orders={
+                    "NEWEST": PageOrder(
+                        [OrderTerm("created_at", "desc")]
+                    ),
+                    "HIGHEST_RATING": PageOrder(
+                        [OrderTerm("rating", "desc")]
+                    ),
+                },
+            )
+        }
+    },
+)
+```
+
+挂载方静态选择其中一个 profile；`order=None` 使用 member 默认值。order 属于部署
+配置，不开放给业务 GraphQL 客户端。
+
+```python
+RemoteRelationship(
+    fk="id", target=list[reviews.Review],
+    name="reviews", join_remote="product_id",
+    pagination=True,
+    order="HIGHEST_RATING",
+)
+```
+
+查询时带 `limit`/`offset`;`total_count` 可选(仅在选择时计算):
+
+```graphql
+{ Product { by_filter {
+  reviews(limit: 5, offset: 0) {
+    items { title rating }
+    pagination { has_more total_count }
+  }
+} } }
+```
+
+分页发生在数据所在的 member(按 join key 的窗口函数);挂载方每次遍历对每个被挂服务发一条 gql,并按 join key 对齐 per-key 分页包。`items` 子树(嵌套关系,含更深的跨服务跳转)由 member 在这一条 gql 内解析。
+内部调用为 `page_by_<key>_in(keys, limit, offset, order)`；ER contract 只暴露
+profile 名和描述，不暴露物理排序字段。
 
 相关:[自定义关系](../guide/custom_relationship.zh.md)、
 [ER 图可视化](voyager.zh.md)。

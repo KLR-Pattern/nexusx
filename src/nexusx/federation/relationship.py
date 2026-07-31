@@ -68,6 +68,10 @@ class RemoteRelationship:
         join_remote: Corresponding field on the remote type; the remote service
             must expose a ``by_<join_remote>_in`` batch query root.
         description: Optional ER-diagram documentation.
+        pagination: Whether this to-many relationship uses member-side offset
+            pagination.
+        order: Optional semantic order profile exposed by the member. ``None``
+            selects the member's default profile.
     """
 
     fk: str
@@ -75,6 +79,8 @@ class RemoteRelationship:
     name: str
     join_remote: str
     description: str | None = None
+    pagination: bool = False
+    order: str | None = None
     # Derived from `target` (list[...] => True); not passed by callers.
     is_list: bool = field(default=False, init=False)
 
@@ -89,6 +95,10 @@ class RemoteRelationship:
         # Optional voyager cluster color, carried the same way as target_url.
         self.target_color = getattr(ref, "color", None)
         self.target = ref.qualified_name
+        if self.order is not None and not self.pagination:
+            raise ValueError(
+                "RemoteRelationship.order requires pagination=True"
+            )
 
 
 def parse_qualified_name(target: str) -> tuple[str, str]:

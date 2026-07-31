@@ -138,11 +138,22 @@ class SDLGenerator:
         for entity in self.entities:
             parts.append(self._generate_type(entity))
 
-        # 4. Generate Pagination and Result types (if pagination enabled)
-        if enable_pagination:
+        # 4. Generate Pagination and Result types. Local relationships remain
+        # gated by enable_pagination; federated paginated relationships and
+        # member-side page_by_<key>_in roots are independently active.
+        if (
+            enable_pagination
+            or self._has_any_paginated_relationship()
+            or self._has_any_pagination_root()
+        ):
             pag_types = self._generate_pagination_types()
             if pag_types:
                 parts.append(pag_types)
+        # Federation pagination roots (member-side page_by_<key>_in): per-key
+        # package types + Pagination, so the member's get_sdl() is complete.
+        pp_types = self._generate_page_package_types()
+        if pp_types:
+            parts.append(pp_types)
 
         # 5. Generate per-entity Query group types + the root Query type
         query_group_blocks, query_root_lines = self._collect_query_groups()
@@ -181,6 +192,18 @@ class SDLGenerator:
             for field_type in hints.values():
                 if isinstance(field_type, type) and issubclass(field_type, Enum):
                     enums[field_type.__name__] = field_type
+            for attr_name in dir(entity):
+                try:
+                    attr = getattr(entity, attr_name)
+                except Exception:
+                    continue
+                if not callable(attr):
+                    continue
+                func = attr.__func__ if hasattr(attr, "__func__") else attr
+                pag_root = getattr(func, "_pagination_root", None)
+                if pag_root:
+                    enum_class = pag_root["order_enum"]
+                    enums[enum_class.__name__] = enum_class
 
         result = []
         for enum_name, enum_class in enums.items():
@@ -407,8 +430,16 @@ class SDLGenerator:
                 if target_entity is None or not hasattr(target_entity, "__name__"):
                     continue
                 target = target_entity.__name__
-                gql_type = f"[{target}!]!" if rel_info.is_list else target
-                fields.append(f"  {rel_name}: {gql_type}")
+                if self._is_active_paginated_relationship(rel_info):
+                    # Federated/local paginated to-many via the registry path —
+                    # render as {Target}Result with limit/offset args (mirrors
+                    # the type-hint path's paginated rendering).
+                    fields.append(
+                        f"  {rel_name}(limit: Int, offset: Int = 0): {target}Result!"
+                    )
+                else:
+                    gql_type = f"[{target}!]!" if rel_info.is_list else target
+                    fields.append(f"  {rel_name}: {gql_type}")
 
         # Build type definition with optional description
         type_def = f"type {entity.__name__} {{\n{chr(10).join(fields)}\n}}"
@@ -443,8 +474,7 @@ class SDLGenerator:
             if entity_name:
                 # Check if pagination is enabled for this relationship
                 if (
-                    self._enable_pagination
-                    and entity
+                    entity
                     and field_name
                     and self._is_paginated_relationship(entity, field_name)
                 ):
@@ -470,11 +500,95 @@ class SDLGenerator:
     def _is_paginated_relationship(
         self, entity: type[SQLModel], field_name: str
     ) -> bool:
-        """Check if a relationship has pagination enabled (page_loader configured)."""
+        """Check if a relationship exposes pagination in this schema."""
         if not self._loader_registry:
             return False
         rel_info = self._loader_registry.get_relationship(entity, field_name)
-        return rel_info is not None and rel_info.page_loader is not None
+        return self._is_active_paginated_relationship(rel_info)
+
+    def _has_any_paginated_relationship(self) -> bool:
+        """True if any registered relationship exposes pagination in this schema."""
+        if not self._loader_registry:
+            return False
+        for entity in self.entities:
+            for rel in self._loader_registry.get_relationships(entity).values():
+                if self._is_active_paginated_relationship(rel):
+                    return True
+        return False
+
+    def _is_active_paginated_relationship(self, rel_info: Any) -> bool:
+        """Apply the local toggle without disabling explicit federation pagination."""
+        return (
+            rel_info is not None
+            and rel_info.is_list
+            and (
+                rel_info.page_loader is not None
+                or getattr(rel_info, "pagination", False)
+            )
+            and (
+                self._enable_pagination
+                or getattr(rel_info, "target_service", None) is not None
+            )
+        )
+
+    def _has_any_pagination_root(self) -> bool:
+        """True if any entity has a federation pagination root."""
+        for entity in self.entities:
+            for attr_name in dir(entity):
+                try:
+                    attr = getattr(entity, attr_name)
+                except Exception:
+                    continue
+                if not callable(attr):
+                    continue
+                func = attr.__func__ if hasattr(attr, "__func__") else attr
+                if getattr(func, "_pagination_root", None):
+                    return True
+        return False
+
+    def _generate_page_package_types(self) -> str | None:
+        """Generate per-key package types for federation pagination roots.
+
+        Mirrors the introspection side: a federation pagination root returns a
+        list of per-key packages ``{fk, items:[Entity], pagination}``; this emits
+        the named OBJECT type so the member's SDL (get_sdl) is complete.
+        """
+        parts: list[str] = []
+        seen: set[str] = set()
+        for entity in self.entities:
+            for attr_name in dir(entity):
+                try:
+                    attr = getattr(entity, attr_name)
+                except Exception:
+                    continue
+                if not callable(attr):
+                    continue
+                func = attr.__func__ if hasattr(attr, "__func__") else attr
+                pag_root = getattr(func, "_pagination_root", None)
+                if not pag_root:
+                    continue
+                ent = pag_root["entity"]
+                fk_field = pag_root["fk_field"]
+                fk_type = pag_root["fk_type"]
+                pkg_name = pag_root["package_name"]
+                if pkg_name in seen:
+                    continue
+                seen.add(pkg_name)
+                fk_gql = _python_type_to_graphql(
+                    fk_type, self._converter, self._entity_names
+                )
+                parts.append(
+                    f"type {pkg_name} {{\n"
+                    f"  {fk_field}: {fk_gql}\n"
+                    f"  items: [{ent.__name__}!]!\n"
+                    f"  pagination: Pagination!\n"
+                    f"}}"
+                )
+        if not parts:
+            return None
+        # Pagination itself is emitted by _generate_pagination_types (whose gate
+        # also covers page_by_<key>_in roots) to avoid a duplicate type.
+        return "\n\n".join(parts)
 
     def _generate_pagination_types(self) -> str | None:
         """Generate Pagination type and Result types for paginated relationships."""
@@ -496,7 +610,7 @@ class SDLGenerator:
         for entity in self.entities:
             rels = self._loader_registry.get_relationships(entity)
             for _rel_name, rel_info in rels.items():
-                if rel_info.is_list and rel_info.page_loader is not None:
+                if self._is_active_paginated_relationship(rel_info):
                     target_name = rel_info.target_entity.__name__
                     result_type_name = f"{target_name}Result"
                     if result_type_name not in result_type_names:
@@ -636,13 +750,17 @@ class SDLGenerator:
                 params.append(f"{param_name}: String!")
 
         # Get return type
-        return_type = hints.get("return", inspect.Signature.empty)
-        if return_type != inspect.Signature.empty:
-            return_gql_type = _python_type_to_graphql(
-                return_type, self._converter, self._entity_names
-            )
+        pag_root = getattr(func, "_pagination_root", None)
+        if pag_root:
+            return_gql_type = f"[{pag_root['package_name']}!]!"
         else:
-            return_gql_type = "String!"
+            return_type = hints.get("return", inspect.Signature.empty)
+            if return_type != inspect.Signature.empty:
+                return_gql_type = _python_type_to_graphql(
+                    return_type, self._converter, self._entity_names
+                )
+            else:
+                return_gql_type = "String!"
 
         # Build field definition
         param_str = f"({', '.join(params)})" if params else ""
