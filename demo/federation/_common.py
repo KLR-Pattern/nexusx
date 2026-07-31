@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from nexusx.federation.introspect import serialize_er_introspection
+from nexusx.federation.transport import FederationTransportError
 
 
 class GraphQLRequest(BaseModel):
@@ -33,9 +34,12 @@ def make_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        if on_startup is not None:
-            await on_startup()
-        yield
+        try:
+            if on_startup is not None:
+                await on_startup()
+            yield
+        finally:
+            await handler.aclose()
 
     app = FastAPI(title=title, lifespan=lifespan)
 
@@ -67,7 +71,9 @@ async def initialize_with_retry(
         try:
             await handler.er.initialize()
             return
-        except Exception as e:  # noqa: BLE001 — demo-only resilience
+        except FederationTransportError as e:
+            if not e.retryable:
+                raise
             last = e
             await asyncio.sleep(delay)
     msg = f"initialize() failed after {tries} retries: {last}"

@@ -13,9 +13,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nexusx.federation.contract import BatchRoot, EntityFragment, ERIntrospectionResponse
+from nexusx.federation.contract import (
+    BatchRoot,
+    EntityFragment,
+    ERIntrospectionResponse,
+    FieldDescriptor,
+)
 from nexusx.federation.http import GraphQLTransport
-from nexusx.federation.introspect import fetch_er_introspection, find_fragment
+from nexusx.federation.introspect import _type_expr, fetch_er_introspection, find_fragment
 from nexusx.federation.registry import FederatedTypeRegistry
 from nexusx.federation.relationship import (
     RemoteRelationship,
@@ -32,6 +37,9 @@ if TYPE_CHECKING:
 
 class FederationError(RuntimeError):
     """Raised at federation init when a declaration is invalid (fail-fast)."""
+
+
+_SUPPORTED_JOIN_TYPES = frozenset({"str", "int", "float", "bool", "UUID", "Decimal"})
 
 
 async def federate(
@@ -52,7 +60,10 @@ async def federate(
     if service_name is not None:
         er_manager.service_name = service_name
     er_manager._mounted_services.update(services)
-    transport = transport or GraphQLTransport()
+    if transport is None:
+        transport = getattr(er_manager, "_federation_transport", None)
+    if transport is None:
+        transport = GraphQLTransport()
     er_manager._federation_transport = transport
 
     # 1. Seed the fetch queue from declared remote relationships.
@@ -184,16 +195,25 @@ def _validate_declarations(
     fragments: dict[str, EntityFragment],
 ) -> None:
     # Validate pending RemoteRelationship declarations.
-    for _src, rrel in er_manager._pending_remote_rels:
+    for source_entity, rrel in er_manager._pending_remote_rels:
         if rrel.sort_field and not rrel.is_list:
             raise FederationError(
                 f"RemoteRelationship {rrel.name!r} declares sort_field but its "
                 f"target is to-one (not list[...]); pagination only applies to "
                 f"to-many relationships."
             )
-        _check_target(
-            rrel.target, rrel.join_remote, endpoints, fragments,
+        remote_field, batch_root = _check_target(
+            rrel.target,
+            rrel.join_remote,
+            endpoints,
+            fragments,
             sort_field=rrel.sort_field,
+        )
+        _check_join_contract(
+            source_entity=source_entity,
+            rrel=rrel,
+            remote_field_type=remote_field.type_name,
+            batch_arg_type=batch_root.arg_type,
         )
 
 
@@ -227,7 +247,7 @@ def _check_target(
     services: dict[str, str],
     fragments: dict[str, EntityFragment],
     sort_field: str | None = None,
-) -> BatchRoot:
+) -> tuple[FieldDescriptor, BatchRoot]:
     """Validate a declared remote target; return its batch root for wiring.
 
     Checks (fail-fast at ``federate()``): service known, type exists, join field
@@ -241,16 +261,17 @@ def _check_target(
     frag = fragments.get(target)
     if frag is None:
         raise FederationError(f"Service {srv!r} has no type for {target!r}")
-    scalar_names = {f.name for f in frag.scalar_fields}
-    if join_remote not in scalar_names:
+    scalar_fields = {f.name: f for f in frag.scalar_fields}
+    remote_field = scalar_fields.get(join_remote)
+    if remote_field is None:
         raise FederationError(
             f"Type {target!r} has no scalar field {join_remote!r} "
-            f"(needed as join key). Fields: {sorted(scalar_names)}"
+            f"(needed as join key). Fields: {sorted(scalar_fields)}"
         )
-    if sort_field and sort_field not in scalar_names:
+    if sort_field and sort_field not in scalar_fields:
         raise FederationError(
             f"Type {target!r} has no scalar field {sort_field!r} "
-            f"(needed as pagination sort_field). Fields: {sorted(scalar_names)}"
+            f"(needed as pagination sort_field). Fields: {sorted(scalar_fields)}"
         )
     entry = f"by_{join_remote}_in"
     br = _find_batch_root(frag, join_remote)
@@ -264,7 +285,70 @@ def _check_target(
             f"Batch root {entry!r} on {target!r} has no determinable argument "
             f"name; the member must generate it via AutoQueryConfig.batch_keys."
         )
-    return br
+    return remote_field, br
+
+
+def _normalize_join_type(type_expr: str) -> str | None:
+    """Return the non-null scalar name from a federation type expression."""
+    parts = {
+        part.strip().strip("()")
+        for part in type_expr.split("|")
+        if part.strip().strip("()") != "None"
+    }
+    if len(parts) != 1:
+        return None
+    scalar = next(iter(parts))
+    if any(token in scalar for token in "[] ,"):
+        return None
+    return scalar
+
+
+def _batch_element_type(type_expr: str) -> str | None:
+    compact = type_expr.replace(" ", "")
+    if not (compact.startswith("list[") and compact.endswith("]")):
+        return None
+    return _normalize_join_type(compact[5:-1])
+
+
+def _check_join_contract(
+    *,
+    source_entity: type,
+    rrel: RemoteRelationship,
+    remote_field_type: str,
+    batch_arg_type: str,
+) -> None:
+    local_field = getattr(source_entity, "model_fields", {}).get(rrel.fk)
+    if local_field is None:
+        raise FederationError(
+            f"RemoteRelationship {source_entity.__name__}.{rrel.name} uses "
+            f"{rrel.fk!r} as a local join field, but that field does not exist."
+        )
+
+    local_type = _normalize_join_type(_type_expr(local_field.annotation))
+    remote_type = _normalize_join_type(remote_field_type)
+    for side, type_name in (("local", local_type), ("remote", remote_type)):
+        if type_name not in _SUPPORTED_JOIN_TYPES:
+            supported = ", ".join(sorted(_SUPPORTED_JOIN_TYPES))
+            raise FederationError(
+                f"Unsupported {side} federation join-key type {type_name!r} on "
+                f"{source_entity.__name__}.{rrel.name}; supported types: {supported}."
+            )
+
+    if local_type != remote_type:
+        raise FederationError(
+            f"Local join field {source_entity.__name__}.{rrel.fk} and remote "
+            f"join field {rrel.target}.{rrel.join_remote} have incompatible "
+            f"types ({local_type} vs {remote_type})."
+        )
+
+    if batch_arg_type:
+        batch_type = _batch_element_type(batch_arg_type)
+        if batch_type != remote_type:
+            raise FederationError(
+                f"Batch root for {rrel.target}.{rrel.join_remote} accepts "
+                f"{batch_arg_type!r}, which is incompatible with remote join "
+                f"type {remote_type!r}."
+            )
 
 
 def _wire_remote_relationship(
@@ -278,7 +362,12 @@ def _wire_remote_relationship(
 ) -> None:
     srv, typename = parse_qualified_name(rrel.target)
     target_cls = fed_registry.get(rrel.target)
-    br = _check_target(rrel.target, rrel.join_remote, endpoints, fragments)
+    _remote_field, br = _check_target(
+        rrel.target,
+        rrel.join_remote,
+        endpoints,
+        fragments,
+    )
     loader_cls = create_remote_loader(
         typename=typename,
         join_remote=rrel.join_remote,
@@ -316,4 +405,3 @@ def _wire_remote_relationship(
         rel_info_kwargs["sort_field"] = rrel.sort_field
     rel_info = RelationshipInfo(**rel_info_kwargs)
     er_manager._registry.setdefault(source_entity, {})[rrel.name] = rel_info
-
