@@ -396,7 +396,24 @@ class QueryExecutor:
         child_sel = job.child_sel
 
         is_remote = getattr(rel_info, "target_service", None) is not None
-        if is_remote:
+        is_paged_remote = (
+            is_remote
+            and bool(getattr(rel_info, "sort_field", None))
+            and rel_info.page_loader is not None
+        )
+        if is_paged_remote:
+            # β paginated path: the relationship declared sort_field, so route to
+            # the paginated RemoteLoader (by_<key>_in_page) which returns
+            # {items, pagination} per parent.
+            from nexusx.federation.remote_loader import fetch_remote_subtree_paged
+
+            results = await fetch_remote_subtree_paged(
+                registry=self._registry,
+                rel_info=rel_info,
+                parents=job.parents,
+                selection=child_sel,
+            )
+        elif is_remote:
             # β path: fetch the whole nested sub-tree via the shared primitive
             # (one gql to the owning service; the member resolves everything
             # under it). Same mechanism the Resolver uses — fetch_remote_subtree.
@@ -440,7 +457,12 @@ class QueryExecutor:
 
         all_children: list = []
         for parent, result in zip(job.parents, results, strict=True):
-            if rel_info.is_list:
+            if isinstance(result, dict) and "items" in result and "pagination" in result:
+                # Paginated result: {items, pagination} — store whole, items to BFS.
+                items = result.get("items") or []
+                self._store(parent, rel_info.name, result)
+                all_children.extend(items)
+            elif rel_info.is_list:
                 items = result or []
                 self._store(parent, rel_info.name, items)
                 all_children.extend(items)
@@ -538,6 +560,10 @@ class QueryExecutor:
     ) -> dict[str, Any]:
         """Serialize a single entity or page result to dict."""
         if isinstance(item, dict):
+            # A by_<key>_in_page root returns per-key packages
+            # {fk, items:[entity], pagination}; serialize specially.
+            if "items" in item and "pagination" in item:
+                return self._serialize_paginated_package(item, entity, field_sel)
             return item
 
         if not field_sel or not field_sel.sub_fields:
@@ -568,6 +594,49 @@ class QueryExecutor:
                     value = str(value)
                 result[field_name] = value
 
+        return result
+
+    def _serialize_paginated_package(
+        self,
+        pkg: dict[str, Any],
+        entity: type[SQLModel],
+        field_sel: FieldSelection | None,
+    ) -> dict[str, Any]:
+        """Serialize a paginated root's per-key package ``{fk, items, pagination}``.
+
+        Reached when a ``by_<key>_in_page`` root returns per-key packages.
+        ``items`` holds entity instances (serialized with the items sub-selection);
+        ``pagination`` is filtered by the client's selection. (US1: scalar items;
+        US2/T014 adds recursion into items' relationships via BFS.)
+        """
+        result: dict[str, Any] = {}
+        sub = (
+            field_sel.sub_fields if field_sel and field_sel.sub_fields else {}
+        )
+        items_sel = sub.get("items")
+        items = pkg.get("items") or []
+        result["items"] = [
+            self._serialize_item(it, entity, items_sel)
+            for it in items if it is not None
+        ]
+        pag_field = sub.get("pagination")
+        pag_sub = (
+            getattr(pag_field, "sub_fields", None) or {}
+            if pag_field else {}
+        )
+        pagination = pkg.get("pagination") or {}
+        if pag_sub:
+            result["pagination"] = {
+                k: v for k, v in pagination.items() if k in pag_sub
+            }
+        else:
+            result["pagination"] = pagination
+        # Carry through any other selected top-level fields (e.g. the fk field).
+        for k, v in pkg.items():
+            if k in ("items", "pagination"):
+                continue
+            if k in sub:
+                result[k] = v
         return result
 
     def _serialize_scalar_value(self, value: Any) -> Any:

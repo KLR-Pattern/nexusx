@@ -11,7 +11,7 @@ privileged router. The orchestrator of a query is the service it enters.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nexusx.federation.contract import BatchRoot, EntityFragment, ERIntrospectionResponse
 from nexusx.federation.http import GraphQLTransport
@@ -21,7 +21,7 @@ from nexusx.federation.relationship import (
     RemoteRelationship,
     parse_qualified_name,
 )
-from nexusx.federation.remote_loader import create_remote_loader
+from nexusx.federation.remote_loader import create_paginated_remote_loader, create_remote_loader
 from nexusx.federation.transport import FederationTransport
 from nexusx.loader.registry import RelationshipInfo
 
@@ -273,15 +273,32 @@ def _wire_remote_relationship(
         is_list=rrel.is_list,
         arg_name=br.arg_name,
     )
-    rel_info = RelationshipInfo(
-        name=rrel.name,
-        direction="ONETOMANY" if rrel.is_list else "MANYTOONE",
-        fk_field=rrel.fk,
-        target_entity=target_cls,
-        is_list=rrel.is_list,
-        loader=loader_cls,
-        target_service=srv,
-        description=rrel.description,
-    )
+    rel_info_kwargs: dict[str, Any] = {
+        "name": rrel.name,
+        "direction": "ONETOMANY" if rrel.is_list else "MANYTOONE",
+        "fk_field": rrel.fk,
+        "target_entity": target_cls,
+        "is_list": rrel.is_list,
+        "loader": loader_cls,
+        "target_service": srv,
+        "description": rrel.description,
+    }
+    # Pagination: RemoteRelationship.sort_field's presence IS the switch (mirrors
+    # local Relationship.order_by). Wire a paginated RemoteLoader to page_loader
+    # and carry sort_field, so the mounter executor routes to it and the loader
+    # knows how to ORDER BY on the member side.
+    if rrel.sort_field:
+        rel_info_kwargs["page_loader"] = create_paginated_remote_loader(
+            typename=typename,
+            join_remote=rrel.join_remote,
+            endpoint=endpoints[srv],
+            target_cls=target_cls,
+            transport=transport,
+            arg_name=br.arg_name,
+            sort_field=rrel.sort_field,
+            sort_direction=rrel.sort_direction,
+        )
+        rel_info_kwargs["sort_field"] = rrel.sort_field
+    rel_info = RelationshipInfo(**rel_info_kwargs)
     er_manager._registry.setdefault(source_entity, {})[rrel.name] = rel_info
 

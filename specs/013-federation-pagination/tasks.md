@@ -55,16 +55,16 @@ description: "Task list for nexusx 联邦分页(federation pagination)"
 ### Tests for User Story 1
 
 - [ ] T004 [P] [US1] Write test_federation_pagination_decl.py:`RemoteRelationship.sort_field` 声明、`is_list` 派生、未声明→全量语义 in tests/test_federation_pagination_decl.py
-- [ ] T005 [P] [US1] Write test_federation_pagination_loader.py(int key):分页 gql 文档构造(`by_<key>_in_page` + batch 级 limit/offset/sort_field)、per-key 包按 join key 对齐成 `{items,pagination}`、`total_count` 可选、缺失 key→空包 in tests/test_federation_pagination_loader.py
+- [x] T005 [P] [US1] Write test_federation_pagination_loader.py(int key):分页 gql 文档构造(`by_<key>_in_page` + batch 级 limit/offset/sort_field)、per-key 包按 join key 对齐成 `{items,pagination}`、`total_count` 可选、缺失 key→空包 in tests/test_federation_pagination_loader.py
 - [ ] T006 [P] [US1] Write test_federation_pagination_root.py(member 侧):分页 root 返回 per-key 包识别、items(标量)序列化、`pagination` 透传、非分页 root 零影响 in tests/test_federation_pagination_root.py
 
 ### Implementation for User Story 1
 
 - [x] T007 [US1] Implement `_create_by_keys_in_page_query`(默认每 batch key 生成 `by_<key>_in_page`;窗口函数 `PARTITION BY <key> ORDER BY <sort_field> <dir>` + peek-by-1 `has_more` + 可选 `COUNT(*) OVER` `total_count`)in src/nexusx/standard_queries.py(depends T002)
-- [ ] T008 [US1] **member executor root 路径识别分页包 v1**(`_execute_entity_group`:root 返回分页包→序列化 `{items,pagination}`;非分页 root 走原路径零影响)in src/nexusx/execution/query_executor.py(**核心难点 v1**,depends T007)
-- [ ] T009 [US1] Implement 分页 RemoteLoader(`build_gql_query` 分页变体 + page_args 从注入的 FieldSelection.arguments 作 batch 级标量透传 + per-key 包按 join key 对齐成 `{items,pagination}`)in src/nexusx/federation/remote_loader.py(depends T007)
-- [ ] T010 [US1] Wire mounter:`_wire_remote_relationship` 据 `RemoteRelationship.sort_field` 把分页 RemoteLoader 挂到 `RelationshipInfo.page_loader`(`sort_field` 透传)in src/nexusx/federation/manager.py(depends T001, T009)
-- [ ] T011 [US1] Wire mounter β path 分页分流:`_load_field_batch` is_remote 分支检测 `sort_field`→分页 RemoteLoader + `fetch_remote_subtree` 增 `page_args` 透传 in src/nexusx/execution/query_executor.py(depends T009, T010)
+- [x] T008 [US1] **member executor root 路径识别分页包 v1**(`_execute_entity_group`:root 返回分页包→序列化 `{items,pagination}`;非分页 root 走原路径零影响)in src/nexusx/execution/query_executor.py(**核心难点 v1**,depends T007)
+- [x] T009 [US1] Implement 分页 RemoteLoader(`build_gql_query` 分页变体 + page_args 从注入的 FieldSelection.arguments 作 batch 级标量透传 + per-key 包按 join key 对齐成 `{items,pagination}`)in src/nexusx/federation/remote_loader.py(depends T007)
+- [x] T010 [US1] Wire mounter:`_wire_remote_relationship` 据 `RemoteRelationship.sort_field` 把分页 RemoteLoader 挂到 `RelationshipInfo.page_loader`(`sort_field` 透传)in src/nexusx/federation/manager.py(depends T001, T009)
+- [x] T011 [US1] Wire mounter β path 分页分流:`_load_field_batch` is_remote 分支检测 `sort_field`→分页 RemoteLoader + `fetch_remote_subtree` 增 `page_args` 透传 in src/nexusx/execution/query_executor.py(depends T009, T010)
 - [ ] T012 [US1] Write test_federation_pagination_e2e.py(catalog+reviews,int key,标量 items,via httpx ASGITransport):SC-001(分页正确)+ SC-002(每服务一条 gql)in tests/test_federation_pagination_e2e.py(depends T008–T011)
 
 **Checkpoint**:US1 MVP 独立可测——基础分页端到端跑通,member root 路径识别验证通过(最高风险点的第一半)。

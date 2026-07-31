@@ -275,3 +275,171 @@ def create_remote_loader(
     _RemoteLoader.__name__ = f"RemoteLoader_{typename}_{join_remote}"
     _RemoteLoader.__qualname__ = _RemoteLoader.__name__
     return _RemoteLoader
+
+
+def build_paginated_gql_query(
+    *,
+    typename: str,
+    entry: str,
+    arg_name: str,
+    join_remote: str,
+    keys: list[Any],
+    items_sel: Any,
+    sort_field: str,
+    sort_direction: str = "asc",
+    limit: int | None = None,
+    offset: int = 0,
+    want_total_count: bool = True,
+) -> str:
+    """Construct the paginated GraphQL query document (``by_<key>_in_page``)."""
+    keys_lit = _render_keys(keys)
+    args = [f"{arg_name}: {keys_lit}"]
+    if limit is not None:
+        args.append(f"limit: {_render_value(limit)}")
+    args.append(f"offset: {_render_value(offset)}")
+    args.append(f"sort_field: {_render_value(sort_field)}")
+    args.append(f"sort_direction: {_render_value(sort_direction)}")
+    items_body = _render_selection(items_sel, indent=6)
+    pag_lines = ["      has_more"]
+    if want_total_count:
+        pag_lines.append("      total_count")
+    pagination_body = "\n".join(pag_lines)
+    return (
+        f"query {{\n"
+        f"  {typename} {{\n"
+        f"    {entry}({', '.join(args)}) {{\n"
+        f"      {join_remote}\n"
+        f"      items {{\n{items_body}\n      }}\n"
+        f"      pagination {{\n{pagination_body}\n      }}\n"
+        f"    }}\n"
+        f"  }}\n"
+        f"}}"
+    )
+
+
+def create_paginated_remote_loader(
+    *,
+    typename: str,
+    join_remote: str,
+    endpoint: str,
+    target_cls: type[BaseModel],
+    transport: FederationTransport,
+    arg_name: str,
+    sort_field: str,
+    sort_direction: str = "asc",
+) -> type[DataLoader]:  # type: ignore[type-arg]
+    """Build a DataLoader that fetches a paginated sub-tree from a mounted service.
+
+    Emits one ``by_<join_remote>_in_page`` gql carrying batch-level
+    ``limit``/``offset``/``sort_field``/``sort_direction`` (read from the injected
+    FieldSelection arguments), then aligns the per-key packages into
+    ``{items, pagination}`` per parent by join key. ``sort_field``/``sort_direction``
+    are baked in from the ``RemoteRelationship`` declaration; ``limit``/``offset``
+    come from the client query args (selection.arguments).
+    """
+
+    entry = f"by_{join_remote}_in_page"
+    gql_url = endpoint.rstrip("/") + "/graphql"
+
+    class _PaginatedRemoteLoader(DataLoader):  # type: ignore[type-arg]
+        async def batch_load_fn(self, keys: list[Any]) -> list[Any]:
+            selection = getattr(self, "_remote_selection", None)
+            items_sel = None
+            want_tc = True
+            sel_args: dict[str, Any] = {}
+            if selection is not None:
+                sub = getattr(selection, "sub_fields", None) or {}
+                items_sel = sub.get("items")
+                pag_field = sub.get("pagination")
+                pag_sub = (
+                    getattr(pag_field, "sub_fields", None) or {}
+                    if pag_field else {}
+                )
+                want_tc = "total_count" in pag_sub
+                sel_args = getattr(selection, "arguments", None) or {}
+            if items_sel is None:
+                from pydantic import BaseModel as _BM
+
+                from nexusx.query_parser import FieldSelection
+
+                items_sel = FieldSelection(
+                    name=typename,
+                    sub_fields={
+                        fname: FieldSelection(name=fname)
+                        for fname, fi in target_cls.model_fields.items()
+                        if not (
+                            isinstance(fi.annotation, type)
+                            and issubclass(fi.annotation, _BM)
+                        )
+                    },
+                )
+            limit = sel_args.get("limit")
+            offset = sel_args.get("offset", 0)
+            query = build_paginated_gql_query(
+                typename=typename, entry=entry, arg_name=arg_name,
+                join_remote=join_remote, keys=list(keys), items_sel=items_sel,
+                sort_field=sort_field, sort_direction=sort_direction,
+                limit=limit, offset=offset, want_total_count=want_tc,
+            )
+            resp = await transport.post_json(gql_url, {"query": query})
+            if resp.get("errors"):
+                raise RemoteQueryError(typename, resp["errors"])
+            data = resp.get("data") or {}
+            packages = (data.get(typename) or {}).get(entry) or []
+            buckets: dict[Any, Any] = {}
+            for pkg in packages:
+                pkg_d = _to_dict(pkg)
+                fk = pkg_d.get(join_remote)
+                buckets[_normalize_join_key(fk)] = pkg_d
+            aligned: list[Any] = []
+            for key in keys:
+                pkg_d = buckets.get(_normalize_join_key(key))
+                if pkg_d is None:
+                    aligned.append({
+                        "items": [],
+                        "pagination": {"has_more": False, "total_count": 0},
+                    })
+                else:
+                    items = [
+                        target_cls.model_validate(_to_dict(r))
+                        for r in (pkg_d.get("items") or [])
+                    ]
+                    aligned.append({
+                        "items": items,
+                        "pagination": pkg_d.get("pagination") or {},
+                    })
+            return aligned
+
+    _PaginatedRemoteLoader.__name__ = f"PaginatedRemoteLoader_{typename}_{join_remote}"
+    _PaginatedRemoteLoader.__qualname__ = _PaginatedRemoteLoader.__name__
+    return _PaginatedRemoteLoader
+
+
+async def fetch_remote_subtree_paged(
+    *,
+    registry: Any,
+    rel_info: Any,
+    parents: list[Any],
+    selection: Any,
+) -> list[Any]:
+    """Fetch a paginated federated sub-tree via ``rel_info.page_loader``.
+
+    Like :func:`fetch_remote_subtree` but uses the paginated RemoteLoader
+    (``rel_info.page_loader``), which emits ``by_<key>_in_page`` and aligns
+    per-key packages into ``{items, pagination}``. The client ``limit``/``offset``
+    live in ``selection.arguments``; ``sort_field``/``sort_direction`` are baked
+    into the loader class (from the ``RemoteRelationship`` declaration).
+    """
+    from nexusx.loader.query_meta import generate_type_key_from_selection
+
+    target_rels = registry.get_relationships(rel_info.target_entity)
+    fk_lookup = {name: info.fk_field for name, info in target_rels.items()}
+    type_key = generate_type_key_from_selection(
+        selection, rel_info.target_entity, fk_lookup=fk_lookup,
+    )
+    loader = registry.get_loader(
+        rel_info.page_loader, type_key=type_key, force_split=True,
+    )
+    set_remote_selection(loader, selection)
+    fk_values = [getattr(p, rel_info.fk_field) for p in parents]
+    return await loader.load_many(fk_values)
