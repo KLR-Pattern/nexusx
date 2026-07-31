@@ -52,6 +52,7 @@ from nexusx.context import (
     scan_expose_fields,
     scan_send_to_fields,
 )
+from nexusx.loader.registry import RelationshipKind
 
 T = TypeVar("T", bound=BaseModel | list[BaseModel] | tuple[BaseModel, ...])
 
@@ -620,7 +621,7 @@ class Resolver:
             # Coalesced rels are resolved within the owning service's nested
             # fetch (β) — they arrive populated on the instance, not loaded
             # per-edge here (see fetch_remote_subtree). Mirrors the executor.
-            if getattr(rel_info, "coalesced", False):
+            if rel_info.kind == RelationshipKind.REMOTE_COALESCED:
                 continue
             if dto_cls is None:
                 if self._is_scalar_rel_field(field_info, rel_info):
@@ -638,7 +639,7 @@ class Resolver:
         # so the Resolver must discover them here.
         if source_entity is node_type:
             for rel_name, rel_info in entity_rels.items():
-                if getattr(rel_info, "coalesced", False):
+                if rel_info.kind == RelationshipKind.REMOTE_COALESCED:
                     continue  # populated by the parent fetch's nested selection
                 if rel_name in node_type.model_fields:
                     continue  # already handled above
@@ -1477,9 +1478,8 @@ class Resolver:
             # A non-coalesced service-boundary rel: fetch the whole sub-tree via
             # the shared β primitive (one nested gql to the owning service; the
             # member resolves its local edges + further cross-service hops).
-            is_remote_entry = (
-                getattr(first_rel, "target_service", None) is not None
-                and not getattr(first_rel, "coalesced", False)
+            is_remote_entry = first_rel.kind in (
+                RelationshipKind.REMOTE_PAGED, RelationshipKind.REMOTE_PLAIN
             )
 
             # Collect FK/PK values + valid entries (shared by both paths).

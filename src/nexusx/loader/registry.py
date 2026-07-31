@@ -30,6 +30,30 @@ from nexusx.relationship import Relationship, get_custom_relationships
 logger = logging.getLogger(__name__)
 
 
+class RelationshipKind:
+    """Discriminator for how a relationship is loaded/resolved.
+
+    Replaces the implicit ``(target_service × coalesced × pagination ×
+    page_loader × loader)`` boolean matrix with one explicit value that
+    consumers match on — see D1.
+
+    - LOCAL: a local relationship. ``loader``/``page_loader`` drive it;
+      ``page_loader`` set ⇒ local pagination.
+    - REMOTE_COALESCED: a relationship on a materialized remote type, resolved
+      by the owning service within the parent fetch (β coalescing). Not
+      BFS-traversed; the serializer reads it off the instance attribute.
+    - REMOTE_PAGED: a declared RemoteRelationship with ``pagination=True``
+      (``page_by_<key>_in`` via ``fetch_remote_subtree(paged=True)``).
+    - REMOTE_PLAIN: a declared RemoteRelationship without pagination
+      (``by_<key>_in`` via ``fetch_remote_subtree()``).
+    """
+
+    LOCAL = "local"
+    REMOTE_COALESCED = "remote_coalesced"
+    REMOTE_PAGED = "remote_paged"
+    REMOTE_PLAIN = "remote_plain"
+
+
 @dataclass
 class RelationshipInfo:
     """Metadata for a single ORM relationship, including its DataLoader."""
@@ -51,11 +75,10 @@ class RelationshipInfo:
     description: str | None = None  # documentation string surfaced in voyager/ER diagram
     # Owning service prefix for a remote (federated) relationship; None for local.
     target_service: str | None = None
-    # True for relationships on a materialized remote type whose data is resolved
-    # by the owning service within the parent fetch (β coalescing). The executor
-    # does NOT BFS-traverse these (data already on the instance); the serializer
-    # reads them from the instance attribute.
-    coalesced: bool = False
+    # Discriminator for the relationship kind — consumers match on this instead
+    # of combining target_service/pagination booleans. See RelationshipKind.
+    # Defaults to LOCAL; federation construction sets the remote variants.
+    kind: str = RelationshipKind.LOCAL
 
 
 def _expect_single_pair(pairs: Any, message: str) -> tuple[Any, Any]:

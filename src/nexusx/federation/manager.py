@@ -28,7 +28,7 @@ from nexusx.federation.relationship import (
 )
 from nexusx.federation.remote_loader import create_paginated_remote_loader, create_remote_loader
 from nexusx.federation.transport import FederationTransport
-from nexusx.loader.registry import RelationshipInfo
+from nexusx.loader.registry import RelationshipInfo, RelationshipKind
 
 if TYPE_CHECKING:
     from nexusx.loader.registry import ErManager
@@ -189,8 +189,8 @@ async def federate(
                 is_list=rel.is_list,
                 loader=None,
                 target_service=owner,
-                coalesced=True,
                 pagination=rel.pagination,
+                kind=RelationshipKind.REMOTE_COALESCED,
             )
 
 
@@ -266,6 +266,11 @@ def _validate_and_wire_remote_relationship(
         "target_service": srv,
         "description": rrel.description,
         "pagination": rrel.pagination,
+        "kind": (
+            RelationshipKind.REMOTE_PAGED
+            if rrel.pagination
+            else RelationshipKind.REMOTE_PLAIN
+        ),
     }
     if rrel.pagination:
         resolved_order = _validate_page_capability(rrel.target, page_br, rrel.order)

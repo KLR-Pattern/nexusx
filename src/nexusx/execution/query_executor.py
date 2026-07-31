@@ -15,6 +15,7 @@ from sqlmodel import SQLModel
 
 from nexusx.execution.argument_builder import ArgumentBuilder
 from nexusx.loader.pagination import PageArgs, PageLoadCommand
+from nexusx.loader.registry import RelationshipKind
 from nexusx.query_parser import FieldSelection
 
 if TYPE_CHECKING:
@@ -382,7 +383,7 @@ class QueryExecutor:
 
             # Coalesced (β): data already resolved by the owning service within
             # the parent fetch and preserved on the instance — no BFS job.
-            if getattr(rel_info, "coalesced", False):
+            if rel_info.kind == RelationshipKind.REMOTE_COALESCED:
                 continue
 
             if not child_sel.sub_fields:
@@ -443,12 +444,10 @@ class QueryExecutor:
         rel_info = job.rel_info
         child_sel = job.child_sel
 
-        is_remote = getattr(rel_info, "target_service", None) is not None
-        is_paged_remote = (
-            is_remote
-            and bool(getattr(rel_info, "pagination", False))
-            and rel_info.page_loader is not None
+        is_remote = rel_info.kind in (
+            RelationshipKind.REMOTE_PAGED, RelationshipKind.REMOTE_PLAIN
         )
+        is_paged_remote = rel_info.kind == RelationshipKind.REMOTE_PAGED
         if is_paged_remote:
             # β paginated path: route to the member's page_by_<key>_in root.
             # {items, pagination} per parent.
@@ -626,7 +625,7 @@ class QueryExecutor:
             rel_info = entity_rels.get(field_name)
 
             if rel_info is not None:
-                if getattr(rel_info, "coalesced", False):
+                if rel_info.kind == RelationshipKind.REMOTE_COALESCED:
                     # β: nested data already resolved by the owning service and
                     # preserved on the instance (extra="allow").
                     value = getattr(item, field_name, None)

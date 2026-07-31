@@ -12,6 +12,7 @@ from graphql import FieldNode, OperationDefinitionNode, parse
 from graphql.utilities import value_from_ast_untyped
 from sqlmodel import SQLModel
 
+from nexusx.loader.registry import RelationshipKind
 from nexusx.type_converter import TypeConverter
 from nexusx.utils.schema_helpers import get_core_types, is_input_type
 
@@ -777,12 +778,16 @@ class IntrospectionGenerator:
             rel_info is not None
             and rel_info.is_list
             and (
-                rel_info.page_loader is not None
-                or getattr(rel_info, "pagination", False)
-            )
-            and (
-                self._enable_pagination
-                or getattr(rel_info, "target_service", None) is not None
+                rel_info.kind == RelationshipKind.REMOTE_PAGED
+                or (
+                    rel_info.kind == RelationshipKind.REMOTE_COALESCED
+                    and getattr(rel_info, "pagination", False)
+                )
+                or (
+                    rel_info.kind == RelationshipKind.LOCAL
+                    and rel_info.page_loader is not None
+                    and self._enable_pagination
+                )
             )
         )
 
