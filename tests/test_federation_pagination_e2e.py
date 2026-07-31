@@ -97,6 +97,7 @@ async def _ensure_seed():
         s.add(EPProduct(id=1, name="P1"))
         s.add(EPProduct(id=2, name="P2"))
         s.add(EPProduct(id=3, name="P3"))  # no reviews — for empty-children edge case
+        s.add(EPProduct(id=4, name="P4"))  # 3 reviews all rating=5 — PK tie-breaker case
         await s.commit()
     async with _rev_sf() as s:
         # Product 1: 7 reviews, ratings 1..7 (deterministic asc order)
@@ -105,6 +106,10 @@ async def _ensure_seed():
         # Product 2: 2 reviews
         s.add(EPReview(id=10, product_id=2, title="RA", rating=5))
         s.add(EPReview(id=11, product_id=2, title="RB", rating=3))
+        # Product 4: 3 reviews, all rating=5 → rating ties, so PK tie-breaker (desc) decides order.
+        s.add(EPReview(id=100, product_id=4, title="T100", rating=5))
+        s.add(EPReview(id=101, product_id=4, title="T101", rating=5))
+        s.add(EPReview(id=102, product_id=4, title="T102", rating=5))
         # comments on the first two rows in HIGHEST_RATING order.
         s.add(EPComment(id=1, review_id=7, text="C7"))
         s.add(EPComment(id=2, review_id=6, text="C6"))
@@ -328,3 +333,62 @@ async def test_default_page_size_when_no_limit(federation):
     assert len(pkg["items"]) == 7  # 7 total < default 20 → whole relation returned
     assert pkg["pagination"]["has_more"] is False
     assert pkg["pagination"]["total_count"] == 7
+
+
+@pytest.mark.asyncio
+async def test_multiple_parents_each_get_own_page(federation):
+    """跨服务 batch 内多 parent：每个 parent 只拿到自己的那页，整批仍只发一条 GQL。
+
+    by_filter 一次取回 P1..P4 四个 parent；分页必须按 join key 对齐到各自父，
+    而不是把某一个 parent 的页错配给所有 parent。per-key 对齐此前只在 loader
+    单元里用 FakeTransport 测过——这里在真实 GraphQL 序列化链路上端到端复核。
+    """
+    catalog_handler, transport = federation
+    res = await catalog_handler.execute(
+        "{ EPProduct { by_filter { id reviews(limit: 5) { "
+        "items { title } pagination { has_more total_count } } } } }"
+    )
+    assert not res.get("errors"), res
+    assert transport.gql_calls == 1  # 整个 batch 仍只有一条 GQL
+    by_id = {p["id"]: p for p in res["data"]["EPProduct"]["by_filter"]}
+    assert set(by_id) == {1, 2, 3, 4}
+
+    # P1: 7 条，rating desc → R7..R3，limit 5 有下一页
+    p1 = by_id[1]["reviews"]
+    assert [it["title"] for it in p1["items"]] == ["R7", "R6", "R5", "R4", "R3"]
+    assert p1["pagination"] == {"has_more": True, "total_count": 7}
+
+    # P2: 2 条，rating desc → RA(5) RB(3)，不足一页
+    p2 = by_id[2]["reviews"]
+    assert [it["title"] for it in p2["items"]] == ["RA", "RB"]
+    assert p2["pagination"] == {"has_more": False, "total_count": 2}
+
+    # P3: 无 children
+    p3 = by_id[3]["reviews"]
+    assert p3["items"] == []
+    assert p3["pagination"] == {"has_more": False, "total_count": 0}
+
+    # P4: 3 条 rating 全 5 → 顺序由 PK tie-breaker 决定（见下一条测试）
+    p4 = by_id[4]["reviews"]
+    assert len(p4["items"]) == 3
+    assert p4["pagination"] == {"has_more": False, "total_count": 3}
+
+
+@pytest.mark.asyncio
+async def test_pk_tie_breaker_for_equal_rating(federation):
+    """排序语义跨服务端到端：rating 相同时，缺省 PK tie-breaker 按 order 方向（desc）定序。
+
+    HIGHEST_RATING = [rating desc]，member 自动追加 PK；末位 term 是 desc，故 PK 亦 desc。
+    P4 的三条 review rating 全为 5（id=100/101/102）→ 期望 102, 101, 100。这条链路覆盖
+    order profile → wire enum → member 解析 → SQL → package → mounter 对齐 的完整排序语义。
+    """
+    catalog_handler, _ = federation
+    res = await catalog_handler.execute(
+        "{ EPProduct { by_id(id: 4) { reviews(limit: 5) { "
+        "items { title } pagination { has_more total_count } } } } }"
+    )
+    assert not res.get("errors"), res
+    pkg = res["data"]["EPProduct"]["by_id"]["reviews"]
+    assert [it["title"] for it in pkg["items"]] == ["T102", "T101", "T100"]
+    assert pkg["pagination"]["has_more"] is False
+    assert pkg["pagination"]["total_count"] == 3
