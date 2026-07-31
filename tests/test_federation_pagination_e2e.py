@@ -96,6 +96,7 @@ async def _ensure_seed():
     async with _cat_sf() as s:
         s.add(EPProduct(id=1, name="P1"))
         s.add(EPProduct(id=2, name="P2"))
+        s.add(EPProduct(id=3, name="P3"))  # no reviews — for empty-children edge case
         await s.commit()
     async with _rev_sf() as s:
         # Product 1: 7 reviews, ratings 1..7 (deterministic asc order)
@@ -282,3 +283,48 @@ async def test_items_subtree_resolved(federation):
     assert [c["text"] for c in by_title["R7"]["comments"]] == ["C7"]
     assert [c["text"] for c in by_title["R6"]["comments"]] == ["C6"]
     assert pkg["pagination"]["has_more"] is True  # 7 total, took 2
+
+
+@pytest.mark.asyncio
+async def test_offset_beyond_total(federation):
+    """Edge: offset > total → empty items, has_more false, total_count still real."""
+    catalog_handler, _ = federation
+    res = await catalog_handler.execute(
+        "{ EPProduct { by_id(id: 1) { reviews(limit: 5, offset: 100) { "
+        "items { title } pagination { has_more total_count } } } } }"
+    )
+    assert not res.get("errors"), res
+    pkg = res["data"]["EPProduct"]["by_id"]["reviews"]
+    assert pkg["items"] == []
+    assert pkg["pagination"]["has_more"] is False
+    assert pkg["pagination"]["total_count"] == 7
+
+
+@pytest.mark.asyncio
+async def test_parent_with_no_children(federation):
+    """Edge: parent with zero children → items=[], total_count=0, has_more=false."""
+    catalog_handler, _ = federation
+    res = await catalog_handler.execute(
+        "{ EPProduct { by_id(id: 3) { reviews(limit: 5) { "
+        "items { title } pagination { has_more total_count } } } } }"
+    )
+    assert not res.get("errors"), res
+    pkg = res["data"]["EPProduct"]["by_id"]["reviews"]
+    assert pkg["items"] == []
+    assert pkg["pagination"]["has_more"] is False
+    assert pkg["pagination"]["total_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_default_page_size_when_no_limit(federation):
+    """Edge: client omits limit → default_page_size (20); product1's 7 all returned."""
+    catalog_handler, _ = federation
+    res = await catalog_handler.execute(
+        "{ EPProduct { by_id(id: 1) { reviews { "
+        "items { title } pagination { has_more total_count } } } } }"
+    )
+    assert not res.get("errors"), res
+    pkg = res["data"]["EPProduct"]["by_id"]["reviews"]
+    assert len(pkg["items"]) == 7  # 7 total < default 20 → whole relation returned
+    assert pkg["pagination"]["has_more"] is False
+    assert pkg["pagination"]["total_count"] == 7
