@@ -211,7 +211,8 @@ class QueryExecutor:
                     method_node, variables, method, entity, entity_names
                 )
                 func = method.__func__ if hasattr(method, "__func__") else method
-                if getattr(func, "_pagination_root", None):
+                is_pagination_root = bool(getattr(func, "_pagination_root", None))
+                if is_pagination_root:
                     pagination_field = (
                         field_sel.sub_fields.get("pagination")
                         if field_sel and field_sel.sub_fields
@@ -234,7 +235,10 @@ class QueryExecutor:
 
                 # Resolve relationships via BFS DataLoader
                 if field_sel and result is not None:
-                    await self._resolve_result(result, entity, field_sel)
+                    await self._resolve_result(
+                        result, entity, field_sel,
+                        is_pagination_root=is_pagination_root,
+                    )
 
                 # Serialize
                 entity_data[method_name] = self._serialize(result, entity, field_sel)
@@ -290,37 +294,37 @@ class QueryExecutor:
         result: Any,
         entity: type[SQLModel],
         field_sel: FieldSelection,
+        *,
+        is_pagination_root: bool = False,
     ) -> None:
         """Resolve relationships for a query result (single or list).
 
-        For a federation pagination root the result is a list of per-key
-        packages ``{fk, items:[entity], pagination}``; BFS proceeds into each
-        package's ``items`` entities (US2: items subtree recursion), not the
-        packages themselves — mirroring the local paginated loader's
-        ``all_children.extend(items)`` on the root path.
+        When ``is_pagination_root`` is set (the caller derived it from
+        ``func._pagination_root`` before the method ran), the result is a list
+        of per-key packages ``{fk, items:[entity], pagination}``; BFS proceeds
+        into each package's ``items`` entities (US2: items subtree recursion),
+        not the packages themselves — mirroring the local paginated loader's
+        ``all_children.extend(items)`` on the root path. Branching on the flag
+        (a known fact) instead of sniffing the result shape avoids misrouting a
+        plain ``list[dict]`` query whose first row happens to carry
+        ``items``/``pagination`` keys.
         """
         if result is None:
             return
 
-        if (
-            isinstance(result, list)
-            and result
-            and isinstance(result[0], dict)
-            and "items" in result[0]
-            and "pagination" in result[0]
-        ):
-            # Federation pagination root: recurse into items' entities.
-            items_sel = (
-                field_sel.sub_fields.get("items")
-                if field_sel and field_sel.sub_fields
-                else None
-            )
-            if items_sel is not None:
-                all_items: list = []
-                for pkg in result:
-                    all_items.extend(pkg.get("items") or [])
-                if all_items:
-                    await self._bfs_resolve(all_items, entity, items_sel)
+        if is_pagination_root:
+            if isinstance(result, list) and result:
+                items_sel = (
+                    field_sel.sub_fields.get("items")
+                    if field_sel and field_sel.sub_fields
+                    else None
+                )
+                if items_sel is not None:
+                    all_items: list = []
+                    for pkg in result:
+                        all_items.extend(pkg.get("items") or [])
+                    if all_items:
+                        await self._bfs_resolve(all_items, entity, items_sel)
             return
 
         if isinstance(result, list):
@@ -448,13 +452,14 @@ class QueryExecutor:
         if is_paged_remote:
             # β paginated path: route to the member's page_by_<key>_in root.
             # {items, pagination} per parent.
-            from nexusx.federation.remote_loader import fetch_remote_subtree_paged
+            from nexusx.federation.remote_loader import fetch_remote_subtree
 
-            results = await fetch_remote_subtree_paged(
+            results = await fetch_remote_subtree(
                 registry=self._registry,
                 rel_info=rel_info,
                 parents=job.parents,
                 selection=child_sel,
+                paged=True,
             )
         elif is_remote:
             # β path: fetch the whole nested sub-tree via the shared primitive

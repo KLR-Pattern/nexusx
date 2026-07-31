@@ -149,13 +149,12 @@ async def federate(
     from nexusx.federation.remote_ref import resolve_deferred_subsets
     resolve_deferred_subsets(fed_registry)
 
-    # 4. Validate declared remote relationships (correctness subset; full
-    #    7-check suite incl. prefix/bare-name/cycle in US3).
-    _validate_declarations(er_manager, endpoints, fragments)
-
-    # 5. Wire declared remote relationships (on local source entities).
+    # 4. Validate + wire declared remote relationships in ONE pass (one
+    #    _check_target per root per rrel — no re-validation between a validate
+    #    step and a wire step). Fail-fast still holds: any invalid rrel raises
+    #    before the ErManager is frozen, so partial wiring never reaches serving.
     for source_entity, rrel in er_manager._pending_remote_rels:
-        _wire_remote_relationship(
+        _validate_and_wire_remote_relationship(
             er_manager, source_entity, rrel, endpoints, fed_registry, fragments, transport
         )
     er_manager._pending_remote_rels.clear()  # M7: prevent double-wiring on re-federate
@@ -195,48 +194,92 @@ async def federate(
             )
 
 
-def _validate_declarations(
+def _validate_and_wire_remote_relationship(
     er_manager: ErManager,
+    source_entity: type,
+    rrel: RemoteRelationship,
     endpoints: dict[str, str],
+    fed_registry: FederatedTypeRegistry,
     fragments: dict[str, EntityFragment],
+    transport: FederationTransport,
 ) -> None:
-    # Validate pending RemoteRelationship declarations.
-    for source_entity, rrel in er_manager._pending_remote_rels:
-        if rrel.pagination and not rrel.is_list:
-            raise FederationError(
-                f"RemoteRelationship {rrel.name!r} enables pagination but its "
-                f"target is to-one (not list[...]); pagination only applies to "
-                f"to-many relationships."
-            )
-        remote_field, batch_root = _check_target(
-            rrel.target,
-            rrel.join_remote,
-            endpoints,
-            fragments,
-            pagination=rrel.pagination,
-            order=rrel.order,
+    """Validate a declared remote relationship, then wire it on the source
+    entity — in one pass, calling ``_check_target`` once per root (page root
+    and, when paginated, the full root) rather than re-validating at wire time.
+
+    Fail-fast is preserved: any invalid rrel raises before the ErManager is
+    frozen, so partial wiring never reaches query serving.
+    """
+    if rrel.pagination and not rrel.is_list:
+        raise FederationError(
+            f"RemoteRelationship {rrel.name!r} enables pagination but its "
+            f"target is to-one (not list[...]); pagination only applies to "
+            f"to-many relationships."
         )
-        full_batch_root = None
-        if rrel.pagination:
-            _remote_field, full_batch_root = _check_target(
-                rrel.target,
-                rrel.join_remote,
-                endpoints,
-                fragments,
-            )
+    # One _check_target per root: page root (or the full root when not
+    # paginated), plus the full root when paginated.
+    remote_field, page_br = _check_target(
+        rrel.target,
+        rrel.join_remote,
+        endpoints,
+        fragments,
+        pagination=rrel.pagination,
+        order=rrel.order,
+    )
+    full_br = (
+        _check_target(rrel.target, rrel.join_remote, endpoints, fragments)[1]
+        if rrel.pagination
+        else page_br
+    )
+    _check_join_contract(
+        source_entity=source_entity,
+        rrel=rrel,
+        remote_field_type=remote_field.type_name,
+        batch_arg_type=page_br.arg_type,
+    )
+    if rrel.pagination:
         _check_join_contract(
             source_entity=source_entity,
             rrel=rrel,
             remote_field_type=remote_field.type_name,
-            batch_arg_type=batch_root.arg_type,
+            batch_arg_type=full_br.arg_type,
         )
-        if full_batch_root is not None:
-            _check_join_contract(
-                source_entity=source_entity,
-                rrel=rrel,
-                remote_field_type=remote_field.type_name,
-                batch_arg_type=full_batch_root.arg_type,
-            )
+
+    srv, typename = parse_qualified_name(rrel.target)
+    target_cls = fed_registry.get(rrel.target)
+    loader_cls = create_remote_loader(
+        typename=typename,
+        join_remote=rrel.join_remote,
+        endpoint=endpoints[srv],
+        target_cls=target_cls,
+        transport=transport,
+        is_list=rrel.is_list,
+        arg_name=full_br.arg_name,
+    )
+    rel_info_kwargs: dict[str, Any] = {
+        "name": rrel.name,
+        "direction": "ONETOMANY" if rrel.is_list else "MANYTOONE",
+        "fk_field": rrel.fk,
+        "target_entity": target_cls,
+        "is_list": rrel.is_list,
+        "loader": loader_cls,
+        "target_service": srv,
+        "description": rrel.description,
+        "pagination": rrel.pagination,
+    }
+    if rrel.pagination:
+        resolved_order = _validate_page_capability(rrel.target, page_br, rrel.order)
+        rel_info_kwargs["page_loader"] = create_paginated_remote_loader(
+            typename=typename,
+            join_remote=rrel.join_remote,
+            endpoint=endpoints[srv],
+            target_cls=target_cls,
+            transport=transport,
+            arg_name=page_br.arg_name,
+            order=resolved_order,
+        )
+    rel_info = RelationshipInfo(**rel_info_kwargs)
+    er_manager._registry.setdefault(source_entity, {})[rrel.name] = rel_info
 
 
 def _find_batch_root(
@@ -416,67 +459,3 @@ def _check_join_contract(
                 f"{batch_arg_type!r}, which is incompatible with remote join "
                 f"type {remote_type!r}."
             )
-
-
-def _wire_remote_relationship(
-    er_manager: ErManager,
-    source_entity: type,
-    rrel: RemoteRelationship,
-    endpoints: dict[str, str],
-    fed_registry: FederatedTypeRegistry,
-    fragments: dict[str, EntityFragment],
-    transport: FederationTransport,
-) -> None:
-    srv, typename = parse_qualified_name(rrel.target)
-    target_cls = fed_registry.get(rrel.target)
-    _remote_field, br = _check_target(
-        rrel.target,
-        rrel.join_remote,
-        endpoints,
-        fragments,
-        pagination=rrel.pagination,
-        order=rrel.order,
-    )
-    full_br = (
-        _check_target(
-            rrel.target,
-            rrel.join_remote,
-            endpoints,
-            fragments,
-        )[1]
-        if rrel.pagination
-        else br
-    )
-    loader_cls = create_remote_loader(
-        typename=typename,
-        join_remote=rrel.join_remote,
-        endpoint=endpoints[srv],
-        target_cls=target_cls,
-        transport=transport,
-        is_list=rrel.is_list,
-        arg_name=full_br.arg_name,
-    )
-    rel_info_kwargs: dict[str, Any] = {
-        "name": rrel.name,
-        "direction": "ONETOMANY" if rrel.is_list else "MANYTOONE",
-        "fk_field": rrel.fk,
-        "target_entity": target_cls,
-        "is_list": rrel.is_list,
-        "loader": loader_cls,
-        "target_service": srv,
-        "description": rrel.description,
-        "pagination": rrel.pagination,
-    }
-    if rrel.pagination:
-        resolved_order = _validate_page_capability(rrel.target, br, rrel.order)
-        rel_info_kwargs["page_loader"] = create_paginated_remote_loader(
-            typename=typename,
-            join_remote=rrel.join_remote,
-            endpoint=endpoints[srv],
-            target_cls=target_cls,
-            transport=transport,
-            arg_name=br.arg_name,
-            order=resolved_order,
-        )
-    rel_info = RelationshipInfo(**rel_info_kwargs)
-    er_manager._registry.setdefault(source_entity, {})[rrel.name] = rel_info

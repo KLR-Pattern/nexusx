@@ -162,7 +162,7 @@ class GraphQLHandler:
         ``er.initialize()``), so the SDL reflects materialized remote types with
         no handler-side rebuild step. Kept under the old name for compatibility.
         """
-        v = self._er_manager._version
+        v = self._er_manager.version
         if self._sdl_cache is None or self._sdl_cache[0] != v:
             self._sdl_cache = (
                 v,
@@ -177,7 +177,7 @@ class GraphQLHandler:
     @property
     def _introspection_generator(self) -> IntrospectionGenerator:
         """Version-cached IntrospectionGenerator over the live ER graph."""
-        v = self._er_manager._version
+        v = self._er_manager.version
         if self._intro_cache is None or self._intro_cache[0] != v:
             self._intro_cache = (
                 v,
@@ -237,10 +237,7 @@ class GraphQLHandler:
 
     async def aclose(self) -> None:
         """Close federation resources (httpx.AsyncClient). Call on shutdown."""
-        transport = getattr(self._er_manager, "_federation_transport", None)
-        if transport is not None:
-            self._er_manager._federation_transport = None
-            await transport.close()
+        await self._er_manager.aclose_federation()
 
     async def execute(
         self,

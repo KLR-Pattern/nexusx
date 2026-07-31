@@ -57,6 +57,72 @@ def _parse(query_str: str) -> tuple[DocumentNode, dict[str, FieldSelection]]:
 # ──────────────────────────────────────────────────────────
 
 
+class TestResolveResultFederationBranching:
+    """H2 regression: federation pagination-root routing is decided by the
+    ``is_pagination_root`` flag (derived from ``func._pagination_root`` before
+    the method runs), NOT by sniffing the result shape. A plain query that
+    happens to return ``list[dict]`` rows carrying ``items``+``pagination``
+    keys must NOT be misrouted into the pagination-root branch (which would
+    flatten ``items`` and drop the row structure)."""
+
+    async def test_non_pagination_root_passes_rows_verbatim(
+        self, monkeypatch
+    ) -> None:
+        executor = _make_executor()
+        calls: list = []
+
+        async def fake_bfs(nodes, entity, sel):
+            calls.append(list(nodes))
+
+        monkeypatch.setattr(executor, "_bfs_resolve", fake_bfs)
+
+        field_sel = FieldSelection(
+            name="X",
+            sub_fields={
+                "items": FieldSelection(name="items"),
+                "pagination": FieldSelection(name="pagination"),
+            },
+        )
+        rows = [
+            {"items": [{"k": 1}], "pagination": {"has_more": False}},
+            {"items": [{"k": 2}], "pagination": {"has_more": False}},
+        ]
+
+        # Not a pagination root → rows go through verbatim. Before the fix this
+        # duck-typed into the pagination-root branch and flattened `items`.
+        await executor._resolve_result(
+            rows, FixtureUser, field_sel, is_pagination_root=False
+        )
+        assert calls == [rows]
+
+    async def test_pagination_root_flattens_items(self, monkeypatch) -> None:
+        executor = _make_executor()
+        calls: list = []
+
+        async def fake_bfs(nodes, entity, sel):
+            calls.append(list(nodes))
+
+        monkeypatch.setattr(executor, "_bfs_resolve", fake_bfs)
+
+        field_sel = FieldSelection(
+            name="X",
+            sub_fields={
+                "items": FieldSelection(name="items"),
+                "pagination": FieldSelection(name="pagination"),
+            },
+        )
+        rows = [
+            {"items": [{"k": 1}], "pagination": {"has_more": False}},
+            {"items": [{"k": 2}], "pagination": {"has_more": False}},
+        ]
+
+        # Pagination root → BFS recurses into the flattened items only.
+        await executor._resolve_result(
+            rows, FixtureUser, field_sel, is_pagination_root=True
+        )
+        assert calls == [[{"k": 1}, {"k": 2}]]
+
+
 class TestQueryExecutorBasic:
     @pytest.mark.usefixtures("test_db")
     async def test_execute_simple_query(self):

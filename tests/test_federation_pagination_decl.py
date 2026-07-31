@@ -11,7 +11,7 @@ from nexusx.federation.contract import (
     FieldDescriptor,
     PageOrderDescriptor,
 )
-from nexusx.federation.manager import FederationError, _validate_declarations
+from nexusx.federation.manager import FederationError, _validate_and_wire_remote_relationship
 from nexusx.loader.registry import ErManager
 
 users = RemoteService("users")
@@ -60,15 +60,23 @@ def _frag_with_id_root() -> EntityFragment:
 
 def test_to_one_with_pagination_rejected():
     er = ErManager(entities=[_DeclToOne], session_factory=lambda: None)
+    source_entity, rrel = er._pending_remote_rels[0]
     with pytest.raises(FederationError, match="to-one"):
-        _validate_declarations(er, {"users": "http://u"}, {})
+        # fed_registry/transport are None — validation raises before wiring.
+        _validate_and_wire_remote_relationship(
+            er, source_entity, rrel, {"users": "http://u"}, None, {}, None,
+        )
 
 
 def test_unknown_order_profile_rejected():
     er = ErManager(entities=[_DeclMany], session_factory=lambda: None)
+    source_entity, rrel = er._pending_remote_rels[0]
     fragments = {"users.User": _frag_with_id_root()}
     with pytest.raises(FederationError, match="UNKNOWN"):
-        _validate_declarations(er, {"users": "http://u"}, fragments)
+        # fed_registry/transport are None — validation raises before wiring.
+        _validate_and_wire_remote_relationship(
+            er, source_entity, rrel, {"users": "http://u"}, None, fragments, None,
+        )
 
 
 def test_order_requires_pagination():

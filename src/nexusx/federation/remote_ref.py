@@ -304,13 +304,17 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
             if fname not in field_names:
                 new_namespace[fname] = namespace.get(fname, None)
 
-        # Preserve user-defined resolver methods (post_*, resolve_*,
-        # post_default_handler) from the original class body. The rebuild above
-        # carries only __subset__/annotations/field-defaults — without this, the
-        # methods are stripped and never execute on remote-sourced DTO nodes
-        # (their fields survive via __annotations__, the methods did not).
+        # Preserve user-defined members from the original class body. The
+        # rebuild above carries only __subset__/annotations/field-defaults; any
+        # other methods, properties, or descriptors (post_*, resolve_*,
+        # @property, @computed_field, …) would otherwise be stripped and never
+        # execute on remote-sourced DTO nodes. Skip dunder names (__subset__,
+        # __annotations__, __module__, …) already set explicitly above, and
+        # field names already carried via __annotations__.
         for key, value in namespace.items():
-            if key.startswith(("post_", "resolve_")) and callable(value):
+            if key.startswith("__") and key.endswith("__"):
+                continue
+            if isinstance(value, (staticmethod, classmethod, property)) or callable(value):
                 new_namespace[key] = value
 
         new_cls = type(name, (DefineSubset,), new_namespace)

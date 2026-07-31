@@ -14,6 +14,8 @@ side-channel pattern as ``loader._query_meta``.
 from __future__ import annotations
 
 import json
+import types
+import typing
 import uuid
 from typing import Any, cast
 
@@ -50,6 +52,7 @@ async def fetch_remote_subtree(
     rel_info: Any,
     parents: list[Any],
     selection: Any,
+    paged: bool = False,
 ) -> list[Any]:
     """Fetch a federated sub-tree: ONE nested gql to ``rel_info``'s owning
     service, returning target instances — with the whole sub-tree populated by
@@ -63,24 +66,28 @@ async def fetch_remote_subtree(
     Args:
         registry: the ErManager (provides ``get_loader`` + ``get_relationships``).
         rel_info: the RelationshipInfo for the (non-coalesced) service-boundary
-            relationship. Its ``loader``/``fk_field``/``target_entity`` drive the fetch.
+            relationship. Its ``fk_field``/``target_entity`` drive the fetch.
         parents: the source instances whose ``fk_field`` values key the fetch.
         selection: a FieldSelection over ``rel_info.target_entity`` describing the
             nested sub-tree to request. The member resolves everything under it
             (local edges + further cross-service hops).
+        paged: when True, drive ``rel_info.page_loader`` (member
+            ``page_by_<key>_in``, per-key ``{items, pagination}``); otherwise
+            ``rel_info.loader`` (member ``by_<key>_in``, flat list).
     """
     from nexusx.loader.query_meta import generate_type_key_from_selection
 
     # type_key from the selection so distinct selections get distinct loader
     # instances; force_split isolates _remote_selection per selection (prevents
     # races when two concurrent groups query the same remote rel differently).
+    loader_cls = rel_info.page_loader if paged else rel_info.loader
     target_rels = registry.get_relationships(rel_info.target_entity)
     fk_lookup = {name: info.fk_field for name, info in target_rels.items()}
     type_key = generate_type_key_from_selection(
         selection, rel_info.target_entity, fk_lookup=fk_lookup,
     )
     loader = registry.get_loader(
-        rel_info.loader, type_key=type_key, force_split=True,
+        loader_cls, type_key=type_key, force_split=True,
     )
     set_remote_selection(loader, selection)
     fk_values = [getattr(p, rel_info.fk_field) for p in parents]
@@ -117,6 +124,36 @@ def _normalize_join_key(v: Any) -> Any:
     if isinstance(v, uuid.UUID):
         return str(v)
     return v
+
+
+def _is_scalar_annotation(ann: Any) -> bool:
+    """True if a model field annotation is a scalar (safe as a gql leaf).
+
+    Relationship fields on a materialized remote type — to-one (``Target | None``),
+    to-many (``list[Target] | None``), and paginated (``Any | None``) — need a
+    sub-selection. The default fallback selection must exclude them, or the
+    rendered gql selects them as leaf scalars and the member rejects the query.
+    """
+    from pydantic import BaseModel as _BM
+
+    origin = typing.get_origin(ann)
+    args = typing.get_args(ann)
+    # Peel Optional (X | None) — keep only the non-None arm.
+    if origin in (typing.Union, types.UnionType):
+        non_none = [a for a in args if a is not type(None)]
+        if len(non_none) != 1:
+            return False
+        ann = non_none[0]
+        origin = typing.get_origin(ann)
+        args = typing.get_args(ann)
+    if ann is typing.Any:
+        return False
+    if origin is list:
+        elem = args[0] if args else None
+        return not (isinstance(elem, type) and issubclass(elem, _BM))
+    if isinstance(ann, type) and issubclass(ann, _BM):
+        return False
+    return True
 
 
 def _render_keys(keys: list[Any]) -> str:
@@ -235,17 +272,19 @@ def create_remote_loader(
         async def batch_load_fn(self, keys: list[Any]) -> list[Any]:
             selection = getattr(self, "_remote_selection", None)
             if selection is None:
-                # Default selection: all SCALAR fields (exclude relationship
-                # fields which are BaseModel-typed and need sub-selections).
-                from pydantic import BaseModel as _BM
-
+                # Default selection: scalar fields only. Relationship fields
+                # (to-one / to-many / paginated) need a sub-selection and would
+                # make the member reject the query.
                 from nexusx.query_parser import FieldSelection
-                sub = {
-                    fname: FieldSelection(name=fname)
-                    for fname, fi in target_cls.model_fields.items()
-                    if not (isinstance(fi.annotation, type) and issubclass(fi.annotation, _BM))
-                }
-                selection = FieldSelection(name=typename, sub_fields=sub)
+
+                selection = FieldSelection(
+                    name=typename,
+                    sub_fields={
+                        fname: FieldSelection(name=fname)
+                        for fname, fi in target_cls.model_fields.items()
+                        if _is_scalar_annotation(fi.annotation)
+                    },
+                )
             query = build_gql_query(
                 typename=typename,
                 entry=entry,
@@ -398,8 +437,6 @@ def create_paginated_remote_loader(
                 want_tc = "total_count" in pag_sub
                 sel_args = getattr(selection, "arguments", None) or {}
             if items_sel is None:
-                from pydantic import BaseModel as _BM
-
                 from nexusx.query_parser import FieldSelection
 
                 items_sel = FieldSelection(
@@ -407,10 +444,7 @@ def create_paginated_remote_loader(
                     sub_fields={
                         fname: FieldSelection(name=fname)
                         for fname, fi in target_cls.model_fields.items()
-                        if not (
-                            isinstance(fi.annotation, type)
-                            and issubclass(fi.annotation, _BM)
-                        )
+                        if _is_scalar_annotation(fi.annotation)
                     },
                 )
             limit = sel_args.get("limit")
@@ -541,33 +575,3 @@ def create_paginated_remote_loader(
     _PaginatedRemoteLoader.__name__ = f"PaginatedRemoteLoader_{typename}_{join_remote}"
     _PaginatedRemoteLoader.__qualname__ = _PaginatedRemoteLoader.__name__
     return _PaginatedRemoteLoader
-
-
-async def fetch_remote_subtree_paged(
-    *,
-    registry: Any,
-    rel_info: Any,
-    parents: list[Any],
-    selection: Any,
-) -> list[Any]:
-    """Fetch a paginated federated sub-tree via ``rel_info.page_loader``.
-
-    Like :func:`fetch_remote_subtree` but uses the paginated RemoteLoader
-    (``rel_info.page_loader``), which emits ``page_by_<key>_in`` and aligns
-    per-key packages into ``{items, pagination}``. The client ``limit``/``offset``
-    live in ``selection.arguments``; the resolved semantic order is baked into
-    the loader class during federation initialization.
-    """
-    from nexusx.loader.query_meta import generate_type_key_from_selection
-
-    target_rels = registry.get_relationships(rel_info.target_entity)
-    fk_lookup = {name: info.fk_field for name, info in target_rels.items()}
-    type_key = generate_type_key_from_selection(
-        selection, rel_info.target_entity, fk_lookup=fk_lookup,
-    )
-    loader = registry.get_loader(
-        rel_info.page_loader, type_key=type_key, force_split=True,
-    )
-    set_remote_selection(loader, selection)
-    fk_values = [getattr(p, rel_info.fk_field) for p in parents]
-    return await loader.load_many(fk_values)

@@ -16,6 +16,7 @@ from __future__ import annotations
 import inspect
 import types
 import typing
+import warnings
 from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Union
@@ -249,6 +250,14 @@ def build_federable_app(
             helper is the canonical minimal surface (and what tests use with
             ASGITransport).
     """
+    if dependencies is None:
+        warnings.warn(
+            "build_federable_app() exposes /nexusx/er-introspection with no auth "
+            "dependency. That endpoint publishes the full ER topology (and, when "
+            "expose_mounted_endpoints=True, internal service URLs). Pass "
+            "dependencies=[Depends(...)] in production.",
+            stacklevel=2,
+        )
     from fastapi import FastAPI
 
     from nexusx.federation.introspect import serialize_er_introspection

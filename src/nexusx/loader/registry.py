@@ -682,6 +682,26 @@ class ErManager:
             )
         self._version += 1
 
+    @property
+    def version(self) -> int:
+        """Generation counter for the entity/relationship set.
+
+        Bumped on ``add_virtual_entities`` and ``initialize``/federation. GraphQL
+        views (SDL/introspection) read this to refresh lazily; prefer it over
+        touching the private ``_version`` from outside the manager.
+        """
+        return self._version
+
+    async def aclose_federation(self) -> None:
+        """Close the federation transport if one was created (call on shutdown).
+
+        Idempotent: once the transport is cleared, subsequent calls are no-ops.
+        """
+        if self._federation_transport is not None:
+            transport = self._federation_transport
+            self._federation_transport = None
+            await transport.close()
+
     def create_resolver(self) -> type:
         """Create a Resolver class pre-wired with this ErManager.
 
