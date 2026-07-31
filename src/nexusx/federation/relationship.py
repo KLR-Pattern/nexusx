@@ -75,6 +75,13 @@ class RemoteRelationship:
     name: str
     join_remote: str
     description: str | None = None
+    # Pagination: declaring sort_field enables offset/limit pagination on this
+    # to-many relationship — its presence IS the pagination switch (mirrors
+    # local Relationship.order_by, where order_by's presence enables paging).
+    # sort_direction defaults to "asc". Only meaningful for to-many
+    # (target=list[...]); validated to-many in federate().
+    sort_field: str | None = None
+    sort_direction: str = "asc"
     # Derived from `target` (list[...] => True); not passed by callers.
     is_list: bool = field(default=False, init=False)
 

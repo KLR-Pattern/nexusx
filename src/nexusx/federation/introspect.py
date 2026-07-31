@@ -96,16 +96,29 @@ def _batch_root_arg(method: Any) -> tuple[str, str]:
 
 
 def _batch_roots(entity: type) -> list[BatchRoot]:
-    """Generated ``by_<key>_in`` batch roots on ``entity`` with their arg contract."""
+    """Generated batch roots on ``entity`` with their arg contract.
+
+    Recognizes both ``by_<key>_in`` (full fetch) and ``by_<key>_in_page``
+    (paginated, federation) roots; the latter carry ``paginated=True`` so the
+    mounter knows which roots accept ``limit``/``offset``/``sort_field``.
+    """
     roots: list[BatchRoot] = []
     for attr_name in dir(entity):
-        if not (attr_name.startswith("by_") and attr_name.endswith("_in")):
+        if not attr_name.startswith("by_"):
+            continue
+        paginated = attr_name.endswith("_in_page")
+        if not (attr_name.endswith("_in") or paginated):
             continue
         attr = getattr(entity, attr_name, None)
         if not callable(attr):
             continue
         arg_name, arg_type = _batch_root_arg(attr)
-        roots.append(BatchRoot(name=attr_name, arg_name=arg_name, arg_type=arg_type))
+        roots.append(
+            BatchRoot(
+                name=attr_name, arg_name=arg_name, arg_type=arg_type,
+                paginated=paginated,
+            )
+        )
     return sorted(roots, key=lambda r: r.name)
 
 

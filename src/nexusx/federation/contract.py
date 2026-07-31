@@ -32,9 +32,13 @@ class BatchRoot(BaseModel):
     introspected (the mounter rejects such roots).
     """
 
-    name: str  # e.g. "by_product_id_in"
+    name: str  # e.g. "by_product_id_in" or "by_product_id_in_page"
     arg_name: str = ""  # e.g. "product_id_list"
     arg_type: str = ""  # lossless type expr, e.g. "list[UUID]"
+    # True for the federation pagination root (by_<key>_in_page). The mounter
+    # uses a RemoteRelationship's declared sort_field to decide which root to
+    # call; paginated marks which roots accept limit/offset/sort_field.
+    paginated: bool = False
 
 
 class RelDescriptor(BaseModel):
