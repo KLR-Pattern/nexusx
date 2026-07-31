@@ -89,22 +89,47 @@ The client sees a flat, un-prefixed schema (`Review`, `User`, `Product.reviews`,
 
 `demo/federation/` runs all three services; `bash start_all.sh` starts them.
 Open http://localhost:8022/ for GraphiQL on the catalog service and query
-`{ Product { by_filter { id name reviews { title rating author { name } } } } }`.
+`{ Product { by_filter { id name reviews(limit:5) { items { title rating } pagination { has_more } } } } }`.
 
 ## Pagination
 
-A cross-service to-many relationship can be paginated by declaring `sort_field`
-on the `RemoteRelationship` — its presence IS the pagination switch (mirrors
-local `Relationship.order_by`). The member generates a paginated batch root
-`by_<key>_in_page` by default (zero-config); the mounter routes to it when
-`sort_field` is declared, and to the plain `by_<key>_in` otherwise.
+Pagination and physical sorting are owned by the member. The member explicitly
+publishes named semantic order profiles through `batch_pages`; physical column
+names and directions stay private to that service.
+
+```python
+from nexusx import BatchPageConfig, OrderTerm, PageOrder
+
+AutoQueryConfig(
+    batch_keys={"Review": ["product_id"]},
+    batch_pages={
+        "Review": {
+            "product_id": BatchPageConfig(
+                default_order="NEWEST",
+                orders={
+                    "NEWEST": PageOrder(
+                        [OrderTerm("created_at", "desc")]
+                    ),
+                    "HIGHEST_RATING": PageOrder(
+                        [OrderTerm("rating", "desc")]
+                    ),
+                },
+            )
+        }
+    },
+)
+```
+
+The mounter statically selects one of those profiles. `order=None` uses the
+member default. Order is deployment configuration and is not exposed to
+business GraphQL clients.
 
 ```python
 RemoteRelationship(
     fk="id", target=list[reviews.Review],
     name="reviews", join_remote="product_id",
-    sort_field="rating",           # ← declaring it enables pagination
-    sort_direction="desc",         # optional, default "asc"
+    pagination=True,
+    order="HIGHEST_RATING",
 )
 ```
 
@@ -124,6 +149,9 @@ Pagination happens at the owning member (a window function partitions by join
 key); the mounter sends one gql per mounted service per traversal and aligns
 the per-key packages by join key. `items` subtrees (nested relationships, incl.
 further cross-service hops) are resolved by the member inside that one gql.
+Internally, the mounter calls `page_by_<key>_in(keys, limit, offset, order)`;
+the ER contract exposes only profile names and descriptions, never physical
+sort fields.
 
 See also: [Custom Relationships](../guide/custom_relationship.md),
 [ER Diagram Visualization](voyager.md).

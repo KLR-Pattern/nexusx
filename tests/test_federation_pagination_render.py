@@ -1,8 +1,8 @@
-"""US1/US4 (T019): catalog schema renders a federated paginated relationship
-(declared via RemoteRelationship.sort_field) as {items, pagination} + limit/offset
+"""Catalog schema renders a federated paginated relationship as
+{items, pagination} + limit/offset
 args — without forcing the global enable_pagination toggle on the mounter.
 
-Covers the catalog side. The member side (by_<key>_in_page root return type) is
+Covers the catalog side. The member side (page_by_<key>_in root return type) is
 tracked separately — it is the remaining blocker for full US1 e2e.
 """
 
@@ -17,11 +17,16 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from nexusx import GraphQLHandler
+from nexusx import (
+    AutoQueryConfig,
+    BatchPageConfig,
+    GraphQLHandler,
+    OrderTerm,
+    PageOrder,
+)
 from nexusx.federation import RemoteRelationship, RemoteService
 from nexusx.federation.http import GraphQLTransport
 from nexusx.federation.introspect import build_federable_app
-from nexusx.standard_queries import AutoQueryConfig
 
 reviews = RemoteService("reviews", url="http://test/reviews")
 
@@ -54,7 +59,8 @@ class RProduct(RProductBase, table=True):
         RemoteRelationship(
             fk="id", target=list[reviews.RReview],
             name="reviews", join_remote="product_id",
-            sort_field="rating",  # pagination switch
+            pagination=True,
+            order="HIGHEST_RATING",
         ),
     ]
 
@@ -102,7 +108,21 @@ async def catalog():
     await _ensure_seed()
     reviews_handler = GraphQLHandler(
         base=RReviewBase, session_factory=_rev_sf,
-        auto_query_config=AutoQueryConfig(batch_keys={"RReview": ["product_id"]}),
+        auto_query_config=AutoQueryConfig(
+            batch_keys={"RReview": ["product_id"]},
+            batch_pages={
+                "RReview": {
+                    "product_id": BatchPageConfig(
+                        default_order="HIGHEST_RATING",
+                        orders={
+                            "HIGHEST_RATING": PageOrder(
+                                [OrderTerm("rating", "desc")]
+                            )
+                        },
+                    )
+                }
+            },
+        ),
         service_name="reviews",
     )
     reviews_app = build_federable_app(reviews_handler)
@@ -130,7 +150,7 @@ def _unwrap_type_name(type_ref: dict) -> str | None:
 @pytest.mark.asyncio
 async def test_sdl_renders_paginated_remote_as_result(catalog):
     sdl = catalog.get_sdl()
-    # The remote to-many declared with sort_field renders as a Result field.
+    # The paginated remote to-many renders as a Result field.
     assert "reviews(limit: Int, offset: Int = 0): RReviewResult!" in sdl
     # Result + Pagination types are generated.
     assert "type RReviewResult {" in sdl

@@ -186,6 +186,7 @@ async def federate(
                 loader=None,
                 target_service=owner,
                 coalesced=True,
+                pagination=rel.pagination,
             )
 
 
@@ -196,9 +197,9 @@ def _validate_declarations(
 ) -> None:
     # Validate pending RemoteRelationship declarations.
     for source_entity, rrel in er_manager._pending_remote_rels:
-        if rrel.sort_field and not rrel.is_list:
+        if rrel.pagination and not rrel.is_list:
             raise FederationError(
-                f"RemoteRelationship {rrel.name!r} declares sort_field but its "
+                f"RemoteRelationship {rrel.name!r} enables pagination but its "
                 f"target is to-one (not list[...]); pagination only applies to "
                 f"to-many relationships."
             )
@@ -207,19 +208,44 @@ def _validate_declarations(
             rrel.join_remote,
             endpoints,
             fragments,
-            sort_field=rrel.sort_field,
+            pagination=rrel.pagination,
+            order=rrel.order,
         )
+        full_batch_root = None
+        if rrel.pagination:
+            _remote_field, full_batch_root = _check_target(
+                rrel.target,
+                rrel.join_remote,
+                endpoints,
+                fragments,
+            )
         _check_join_contract(
             source_entity=source_entity,
             rrel=rrel,
             remote_field_type=remote_field.type_name,
             batch_arg_type=batch_root.arg_type,
         )
+        if full_batch_root is not None:
+            _check_join_contract(
+                source_entity=source_entity,
+                rrel=rrel,
+                remote_field_type=remote_field.type_name,
+                batch_arg_type=full_batch_root.arg_type,
+            )
 
 
-def _find_batch_root(frag: EntityFragment, join_remote: str) -> BatchRoot | None:
-    """Look up the ``by_<join_remote>_in`` batch root on a fragment, if exposed."""
-    entry = f"by_{join_remote}_in"
+def _find_batch_root(
+    frag: EntityFragment,
+    join_remote: str,
+    *,
+    pagination: bool = False,
+) -> BatchRoot | None:
+    """Look up the required full or paginated batch root."""
+    entry = (
+        f"page_by_{join_remote}_in"
+        if pagination
+        else f"by_{join_remote}_in"
+    )
     for br in frag.batch_roots:
         if br.name == entry:
             return br
@@ -246,14 +272,13 @@ def _check_target(
     join_remote: str,
     services: dict[str, str],
     fragments: dict[str, EntityFragment],
-    sort_field: str | None = None,
+    pagination: bool = False,
+    order: str | None = None,
 ) -> tuple[FieldDescriptor, BatchRoot]:
     """Validate a declared remote target; return its batch root for wiring.
 
-    Checks (fail-fast at ``federate()``): service known, type exists, join field
-    is a scalar, the ``by_<join_remote>_in`` batch root is exposed, AND its
-    argument name is introspectable — so the mounter sends the argument name the
-    member actually declared instead of guessing the ``<key>_list`` convention.
+    Checks service/type/join field, the required full or paginated root, its
+    argument contract, and pagination capability when applicable.
     """
     srv, _typename = parse_qualified_name(target)
     if srv not in services:
@@ -268,24 +293,61 @@ def _check_target(
             f"Type {target!r} has no scalar field {join_remote!r} "
             f"(needed as join key). Fields: {sorted(scalar_fields)}"
         )
-    if sort_field and sort_field not in scalar_fields:
-        raise FederationError(
-            f"Type {target!r} has no scalar field {sort_field!r} "
-            f"(needed as pagination sort_field). Fields: {sorted(scalar_fields)}"
-        )
-    entry = f"by_{join_remote}_in"
-    br = _find_batch_root(frag, join_remote)
+    entry = (
+        f"page_by_{join_remote}_in"
+        if pagination
+        else f"by_{join_remote}_in"
+    )
+    br = _find_batch_root(frag, join_remote, pagination=pagination)
     if br is None:
         raise FederationError(
             f"Type {target!r} does not expose batch root {entry!r}; "
-            f"member must generate it (AutoQueryConfig.batch_keys)."
+            f"member must generate it via AutoQueryConfig."
         )
     if not br.arg_name:
         raise FederationError(
             f"Batch root {entry!r} on {target!r} has no determinable argument "
             f"name; the member must generate it via AutoQueryConfig.batch_keys."
         )
+    if pagination:
+        _validate_page_capability(target, br, order)
     return remote_field, br
+
+
+def _validate_page_capability(
+    target: str,
+    batch_root: BatchRoot,
+    order: str | None,
+) -> str:
+    capability = batch_root.page
+    if capability is None:
+        raise FederationError(
+            f"Pagination root {batch_root.name!r} on {target!r} does not "
+            "advertise a page capability."
+        )
+    if capability.protocol != "offset-v1":
+        raise FederationError(
+            f"Pagination root {batch_root.name!r} on {target!r} uses "
+            f"unsupported protocol {capability.protocol!r}."
+        )
+    order_names = {item.name for item in capability.orders}
+    if not order_names:
+        raise FederationError(
+            f"Pagination root {batch_root.name!r} on {target!r} exposes no "
+            "order profiles."
+        )
+    if capability.default_order not in order_names:
+        raise FederationError(
+            f"Pagination root {batch_root.name!r} on {target!r} has unknown "
+            f"default_order {capability.default_order!r}."
+        )
+    resolved_order = order or capability.default_order
+    if resolved_order not in order_names:
+        raise FederationError(
+            f"RemoteRelationship order {resolved_order!r} is not supported by "
+            f"{target!r}; available orders: {sorted(order_names)}."
+        )
+    return resolved_order
 
 
 def _normalize_join_type(type_expr: str) -> str | None:
@@ -367,6 +429,18 @@ def _wire_remote_relationship(
         rrel.join_remote,
         endpoints,
         fragments,
+        pagination=rrel.pagination,
+        order=rrel.order,
+    )
+    full_br = (
+        _check_target(
+            rrel.target,
+            rrel.join_remote,
+            endpoints,
+            fragments,
+        )[1]
+        if rrel.pagination
+        else br
     )
     loader_cls = create_remote_loader(
         typename=typename,
@@ -375,7 +449,7 @@ def _wire_remote_relationship(
         target_cls=target_cls,
         transport=transport,
         is_list=rrel.is_list,
-        arg_name=br.arg_name,
+        arg_name=full_br.arg_name,
     )
     rel_info_kwargs: dict[str, Any] = {
         "name": rrel.name,
@@ -386,12 +460,10 @@ def _wire_remote_relationship(
         "loader": loader_cls,
         "target_service": srv,
         "description": rrel.description,
+        "pagination": rrel.pagination,
     }
-    # Pagination: RemoteRelationship.sort_field's presence IS the switch (mirrors
-    # local Relationship.order_by). Wire a paginated RemoteLoader to page_loader
-    # and carry sort_field, so the mounter executor routes to it and the loader
-    # knows how to ORDER BY on the member side.
-    if rrel.sort_field:
+    if rrel.pagination:
+        resolved_order = _validate_page_capability(rrel.target, br, rrel.order)
         rel_info_kwargs["page_loader"] = create_paginated_remote_loader(
             typename=typename,
             join_remote=rrel.join_remote,
@@ -399,9 +471,7 @@ def _wire_remote_relationship(
             target_cls=target_cls,
             transport=transport,
             arg_name=br.arg_name,
-            sort_field=rrel.sort_field,
-            sort_direction=rrel.sort_direction,
+            order=resolved_order,
         )
-        rel_info_kwargs["sort_field"] = rrel.sort_field
     rel_info = RelationshipInfo(**rel_info_kwargs)
     er_manager._registry.setdefault(source_entity, {})[rrel.name] = rel_info

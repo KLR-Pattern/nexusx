@@ -140,7 +140,7 @@ class SDLGenerator:
 
         # 4. Generate Pagination and Result types. Local relationships remain
         # gated by enable_pagination; federated paginated relationships and
-        # member-side by_<key>_in_page roots are independently active.
+        # member-side page_by_<key>_in roots are independently active.
         if (
             enable_pagination
             or self._has_any_paginated_relationship()
@@ -149,7 +149,7 @@ class SDLGenerator:
             pag_types = self._generate_pagination_types()
             if pag_types:
                 parts.append(pag_types)
-        # Federation pagination roots (member-side by_<key>_in_page): per-key
+        # Federation pagination roots (member-side page_by_<key>_in): per-key
         # package types + Pagination, so the member's get_sdl() is complete.
         pp_types = self._generate_page_package_types()
         if pp_types:
@@ -192,6 +192,18 @@ class SDLGenerator:
             for field_type in hints.values():
                 if isinstance(field_type, type) and issubclass(field_type, Enum):
                     enums[field_type.__name__] = field_type
+            for attr_name in dir(entity):
+                try:
+                    attr = getattr(entity, attr_name)
+                except Exception:
+                    continue
+                if not callable(attr):
+                    continue
+                func = attr.__func__ if hasattr(attr, "__func__") else attr
+                pag_root = getattr(func, "_pagination_root", None)
+                if pag_root:
+                    enum_class = pag_root["order_enum"]
+                    enums[enum_class.__name__] = enum_class
 
         result = []
         for enum_name, enum_class in enums.items():
@@ -509,7 +521,10 @@ class SDLGenerator:
         return (
             rel_info is not None
             and rel_info.is_list
-            and rel_info.page_loader is not None
+            and (
+                rel_info.page_loader is not None
+                or getattr(rel_info, "pagination", False)
+            )
             and (
                 self._enable_pagination
                 or getattr(rel_info, "target_service", None) is not None
@@ -517,11 +532,9 @@ class SDLGenerator:
         )
 
     def _has_any_pagination_root(self) -> bool:
-        """True if any entity has a by_<key>_in_page federation pagination root."""
+        """True if any entity has a federation pagination root."""
         for entity in self.entities:
             for attr_name in dir(entity):
-                if not attr_name.endswith("_in_page"):
-                    continue
                 try:
                     attr = getattr(entity, attr_name)
                 except Exception:
@@ -534,7 +547,7 @@ class SDLGenerator:
         return False
 
     def _generate_page_package_types(self) -> str | None:
-        """Generate ``{Entity}PagePackage`` (+ Pagination) types for by_<key>_in_page roots.
+        """Generate per-key package types for federation pagination roots.
 
         Mirrors the introspection side: a federation pagination root returns a
         list of per-key packages ``{fk, items:[Entity], pagination}``; this emits
@@ -544,8 +557,6 @@ class SDLGenerator:
         seen: set[str] = set()
         for entity in self.entities:
             for attr_name in dir(entity):
-                if not attr_name.endswith("_in_page"):
-                    continue
                 try:
                     attr = getattr(entity, attr_name)
                 except Exception:
@@ -559,7 +570,7 @@ class SDLGenerator:
                 ent = pag_root["entity"]
                 fk_field = pag_root["fk_field"]
                 fk_type = pag_root["fk_type"]
-                pkg_name = f"{ent.__name__}PagePackage"
+                pkg_name = pag_root["package_name"]
                 if pkg_name in seen:
                     continue
                 seen.add(pkg_name)
@@ -576,7 +587,7 @@ class SDLGenerator:
         if not parts:
             return None
         # Pagination itself is emitted by _generate_pagination_types (whose gate
-        # also covers by_<key>_in_page roots) to avoid a duplicate type.
+        # also covers page_by_<key>_in roots) to avoid a duplicate type.
         return "\n\n".join(parts)
 
     def _generate_pagination_types(self) -> str | None:
@@ -741,8 +752,7 @@ class SDLGenerator:
         # Get return type
         pag_root = getattr(func, "_pagination_root", None)
         if pag_root:
-            # by_<key>_in_page federation pagination root → per-key packages.
-            return_gql_type = f"[{pag_root['entity'].__name__}PagePackage!]!"
+            return_gql_type = f"[{pag_root['package_name']}!]!"
         else:
             return_type = hints.get("return", inspect.Signature.empty)
             if return_type != inspect.Signature.empty:

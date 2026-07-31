@@ -6,7 +6,7 @@
 
 ## Content Quality
 
-- [x] No implementation details (languages, frameworks, APIs) — 注:作为 schema-to-API 框架的特性 spec,涉及 `RemoteRelationship.sort_field`、`by_<key>_in_page`、executor 等机制名词,与 012-federation spec 风格一致(框架 spec 必然描述 API 形状);聚焦"提供什么能力",未规定代码实现。
+- [x] No accidental storage coupling — spec uses semantic order profiles and `page_by_<key>_in`; physical fields remain member-private.
 - [x] Focused on user value and business needs
 - [x] Written for non-technical stakeholders — 叙述面向开发者/架构师(nexusx 受众),术语已收敛进 glossary
 - [x] All mandatory sections completed

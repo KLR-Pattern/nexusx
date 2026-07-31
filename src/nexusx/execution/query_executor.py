@@ -198,16 +198,6 @@ class QueryExecutor:
 
                 entity, method = method_info
 
-                # Build arguments from the METHOD field node (second level).
-                args = self._argument_builder.build_arguments(
-                    method_node, variables, method, entity, entity_names
-                )
-
-                # Execute the method
-                result = method(**args)
-                if inspect.isawaitable(result):
-                    result = await result
-
                 # The method's selection tree is nested one level deeper than
                 # the entity-group selection.
                 field_sel = (
@@ -215,6 +205,32 @@ class QueryExecutor:
                     if group_sel and group_sel.sub_fields
                     else None
                 )
+
+                # Build arguments from the METHOD field node (second level).
+                args = self._argument_builder.build_arguments(
+                    method_node, variables, method, entity, entity_names
+                )
+                func = method.__func__ if hasattr(method, "__func__") else method
+                if getattr(func, "_pagination_root", None):
+                    pagination_field = (
+                        field_sel.sub_fields.get("pagination")
+                        if field_sel and field_sel.sub_fields
+                        else None
+                    )
+                    pagination_fields = (
+                        set(pagination_field.sub_fields)
+                        if pagination_field and pagination_field.sub_fields
+                        else set()
+                    )
+                    # Private execution metadata: the generated root accepts
+                    # **kwargs at runtime, while its public GraphQL signature
+                    # remains limited to the declared pagination arguments.
+                    args["__nexusx_pagination_selection"] = pagination_fields
+
+                # Execute the method
+                result = method(**args)
+                if inspect.isawaitable(result):
+                    result = await result
 
                 # Resolve relationships via BFS DataLoader
                 if field_sel and result is not None:
@@ -426,12 +442,11 @@ class QueryExecutor:
         is_remote = getattr(rel_info, "target_service", None) is not None
         is_paged_remote = (
             is_remote
-            and bool(getattr(rel_info, "sort_field", None))
+            and bool(getattr(rel_info, "pagination", False))
             and rel_info.page_loader is not None
         )
         if is_paged_remote:
-            # β paginated path: the relationship declared sort_field, so route to
-            # the paginated RemoteLoader (by_<key>_in_page) which returns
+            # β paginated path: route to the member's page_by_<key>_in root.
             # {items, pagination} per parent.
             from nexusx.federation.remote_loader import fetch_remote_subtree_paged
 
@@ -588,7 +603,7 @@ class QueryExecutor:
     ) -> dict[str, Any]:
         """Serialize a single entity or page result to dict."""
         if isinstance(item, dict):
-            # A by_<key>_in_page root returns per-key packages
+            # A page_by_<key>_in root returns per-key packages
             # {fk, items:[entity], pagination}; serialize specially.
             if "items" in item and "pagination" in item:
                 return self._serialize_paginated_package(item, entity, field_sel)
@@ -632,7 +647,7 @@ class QueryExecutor:
     ) -> dict[str, Any]:
         """Serialize a paginated root's per-key package ``{fk, items, pagination}``.
 
-        Reached when a ``by_<key>_in_page`` root returns per-key packages.
+        Reached when a ``page_by_<key>_in`` root returns per-key packages.
         ``items`` holds entity instances (serialized with the items sub-selection);
         ``pagination`` is filtered by the client's selection. (US1: scalar items;
         US2/T014 adds recursion into items' relationships via BFS.)
@@ -642,28 +657,26 @@ class QueryExecutor:
             field_sel.sub_fields if field_sel and field_sel.sub_fields else {}
         )
         items_sel = sub.get("items")
-        items = pkg.get("items") or []
-        result["items"] = [
-            self._serialize_item(it, entity, items_sel)
-            for it in items if it is not None
-        ]
+        if items_sel is not None:
+            items = pkg.get("items") or []
+            result["items"] = [
+                self._serialize_item(it, entity, items_sel)
+                for it in items if it is not None
+            ]
         pag_field = sub.get("pagination")
-        pag_sub = (
-            getattr(pag_field, "sub_fields", None) or {}
-            if pag_field else {}
-        )
-        pagination = pkg.get("pagination")
-        if pagination is None:
-            pagination = {}
-        elif hasattr(pagination, "model_dump"):
-            # member side: per-key package carries a Pagination model instance
-            pagination = pagination.model_dump(mode="json")
-        if pag_sub:
-            result["pagination"] = {
-                k: v for k, v in pagination.items() if k in pag_sub
-            }
-        else:
-            result["pagination"] = pagination
+        if pag_field is not None:
+            pag_sub = getattr(pag_field, "sub_fields", None) or {}
+            pagination = pkg.get("pagination")
+            if pagination is None:
+                pagination = {}
+            elif hasattr(pagination, "model_dump"):
+                pagination = pagination.model_dump(mode="json")
+            if pag_sub:
+                result["pagination"] = {
+                    k: v for k, v in pagination.items() if k in pag_sub
+                }
+            else:
+                result["pagination"] = pagination
         # Carry through any other selected top-level fields (e.g. the fk field).
         for k, v in pkg.items():
             if k in ("items", "pagination"):

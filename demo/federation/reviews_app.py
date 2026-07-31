@@ -13,7 +13,13 @@ from sqlmodel import Field, Relationship, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from demo.federation._common import initialize_with_retry, make_app
-from nexusx import AutoQueryConfig, GraphQLHandler
+from nexusx import (
+    AutoQueryConfig,
+    BatchPageConfig,
+    GraphQLHandler,
+    OrderTerm,
+    PageOrder,
+)
 from nexusx.federation import RemoteRelationship, RemoteService
 
 USERS_URL = "http://localhost:8020"  # base URL of the users service
@@ -75,7 +81,22 @@ handler = GraphQLHandler(
     session_factory=async_session,
     # `by_product_id_in` is the batch root catalog drives (Product → Review).
     # Comment.author → users.User is driven against users' `by_id_in`.
-    auto_query_config=AutoQueryConfig(batch_keys={"Review": ["product_id"]}),
+    auto_query_config=AutoQueryConfig(
+        batch_keys={"Review": ["product_id"]},
+        batch_pages={
+            "Review": {
+                "product_id": BatchPageConfig(
+                    default_order="HIGHEST_RATING",
+                    orders={
+                        "HIGHEST_RATING": PageOrder(
+                            [OrderTerm("rating", "desc")],
+                            description="Highest rating first",
+                        )
+                    },
+                )
+            }
+        },
+    ),
     service_name="reviews",
     # reviews is itself mounted by catalog AND mounts users — opting in lets
     # catalog discover users' endpoint transitively through reviews. Leaf

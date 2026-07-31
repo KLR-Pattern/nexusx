@@ -11,6 +11,7 @@ import pytest
 from pydantic import create_model
 
 from nexusx.federation.remote_loader import (
+    RemoteQueryError,
     build_paginated_gql_query,
     create_paginated_remote_loader,
     set_remote_selection,
@@ -74,17 +75,17 @@ async def test_build_paginated_gql_query_shape():
         },
     )
     q = build_paginated_gql_query(
-        typename="PagReview", entry="by_product_id_in_page",
+        typename="PagReview", entry="page_by_product_id_in",
         arg_name="product_id_list", join_remote="product_id",
         keys=[1, 2], items_sel=items_sel,
-        sort_field="rating", sort_direction="asc",
+        order="HIGHEST_RATING",
         limit=5, offset=0, want_total_count=True,
     )
     # entry + batch-level args
-    assert "by_product_id_in_page(" in q
+    assert "page_by_product_id_in(" in q
     assert "product_id_list: [1, 2]" in q
     assert "limit: 5" in q and "offset: 0" in q
-    assert 'sort_field: "rating"' in q and 'sort_direction: "asc"' in q
+    assert "order: HIGHEST_RATING" in q
     # fk field for alignment + items/pagination wrappers
     assert "product_id" in q
     assert "items {" in q and "pagination {" in q
@@ -95,9 +96,9 @@ async def test_build_paginated_gql_query_shape():
 async def test_build_paginated_gql_query_omits_total_count_when_not_selected():
     items_sel = FieldSelection(name="PagReview", sub_fields={"title": FieldSelection(name="title")})
     q = build_paginated_gql_query(
-        typename="PagReview", entry="by_product_id_in_page",
+        typename="PagReview", entry="page_by_product_id_in",
         arg_name="product_id_list", join_remote="product_id",
-        keys=[1], items_sel=items_sel, sort_field="rating",
+        keys=[1], items_sel=items_sel, order="HIGHEST_RATING",
         limit=3, offset=0, want_total_count=False,
     )
     assert "total_count" not in q
@@ -106,7 +107,7 @@ async def test_build_paginated_gql_query_omits_total_count_when_not_selected():
 
 @pytest.mark.asyncio
 async def test_paginated_loader_aligns_per_key_by_join_key():
-    fake = FakeTransport({"data": {"PagReview": {"by_product_id_in_page": [
+    fake = FakeTransport({"data": {"PagReview": {"page_by_product_id_in": [
         {
             "product_id": 1,
             "items": [
@@ -124,7 +125,7 @@ async def test_paginated_loader_aligns_per_key_by_join_key():
     loader_cls = create_paginated_remote_loader(
         typename="PagReview", join_remote="product_id", endpoint="http://test",
         target_cls=PagReview, transport=fake, arg_name="product_id_list",
-        sort_field="rating",
+        order="HIGHEST_RATING",
     )
     loader = loader_cls()
     set_remote_selection(loader, _selection(limit=5, offset=0))
@@ -150,11 +151,11 @@ async def test_paginated_loader_aligns_per_key_by_join_key():
 
 @pytest.mark.asyncio
 async def test_paginated_loader_passes_page_args_from_selection():
-    fake = FakeTransport({"data": {"PagReview": {"by_product_id_in_page": []}}})
+    fake = FakeTransport({"data": {"PagReview": {"page_by_product_id_in": []}}})
     loader_cls = create_paginated_remote_loader(
         typename="PagReview", join_remote="product_id", endpoint="http://test",
         target_cls=PagReview, transport=fake, arg_name="product_id_list",
-        sort_field="rating", sort_direction="desc",
+        order="HIGHEST_RATING",
     )
     loader = loader_cls()
     set_remote_selection(loader, _selection(limit=3, offset=10))
@@ -162,7 +163,7 @@ async def test_paginated_loader_passes_page_args_from_selection():
     sent = fake.calls[0]["query"]
     assert "limit: 3" in sent
     assert "offset: 10" in sent
-    assert 'sort_direction: "desc"' in sent
+    assert "order: HIGHEST_RATING" in sent
 
 
 @pytest.mark.asyncio
@@ -183,7 +184,7 @@ async def test_paginated_loader_aligns_uuid_join_key():
     pk1 = _uuid.UUID("00000000-0000-0000-0000-000000000001")
     pk2 = _uuid.UUID("00000000-0000-0000-0000-000000000002")
     fake = FakeTransport({
-        "data": {"UuidReview": {"by_product_id_in_page": [
+        "data": {"UuidReview": {"page_by_product_id_in": [
             {
                 "product_id": str(pk1),
                 "items": [{"product_id": str(pk1), "title": "U1"}],
@@ -199,7 +200,7 @@ async def test_paginated_loader_aligns_uuid_join_key():
     loader_cls = create_paginated_remote_loader(
         typename="UuidReview", join_remote="product_id", endpoint="http://test",
         target_cls=UuidReview, transport=fake, arg_name="product_id_list",
-        sort_field="title",
+        order="TITLE",
     )
     loader = loader_cls()
     set_remote_selection(loader, _selection(limit=5, offset=0))
@@ -207,3 +208,40 @@ async def test_paginated_loader_aligns_uuid_join_key():
     results = await loader.load_many([pk2, pk1])
     assert results[0]["items"][0].title == "U2"
     assert results[1]["items"][0].title == "U1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        None,
+        {},
+        {"data": {}},
+        {"data": {"PagReview": {}}},
+        {"data": {"PagReview": {"page_by_product_id_in": {}}}},
+        {
+            "data": {
+                "PagReview": {
+                    "page_by_product_id_in": [
+                        {"product_id": 1, "items": [], "pagination": {}}
+                    ]
+                }
+            }
+        },
+    ],
+)
+async def test_paginated_loader_rejects_malformed_response(response):
+    fake = FakeTransport(response)
+    loader_cls = create_paginated_remote_loader(
+        typename="PagReview",
+        join_remote="product_id",
+        endpoint="http://test",
+        target_cls=PagReview,
+        transport=fake,
+        arg_name="product_id_list",
+        order="HIGHEST_RATING",
+    )
+    loader = loader_cls()
+    set_remote_selection(loader, _selection())
+    with pytest.raises(RemoteQueryError):
+        await loader.load_many([1])

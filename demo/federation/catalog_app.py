@@ -8,7 +8,9 @@ graph (catalog + materialized reviews/users, tagged by owning service). Try the
 deep multi-branch chain:
 
     { Product { by_filter { id name
-        reviews { title rating comments { text author { name config { theme } } } } } } }
+        reviews(limit: 5) { items {
+          title rating comments { text author { name config { theme } } }
+        } pagination { has_more } } } } }
 
 A single query to catalog traverses catalog → reviews → users transparently:
 Product → Review → Comment (local to reviews) → User (remote to users) →
@@ -57,6 +59,8 @@ class Product(CatalogBase, table=True):
         RemoteRelationship(
             fk="id", target=list[reviews.Review],
             name="reviews", join_remote="product_id",
+            pagination=True,
+            order="HIGHEST_RATING",
         ),
     ]
 

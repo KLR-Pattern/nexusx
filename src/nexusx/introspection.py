@@ -177,7 +177,7 @@ class IntrospectionGenerator:
 
         # 5. Pagination types (Pagination + Result types). Local relationships
         # remain gated by enable_pagination; federated paginated relationships
-        # and member-side by_<key>_in_page roots are independently active.
+        # and member-side page_by_<key>_in roots are independently active.
         if self._loader_registry and (
             self._enable_pagination
             or self._has_any_paginated_relationship()
@@ -185,7 +185,7 @@ class IntrospectionGenerator:
         ):
             types_list.extend(self._build_pagination_types())
 
-        # 5c. Federation pagination root package types (member-side by_<key>_in_page)
+        # 5c. Federation pagination root package types.
         types_list.extend(self._build_page_package_types())
 
         # 5b. Entity group types ({Entity}Query / {Entity}Mutation)
@@ -443,14 +443,12 @@ class IntrospectionGenerator:
         # Build return type
         pag_root = getattr(func, "_pagination_root", None)
         if pag_root:
-            # by_<key>_in_page federation pagination root → [{Entity}PagePackage!]!
-            ent_name = pag_root["entity"].__name__
             type_ref = {
                 "kind": "NON_NULL", "name": None, "ofType": {
                     "kind": "LIST", "name": None, "ofType": {
                         "kind": "NON_NULL", "name": None, "ofType": {
                             "kind": "OBJECT",
-                            "name": f"{ent_name}PagePackage",
+                            "name": pag_root["package_name"],
                             "ofType": None,
                         },
                     },
@@ -778,7 +776,10 @@ class IntrospectionGenerator:
         return (
             rel_info is not None
             and rel_info.is_list
-            and rel_info.page_loader is not None
+            and (
+                rel_info.page_loader is not None
+                or getattr(rel_info, "pagination", False)
+            )
             and (
                 self._enable_pagination
                 or getattr(rel_info, "target_service", None) is not None
@@ -786,11 +787,9 @@ class IntrospectionGenerator:
         )
 
     def _has_any_pagination_root(self) -> bool:
-        """True if any entity has a by_<key>_in_page federation pagination root."""
+        """True if any entity has a federation pagination root."""
         for entity in self.entities:
             for attr_name in dir(entity):
-                if not attr_name.endswith("_in_page"):
-                    continue
                 try:
                     attr = getattr(entity, attr_name)
                 except Exception:
@@ -803,7 +802,7 @@ class IntrospectionGenerator:
         return False
 
     def _build_page_package_types(self) -> list[dict]:
-        """Build ``{Entity}PagePackage`` (+ Pagination) types for ``by_<key>_in_page`` roots.
+        """Build per-key package types for federation pagination roots.
 
         A federation pagination root returns a list of per-key packages
         ``{fk, items:[Entity], pagination}``; this generates the named OBJECT type
@@ -821,8 +820,6 @@ class IntrospectionGenerator:
             }
         for entity in self.entities:
             for attr_name in dir(entity):
-                if not attr_name.endswith("_in_page"):
-                    continue
                 try:
                     attr = getattr(entity, attr_name)
                 except Exception:
@@ -836,7 +833,7 @@ class IntrospectionGenerator:
                 ent = pag_root["entity"]
                 fk_field = pag_root["fk_field"]
                 fk_type = pag_root["fk_type"]
-                pkg_name = f"{ent.__name__}PagePackage"
+                pkg_name = pag_root["package_name"]
                 if pkg_name in seen:
                     continue
                 seen.add(pkg_name)
@@ -858,7 +855,7 @@ class IntrospectionGenerator:
                 types_list.append({
                     "kind": "OBJECT",
                     "name": pkg_name,
-                    "description": "Federation pagination per-key package (by_<key>_in_page)",
+                    "description": "Federation pagination per-key package",
                     "fields": [
                         _f(fk_field, fk_type_ref),
                         _f("items", items_type_ref),
@@ -870,7 +867,7 @@ class IntrospectionGenerator:
                     "possibleTypes": None,
                 })
         # Pagination itself is emitted by _build_pagination_types (whose gate now
-        # also covers member-side by_<key>_in_page roots) to avoid a duplicate
+        # also covers member-side page_by_<key>_in roots) to avoid a duplicate
         # Pagination type when a member has BOTH a local paged relation and a
         # federation pagination root.
         return types_list

@@ -1,5 +1,5 @@
 """Federation pagination end-to-end (US1 / T012): catalog mounts reviews;
-Product.reviews declares sort_field (pagination switch). A single query paginates
+Product.reviews enables pagination and selects a member order profile. A single query paginates
 reviews across the service boundary.
 
 - SC-001: limit/offset returns the correct page + has_more + total_count.
@@ -12,17 +12,23 @@ import tempfile
 
 import httpx
 import pytest
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, Relationship, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from nexusx import GraphQLHandler
+from nexusx import (
+    AutoQueryConfig,
+    BatchPageConfig,
+    GraphQLHandler,
+    OrderTerm,
+    PageOrder,
+)
 from nexusx.federation import RemoteRelationship, RemoteService
 from nexusx.federation.http import GraphQLTransport
 from nexusx.federation.introspect import build_federable_app
-from nexusx.standard_queries import AutoQueryConfig
 
 reviews = RemoteService("reviews", url="http://test/reviews")
 
@@ -60,7 +66,8 @@ class EPProduct(EPCatalogBase, table=True):
         RemoteRelationship(
             fk="id", target=list[reviews.EPReview],
             name="reviews", join_remote="product_id",
-            sort_field="rating",  # pagination switch
+            pagination=True,
+            order="HIGHEST_RATING",
         ),
     ]
 
@@ -97,9 +104,9 @@ async def _ensure_seed():
         # Product 2: 2 reviews
         s.add(EPReview(id=10, product_id=2, title="RA", rating=5))
         s.add(EPReview(id=11, product_id=2, title="RB", rating=3))
-        # comments on product 1's first two reviews (for US2 items subtree)
-        s.add(EPComment(id=1, review_id=1, text="C1"))
-        s.add(EPComment(id=2, review_id=2, text="C2"))
+        # comments on the first two rows in HIGHEST_RATING order.
+        s.add(EPComment(id=1, review_id=7, text="C7"))
+        s.add(EPComment(id=2, review_id=6, text="C6"))
         await s.commit()
     _seeded = True
 
@@ -120,7 +127,24 @@ async def federation():
     await _ensure_seed()
     reviews_handler = GraphQLHandler(
         base=EPReviewsBase, session_factory=_rev_sf,
-        auto_query_config=AutoQueryConfig(batch_keys={"EPReview": ["product_id"]}),
+        auto_query_config=AutoQueryConfig(
+            batch_keys={"EPReview": ["product_id"]},
+            batch_pages={
+                "EPReview": {
+                    "product_id": BatchPageConfig(
+                        default_order="LOWEST_RATING",
+                        orders={
+                            "LOWEST_RATING": PageOrder(
+                                [OrderTerm("rating", "asc")]
+                            ),
+                            "HIGHEST_RATING": PageOrder(
+                                [OrderTerm("rating", "desc")]
+                            ),
+                        },
+                    )
+                }
+            },
+        ),
         service_name="reviews",
     )
     reviews_app = build_federable_app(reviews_handler)
@@ -148,8 +172,7 @@ async def test_first_page_correct(federation):
     )
     assert not res.get("errors"), res
     pkg = res["data"]["EPProduct"]["by_id"]["reviews"]
-    # asc by rating → R1..R5
-    assert [it["title"] for it in pkg["items"]] == ["R1", "R2", "R3", "R4", "R5"]
+    assert [it["title"] for it in pkg["items"]] == ["R7", "R6", "R5", "R4", "R3"]
     assert pkg["pagination"]["has_more"] is True
     assert pkg["pagination"]["total_count"] == 7
 
@@ -163,7 +186,7 @@ async def test_last_page_correct(federation):
     )
     assert not res.get("errors"), res
     pkg = res["data"]["EPProduct"]["by_id"]["reviews"]
-    assert [it["title"] for it in pkg["items"]] == ["R6", "R7"]
+    assert [it["title"] for it in pkg["items"]] == ["R2", "R1"]
     assert pkg["pagination"]["has_more"] is False
     assert pkg["pagination"]["total_count"] == 7
 
@@ -195,10 +218,56 @@ async def test_total_count_optional(federation):
 
 
 @pytest.mark.asyncio
+async def test_total_count_only_computed_when_selected(federation):
+    """R6: member SQL only includes COUNT when total_count is selected."""
+    catalog_handler, _ = federation
+    statements: list[str] = []
+
+    def capture_sql(_conn, _cursor, statement, _params, _context, _executemany):
+        statements.append(statement)
+
+    event.listen(_rev_engine.sync_engine, "before_cursor_execute", capture_sql)
+    try:
+        without_total = await catalog_handler.execute(
+            "{ EPProduct { by_id(id: 1) { reviews(limit: 2, offset: 100) { "
+            "items { title } pagination { has_more } } } } }"
+        )
+        page = without_total["data"]["EPProduct"]["by_id"]["reviews"]
+        assert page == {"items": [], "pagination": {"has_more": False}}
+        review_statements = [
+            statement
+            for statement in statements
+            if "fed_pag_e2e_review" in statement.lower()
+        ]
+        assert review_statements
+        assert not any("count(" in statement.lower() for statement in review_statements)
+
+        statements.clear()
+        with_total = await catalog_handler.execute(
+            "{ EPProduct { by_id(id: 1) { reviews(limit: 2, offset: 100) { "
+            "items { title } pagination { has_more total_count } } } } }"
+        )
+        page = with_total["data"]["EPProduct"]["by_id"]["reviews"]
+        assert page["items"] == []
+        assert page["pagination"] == {"has_more": False, "total_count": 7}
+        review_statements = [
+            statement
+            for statement in statements
+            if "fed_pag_e2e_review" in statement.lower()
+        ]
+        assert any(
+            "count(" in statement.lower() and "over" in statement.lower()
+            for statement in review_statements
+        )
+    finally:
+        event.remove(_rev_engine.sync_engine, "before_cursor_execute", capture_sql)
+
+
+@pytest.mark.asyncio
 async def test_items_subtree_resolved(federation):
     """US2 (SC-005): paginated items' nested relationship (comments) is resolved.
 
-    The member resolves comments inside its by_<key>_in_page response (items
+    The member resolves comments inside its page_by_<key>_in response (items
     subtree recursion on the root path); catalog reads them off the instance.
     """
     catalog_handler, _ = federation
@@ -208,8 +277,8 @@ async def test_items_subtree_resolved(federation):
     )
     assert not res.get("errors"), res
     pkg = res["data"]["EPProduct"]["by_id"]["reviews"]
-    # asc by rating → R1 (has C1), R2 (has C2)
+    # descending by rating → R7 (has C7), R6 (has C6)
     by_title = {it["title"]: it for it in pkg["items"]}
-    assert [c["text"] for c in by_title["R1"]["comments"]] == ["C1"]
-    assert [c["text"] for c in by_title["R2"]["comments"]] == ["C2"]
+    assert [c["text"] for c in by_title["R7"]["comments"]] == ["C7"]
+    assert [c["text"] for c in by_title["R6"]["comments"]] == ["C6"]
     assert pkg["pagination"]["has_more"] is True  # 7 total, took 2

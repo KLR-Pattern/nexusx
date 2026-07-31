@@ -45,6 +45,7 @@ class RelationshipInfo:
     loader: type[DataLoader] | None = None
     page_loader: type[DataLoader] | None = None  # paginated loader (list only)
     sort_field: str | None = None  # sort column for pagination
+    pagination: bool = False  # explicit remote pagination capability
     default_page_size: int = 20
     max_page_size: int = 100
     description: str | None = None  # documentation string surfaced in voyager/ER diagram

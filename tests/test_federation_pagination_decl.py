@@ -1,12 +1,16 @@
-"""US5 (T024): pagination fail-fast — to-one declares sort_field, or sort_field
-is not a member scalar field. Both rejected at federate() (_validate_declarations).
-"""
+"""Federation pagination declaration and capability validation."""
 
 import pytest
 from sqlmodel import Field, SQLModel
 
 from nexusx.federation import RemoteRelationship, RemoteService
-from nexusx.federation.contract import BatchRoot, EntityFragment, FieldDescriptor
+from nexusx.federation.contract import (
+    BatchPageCapability,
+    BatchRoot,
+    EntityFragment,
+    FieldDescriptor,
+    PageOrderDescriptor,
+)
 from nexusx.federation.manager import FederationError, _validate_declarations
 from nexusx.loader.registry import ErManager
 
@@ -19,7 +23,7 @@ class _DeclToOne(SQLModel, table=True):
     __relationships__ = [
         RemoteRelationship(
             fk="id", target=users.User, name="u", join_remote="id",
-            sort_field="name",  # to-one + sort_field → illegal
+            pagination=True,
         ),
     ]
 
@@ -30,7 +34,8 @@ class _DeclMany(SQLModel, table=True):
     __relationships__ = [
         RemoteRelationship(
             fk="id", target=list[users.User], name="u", join_remote="id",
-            sort_field="nonexistent",  # not a member scalar → illegal
+            pagination=True,
+            order="UNKNOWN",
         ),
     ]
 
@@ -39,20 +44,39 @@ def _frag_with_id_root() -> EntityFragment:
     return EntityFragment(
         typename="User",
         scalar_fields=[FieldDescriptor(name="id", type_name="int")],
-        batch_roots=[BatchRoot(name="by_id_in", arg_name="id_list")],
+        batch_roots=[
+            BatchRoot(
+                name="page_by_id_in",
+                arg_name="id_list",
+                arg_type="list[int]",
+                page=BatchPageCapability(
+                    default_order="NEWEST",
+                    orders=[PageOrderDescriptor(name="NEWEST")],
+                ),
+            )
+        ],
     )
 
 
-def test_to_one_with_sort_field_rejected():
-    """FR-002: to-one RemoteRelationship declaring sort_field → fail-fast."""
+def test_to_one_with_pagination_rejected():
     er = ErManager(entities=[_DeclToOne], session_factory=lambda: None)
     with pytest.raises(FederationError, match="to-one"):
         _validate_declarations(er, {"users": "http://u"}, {})
 
 
-def test_illegal_sort_field_rejected():
-    """FR-012b: sort_field not a member scalar field → fail-fast."""
+def test_unknown_order_profile_rejected():
     er = ErManager(entities=[_DeclMany], session_factory=lambda: None)
     fragments = {"users.User": _frag_with_id_root()}
-    with pytest.raises(FederationError, match="sort_field"):
+    with pytest.raises(FederationError, match="UNKNOWN"):
         _validate_declarations(er, {"users": "http://u"}, fragments)
+
+
+def test_order_requires_pagination():
+    with pytest.raises(ValueError, match="pagination=True"):
+        RemoteRelationship(
+            fk="id",
+            target=list[users.User],
+            name="u",
+            join_remote="id",
+            order="NEWEST",
+        )
