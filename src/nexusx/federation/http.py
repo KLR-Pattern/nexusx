@@ -7,7 +7,10 @@ backed by ``httpx.ASGITransport`` so member ASGI apps are called in-process
 
 from __future__ import annotations
 
+import json
 from typing import Any
+
+from nexusx.federation.transport import FederationTransportError
 
 
 class GraphQLTransport:
@@ -40,16 +43,65 @@ class GraphQLTransport:
         return self._client
 
     async def post_json(self, url: str, body: dict[str, Any]) -> dict[str, Any]:
-        client = await self._ensure()
-        r = await client.post(url, json=body)
-        r.raise_for_status()
-        return dict(r.json())
+        return await self._request_json("POST", url, body)
 
     async def get_json(self, url: str) -> dict[str, Any]:
+        return await self._request_json("GET", url)
+
+    async def _request_json(
+        self,
+        method: str,
+        url: str,
+        body: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         client = await self._ensure()
-        r = await client.get(url)
-        r.raise_for_status()
-        return dict(r.json())
+        try:
+            if method == "POST":
+                response = await client.post(url, json=body)
+            else:
+                response = await client.get(url)
+        except Exception as exc:
+            raise FederationTransportError(method, url, str(exc)) from exc
+
+        if response.status_code >= 400:
+            detail = self._response_detail(response)
+            raise FederationTransportError(
+                method,
+                url,
+                response.reason_phrase,
+                status_code=response.status_code,
+                response_detail=detail,
+            )
+
+        try:
+            payload = response.json()
+        except Exception as exc:
+            raise FederationTransportError(
+                method,
+                url,
+                "remote response is not valid JSON",
+                response_detail=response.text[:1000],
+            ) from exc
+        if not isinstance(payload, dict):
+            raise FederationTransportError(
+                method,
+                url,
+                f"expected a JSON object, got {type(payload).__name__}",
+            )
+        return dict(payload)
+
+    @staticmethod
+    def _response_detail(response: Any) -> str:
+        try:
+            payload = response.json()
+        except Exception:
+            return str(response.text)[:1000]
+        if isinstance(payload, dict):
+            for key in ("detail", "message", "errors"):
+                if key in payload:
+                    value = payload[key]
+                    return value if isinstance(value, str) else json.dumps(value)
+        return json.dumps(payload)[:1000]
 
     async def close(self) -> None:
         if self._owned and self._client is not None:

@@ -239,6 +239,7 @@ class GraphQLHandler:
         """Close federation resources (httpx.AsyncClient). Call on shutdown."""
         transport = getattr(self._er_manager, "_federation_transport", None)
         if transport is not None:
+            self._er_manager._federation_transport = None
             await transport.close()
 
     async def execute(

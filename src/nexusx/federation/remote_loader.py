@@ -16,7 +16,7 @@ from __future__ import annotations
 import decimal
 import json
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from aiodataloader import DataLoader
 from pydantic import BaseModel
@@ -85,7 +85,7 @@ async def fetch_remote_subtree(
     )
     set_remote_selection(loader, selection)
     fk_values = [getattr(p, rel_info.fk_field) for p in parents]
-    return await loader.load_many(fk_values)
+    return cast("list[Any]", await loader.load_many(fk_values))
 
 
 def _render_value(v: Any) -> str:
@@ -121,6 +121,14 @@ def _render_keys(keys: list[Any]) -> str:
     return "[" + ", ".join(_render_value(k) for k in keys) + "]"
 
 
+def _render_arguments(selection: Any) -> str:
+    args = getattr(selection, "arguments", None) or {}
+    if not args:
+        return ""
+    rendered = ", ".join(f"{key}: {_render_value(value)}" for key, value in args.items())
+    return f"({rendered})"
+
+
 def _render_selection(sel: Any, indent: int = 6) -> str:
     """Render a FieldSelection subtree as a GraphQL selection set.
 
@@ -133,17 +141,12 @@ def _render_selection(sel: Any, indent: int = 6) -> str:
     sub_fields = getattr(sel, "sub_fields", None) or {}
     for fname, child in sub_fields.items():
         child_sub = getattr(child, "sub_fields", None) or {}
+        arg_str = _render_arguments(child)
         if child_sub:
-            lines.append(f"{pad}{fname} {{")
+            lines.append(f"{pad}{fname}{arg_str} {{")
             lines.append(_render_selection(child, indent + 2))
             lines.append(f"{pad}}}")
         else:
-            args = getattr(child, "arguments", None) or {}
-            arg_str = (
-                "(" + ", ".join(f"{k}: {_render_value(v)}" for k, v in args.items()) + ")"
-                if args
-                else ""
-            )
             lines.append(f"{pad}{fname}{arg_str}")
     return "\n".join(lines)
 
@@ -172,12 +175,13 @@ def build_gql_query(
     for fname in wanted:
         child = sub_fields.get(fname)
         child_sub = getattr(child, "sub_fields", None) if child else None
+        arg_str = _render_arguments(child) if child is not None else ""
         if child_sub:
-            body_lines.append(f"{pad*2}{fname} {{")
+            body_lines.append(f"{pad*2}{fname}{arg_str} {{")
             body_lines.append(_render_selection(child, 6))
             body_lines.append(f"{pad*2}}}")
         else:
-            body_lines.append(f"{pad*2}{fname}")
+            body_lines.append(f"{pad*2}{fname}{arg_str}")
 
     keys_lit = _render_keys(keys)
     return (
@@ -222,8 +226,7 @@ def create_remote_loader(
             the argument is caught at ``federate()``, not at query time.
     """
     entry = f"by_{join_remote}_in"
-    if not arg_name:
-        arg_name = f"{join_remote}_list"
+    resolved_arg_name = arg_name or f"{join_remote}_list"
     gql_url = endpoint.rstrip("/") + "/graphql"
 
     class _RemoteLoader(DataLoader):  # type: ignore[type-arg]
@@ -244,22 +247,63 @@ def create_remote_loader(
             query = build_gql_query(
                 typename=typename,
                 entry=entry,
-                arg_name=arg_name,
+                arg_name=resolved_arg_name,
                 keys=list(keys),
                 selection=selection,
                 target_cls=target_cls,
                 join_remote=join_remote,
             )
             resp = await transport.post_json(gql_url, {"query": query})
+            if not isinstance(resp, dict):
+                raise RemoteQueryError(
+                    typename,
+                    [{"message": f"Expected object response, got {type(resp).__name__}"}],
+                )
             if resp.get("errors"):
                 raise RemoteQueryError(typename, resp["errors"])
-            data = resp.get("data") or {}
-            group = (data.get(typename) or {}).get(entry) or []
+            data = resp.get("data")
+            if not isinstance(data, dict):
+                raise RemoteQueryError(
+                    typename,
+                    [{"message": "Response is missing an object-valued 'data' field"}],
+                )
+            type_group = data.get(typename)
+            if not isinstance(type_group, dict):
+                raise RemoteQueryError(
+                    typename,
+                    [{"message": f"Response is missing data.{typename}"}],
+                )
+            if entry not in type_group:
+                raise RemoteQueryError(
+                    typename,
+                    [{"message": f"Response is missing data.{typename}.{entry}"}],
+                )
+            group = type_group[entry]
+            if not isinstance(group, list):
+                raise RemoteQueryError(
+                    typename,
+                    [{
+                        "message": (
+                            f"Expected data.{typename}.{entry} to be a list, "
+                            f"got {type(group).__name__}"
+                        )
+                    }],
+                )
             rows = [_to_dict(r) for r in group]
 
             # Group rows by join key, align to input order.
             buckets: dict[Any, list[Any]] = {}
             for row in rows:
+                if not isinstance(row, dict):
+                    raise RemoteQueryError(
+                        typename,
+                        [{
+                            "message": (
+                                f"Expected rows in data.{typename}.{entry} to be "
+                                f"objects, got {type(row).__name__}"
+                            )
+                        }],
+                    )
                 k = row.get(join_remote)
                 buckets.setdefault(k, []).append(row)
 

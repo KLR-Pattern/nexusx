@@ -17,6 +17,7 @@ import inspect
 import types
 import typing
 from collections.abc import Sequence
+from contextlib import asynccontextmanager
 from typing import Any, Union
 
 from nexusx.federation.contract import (
@@ -225,7 +226,16 @@ def build_federable_app(
 
     from nexusx.federation.introspect import serialize_er_introspection
 
-    app = FastAPI()
+    @asynccontextmanager
+    async def lifespan(_app: Any):
+        try:
+            yield
+        finally:
+            close = getattr(handler, "aclose", None)
+            if close is not None:
+                await close()
+
+    app = FastAPI(lifespan=lifespan)
 
     @app.post("/graphql", dependencies=dependencies)
     async def graphql_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
