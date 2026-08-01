@@ -123,6 +123,39 @@ def _extract_sort_field(order_by: Any) -> str:
     )
 
 
+def _resolve_local_page_capability(
+    entity_kls: type[SQLModel],
+    rel_name: str,
+    target_entity: type[SQLModel],
+) -> Any:
+    """Build a ``BatchPageCapability`` for a local paginated relationship from
+    the entity's class-level ``__pagination_orders__`` declaration.
+
+    ``__pagination_orders__`` maps ORM relation name → ``BatchPageConfig`` (the
+    same container federation ``batch_pages`` uses). Profiles are validated with
+    federation's ``_resolve_page_orders`` (enum-safe names, single-column, SQL
+    column, direction, nullable nulls, default∈keys) — fail-fast at startup.
+
+    Returns ``None`` when the relationship has no profile declaration, so the
+    relationship falls back to the fixed ``sort_field`` (backward compat).
+    specs/015.
+    """
+    cfg = getattr(entity_kls, "__pagination_orders__", {}).get(rel_name)
+    if cfg is None:
+        return None
+    from nexusx.federation.contract import BatchPageCapability, PageOrderDescriptor
+    from nexusx.standard_queries import _resolve_page_orders
+
+    resolved = _resolve_page_orders(target_entity, cfg)
+    return BatchPageCapability(
+        default_order=cfg.default_order,
+        orders=[
+            PageOrderDescriptor(name=n, description=o.description)
+            for n, o in resolved.items()
+        ],
+    )
+
+
 def _inspect_relationships(
     entity_kls: type[SQLModel],
     all_entities: set[type[SQLModel]],
@@ -243,6 +276,10 @@ def _inspect_relationships(
                     session_factory=session_factory,
                 )
 
+                page_capability = _resolve_local_page_capability(
+                    entity_kls, rel_name, target_entity
+                )
+
                 results.append(
                     RelationshipInfo(
                         name=rel_name,
@@ -253,6 +290,7 @@ def _inspect_relationships(
                         loader=loader,
                         page_loader=page_loader,
                         sort_field=sort_field,
+                        page_capability=page_capability,
                     )
                 )
 
@@ -306,6 +344,10 @@ def _inspect_relationships(
                 session_factory=session_factory,
             )
 
+            page_capability = _resolve_local_page_capability(
+                entity_kls, rel_name, target_entity
+            )
+
             results.append(
                 RelationshipInfo(
                     name=rel_name,
@@ -316,6 +358,7 @@ def _inspect_relationships(
                     loader=loader,
                     page_loader=page_loader,
                     sort_field=sort_field,
+                    page_capability=page_capability,
                 )
             )
 
