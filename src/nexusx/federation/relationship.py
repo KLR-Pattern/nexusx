@@ -69,9 +69,8 @@ class RemoteRelationship:
             must expose a ``by_<join_remote>_in`` batch query root.
         description: Optional ER-diagram documentation.
         pagination: Whether this to-many relationship uses member-side offset
-            pagination.
-        order: Optional semantic order profile exposed by the member. ``None``
-            selects the member's default profile.
+            pagination. The order profile is chosen by the caller at query time
+            (``reviews(order: ..., direction: ...)``) — it is NOT pinned here.
     """
 
     fk: str
@@ -80,7 +79,6 @@ class RemoteRelationship:
     join_remote: str
     description: str | None = None
     pagination: bool = False
-    order: str | None = None
     # Derived from `target` (list[...] => True); not passed by callers.
     is_list: bool = field(default=False, init=False)
 
@@ -96,10 +94,6 @@ class RemoteRelationship:
         # Optional voyager cluster color, carried the same way as target_url.
         self.target_color = getattr(ref, "color", None)
         self._qualified_name = ref.qualified_name
-        if self.order is not None and not self.pagination:
-            raise ValueError(
-                "RemoteRelationship.order requires pagination=True"
-            )
 
     @property
     def qualified_name(self) -> str:

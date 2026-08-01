@@ -116,32 +116,39 @@ AutoQueryConfig(
 )
 ```
 
-挂载方静态选择其中一个 profile；`order=None` 使用 member 默认值。order 属于部署
-配置，不开放给业务 GraphQL 客户端。
+查询者在查询期挑选其中一个 profile，并指定方向（`ASC`/`DESC`）。挂载方把
+profile 名渲染成 schema 的 enum，并在关系字段上加 `order`/`direction`
+参数 —— `RemoteRelationship` 不再静态绑定 order：
 
 ```python
 RemoteRelationship(
     fk="id", target=list[reviews.Review],
     name="reviews", join_remote="product_id",
     pagination=True,
-    order="HIGHEST_RATING",
 )
 ```
 
-查询时带 `limit`/`offset`;`total_count` 可选(仅在选择时计算):
+省略 `order` 使用 member 的 `default_order`；省略 `direction` 使用 profile 的
+默认方向。`total_count` 可选（仅在选择时计算）：
 
 ```graphql
 { Product { by_filter {
-  reviews(limit: 5, offset: 0) {
+  reviews(limit: 5, offset: 0, order: HIGHEST_RATING, direction: DESC) {
     items { title rating }
     pagination { has_more total_count }
   }
 } } }
 ```
 
+`direction` 覆盖 profile 的默认方向，**nulls 跟随翻转**（`desc + nulls_last`
+⇄ `asc + nulls_first`），因此翻转得到的是严格相反的顺序（含 NULL 位置）。
+每个 profile 只能单列（多列 profile 在 member 启动期被拒绝）——这让翻转无歧
+义。排序 *字段* 仍封闭：查询者只能在 member 发布的名字集合里选名 + 翻方向，
+索引控制权始终在 member（查询者无法 `order by` 无索引列）。
+
 分页发生在数据所在的 member(按 join key 的窗口函数);挂载方每次遍历对每个被挂服务发一条 gql,并按 join key 对齐 per-key 分页包。`items` 子树(嵌套关系,含更深的跨服务跳转)由 member 在这一条 gql 内解析。
-内部调用为 `page_by_<key>_in(keys, limit, offset, order)`；ER contract 只暴露
-profile 名和描述，不暴露物理排序字段。
+内部调用为 `page_by_<key>_in(keys, order, direction, limit, offset)`；ER contract
+只暴露 profile 名和描述，不暴露物理排序字段。
 
 相关:[自定义关系](../guide/custom_relationship.zh.md)、
 [ER 图可视化](voyager.zh.md)。

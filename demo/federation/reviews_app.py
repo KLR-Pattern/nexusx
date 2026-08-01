@@ -54,6 +54,7 @@ class Review(ReviewsBase, table=True):
     product_id: int
     title: str
     rating: int
+    created_at: int  # epoch seconds — backs the NEWEST order profile
     comments: list[Comment] = Relationship()
 
 
@@ -66,9 +67,9 @@ async def init_db() -> None:
         await conn.run_sync(SQLModel.metadata.create_all)
     async with async_session() as s:
         if not (await s.exec(select(Review))).first():
-            s.add(Review(id=1, product_id=1, title="Great widget", rating=5))
-            s.add(Review(id=2, product_id=1, title="Works okay", rating=3))
-            s.add(Review(id=3, product_id=2, title="Mediocre", rating=2))
+            s.add(Review(id=1, product_id=1, title="Great widget", rating=5, created_at=300))
+            s.add(Review(id=2, product_id=1, title="Works okay", rating=3, created_at=100))
+            s.add(Review(id=3, product_id=2, title="Mediocre", rating=2, created_at=200))
             s.add(Comment(id=1, review_id=1, author_id=1, text="Loved it"))
             s.add(Comment(id=2, review_id=1, author_id=2, text="Solid build"))
             s.add(Comment(id=3, review_id=2, author_id=1, text="Fair enough"))
@@ -91,7 +92,11 @@ handler = GraphQLHandler(
                         "HIGHEST_RATING": PageOrder(
                             [OrderTerm("rating", "desc")],
                             description="Highest rating first",
-                        )
+                        ),
+                        "NEWEST": PageOrder(
+                            [OrderTerm("created_at", "desc")],
+                            description="Newest first",
+                        ),
                     },
                 )
             }

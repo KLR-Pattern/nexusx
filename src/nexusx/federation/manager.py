@@ -224,7 +224,6 @@ def _validate_and_wire_remote_relationship(
         endpoints,
         fragments,
         pagination=rrel.pagination,
-        order=rrel.order,
     )
     full_br = (
         _check_target(rrel.qualified_name, rrel.join_remote, endpoints, fragments)[1]
@@ -273,7 +272,11 @@ def _validate_and_wire_remote_relationship(
         ),
     }
     if rrel.pagination:
-        resolved_order = _validate_page_capability(rrel.qualified_name, page_br, rrel.order)
+        # Store the member's page capability so SDL/__schema can render the
+        # `order` enum + default, and bake only the default order into the
+        # loader (the chosen order/direction arrive per-query). specs/014.
+        capability = _validate_page_capability(rrel.qualified_name, page_br)
+        rel_info_kwargs["page_capability"] = capability
         rel_info_kwargs["page_loader"] = create_paginated_remote_loader(
             typename=typename,
             join_remote=rrel.join_remote,
@@ -281,7 +284,7 @@ def _validate_and_wire_remote_relationship(
             target_cls=target_cls,
             transport=transport,
             arg_name=page_br.arg_name,
-            order=resolved_order,
+            default_order=capability.default_order,
         )
     rel_info = RelationshipInfo(**rel_info_kwargs)
     er_manager._registry.setdefault(source_entity, {})[rrel.name] = rel_info
@@ -326,12 +329,14 @@ def _check_target(
     services: dict[str, str],
     fragments: dict[str, EntityFragment],
     pagination: bool = False,
-    order: str | None = None,
 ) -> tuple[FieldDescriptor, BatchRoot]:
     """Validate a declared remote target; return its batch root for wiring.
 
     Checks service/type/join field, the required full or paginated root, its
-    argument contract, and pagination capability when applicable.
+    argument contract, and pagination capability when applicable. The caller
+    chooses the order profile at query time, so no order is pinned here
+    (specs/014); this only verifies the member advertised a non-empty,
+    self-consistent capability.
     """
     srv, _typename = parse_qualified_name(target)
     if srv not in services:
@@ -363,15 +368,22 @@ def _check_target(
             f"name; the member must generate it via AutoQueryConfig.batch_keys."
         )
     if pagination:
-        _validate_page_capability(target, br, order)
+        _validate_page_capability(target, br)
     return remote_field, br
 
 
 def _validate_page_capability(
     target: str,
     batch_root: BatchRoot,
-    order: str | None,
-) -> str:
+) -> Any:
+    """Validate the member's page capability; return it for the mounter to store.
+
+    The order profile is chosen by the caller at query time, so this no longer
+    pins a specific order. It still fail-fast checks the capability is present,
+    uses the supported protocol, and advertises a non-empty order set whose
+    ``default_order`` is one of its members (the mounter needs a default to fall
+    back on and an enum to render). specs/014.
+    """
     capability = batch_root.page
     if capability is None:
         raise FederationError(
@@ -394,13 +406,7 @@ def _validate_page_capability(
             f"Pagination root {batch_root.name!r} on {target!r} has unknown "
             f"default_order {capability.default_order!r}."
         )
-    resolved_order = order or capability.default_order
-    if resolved_order not in order_names:
-        raise FederationError(
-            f"RemoteRelationship order {resolved_order!r} is not supported by "
-            f"{target!r}; available orders: {sorted(order_names)}."
-        )
-    return resolved_order
+    return capability
 
 
 def _normalize_join_type(type_expr: str) -> str | None:

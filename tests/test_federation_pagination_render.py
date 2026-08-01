@@ -60,7 +60,6 @@ class RProduct(RProductBase, table=True):
             fk="id", target=list[reviews.RReview],
             name="reviews", join_remote="product_id",
             pagination=True,
-            order="HIGHEST_RATING",
         ),
     ]
 
@@ -150,14 +149,23 @@ def _unwrap_type_name(type_ref: dict) -> str | None:
 @pytest.mark.asyncio
 async def test_sdl_renders_paginated_remote_as_result(catalog):
     sdl = catalog.get_sdl()
-    # The paginated remote to-many renders as a Result field.
-    assert "reviews(limit: Int, offset: Int = 0): RReviewResult!" in sdl
+    # The paginated remote to-many renders as a Result field exposing
+    # order (enum, default = member default_order) + direction. specs/014.
+    assert (
+        "reviews(limit: Int, offset: Int = 0, "
+        "order: RReviewOrder = HIGHEST_RATING, direction: Direction): RReviewResult!"
+    ) in sdl
+    # Mounter-side order enum (values = member profile names) + shared Direction.
+    assert "enum RReviewOrder {\n  HIGHEST_RATING\n}" in sdl
+    assert "enum Direction {\n  ASC\n  DESC\n}" in sdl
     # Result + Pagination types are generated.
     assert "type RReviewResult {" in sdl
     assert "items: [RReview!]!" in sdl
     assert "pagination: Pagination!" in sdl
     # A local ordered relationship stays non-paginated while the global toggle
-    # is off; the remote paginated relationship must not activate it.
+    # is off; the remote paginated relationship must not activate it, and a
+    # federation-paginated relationship does NOT turn on local order/direction
+    # for local rels (notes keeps no args).
     assert "notes: [RProductNote!]!" in sdl
     assert "notes(limit:" not in sdl
     assert "type RProductNoteResult {" not in sdl
@@ -169,11 +177,19 @@ async def test_introspection_renders_paginated_remote_as_result(catalog):
     types = {t["name"]: t for t in intro["types"]}
     assert "RReviewResult" in types
     assert "Pagination" in types
+    # SDL and __schema expose the same mounter-side order enum + Direction.
+    assert "RReviewOrder" in types
+    assert types["RReviewOrder"]["kind"] == "ENUM"
+    assert {v["name"] for v in types["RReviewOrder"]["enumValues"]} == {"HIGHEST_RATING"}
+    assert "Direction" in types
+    assert {v["name"] for v in types["Direction"]["enumValues"]} == {"ASC", "DESC"}
     product = types["RProduct"]
     reviews_field = next(f for f in product["fields"] if f["name"] == "reviews")
-    arg_names = {a["name"] for a in reviews_field["args"]}
-    assert "limit" in arg_names
-    assert "offset" in arg_names
+    arg_by_name = {a["name"]: a for a in reviews_field["args"]}
+    assert {"limit", "offset", "order", "direction"} <= set(arg_by_name)
+    assert _unwrap_type_name(arg_by_name["order"]["type"]) == "RReviewOrder"
+    assert arg_by_name["order"]["defaultValue"] == "HIGHEST_RATING"
+    assert _unwrap_type_name(arg_by_name["direction"]["type"]) == "Direction"
     assert _unwrap_type_name(reviews_field["type"]) == "RReviewResult"
     notes_field = next(f for f in product["fields"] if f["name"] == "notes")
     assert notes_field["args"] == []

@@ -65,6 +65,7 @@ from nexusx.resolver import Loader
 from nexusx.standard_queries import (
     AutoQueryConfig,
     BatchPageConfig,
+    Direction,
     OrderTerm,
     PageOrder,
     add_standard_queries,
@@ -99,6 +100,7 @@ __all__ = [
     # Standard queries
     "AutoQueryConfig",
     "BatchPageConfig",
+    "Direction",
     "OrderTerm",
     "PageOrder",
     "add_standard_queries",

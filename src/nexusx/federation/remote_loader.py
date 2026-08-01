@@ -371,17 +371,27 @@ def build_paginated_gql_query(
     keys: list[Any],
     items_sel: Any,
     order: str,
+    direction: str | None = None,
     limit: int | None = None,
     offset: int = 0,
     want_total_count: bool = True,
 ) -> str:
-    """Construct the paginated GraphQL query document."""
+    """Construct the paginated GraphQL query document.
+
+    ``order`` is always sent (the caller resolves the member default when the
+    query omits it); ``direction`` is sent only when the caller supplied one —
+    otherwise the member applies the profile's default direction. Both are bare
+    GraphQL enum literals (never quoted strings): ``order: HIGHEST_RATING``,
+    ``direction: DESC``. specs/014.
+    """
     keys_lit = _render_keys(keys)
     args = [f"{arg_name}: {keys_lit}"]
     if limit is not None:
         args.append(f"limit: {_render_value(limit)}")
     args.append(f"offset: {_render_value(offset)}")
     args.append(f"order: {order}")
+    if direction is not None:
+        args.append(f"direction: {direction}")
     items_body = _render_selection(items_sel, indent=6)
     pag_lines = ["      has_more"]
     if want_total_count:
@@ -408,13 +418,18 @@ def create_paginated_remote_loader(
     target_cls: type[BaseModel],
     transport: FederationTransport,
     arg_name: str,
-    order: str,
+    default_order: str,
 ) -> type[DataLoader]:  # type: ignore[type-arg]
     """Build a DataLoader that fetches a paginated sub-tree from a mounted service.
 
     Emits one ``page_by_<join_remote>_in`` gql carrying batch-level
-    ``limit``/``offset`` and a member-defined semantic ``order`` profile, then
-    aligns the per-key packages into ``{items, pagination}`` per parent.
+    ``limit``/``offset`` plus the caller-chosen ``order``/``direction`` (read
+    from the selection arguments at query time — NOT baked at federate time),
+    then aligns the per-key packages into ``{items, pagination}`` per parent.
+
+    ``default_order`` is the member's default profile (from
+    ``BatchPageCapability.default_order``); it is sent only when the caller
+    omits ``order``. specs/014.
     """
 
     entry = f"page_by_{join_remote}_in"
@@ -425,7 +440,7 @@ def create_paginated_remote_loader(
             selection = getattr(self, "_remote_selection", None)
             items_sel = None
             want_tc = True
-            sel_args: dict[str, Any] = {}
+            sel_args: dict[str,Any] = {}
             if selection is not None:
                 sub = getattr(selection, "sub_fields", None) or {}
                 items_sel = sub.get("items")
@@ -449,10 +464,16 @@ def create_paginated_remote_loader(
                 )
             limit = sel_args.get("limit")
             offset = sel_args.get("offset", 0)
+            # order/direction come from the query's selection.arguments (the
+            # parsed GraphQL enum literals arrive as plain strings). order is
+            # always sent — fall back to the member default when the caller
+            # omits it; direction is forwarded only when supplied. specs/014.
+            order = sel_args.get("order") or default_order
+            direction = sel_args.get("direction")
             query = build_paginated_gql_query(
                 typename=typename, entry=entry, arg_name=arg_name,
                 join_remote=join_remote, keys=list(keys), items_sel=items_sel,
-                order=order,
+                order=order, direction=direction,
                 limit=limit, offset=offset, want_total_count=want_tc,
             )
             resp = await transport.post_json(gql_url, {"query": query})

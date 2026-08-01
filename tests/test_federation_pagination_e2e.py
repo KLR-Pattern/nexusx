@@ -67,7 +67,6 @@ class EPProduct(EPCatalogBase, table=True):
             fk="id", target=list[reviews.EPReview],
             name="reviews", join_remote="product_id",
             pagination=True,
-            order="HIGHEST_RATING",
         ),
     ]
 
@@ -138,7 +137,7 @@ async def federation():
             batch_pages={
                 "EPReview": {
                     "product_id": BatchPageConfig(
-                        default_order="LOWEST_RATING",
+                        default_order="HIGHEST_RATING",
                         orders={
                             "LOWEST_RATING": PageOrder(
                                 [OrderTerm("rating", "asc")]

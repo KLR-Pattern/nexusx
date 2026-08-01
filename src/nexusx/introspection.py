@@ -14,6 +14,7 @@ from sqlmodel import SQLModel
 
 from nexusx.type_converter import TypeConverter
 from nexusx.utils.pagination_schema import (
+    federation_order_enum_layout,
     has_any_paginated_relationship,
     has_any_pagination_root,
     is_active_paginated_relationship,
@@ -68,6 +69,14 @@ class IntrospectionGenerator:
         self._converter = TypeConverter(self._entity_names)
         self._enum_types = self._collect_enum_types()
         self._input_types = self._collect_input_types()
+        # Mounter-side federation order enums + per-field enum names (specs/014).
+        # Merged into _enum_types so __schema renders them and _build_field can
+        # reference them — same helper as the SDL generator, so the two paths
+        # expose identical order/direction parameters.
+        self._fed_order_enums, self._fed_order_field_name = (
+            federation_order_enum_layout(loader_registry, entities)
+        )
+        self._enum_types.update(self._fed_order_enums)
 
     def generate(self) -> dict[str, Any]:
         """Generate complete __schema introspection data."""
@@ -593,7 +602,7 @@ class IntrospectionGenerator:
             and self._is_paginated_relationship(entity, name, python_type)
         ):
             type_ref = self._build_result_type_ref(python_type)
-            args = self._build_pagination_args()
+            args = self._build_pagination_args(entity, name)
         else:
             type_ref = self._build_type_ref(python_type, is_input=False, required=required)
 
@@ -854,9 +863,17 @@ class IntrospectionGenerator:
             "ofType": {"kind": "OBJECT", "name": result_type_name, "ofType": None},
         }
 
-    def _build_pagination_args(self) -> list[dict]:
-        """Build limit/offset arguments for paginated relationship fields."""
-        return [
+    def _build_pagination_args(
+        self, entity: type[SQLModel] | None, field_name: str
+    ) -> list[dict]:
+        """Build the argument list for a paginated relationship field.
+
+        Always includes ``limit``/``offset``. Federation REMOTE_PAGED
+        relationships (``page_capability`` set) additionally expose ``order``
+        (enum, default = member ``default_order``) and ``direction``; local and
+        coalesced paginated relationships keep just limit/offset. specs/014.
+        """
+        args: list[dict] = [
             {
                 "name": "limit",
                 "description": "Maximum number of items to return",
@@ -870,6 +887,29 @@ class IntrospectionGenerator:
                 "defaultValue": "0",
             },
         ]
+        capability = None
+        if entity is not None and self._loader_registry:
+            rel_info = self._loader_registry.get_relationship(entity, field_name)
+            capability = getattr(rel_info, "page_capability", None) if rel_info else None
+        if capability is not None:
+            enum_name = self._fed_order_field_name.get((entity.__name__, field_name))
+            args.append(
+                {
+                    "name": "order",
+                    "description": "Semantic order profile (member-defined)",
+                    "type": {"kind": "ENUM", "name": enum_name, "ofType": None},
+                    "defaultValue": capability.default_order,
+                }
+            )
+            args.append(
+                {
+                    "name": "direction",
+                    "description": "Sort direction; overrides the profile default",
+                    "type": {"kind": "ENUM", "name": "Direction", "ofType": None},
+                    "defaultValue": None,
+                }
+            )
+        return args
 
     def _build_pagination_types(self) -> list[dict]:
         """Build introspection data for Pagination and Result types."""

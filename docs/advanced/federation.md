@@ -120,38 +120,47 @@ AutoQueryConfig(
 )
 ```
 
-The mounter statically selects one of those profiles. `order=None` uses the
-member default. Order is deployment configuration and is not exposed to
-business GraphQL clients.
+The caller chooses one of those profiles at query time, plus a direction
+(`ASC`/`DESC`). The mounter renders the profile names as a schema enum and an
+`order`/`direction` argument on the relationship field — no static binding is
+declared on `RemoteRelationship`:
 
 ```python
 RemoteRelationship(
     fk="id", target=list[reviews.Review],
     name="reviews", join_remote="product_id",
     pagination=True,
-    order="HIGHEST_RATING",
 )
 ```
 
-Query with `limit`/`offset`; `total_count` is optional (computed only when
+Omitting `order` uses the member's `default_order`; omitting `direction` uses
+the profile's default direction. `total_count` is optional (computed only when
 selected):
 
 ```graphql
 { Product { by_filter {
-  reviews(limit: 5, offset: 0) {
+  reviews(limit: 5, offset: 0, order: HIGHEST_RATING, direction: DESC) {
     items { title rating }
     pagination { has_more total_count }
   }
 } } }
 ```
 
+`direction` overrides the profile's default direction; **nulls follow the flip**
+(`desc + nulls_last` ⇄ `asc + nulls_first`), so flipping yields the strict
+reverse order including NULL placement. Each profile is single-column (multi-
+column profiles are rejected at member startup) — that keeps the flip
+unambiguous. The sort *field* stays closed: callers may only pick a name the
+member published and flip its direction, so index control never leaves the
+member (a caller cannot `order by` an un-indexed column).
+
 Pagination happens at the owning member (a window function partitions by join
 key); the mounter sends one gql per mounted service per traversal and aligns
 the per-key packages by join key. `items` subtrees (nested relationships, incl.
 further cross-service hops) are resolved by the member inside that one gql.
-Internally, the mounter calls `page_by_<key>_in(keys, limit, offset, order)`;
-the ER contract exposes only profile names and descriptions, never physical
-sort fields.
+Internally, the mounter calls
+`page_by_<key>_in(keys, order, direction, limit, offset)`; the ER contract
+exposes only profile names and descriptions, never physical sort fields.
 
 See also: [Custom Relationships](../guide/custom_relationship.md),
 [ER Diagram Visualization](voyager.md).

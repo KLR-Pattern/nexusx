@@ -12,6 +12,7 @@ from sqlmodel import SQLModel
 from nexusx.introspection import QUERY_META_PARAM  # noqa: F401
 from nexusx.type_converter import TypeConverter
 from nexusx.utils.pagination_schema import (
+    federation_order_enum_layout,
     has_any_paginated_relationship,
     has_any_pagination_root,
     is_active_paginated_relationship,
@@ -128,6 +129,12 @@ class SDLGenerator:
         """
         self._enable_pagination = enable_pagination
         self._loader_registry = loader_registry
+        # Mounter-side federation order enums + per-field enum names (specs/014).
+        # Computed once so SDL and the (separate) introspection generator, which
+        # call the same helper, expose identical order/direction parameters.
+        self._fed_order_enums, self._fed_order_field_name = (
+            federation_order_enum_layout(loader_registry, self.entities)
+        )
 
         parts = []
 
@@ -210,6 +217,30 @@ class SDLGenerator:
                 if pag_root:
                     enum_class = pag_root.order_enum
                     enums[enum_class.__name__] = enum_class
+                    # Also collect any enum-typed params on the pagination root
+                    # signature (e.g. ``direction: Direction``) so the SDL defines
+                    # every enum the field references — without this, the member
+                    # SDL would mention ``Direction`` without an ``enum Direction``
+                    # block. specs/014.
+                    try:
+                        pag_sig = inspect.signature(func)
+                    except (TypeError, ValueError):
+                        pag_sig = None
+                    if pag_sig is not None:
+                        for _pname, param in pag_sig.parameters.items():
+                            ann = param.annotation
+                            if (
+                                ann is not inspect.Parameter.empty
+                                and isinstance(ann, type)
+                                and issubclass(ann, Enum)
+                            ):
+                                enums[ann.__name__] = ann
+
+        # Mounter-side federation order enums (one per distinct order set on a
+        # federation-paginated relationship) + the shared Direction enum. These
+        # are the enums the mounter's ``reviews(order: …, direction: …)`` fields
+        # reference; member-side page_root enums above belong to the member. specs/014.
+        enums.update(self._fed_order_enums)
 
         result = []
         for enum_name, enum_class in enums.items():
@@ -438,11 +469,11 @@ class SDLGenerator:
                 target = target_entity.__name__
                 if self._is_active_paginated_relationship(rel_info):
                     # Federated/local paginated to-many via the registry path —
-                    # render as {Target}Result with limit/offset args (mirrors
-                    # the type-hint path's paginated rendering).
-                    fields.append(
-                        f"  {rel_name}(limit: Int, offset: Int = 0): {target}Result!"
-                    )
+                    # render as {Target}Result. Federation REMOTE_PAGED rels
+                    # (page_capability set) also expose order/direction; local
+                    # and coalesced paginated rels keep just limit/offset.
+                    args = self._paginated_field_args(entity, rel_name, rel_info)
+                    fields.append(f"  {rel_name}{args}: {target}Result!")
                 else:
                     gql_type = f"[{target}!]!" if rel_info.is_list else target
                     fields.append(f"  {rel_name}: {gql_type}")
@@ -521,6 +552,25 @@ class SDLGenerator:
     def _is_active_paginated_relationship(self, rel_info: Any) -> bool:
         """Apply the local toggle without disabling explicit federation pagination."""
         return is_active_paginated_relationship(rel_info, self._enable_pagination)
+
+    def _paginated_field_args(
+        self, entity: type[SQLModel], rel_name: str, rel_info: Any
+    ) -> str:
+        """Render the ``(...)`` argument list for a paginated relationship field.
+
+        Federation REMOTE_PAGED relationships (``page_capability`` set) expose
+        ``order`` (enum, default = member ``default_order``) and ``direction``;
+        local / coalesced paginated relationships expose only ``limit``/``offset``.
+        specs/014.
+        """
+        capability = getattr(rel_info, "page_capability", None)
+        if capability is None:
+            return "(limit: Int, offset: Int = 0)"
+        enum_name = self._fed_order_field_name.get((entity.__name__, rel_name))
+        return (
+            f"(limit: Int, offset: Int = 0, "
+            f"order: {enum_name} = {capability.default_order}, direction: Direction)"
+        )
 
     def _has_any_pagination_root(self) -> bool:
         """True if any entity has a federation pagination root."""

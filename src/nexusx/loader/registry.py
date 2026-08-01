@@ -70,6 +70,11 @@ class RelationshipInfo:
     page_loader: type[DataLoader] | None = None  # paginated loader (list only)
     sort_field: str | None = None  # sort column for pagination
     pagination: bool = False  # explicit remote pagination capability
+    # Member-owned pagination capability for a federation REMOTE_PAGED relationship
+    # (profile name set + default_order) — the single source the mounter uses to
+    # render the schema's `order` enum and fall back when the caller omits `order`.
+    # None for local / non-paginated / coalesced relationships. specs/014.
+    page_capability: Any = None
     default_page_size: int = 20
     max_page_size: int = 100
     description: str | None = None  # documentation string surfaced in voyager/ER diagram

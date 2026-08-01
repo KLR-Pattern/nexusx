@@ -97,7 +97,7 @@ class EdgeAccount(EdgeCatalogBase, table=True):
         RemoteRelationship(
             fk="account_uuid", target=list[member.EdgeSession],
             name="sessions", join_remote="account_id",
-            pagination=True, order="NEWEST",
+            pagination=True,
         ),
     ]
 

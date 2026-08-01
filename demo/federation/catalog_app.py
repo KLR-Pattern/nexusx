@@ -12,6 +12,12 @@ deep multi-branch chain:
           title rating comments { text author { name config { theme } } }
         } pagination { has_more } } } } }
 
+The caller picks the order profile and direction at query time (specs/014) —
+the member exposes HIGHEST_RATING / NEWEST, the mounter renders them as an enum:
+
+    { Product { by_filter {
+      reviews(limit: 5, order: NEWEST, direction: DESC) { items { title } } } } }
+
 A single query to catalog traverses catalog → reviews → users transparently:
 Product → Review → Comment (local to reviews) → User (remote to users) →
 UserConfig (local to users). Each mounted service receives exactly one nested
@@ -55,12 +61,13 @@ class Product(CatalogBase, table=True):
     name: str
 
     # reviews live on the reviews service, joined by Product.id ↔ Review.product_id.
+    # The order profile is chosen by the caller at query time
+    # (reviews(order: ..., direction: ...)); it is NOT pinned here. specs/014.
     __relationships__ = [
         RemoteRelationship(
             fk="id", target=list[reviews.Review],
             name="reviews", join_remote="product_id",
             pagination=True,
-            order="HIGHEST_RATING",
         ),
     ]
 

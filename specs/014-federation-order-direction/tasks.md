@@ -45,14 +45,14 @@
 
 ### Implementation for User Story 1
 
-- [ ] T006 [P] [US1] `RelationshipInfo` 加 `page_capability: BatchPageCapability | None = None` 字段 in `src/nexusx/loader/registry.py`
-- [ ] T007 [US1] `manager._validate_and_wire` 从 `BatchRoot.page` 取 capability 存进 `rel_info.page_capability`；校验放宽（`pagination=True` 不再强制 `RemoteRelationship.order`；改为校验 `page_capability.orders` 非空，否则 fail-fast）in `src/nexusx/federation/manager.py`
-- [ ] T008 [US1] RemoteLoader: `create_paginated_remote_loader` 去掉 `order` 参数（不再 bake order）in `src/nexusx/federation/remote_loader.py`
-- [ ] T009 [US1] RemoteLoader: `build_paginated_gql_query` 加 `direction`；`batch_load_fn` 从 `selection.arguments` 读 order/direction（缺省传 member default_order / profile 默认方向）in `src/nexusx/federation/remote_loader.py`
-- [ ] T010 [P] [US1] SDL: federation 分页关系字段渲染 `reviews(limit: Int, offset: Int = 0, order: <XxxOrder>, direction: Direction): <Target>Result!` —— order enum 值 = `rel_info.page_capability.orders` 名集合，默认 = `default_order`；`Direction`(ASC|DESC) mounter 自有全局 enum in `src/nexusx/sdl_generator.py`
-- [ ] T011 [P] [US1] Introspection 镜像: `__schema` 暴露同样的 order/direction 参数（复用 `utils/pagination_schema` 共享判定，保证与 SDL 一致）in `src/nexusx/introspection.py`
-- [ ] T012 [P] [US1] `RemoteRelationship.order` 字段废弃: 删除 `order` 字段 + `__post_init__` 相关分支 + `order requires pagination=True` 校验 in `src/nexusx/federation/relationship.py`
-- [ ] T013 [US1] e2e 测试: 查询者传 `order`+`direction` → mounter 透传 → member 收到正确 order+direction、按翻转排序；断言同一关系不同 order/direction 结果不同且正确 in `tests/test_federation_order_direction.py`
+- [X] T006 [P] [US1] `RelationshipInfo` 加 `page_capability: BatchPageCapability | None = None` 字段 in `src/nexusx/loader/registry.py`
+- [X] T007 [US1] `manager._validate_and_wire` 从 `BatchRoot.page` 取 capability 存进 `rel_info.page_capability`；校验放宽（`pagination=True` 不再强制 `RemoteRelationship.order`；改为校验 `page_capability.orders` 非空，否则 fail-fast）in `src/nexusx/federation/manager.py`
+- [X] T008 [US1] RemoteLoader: `create_paginated_remote_loader` 去掉 `order` 参数（不再 bake order）in `src/nexusx/federation/remote_loader.py`
+- [X] T009 [US1] RemoteLoader: `build_paginated_gql_query` 加 `direction`；`batch_load_fn` 从 `selection.arguments` 读 order/direction（缺省传 member default_order / profile 默认方向）in `src/nexusx/federation/remote_loader.py`
+- [X] T010 [P] [US1] SDL: federation 分页关系字段渲染 `reviews(limit: Int, offset: Int = 0, order: <XxxOrder>, direction: Direction): <Target>Result!` —— order enum 值 = `rel_info.page_capability.orders` 名集合，默认 = `default_order`；`Direction`(ASC|DESC) mounter 自有全局 enum in `src/nexusx/sdl_generator.py`
+- [X] T011 [P] [US1] Introspection 镜像: `__schema` 暴露同样的 order/direction 参数（复用 `utils/pagination_schema` 共享判定，保证与 SDL 一致）in `src/nexusx/introspection.py`
+- [X] T012 [P] [US1] `RemoteRelationship.order` 字段废弃: 删除 `order` 字段 + `__post_init__` 相关分支 + `order requires pagination=True` 校验 in `src/nexusx/federation/relationship.py`
+- [X] T013 [US1] e2e 测试: 查询者传 `order`+`direction` → mounter 透传 → member 收到正确 order+direction、按翻转排序；断言同一关系不同 order/direction 结果不同且正确 in `tests/test_federation_order_direction.py`
 
 **Checkpoint**: US1 端到端跑通 —— 查询者能挑 order+direction 拿到正确排序结果。
 
@@ -66,7 +66,7 @@
 
 **Note**: 本 story 的**实现**已在 US1 的 T010/T011 完成（SDL/introspection 渲染 enum）；本 phase 是**独立的 schema 发现验证**。
 
-- [ ] T014 [US2] schema 发现测试: 取 mounter SDL + `__schema` 内省，断言 federation 分页字段含 `order` enum（值 = member profile 名集合，默认 = `default_order`）+ `direction`(ASC|DESC)；SDL 与 `__schema` 暴露一致 in `tests/test_federation_order_direction.py`
+- [X] T014 [US2] schema 发现测试: 取 mounter SDL + `__schema` 内省，断言 federation 分页字段含 `order` enum（值 = member profile 名集合，默认 = `default_order`）+ `direction`(ASC|DESC)；SDL 与 `__schema` 暴露一致 in `tests/test_federation_order_direction.py`
 
 **Checkpoint**: US2 验证 —— 客户端能从 schema 发现 order/direction 选项。
 
@@ -80,7 +80,7 @@
 
 **Note**: 本 story 的**实现**已在 Foundational T003（翻转含 nulls flip）；本 phase 是**聚焦 nullable 场景的正确性验证**。
 
-- [ ] T015 [US3] nulls 翻转测试: nullable 列 profile，direction DESC vs ASC，断言 NULL 位置翻转（`nulls_last` ↔ `nulls_first`），含 window/outer 一致 in `tests/test_federation_order_direction.py`
+- [X] T015 [US3] nulls 翻转测试: nullable 列 profile，direction DESC vs ASC，断言 NULL 位置翻转（`nulls_last` ↔ `nulls_first`），含 window/outer 一致 in `tests/test_federation_order_direction.py`
 
 **Checkpoint**: US3 验证 —— NULL 排序跨 direction 正确。
 
@@ -90,11 +90,11 @@
 
 **Purpose**: demo / 文档 / 迁移 / 全量验证
 
-- [ ] T016 [P] demo: `reviews_app` 暴露 `HIGHEST_RATING` + `NEWEST` 两个单列 profile；`catalog_app` 用 `RemoteRelationship(pagination=True)`（不写 order）+ 查询示例带 order/direction in `demo/federation/reviews_app.py` + `demo/federation/catalog_app.py`
-- [ ] T017 [P] 文档: `docs/advanced/federation.md` + `docs/advanced/federation.zh.md` 加 order/direction 开放段（查询形态 + 翻转语义 + 索引控制权边界）in `docs/advanced/`
-- [ ] T018 迁移既有用法: 移除 `RemoteRelationship(order=...)` 的旧声明（demo + tests）+ 移除断言 "order 静态 bake" 的旧测试（如 `test_federation_pagination_decl.py` 里 order 相关、`test_federation_pagination_e2e.py` 的 order 断言）—— 改为查询参数驱动 in `tests/` + `demo/`
-- [ ] T019 全量 `uv run pytest tests/ -q` + `uv run ruff check src/ tests/` 全绿
-- [ ] T020 按 `specs/014-federation-order-direction/quickstart.md` 跑 6 个验证场景
+- [X] T016 [P] demo: `reviews_app` 暴露 `HIGHEST_RATING` + `NEWEST` 两个单列 profile；`catalog_app` 用 `RemoteRelationship(pagination=True)`（不写 order）+ 查询示例带 order/direction in `demo/federation/reviews_app.py` + `demo/federation/catalog_app.py`
+- [X] T017 [P] 文档: `docs/advanced/federation.md` + `docs/advanced/federation.zh.md` 加 order/direction 开放段（查询形态 + 翻转语义 + 索引控制权边界）in `docs/advanced/`
+- [X] T018 迁移既有用法: 移除 `RemoteRelationship(order=...)` 的旧声明（demo + tests）+ 移除断言 "order 静态 bake" 的旧测试（如 `test_federation_pagination_decl.py` 里 order 相关、`test_federation_pagination_e2e.py` 的 order 断言）—— 改为查询参数驱动 in `tests/` + `demo/`
+- [X] T019 全量 `uv run pytest tests/ -q` + `uv run ruff check src/ tests/` 全绿
+- [X] T020 按 `specs/014-federation-order-direction/quickstart.md` 跑 6 个验证场景
 
 ---
 

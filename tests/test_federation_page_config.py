@@ -192,6 +192,9 @@ def test_multi_key_schema_and_er_capabilities_are_unique_and_semantic():
     assert "type PageConfigItemCategoryPagePackage {" in sdl
     assert "enum PageConfigItemProductIdPageOrder {" in sdl
     assert "enum PageConfigItemCategoryPageOrder {" in sdl
+    # The pagination root signature references Direction — its enum block must
+    # be present too, or the SDL would name an undefined type. specs/014.
+    assert "enum Direction {\n  ASC\n  DESC\n}" in sdl
     assert "page_by_product_id_in(" in sdl
     assert "page_by_category_in(" in sdl
 
