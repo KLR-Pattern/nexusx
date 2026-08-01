@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.0.0."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.0.1."
 ---
 
 # Changelog
@@ -11,6 +11,11 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
 
 ## 5.0
+
+### 5.0.1 (2026-8-1)
+
+- fix:
+  - **Member-side pagination now traverses the federation items subtree (`specs/013` gap)**: When a member owned a locally-paginated relationship (`enable_pagination=True`, e.g. `Review.comments`) and a mounter selected it inside a federation-paginated items subtree (`Product.reviews(limit: 5) { items { comments(limit: 2) { ... } } }`), the mounter crashed with a pydantic `ValidationError`. It materialized the remote `comments` field as a flat `list[Comment]`, but the member returned a `{items, pagination}` package, so `model_validate` rejected the dict. Root cause: ER introspection dropped the member's local-pagination state — `RelDescriptor.pagination` only flagged federation remote pagination (`RemoteRelationship(pagination=True)` with a `target_service`), so the mounter never saw `comments` was paginated on the member side and built a flat-list slot. The federation link layer already supported this case end-to-end — the materializer's package slot (`registry.py`), the renderer's `REMOTE_COALESCED + pagination` branch (`pagination_schema.py`), and the executor's `REMOTE_COALESCED → skip load` (`query_executor.py`) — only the introspection signal was missing. Fix: `serialize_er_introspection` also marks a relationship paginated when it is a local list with a `page_loader` set, so the mounter materializes a package slot, renders `comments(limit, offset)`, and reads the member-filled package without re-loading. One-condition change; the downstream chain was already in place.
 
 ### 5.0.0 (2026-8-1)
 

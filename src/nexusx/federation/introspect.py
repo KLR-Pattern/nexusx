@@ -176,10 +176,19 @@ def serialize_er_introspection(er_manager: Any) -> ERIntrospectionResponse:
                     fk_field=r_info.fk_field,
                     target_typename=r_info.target_entity.__name__,
                     is_list=r_info.is_list,
-                    pagination=(
-                        r_info.is_list
-                        and getattr(r_info, "pagination", False)
+                    pagination=r_info.is_list
+                    and (
+                        # federation 远程分页(RemoteRelationship pagination=True)
+                        getattr(r_info, "pagination", False)
                         and target_service is not None
+                    )
+                    # member 本地分页(enable_pagination: 本地关系, page_loader set;
+                    # 它的 RelationshipInfo.pagination=False 且 target_service=None,
+                    # 不透传则 catalog 物化层看不到这是个分页关系 → 物化成扁平 list)
+                    or (
+                        r_info.is_list
+                        and target_service is None
+                        and getattr(r_info, "page_loader", None) is not None
                     ),
                     target_service=target_service,
                     target_endpoint=(
