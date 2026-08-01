@@ -616,6 +616,15 @@ class TestPaginationIntrospection:
         type_names = [t["name"] for t in schema["types"]]
         assert "Pagination" not in type_names
         assert "PagPostResult" not in type_names
+        author_type = next(t for t in schema["types"] if t["name"] == "PagAuthor")
+        posts_field = next(f for f in author_type["fields"] if f["name"] == "posts")
+        assert posts_field["args"] == []
+        assert posts_field["type"]["ofType"]["kind"] == "LIST"
+
+        sdl = handler.get_sdl()
+        assert "posts: [PagPost!]!" in sdl
+        assert "posts(limit:" not in sdl
+        assert "type Pagination" not in sdl
 
     def test_fk_fields_excluded_in_paginated_entities(
         self, handler: GraphQLHandler,

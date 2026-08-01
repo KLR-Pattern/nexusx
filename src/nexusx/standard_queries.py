@@ -8,13 +8,87 @@ resolved separately via DataLoader.
 from __future__ import annotations
 
 import inspect
+import re
 import types
-from typing import Any, Union, get_args, get_origin
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Literal, Union, get_args, get_origin
 
 from pydantic import Field, create_model
 from sqlmodel import SQLModel, select
 
 from nexusx.decorator import query
+
+_ORDER_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+class Direction(str, Enum):
+    """Sort direction exposed to federation pagination callers (ASC|DESC).
+
+    Overrides an order profile's default direction; ``nulls`` follow the flip
+    (see ``_apply_direction``). specs/014.
+    """
+
+    ASC = "ASC"
+    DESC = "DESC"
+
+
+@dataclass(frozen=True)
+class PaginationRootMeta:
+    """Runtime metadata attached to a generated ``page_by_<key>_in`` root.
+
+    Written by ``_create_page_by_keys_in_query`` onto the function object as
+    ``func._pagination_root``; read by sdl_generator / introspection /
+    query_executor for SDL rendering, ``__schema`` introspection, and
+    pagination-root routing. A frozen dataclass (not a bare dict) so the
+    contract is typed and key typos surface at import rather than as a
+    runtime ``KeyError`` at a consumer.
+    """
+
+    entity: type
+    fk_field: str
+    fk_type: type
+    package_name: str
+    order_enum: type
+    page_capability: Any  # BatchPageCapability
+
+
+@dataclass(frozen=True)
+class OrderTerm:
+    """One physical member-side ordering term."""
+
+    field: Any
+    direction: Literal["asc", "desc"] = "asc"
+    nulls: Literal["first", "last"] | None = None
+
+
+@dataclass(frozen=True)
+class PageOrder:
+    """A named semantic ordering profile exposed through federation capability."""
+
+    terms: list[OrderTerm]
+    description: str | None = None
+
+
+@dataclass(frozen=True)
+class BatchPageConfig:
+    """Pagination capability for one entity batch key."""
+
+    default_order: str
+    orders: dict[str, PageOrder]
+
+
+@dataclass(frozen=True)
+class _ResolvedOrderTerm:
+    field_name: str
+    direction: Literal["asc", "desc"]
+    nulls: Literal["first", "last"] | None
+
+
+@dataclass(frozen=True)
+class _ResolvedPageOrder:
+    terms: tuple[_ResolvedOrderTerm, ...]
+    description: str | None
 
 
 class AutoQueryConfig:
@@ -34,6 +108,8 @@ class AutoQueryConfig:
         generate_by_id: bool = True,
         generate_by_filter: bool = True,
         enabled: bool = True,
+        batch_keys: dict[str, list[str]] | None = None,
+        batch_pages: dict[str, dict[str, BatchPageConfig]] | None = None,
     ):
         """Initialize the auto query configuration.
 
@@ -42,11 +118,43 @@ class AutoQueryConfig:
             generate_by_id: Whether to generate by_id query.
             generate_by_filter: Whether to generate by_filter query.
             enabled: Whether standard queries are enabled.
+            batch_keys: Per-entity batch lookup fields for federation, mapping
+                ``{EntityName: [field, ...]}``. For each field a
+                ``by_<field>_in(values: list)`` batch query root is generated
+                (``where field.in_(values)``). Generally useful beyond federation.
+            batch_pages: Explicit member-side pagination capabilities, mapping
+                ``{EntityName: {batch_field: BatchPageConfig(...)}}``. Each
+                configured field generates ``page_by_<field>_in``.
+
+        Note:
+            ``session_factory`` was removed from this constructor — pass it to
+            ``GraphQLHandler`` / ``Application`` instead. If you pass a callable
+            positionally (old API), it is accepted with a DeprecationWarning and
+            stored as ``_deprecated_session_factory`` for the container to pick up.
         """
+        # ── Backward compat: detect old session_factory-as-first-arg ──────
+        # Before the refactor, AutoQueryConfig(session_factory, ...) was the
+        # signature. Now session_factory lives on the container. If someone
+        # passes a non-int positionally, it's the old session_factory.
+        self._deprecated_session_factory: Any = None
+        if not isinstance(default_limit, int):
+            import warnings
+
+            warnings.warn(
+                "AutoQueryConfig(session_factory) is deprecated — pass "
+                "session_factory to GraphQLHandler / Application instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self._deprecated_session_factory = default_limit
+            default_limit = 10
+
         self.default_limit = default_limit
         self.generate_by_id = generate_by_id
         self.generate_by_filter = generate_by_filter
         self.enabled = enabled
+        self.batch_keys = batch_keys or {}
+        self.batch_pages = batch_pages or {}
 
 
 async def _create_session_context(session_factory: Any) -> Any:
@@ -215,6 +323,410 @@ def _create_by_filter_query(
     return by_filter
 
 
+def _create_by_keys_in_query(
+    entity: type[SQLModel],
+    session_factory: Any,
+    field_name: str,
+    field_type: type,
+) -> Any:
+    """Create a ``by_<field>_in`` batch query root (``where field.in_(values)``)."""
+
+    arg_name = f"{field_name}_list"
+    method_name = f"by_{field_name}_in"
+
+    @query
+    async def by_field_in(cls, **kwargs: Any) -> Any:
+        """Batch-fetch entities where ``field`` is in the provided list."""
+        if arg_name not in kwargs:
+            msg = f"Missing required argument: {arg_name}"
+            raise TypeError(msg)
+        values = kwargs[arg_name]
+        session_context = await _create_session_context(session_factory)
+        async with session_context as session:
+            stmt = select(cls).where(getattr(cls, field_name).in_(values))
+            result = await session.exec(stmt)
+            return list(result.all())
+
+    func = by_field_in.__func__ if hasattr(by_field_in, "__func__") else by_field_in
+    func.__annotations__[arg_name] = list[field_type]
+    by_field_in.__annotations__["return"] = list[entity]
+    func.__signature__ = inspect.Signature(
+        parameters=[
+            inspect.Parameter("cls", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+            inspect.Parameter(
+                arg_name,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                annotation=list[field_type],
+            ),
+        ],
+        return_annotation=list[entity],
+    )
+    func.__name__ = method_name
+    return by_field_in
+
+
+def _create_page_by_keys_in_query(
+    entity: type[SQLModel],
+    session_factory: Any,
+    field_name: str,
+    field_type: type,
+    page_config: BatchPageConfig,
+) -> Any:
+    """Create a ``page_by_<field>_in`` paginated batch root for federation.
+
+    Per-key offset/limit pagination via ``ROW_NUMBER() OVER (PARTITION BY field)``:
+    returns one ``{<field>, items, pagination}`` package per input key, so the
+    mounting service can align by join key. ``has_more`` via peek-by-1;
+    ``total_count`` via ``COUNT(*) OVER`` only when selected by the client.
+    The executor injects the selected pagination field names as private runtime
+    metadata; that metadata is not part of this root's public GraphQL signature.
+    """
+    from nexusx.federation.contract import (
+        BatchPageCapability,
+        PageOrderDescriptor,
+    )
+
+    arg_name = f"{field_name}_list"
+    method_name = f"page_by_{field_name}_in"
+    resolved_orders = _resolve_page_orders(entity, page_config)
+    enum_name = f"{entity.__name__}{_pascal_case(field_name)}PageOrder"
+    order_enum = Enum(enum_name, {name: name for name in resolved_orders})
+    capability = BatchPageCapability(
+        default_order=page_config.default_order,
+        orders=[
+            PageOrderDescriptor(name=name, description=order.description)
+            for name, order in resolved_orders.items()
+        ],
+    )
+
+    @query
+    async def page_by_field_in(cls, **kwargs: Any) -> Any:
+        """Per-key paginated batch fetch (federation pagination root)."""
+        from collections import defaultdict
+
+        from sqlalchemy import func, select
+
+        from nexusx.loader.pagination import PageArgs, Pagination
+
+        if arg_name not in kwargs:
+            msg = f"Missing required argument: {arg_name}"
+            raise TypeError(msg)
+        values = list(kwargs[arg_name])
+        page_args = PageArgs(
+            limit=kwargs.get("limit"),
+            offset=kwargs.get("offset", 0),
+        )
+        raw_order = kwargs["order"]
+        order_name = raw_order.value if isinstance(raw_order, Enum) else raw_order
+        if order_name not in resolved_orders:
+            msg = (
+                f"Unknown order profile {order_name!r} for "
+                f"{cls.__name__}.{method_name}"
+            )
+            raise ValueError(msg)
+        resolved_order = resolved_orders[order_name]
+        # direction (specs/014): caller flips the profile's default direction;
+        # nulls follow. effective_terms feed BOTH the window inner and the
+        # outer order expressions so they stay consistent after the flip.
+        effective_terms = _apply_direction(
+            resolved_order.terms, kwargs.get("direction")
+        )
+        pagination_selection = kwargs.get("__nexusx_pagination_selection")
+        # Direct Python callers do not provide execution metadata, so preserve
+        # the historical full Pagination result for that path.
+        want_total_count = (
+            pagination_selection is None
+            or "total_count" in pagination_selection
+        )
+        effective_limit = page_args.effective_limit
+
+        if not values:
+            return []
+
+        async with session_factory() as session:
+            fk_col = getattr(cls, field_name)
+            window_order = _build_order_expressions(cls, effective_terms)
+
+            rn_label = "_nx_rn"
+            tc_label = "_nx_tc"
+            row_num_col = func.row_number().over(
+                partition_by=fk_col,
+                order_by=window_order,
+            ).label(rn_label)
+            inner_columns = [cls, row_num_col]
+            if want_total_count:
+                inner_columns.append(
+                    func.count().over(partition_by=fk_col).label(tc_label)
+                )
+            inner = select(*inner_columns).where(fk_col.in_(values))
+            subq = inner.subquery()
+
+            rn_col = subq.c[rn_label]
+            fk_col_sub = subq.c[field_name]
+            outer_order = _build_order_expressions(subq.c, effective_terms)
+
+            start = page_args.offset + 1
+            end = page_args.offset + effective_limit + 1  # peek-by-1
+            outer = (
+                select(subq)
+                .where(rn_col.between(start, end))
+                .order_by(fk_col_sub, *outer_order)
+            )
+            rows = (await session.exec(outer)).all()
+
+            grouped: dict[Any, list[Any]] = defaultdict(list)
+            total_counts: dict[Any, int] = {}
+            entity_fields = set(cls.model_fields.keys())
+            for row in rows:
+                mapping = row._mapping
+                fk_val = mapping[field_name]
+                grouped[fk_val].append(mapping)
+                if want_total_count:
+                    total_counts[fk_val] = mapping[tc_label]
+
+            # Keys whose offset is beyond their total (no rows in the window)
+            # still need a total_count entry.
+            missing = (
+                [v for v in values if v not in total_counts]
+                if want_total_count
+                else []
+            )
+            if missing:
+                count_q = (
+                    select(fk_col, func.count().label(tc_label))
+                    .where(fk_col.in_(missing))
+                    .group_by(fk_col)
+                )
+                for row in (await session.exec(count_q)).all():
+                    total_counts[row[0]] = row[1]
+
+            packages: list[dict[str, Any]] = []
+            for v in values:
+                page_rows = grouped.get(v, [])[:effective_limit]
+                items = [
+                    cls(**{k: r[k] for k in entity_fields if k in r})
+                    for r in page_rows
+                ]
+                has_more = len(grouped.get(v, [])) > effective_limit
+                pagination = Pagination(has_more=has_more)
+                if want_total_count:
+                    pagination.total_count = total_counts.get(v, 0)
+                packages.append({
+                    field_name: v,
+                    "items": items,
+                    "pagination": pagination,
+                })
+            return packages
+
+    func_obj = (
+        page_by_field_in.__func__
+        if hasattr(page_by_field_in, "__func__")
+        else page_by_field_in
+    )
+    func_obj.__annotations__[arg_name] = list[field_type]
+    func_obj.__annotations__["limit"] = int | None
+    func_obj.__annotations__["offset"] = int
+    func_obj.__annotations__["order"] = order_enum
+    func_obj.__annotations__["direction"] = Direction
+    page_by_field_in.__annotations__["return"] = list[dict]
+    func_obj.__signature__ = inspect.Signature(
+        parameters=[
+            inspect.Parameter("cls", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+            inspect.Parameter(
+                arg_name, inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                annotation=list[field_type],
+            ),
+            inspect.Parameter(
+                "order", inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                annotation=order_enum,
+            ),
+            inspect.Parameter(
+                "direction", inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=None, annotation=Direction,
+            ),
+            inspect.Parameter(
+                "limit", inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=None, annotation=int | None,
+            ),
+            inspect.Parameter(
+                "offset", inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=0, annotation=int,
+            ),
+        ],
+        return_annotation=list[dict],
+    )
+    func_obj.__name__ = method_name
+    package_name = f"{entity.__name__}{_pascal_case(field_name)}PagePackage"
+    func_obj._pagination_root = PaginationRootMeta(
+        entity=entity,
+        fk_field=field_name,
+        fk_type=field_type,
+        package_name=package_name,
+        order_enum=order_enum,
+        page_capability=capability,
+    )
+    return page_by_field_in
+
+
+def _pascal_case(value: str) -> str:
+    return "".join(part[:1].upper() + part[1:] for part in value.split("_") if part)
+
+
+def _column_name_from_term(entity: type[SQLModel], field: Any) -> str:
+    if isinstance(field, str):
+        return field
+    field_name = getattr(field, "key", None)
+    owner = getattr(field, "class_", None)
+    if not isinstance(field_name, str) or owner is not entity:
+        raise ValueError(
+            f"OrderTerm.field for {entity.__name__} must be a column name or "
+            f"a direct {entity.__name__} column attribute"
+        )
+    return field_name
+
+
+def _resolve_page_orders(
+    entity: type[SQLModel],
+    config: BatchPageConfig,
+) -> dict[str, _ResolvedPageOrder]:
+    from sqlalchemy import JSON, LargeBinary
+    from sqlalchemy import inspect as sa_inspect
+
+    if not config.orders:
+        raise ValueError(
+            f"BatchPageConfig for {entity.__name__} must define at least one order"
+        )
+    if config.default_order not in config.orders:
+        raise ValueError(
+            f"default_order {config.default_order!r} is not defined for "
+            f"{entity.__name__}"
+        )
+
+    mapper = sa_inspect(entity)
+    columns = {column.key: column for column in mapper.columns}
+    primary_keys = [column.key for column in mapper.primary_key]
+    resolved: dict[str, _ResolvedPageOrder] = {}
+    for name, order in config.orders.items():
+        if not _ORDER_NAME_RE.fullmatch(name) or name.startswith("__"):
+            raise ValueError(
+                f"Order profile {name!r} on {entity.__name__} must be a "
+                "GraphQL enum-safe uppercase name"
+            )
+        if not isinstance(order, PageOrder):
+            raise TypeError(
+                f"Order profile {name!r} on {entity.__name__} must be PageOrder"
+            )
+        if not order.terms:
+            raise ValueError(
+                f"Order profile {name!r} on {entity.__name__} cannot be empty"
+            )
+        if len(order.terms) != 1:
+            raise ValueError(
+                f"Order profile {name!r} on {entity.__name__} must have exactly "
+                f"one term (single-column sort, specs/014), "
+                f"got {len(order.terms)}"
+            )
+
+        terms: list[_ResolvedOrderTerm] = []
+        used_fields: set[str] = set()
+        for term in order.terms:
+            if not isinstance(term, OrderTerm):
+                raise TypeError(
+                    f"Order profile {name!r} on {entity.__name__} contains a "
+                    "non-OrderTerm value"
+                )
+            field_name = _column_name_from_term(entity, term.field)
+            column = columns.get(field_name)
+            if column is None:
+                raise ValueError(
+                    f"Order field {field_name!r} is not a SQL column on "
+                    f"{entity.__name__}"
+                )
+            if isinstance(column.type, (JSON, LargeBinary)):
+                raise ValueError(
+                    f"Order field {entity.__name__}.{field_name} uses unsupported "
+                    f"column type {type(column.type).__name__}"
+                )
+            if term.direction not in ("asc", "desc"):
+                raise ValueError(
+                    f"Order direction for {entity.__name__}.{field_name} must be "
+                    "'asc' or 'desc'"
+                )
+            if term.nulls not in (None, "first", "last"):
+                raise ValueError(
+                    f"Order nulls for {entity.__name__}.{field_name} must be "
+                    "'first' or 'last'"
+                )
+            if column.nullable and term.nulls is None:
+                raise ValueError(
+                    f"Nullable order field {entity.__name__}.{field_name} must "
+                    "declare nulls='first' or nulls='last'"
+                )
+            if field_name in used_fields:
+                raise ValueError(
+                    f"Order profile {name!r} repeats field {field_name!r}"
+                )
+            used_fields.add(field_name)
+            terms.append(
+                _ResolvedOrderTerm(field_name, term.direction, term.nulls)
+            )
+
+        tie_direction = terms[-1].direction
+        for pk_name in primary_keys:
+            if pk_name not in used_fields:
+                terms.append(_ResolvedOrderTerm(pk_name, tie_direction, None))
+        resolved[name] = _ResolvedPageOrder(tuple(terms), order.description)
+    return resolved
+
+
+def _build_order_expressions(
+    source: Any,
+    terms: tuple[_ResolvedOrderTerm, ...],
+) -> list[Any]:
+    expressions: list[Any] = []
+    for term in terms:
+        column = getattr(source, term.field_name)
+        expression = (
+            column.desc() if term.direction == "desc" else column.asc()
+        )
+        if term.nulls == "first":
+            expression = expression.nulls_first()
+        elif term.nulls == "last":
+            expression = expression.nulls_last()
+        expressions.append(expression)
+    return expressions
+
+
+def _apply_direction(
+    terms: tuple[_ResolvedOrderTerm, ...], raw_direction: Any
+) -> tuple[_ResolvedOrderTerm, ...]:
+    """Apply a caller-supplied direction to a profile's resolved terms.
+
+    ``None`` direction ⇒ profile default (no flip). Otherwise override each
+    term's direction; ``nulls`` flip (first↔last) only on terms whose direction
+    actually changes; terms already matching the requested direction stay. The
+    result feeds both the window inner and the outer order expressions so they
+    remain consistent. specs/014.
+    """
+    if raw_direction is None:
+        return terms
+    direction = (
+        raw_direction.value if isinstance(raw_direction, Enum) else raw_direction
+    )
+    if isinstance(direction, str):
+        direction = direction.lower()
+    return tuple(
+        t
+        if direction == t.direction
+        else _ResolvedOrderTerm(
+            t.field_name,
+            direction,
+            None if t.nulls is None else ("first" if t.nulls == "last" else "last"),
+        )
+        for t in terms
+    )
+
+
 def add_standard_queries(
     entities: list[type[SQLModel]],
     config: AutoQueryConfig,
@@ -248,3 +760,47 @@ def add_standard_queries(
                 filter_input_type,
             )
             entity.by_filter = by_filter_method
+
+        # Batch lookup roots (by_<key>_in) — used by federation RemoteLoader.
+        for field_name in config.batch_keys.get(entity.__name__, []):
+            method_name = f"by_{field_name}_in"
+            if field_name not in entity.model_fields:
+                msg = (
+                    f"AutoQueryConfig.batch_keys field {field_name!r} is not a "
+                    f"column on {entity.__name__}"
+                )
+                raise ValueError(msg)
+            field_type = _unwrap_optional_type(entity.model_fields[field_name].annotation)
+            if not hasattr(entity, method_name):
+                setattr(
+                    entity,
+                    method_name,
+                    _create_by_keys_in_query(entity, session_factory, field_name, field_type),
+                )
+
+        # Explicit member-side pagination capabilities.
+        for field_name, page_config in config.batch_pages.get(
+            entity.__name__, {}
+        ).items():
+            page_method_name = f"page_by_{field_name}_in"
+            if field_name not in entity.model_fields:
+                msg = (
+                    f"AutoQueryConfig.batch_pages field {field_name!r} is not a "
+                    f"column on {entity.__name__}"
+                )
+                raise ValueError(msg)
+            field_type = _unwrap_optional_type(
+                entity.model_fields[field_name].annotation
+            )
+            if not hasattr(entity, page_method_name):
+                setattr(
+                    entity,
+                    page_method_name,
+                    _create_page_by_keys_in_query(
+                        entity,
+                        session_factory,
+                        field_name,
+                        field_type,
+                        page_config,
+                    ),
+                )

@@ -57,11 +57,19 @@ from __future__ import annotations
 from nexusx.context import AutoLoad, Collector, ExposeAs, SendTo
 from nexusx.decorator import mutation, query
 from nexusx.er_diagram import ErDiagram
+from nexusx.federation import RemoteRef, RemoteRelationship, RemoteService
 from nexusx.handler import GraphQLHandler
 from nexusx.loader import ErManager
 from nexusx.relationship import Relationship
 from nexusx.resolver import Loader
-from nexusx.standard_queries import AutoQueryConfig, add_standard_queries
+from nexusx.standard_queries import (
+    AutoQueryConfig,
+    BatchPageConfig,
+    Direction,
+    OrderTerm,
+    PageOrder,
+    add_standard_queries,
+)
 from nexusx.subset import DefineSubset, SubsetConfig, build_dto_select
 from nexusx.use_case import (
     ComposeSchema,
@@ -91,6 +99,10 @@ __all__ = [
     "ErManager",
     # Standard queries
     "AutoQueryConfig",
+    "BatchPageConfig",
+    "Direction",
+    "OrderTerm",
+    "PageOrder",
     "add_standard_queries",
     # Core API mode (use case response building)
     "DefineSubset",
@@ -102,6 +114,10 @@ __all__ = [
     "AutoLoad",
     # Custom relationships
     "Relationship",
+    # Federation (cross-service)
+    "RemoteRelationship",
+    "RemoteRef",
+    "RemoteService",
     "ErDiagram",
     # Query builder
     "build_dto_select",

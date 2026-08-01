@@ -1,8 +1,18 @@
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
 
-from nexusx import Relationship as CustomRelationship
+if TYPE_CHECKING:
+    from .finance import Asset, Vendor
+    from .operations import (
+        AutomationRule,
+        Ceremony,
+        KnowledgeArticle,
+        Notification,
+        Timesheet,
+    )
+    from .project import Approval, Comment, Project, Task
+    from .resources import Calendar, Dashboard
 
 
 class Organization(SQLModel, table=True):

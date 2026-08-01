@@ -89,6 +89,21 @@ class Relationship:
         return self.target
 
 
+# Lazily-resolved RemoteRelationship class. Imported lazily (and cached) to
+# avoid a top-level dependency cycle — federation.relationship does not import
+# this module, but importing it at module load would still couple import order.
+_REMOTE_RELATIONSHIP_CLS: type | None = None
+
+
+def _remote_relationship_cls() -> type:
+    global _REMOTE_RELATIONSHIP_CLS
+    if _REMOTE_RELATIONSHIP_CLS is None:
+        from nexusx.federation.relationship import RemoteRelationship
+
+        _REMOTE_RELATIONSHIP_CLS = RemoteRelationship
+    return _REMOTE_RELATIONSHIP_CLS
+
+
 def get_custom_relationships(entity: type) -> list[Relationship]:
     """Read __relationships__ from an entity class.
 
@@ -107,10 +122,11 @@ def get_custom_relationships(entity: type) -> list[Relationship]:
             f"{entity.__name__}.__relationships__ must be a list of Relationship, "
             f"got {type(raw).__name__}"
         )
+    remote_relationship_cls = _remote_relationship_cls()
     for i, item in enumerate(raw):
-        if not isinstance(item, Relationship):
+        if not isinstance(item, Relationship | remote_relationship_cls):
             raise TypeError(
-                f"{entity.__name__}.__relationships__[{i}] must be a Relationship, "
-                f"got {type(item).__name__}"
+                f"{entity.__name__}.__relationships__[{i}] must be a Relationship or "
+                f"RemoteRelationship, got {type(item).__name__}"
             )
     return list(raw)

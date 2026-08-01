@@ -1,7 +1,7 @@
 subgraph cluster_{{ cluster_id }} {
     tooltip="{{ tooltip }}"
     color = "{{ border_color }}"
-    style="rounded"
+    style="{{ cluster_style|default('rounded') }}"
     label = "  {{ label }}"
     labeljust = "l"
     {% if pen_color %}pencolor = "{{ pen_color }}"{% endif %}

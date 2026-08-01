@@ -1,8 +1,12 @@
-from typing import Optional
+
+from typing import TYPE_CHECKING
 
 from sqlmodel import Field, Relationship, SQLModel, select
 
 from nexusx import mutation, query
+
+if TYPE_CHECKING:
+    from .tasks import Comment
 
 
 class User(SQLModel, table=True):

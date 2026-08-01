@@ -16,6 +16,8 @@ from aiodataloader import DataLoader
 from pydantic import BaseModel
 from sqlmodel import SQLModel
 
+from nexusx.federation.relationship import RemoteRelationship, parse_qualified_name
+from nexusx.federation.transport import FederationTransport
 from nexusx.loader.factories import (
     create_many_to_many_loader,
     create_many_to_one_loader,
@@ -28,6 +30,30 @@ from nexusx.relationship import Relationship, get_custom_relationships
 logger = logging.getLogger(__name__)
 
 
+class RelationshipKind:
+    """Discriminator for how a relationship is loaded/resolved.
+
+    Replaces the implicit ``(target_service × coalesced × pagination ×
+    page_loader × loader)`` boolean matrix with one explicit value that
+    consumers match on — see D1.
+
+    - LOCAL: a local relationship. ``loader``/``page_loader`` drive it;
+      ``page_loader`` set ⇒ local pagination.
+    - REMOTE_COALESCED: a relationship on a materialized remote type, resolved
+      by the owning service within the parent fetch (β coalescing). Not
+      BFS-traversed; the serializer reads it off the instance attribute.
+    - REMOTE_PAGED: a declared RemoteRelationship with ``pagination=True``
+      (``page_by_<key>_in`` via ``fetch_remote_subtree(paged=True)``).
+    - REMOTE_PLAIN: a declared RemoteRelationship without pagination
+      (``by_<key>_in`` via ``fetch_remote_subtree()``).
+    """
+
+    LOCAL = "local"
+    REMOTE_COALESCED = "remote_coalesced"
+    REMOTE_PAGED = "remote_paged"
+    REMOTE_PLAIN = "remote_plain"
+
+
 @dataclass
 class RelationshipInfo:
     """Metadata for a single ORM relationship, including its DataLoader."""
@@ -37,12 +63,27 @@ class RelationshipInfo:
     fk_field: str  # FK field on the *source* entity used as loader key
     target_entity: type[SQLModel]  # target entity class
     is_list: bool  # True for one-to-many / many-to-many lists
-    loader: type[DataLoader]  # regular DataLoader class
+    # DataLoader class for this relationship. None for coalesced federated rels
+    # (resolved within the owning service's nested fetch — see
+    # fetch_remote_subtree — not loaded per-edge).
+    loader: type[DataLoader] | None = None
     page_loader: type[DataLoader] | None = None  # paginated loader (list only)
     sort_field: str | None = None  # sort column for pagination
+    pagination: bool = False  # explicit remote pagination capability
+    # Member-owned pagination capability for a federation REMOTE_PAGED relationship
+    # (profile name set + default_order) — the single source the mounter uses to
+    # render the schema's `order` enum and fall back when the caller omits `order`.
+    # None for local / non-paginated / coalesced relationships. specs/014.
+    page_capability: Any = None
     default_page_size: int = 20
     max_page_size: int = 100
     description: str | None = None  # documentation string surfaced in voyager/ER diagram
+    # Owning service prefix for a remote (federated) relationship; None for local.
+    target_service: str | None = None
+    # Discriminator for the relationship kind — consumers match on this instead
+    # of combining target_service/pagination booleans. See RelationshipKind.
+    # Defaults to LOCAL; federation construction sets the remote variants.
+    kind: str = RelationshipKind.LOCAL
 
 
 def _expect_single_pair(pairs: Any, message: str) -> tuple[Any, Any]:
@@ -323,6 +364,8 @@ class ErManager:
         entities: list[type[SQLModel]] | None = None,
         enable_pagination: bool = False,
         split_loader_by_type: bool = False,
+        service_name: str | None = None,
+        expose_mounted_endpoints: bool = False,
     ):
         if base is not None and entities is not None:
             raise ValueError("base and entities are mutually exclusive")
@@ -336,6 +379,21 @@ class ErManager:
         self._session_factory = session_factory
         self._enable_pagination = enable_pagination
         self._split_mode = split_loader_by_type
+        # Federation state (no-op when federation is unused).
+        self.service_name: str | None = service_name
+        # When True, this member advertises the endpoints of services it itself
+        # has mounted in its ER-introspection payload (enables transitive
+        # discovery). Defaults to False: internal URLs are suppressed (they leak
+        # network topology); the mounter resolves such services from its own
+        # services= map instead.
+        self._expose_mounted_endpoints: bool = expose_mounted_endpoints
+        self._mounted_services: dict[str, str] = {}
+        self._pending_remote_rels: list[tuple[type, Any]] = []
+        self._fed_registry: Any = None
+        self._federation_transport: FederationTransport | None = None
+        # Bumped whenever the entity/relationship set changes (add_virtual_entities,
+        # initialize/federation). GraphQL views keyed on it to refresh lazily.
+        self._version: int = 0
         # entity -> {rel_name -> RelationshipInfo}. Keys may be SQLModel
         # classes (registered via __init__) OR plain BaseModel classes
         # (registered via add_virtual_entities). The dict shape is uniform;
@@ -359,13 +417,19 @@ class ErManager:
         for entity in entities:
             custom_rels = get_custom_relationships(entity)
             entity_rels = self._registry.setdefault(entity, {})
+            declared_names = set(entity_rels)
             for rel in custom_rels:
-                if rel.name in entity_rels:
+                if rel.name in declared_names:
                     raise ValueError(
                         f"Custom relationship '{rel.name}' on {entity.__name__} "
                         f"conflicts with an existing relationship name"
                     )
-                entity_rels[rel.name] = _build_custom_relationship_info(rel)
+                declared_names.add(rel.name)
+                if isinstance(rel, RemoteRelationship):
+                    # Federated relationship: defer wiring to federate().
+                    self._pending_remote_rels.append((entity, rel))
+                else:
+                    entity_rels[rel.name] = _build_custom_relationship_info(rel)
 
         if enable_pagination:
             self._validate_pagination()
@@ -427,15 +491,21 @@ class ErManager:
             # call — virtual entities have no SQLAlchemy mapper to inspect).
             custom_rels = get_custom_relationships(entity)
             entity_rels: dict[str, RelationshipInfo] = {}
+            declared_names: set[str] = set()
             for rel in custom_rels:
-                if rel.name in entity_rels:
+                if rel.name in declared_names:
                     raise ValueError(
                         f"Custom relationship '{rel.name}' on "
                         f"{entity.__name__} conflicts with another "
                         f"relationship name on the same class."
                     )
-                entity_rels[rel.name] = _build_custom_relationship_info(rel)
+                declared_names.add(rel.name)
+                if isinstance(rel, RemoteRelationship):
+                    self._pending_remote_rels.append((entity, rel))
+                else:
+                    entity_rels[rel.name] = _build_custom_relationship_info(rel)
             self._registry[entity] = entity_rels
+        self._version += 1  # entity set changed; invalidate GraphQL views
 
     @property
     def frozen(self) -> bool:
@@ -510,13 +580,21 @@ class ErManager:
         self,
         loader_cls: type[DataLoader],
         type_key: frozenset[str] | None = None,
+        force_split: bool = False,
     ) -> DataLoader:
         """Get or create a DataLoader instance (cached per request).
 
         In split mode, creates separate instances per type_key so each
         can have its own _query_meta for column pruning.
+
+        Args:
+            force_split: If True, always creates per-type_key instances
+                regardless of ``_split_mode``. Used by federation RemoteLoaders
+                to isolate ``_remote_selection`` per distinct selection.
         """
-        if not self._split_mode or type_key is None:
+        use_split = (self._split_mode or force_split) and type_key is not None
+
+        if not use_split:
             # Default mode / no type_key: shared instance per loader_cls
             if loader_cls not in self._loader_instances:
                 self._loader_instances[loader_cls] = loader_cls()
@@ -585,6 +663,72 @@ class ErManager:
         if rel_info is None:
             return None
         return self.get_loader(rel_info.loader, type_key=type_key)
+
+    async def initialize(
+        self,
+        *,
+        transport: FederationTransport | None = None,
+        extra_types: dict[str, type] | None = None,
+    ) -> None:
+        """Bring up the ER diagram: run federation for declared remote relationships.
+
+        The services to mount (and their endpoints) are **derived from the
+        declarations** — each ``RemoteRelationship`` carries its service url via
+        ``RemoteService(url=…)``. No ``services`` argument. Services referenced
+        only transitively, or whose ``RemoteService`` has no url, are skipped
+        here (transitive ones are discovered during the fetch).
+
+        Call once at startup (app lifespan), before serving. Bumps ``_version``
+        so any GraphQL view built off this ErManager (SDL / ``__schema``)
+        refreshes to include the materialized remote types.
+
+        Args:
+            transport: Injectable HTTP transport (tests pass ASGITransport/fakes).
+            extra_types: Extra type names to recognize when materializing remote
+                scalar fields (shared enums / custom scalars). Unregistered names
+                fall back to ``Any``.
+        """
+        # Endpoints come only from declarations whose RemoteService has a url.
+        # Targets whose service has no url are still fetched (queued inside
+        # federate from _pending_remote_rels) and resolved transitively — or
+        # fail fast with "no endpoint" if neither applies.
+        services_map: dict[str, str] = {}
+        for _src, rrel in self._pending_remote_rels:
+            target_url = getattr(rrel, "target_url", None)
+            if target_url:
+                srv = parse_qualified_name(rrel.qualified_name)[0]
+                services_map.setdefault(srv, target_url)
+
+        if self._pending_remote_rels:
+            from nexusx.federation.manager import federate as _federate
+
+            await _federate(
+                self,
+                services_map,
+                transport=transport,
+                extra_types=extra_types,
+            )
+        self._version += 1
+
+    @property
+    def version(self) -> int:
+        """Generation counter for the entity/relationship set.
+
+        Bumped on ``add_virtual_entities`` and ``initialize``/federation. GraphQL
+        views (SDL/introspection) read this to refresh lazily; prefer it over
+        touching the private ``_version`` from outside the manager.
+        """
+        return self._version
+
+    async def aclose_federation(self) -> None:
+        """Close the federation transport if one was created (call on shutdown).
+
+        Idempotent: once the transport is cleared, subsequent calls are no-ops.
+        """
+        if self._federation_transport is not None:
+            transport = self._federation_transport
+            self._federation_transport = None
+            await transport.close()
 
     def create_resolver(self) -> type:
         """Create a Resolver class pre-wired with this ErManager.

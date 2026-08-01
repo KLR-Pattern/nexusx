@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel, select
 
@@ -6,6 +6,11 @@ from nexusx import Relationship as CustomRelationship
 from nexusx import mutation, query
 
 from .metadata import Tag, TaskLabel
+
+if TYPE_CHECKING:
+    from .metadata import Label
+    from .planning import Sprint
+    from .users import User
 
 
 class Comment(SQLModel, table=True):
@@ -22,6 +27,7 @@ class Comment(SQLModel, table=True):
 
 async def _tags_by_task_loader(task_ids: list[int]) -> list[list[Tag]]:
     from sqlmodel import select
+
     from demo.core_api.database import async_session
 
     async with async_session() as session:

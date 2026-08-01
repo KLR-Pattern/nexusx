@@ -1,8 +1,14 @@
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
 
 from nexusx import Relationship as CustomRelationship
+
+if TYPE_CHECKING:
+    from .finance import Invoice, Risk, TaskLabel
+    from .operations import Ceremony, KnowledgeArticle, Worklog
+    from .organization import Employee, Team, Workspace
+    from .resources import Document
 
 
 class Project(SQLModel, table=True):

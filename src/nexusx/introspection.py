@@ -13,6 +13,13 @@ from graphql.utilities import value_from_ast_untyped
 from sqlmodel import SQLModel
 
 from nexusx.type_converter import TypeConverter
+from nexusx.utils.pagination_schema import (
+    federation_order_enum_layout,
+    has_any_paginated_relationship,
+    has_any_pagination_root,
+    is_active_paginated_relationship,
+    iter_pagination_roots,
+)
 from nexusx.utils.schema_helpers import get_core_types, is_input_type
 
 QUERY_META_PARAM = "query_meta"
@@ -62,6 +69,14 @@ class IntrospectionGenerator:
         self._converter = TypeConverter(self._entity_names)
         self._enum_types = self._collect_enum_types()
         self._input_types = self._collect_input_types()
+        # Mounter-side federation order enums + per-field enum names (specs/014).
+        # Merged into _enum_types so __schema renders them and _build_field can
+        # reference them — same helper as the SDL generator, so the two paths
+        # expose identical order/direction parameters.
+        self._fed_order_enums, self._fed_order_field_name = (
+            federation_order_enum_layout(loader_registry, entities)
+        )
+        self._enum_types.update(self._fed_order_enums)
 
     def generate(self) -> dict[str, Any]:
         """Generate complete __schema introspection data."""
@@ -175,9 +190,18 @@ class IntrospectionGenerator:
         for entity in self.entities:
             types_list.append(self._build_entity_type(entity))
 
-        # 5. Pagination types (Pagination + Result types)
-        if self._enable_pagination and self._loader_registry:
+        # 5. Pagination types (Pagination + Result types). Local relationships
+        # remain gated by enable_pagination; federated paginated relationships
+        # and member-side page_by_<key>_in roots are independently active.
+        if self._loader_registry and (
+            self._enable_pagination
+            or self._has_any_paginated_relationship()
+            or self._has_any_pagination_root()
+        ):
             types_list.extend(self._build_pagination_types())
+
+        # 5c. Federation pagination root package types.
+        types_list.extend(self._build_page_package_types())
 
         # 5b. Entity group types ({Entity}Query / {Entity}Mutation)
         for entity_name, methods in self._query_methods.items():
@@ -239,6 +263,7 @@ class IntrospectionGenerator:
         except Exception:
             hints = {}
 
+        rel_names_done: set[str] = set()
         for field_name, hint in hints.items():
             if field_name in entity.model_fields:
                 continue  # Already processed
@@ -246,6 +271,20 @@ class IntrospectionGenerator:
             # Only include if it's a relationship to another entity
             if self._is_entity_relationship(hint):
                 all_fields.append((field_name, hint, None))
+                rel_names_done.add(field_name)
+
+        # Registry-only relationships (custom + federated RemoteRelationship, and
+        # relationships on create_model'd remote types): synthesize a type hint
+        # so _build_field renders them. Source of truth = the loader registry.
+        if self._loader_registry is not None:
+            for rel_name, rel_info in self._loader_registry.get_relationships(entity).items():
+                if rel_name in rel_names_done:
+                    continue
+                target_entity = getattr(rel_info, "target_entity", None)
+                if target_entity is None or not hasattr(target_entity, "__name__"):
+                    continue
+                synth = list[target_entity] if rel_info.is_list else target_entity
+                all_fields.append((rel_name, synth, None))
 
         # Group fields by type (scalar vs object)
         for field_name, type_hint, description in all_fields:
@@ -417,8 +456,22 @@ class IntrospectionGenerator:
             hints = {}
 
         # Build return type
-        return_type = hints.get("return")
-        type_ref = self._build_type_ref(return_type, is_input=False, required=True)
+        pag_root = getattr(func, "_pagination_root", None)
+        if pag_root:
+            type_ref = {
+                "kind": "NON_NULL", "name": None, "ofType": {
+                    "kind": "LIST", "name": None, "ofType": {
+                        "kind": "NON_NULL", "name": None, "ofType": {
+                            "kind": "OBJECT",
+                            "name": pag_root.package_name,
+                            "ofType": None,
+                        },
+                    },
+                },
+            }
+        else:
+            return_type = hints.get("return")
+            type_ref = self._build_type_ref(return_type, is_input=False, required=True)
 
         # Build arguments
         args: list[dict] = []
@@ -545,12 +598,11 @@ class IntrospectionGenerator:
         # Check if this is a paginated list relationship
         args: list[dict] = []
         if (
-            self._enable_pagination
-            and entity is not None
+            entity is not None
             and self._is_paginated_relationship(entity, name, python_type)
         ):
             type_ref = self._build_result_type_ref(python_type)
-            args = self._build_pagination_args()
+            args = self._build_pagination_args(entity, name)
         else:
             type_ref = self._build_type_ref(python_type, is_input=False, required=required)
 
@@ -716,13 +768,82 @@ class IntrospectionGenerator:
         if not self._loader_registry:
             return False
         rel_info = self._loader_registry.get_relationship(entity, field_name)
-        if rel_info is None or rel_info.page_loader is None:
+        if not self._is_active_paginated_relationship(rel_info):
             return False
         # Must be a list type — unwrap Mapped first
         unwrapped = python_type
         if self._converter.is_mapped_wrapper(python_type):
             unwrapped = self._converter.unwrap_mapped(python_type)
         return self._converter.is_list_type(unwrapped)
+
+    def _has_any_paginated_relationship(self) -> bool:
+        """True if any registered relationship exposes pagination in this schema."""
+        return has_any_paginated_relationship(
+            self._loader_registry, self.entities, self._enable_pagination
+        )
+
+    def _is_active_paginated_relationship(self, rel_info: Any) -> bool:
+        """Apply the local toggle without disabling explicit federation pagination."""
+        return is_active_paginated_relationship(rel_info, self._enable_pagination)
+
+    def _has_any_pagination_root(self) -> bool:
+        """True if any entity has a federation pagination root."""
+        return has_any_pagination_root(self.entities)
+
+    def _build_page_package_types(self) -> list[dict]:
+        """Build per-key package types for federation pagination roots.
+
+        A federation pagination root returns a list of per-key packages
+        ``{fk, items:[Entity], pagination}``; this generates the named OBJECT type
+        the member's schema needs so a cross-service ``reviews(limit,offset){items pagination}``
+        query validates on the member side. Also emits the Pagination type when any
+        such root exists (the member may have no local paged relations).
+        """
+        types_list: list[dict] = []
+
+        def _f(name: str, type_ref: dict) -> dict:
+            return {
+                "name": name, "description": None, "args": [], "type": type_ref,
+                "isDeprecated": False, "deprecationReason": None,
+            }
+        for ent, pag_root in iter_pagination_roots(self.entities):
+            fk_field = pag_root.fk_field
+            fk_type = pag_root.fk_type
+            pkg_name = pag_root.package_name
+            ent_name = ent.__name__
+            fk_type_ref = self._build_type_ref(fk_type, is_input=False, required=True)
+            items_type_ref = {
+                "kind": "NON_NULL", "name": None, "ofType": {
+                    "kind": "LIST", "name": None, "ofType": {
+                        "kind": "NON_NULL", "name": None, "ofType": {
+                            "kind": "OBJECT", "name": ent_name, "ofType": None,
+                        },
+                    },
+                },
+            }
+            pagination_type_ref = {
+                "kind": "NON_NULL", "name": None,
+                "ofType": {"kind": "OBJECT", "name": "Pagination", "ofType": None},
+            }
+            types_list.append({
+                "kind": "OBJECT",
+                "name": pkg_name,
+                "description": "Federation pagination per-key package",
+                "fields": [
+                    _f(fk_field, fk_type_ref),
+                    _f("items", items_type_ref),
+                    _f("pagination", pagination_type_ref),
+                ],
+                "inputFields": None,
+                "interfaces": [],
+                "enumValues": None,
+                "possibleTypes": None,
+            })
+        # Pagination itself is emitted by _build_pagination_types (whose gate now
+        # also covers member-side page_by_<key>_in roots) to avoid a duplicate
+        # Pagination type when a member has BOTH a local paged relation and a
+        # federation pagination root.
+        return types_list
 
     def _build_result_type_ref(self, python_type: Any) -> dict:
         """Build a type reference to a Result type for paginated list relationships."""
@@ -742,9 +863,17 @@ class IntrospectionGenerator:
             "ofType": {"kind": "OBJECT", "name": result_type_name, "ofType": None},
         }
 
-    def _build_pagination_args(self) -> list[dict]:
-        """Build limit/offset arguments for paginated relationship fields."""
-        return [
+    def _build_pagination_args(
+        self, entity: type[SQLModel] | None, field_name: str
+    ) -> list[dict]:
+        """Build the argument list for a paginated relationship field.
+
+        Always includes ``limit``/``offset``. Federation REMOTE_PAGED
+        relationships (``page_capability`` set) additionally expose ``order``
+        (enum, default = member ``default_order``) and ``direction``; local and
+        coalesced paginated relationships keep just limit/offset. specs/014.
+        """
+        args: list[dict] = [
             {
                 "name": "limit",
                 "description": "Maximum number of items to return",
@@ -758,6 +887,29 @@ class IntrospectionGenerator:
                 "defaultValue": "0",
             },
         ]
+        capability = None
+        if entity is not None and self._loader_registry:
+            rel_info = self._loader_registry.get_relationship(entity, field_name)
+            capability = getattr(rel_info, "page_capability", None) if rel_info else None
+        if capability is not None:
+            enum_name = self._fed_order_field_name.get((entity.__name__, field_name))
+            args.append(
+                {
+                    "name": "order",
+                    "description": "Semantic order profile (member-defined)",
+                    "type": {"kind": "ENUM", "name": enum_name, "ofType": None},
+                    "defaultValue": capability.default_order,
+                }
+            )
+            args.append(
+                {
+                    "name": "direction",
+                    "description": "Sort direction; overrides the profile default",
+                    "type": {"kind": "ENUM", "name": "Direction", "ofType": None},
+                    "defaultValue": None,
+                }
+            )
+        return args
 
     def _build_pagination_types(self) -> list[dict]:
         """Build introspection data for Pagination and Result types."""
@@ -801,7 +953,7 @@ class IntrospectionGenerator:
         for entity in self.entities:
             rels = self._loader_registry.get_relationships(entity)
             for _rel_name, rel_info in rels.items():
-                if rel_info.is_list and rel_info.page_loader is not None:
+                if self._is_active_paginated_relationship(rel_info):
                     target_name = rel_info.target_entity.__name__
                     result_type_name = f"{target_name}Result"
                     if result_type_name not in result_type_names:

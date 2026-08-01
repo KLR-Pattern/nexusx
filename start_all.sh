@@ -38,15 +38,22 @@ PORT_USECASE_MCP=8006       # UseCaseService → MCP (4-layer)
 # Visualization (Voyager)
 PORT_VOYAGER_USECASE=8008   # Voyager — UseCase service graph
 PORT_VOYAGER_ER=8009        # Voyager — ER + enterprise schema
+# Federation (nexusx-to-nexusx; relative composition)
+PORT_FED_USERS=8020         # users service (leaf; mounted by reviews)
+PORT_FED_REVIEWS=8021       # reviews service (mounts users; mounted by catalog)
+PORT_FED_CATALOG=8022       # catalog service (entry; mounts reviews) — query this one
 
 # ── Group titles (README pillars) ─────────────────────────────────────────
-GROUP_ORDER=("query" "core_api" "business" "viz")
-declare -A GROUP_TITLE=(
-  [query]="Query surface (SQLModel entities → GraphQL / MCP)"
-  [core_api]="Core API (DefineSubset DTOs + Resolver)"
-  [business]="Business-logic surface (UseCaseService → REST / MCP)"
-  [viz]="Visualization (Voyager)"
-)
+# Portable lookup via `case` — macOS ships Bash 3.2, which has no `declare -A`.
+group_title() {
+  case "$1" in
+    query)      echo "Query surface (SQLModel entities → GraphQL / MCP)" ;;
+    core_api)   echo "Core API (DefineSubset DTOs + Resolver)" ;;
+    business)   echo "Business-logic surface (UseCaseService → REST / MCP)" ;;
+    viz)        echo "Visualization (Voyager)" ;;
+    federation) echo "Federation (nexusx-to-nexusx; relative composition)" ;;
+  esac
+}
 
 # ── Service registry ──────────────────────────────────────────────────────
 # Each record: group | name | port | url path | start command (%PORT% → port)
@@ -66,6 +73,10 @@ SERVICES=(
   # ── Visualization: Voyager ──
   "viz|Voyager — UseCase service graph|$PORT_VOYAGER_USECASE|Voyager, REST|/voyager,/api/users,/api/sprints|uv run uvicorn demo.use_case.voyager_demo:app --port %PORT%"
   "viz|Voyager — ER + enterprise schema|$PORT_VOYAGER_ER|Voyager|/voyager|uv run uvicorn demo.enterprise_voyager.voyager_demo:app --port %PORT%"
+  # ── Federation: nexusx-to-nexusx (start order is tolerated via in-process retry) ──
+  "federation|Fed — users (leaf)|$PORT_FED_USERS|GraphQL|/graphql,/nexusx/er-introspection|uv run uvicorn demo.federation.users_app:app --port %PORT%"
+  "federation|Fed — reviews (mounts users)|$PORT_FED_REVIEWS|GraphQL|/graphql,/nexusx/er-introspection|uv run uvicorn demo.federation.reviews_app:app --port %PORT%"
+  "federation|Fed — catalog (entry; mounts reviews) ★|$PORT_FED_CATALOG|GraphQL, REST, Voyager|/graphql,/nexusx/er-introspection,/api/catalog_service/composed_tree,/voyager|uv run uvicorn demo.federation.catalog_app:app --port %PORT%"
 )
 
 # Derive ALL_PORTS from the registry (single source of truth).
@@ -141,6 +152,13 @@ echo "=============================================="
 echo ""
 
 clear_existing_ports
+
+# Federation demo uses file-based sqlite (fed_*.db) that persists across runs.
+# The demo seeds only when a table is empty, so a stale DB from an older schema
+# (e.g. before Comment was added) leaves new tables unseeded → empty results.
+# Clear them so every start_all begins from a fresh, fully-seeded dataset.
+rm -f fed_users.db fed_reviews.db fed_catalog.db
+echo -e "${YELLOW}Cleared federation demo databases (fed_*.db) for a fresh seed.${NC}"
 echo ""
 
 current_group=""
@@ -148,7 +166,7 @@ for record in "${SERVICES[@]}"; do
   IFS='|' read -r group name port tags paths cmd <<< "$record"
   if [ "$group" != "$current_group" ]; then
     current_group="$group"
-    echo -e "${CYAN}── ${GROUP_TITLE[$group]} ──${NC}"
+    echo -e "${CYAN}── $(group_title "$group") ──${NC}"
   fi
   start_service "$group" "$name" "$port" "$tags" "$paths" "$cmd"
 done
@@ -171,7 +189,7 @@ for record in "${SERVICES[@]}"; do
   IFS='|' read -r group name port tags paths cmd <<< "$record"
   if [ "$group" != "$current_group" ]; then
     current_group="$group"
-    echo -e "${CYAN}── ${GROUP_TITLE[$group]} ──${NC}"
+    echo -e "${CYAN}── $(group_title "$group") ──${NC}"
   fi
   printf "  %-34s :%-5s  ${CYAN}[%s]${NC}\n" "$name" "$port" "$tags"
   IFS=',' read -ra path_list <<< "$paths"

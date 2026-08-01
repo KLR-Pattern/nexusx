@@ -25,7 +25,7 @@ class SchemaFormatter:
             handler: The GraphQLHandler instance to extract schema from.
         """
         self._handler = handler
-        self._introspection = handler._introspection_generator.generate()
+        self._introspection = handler.get_introspection_data()
 
     def get_schema_info(self) -> dict[str, Any]:
         """Get formatted schema information.

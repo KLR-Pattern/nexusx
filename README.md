@@ -133,6 +133,7 @@ Requires Python ≥ 3.10.
 - [Quick Start](docs/guide/quick_start.md) — entities, DTOs, the UseCase layer
 - [Feature highlights](docs/feature-highlights.md) — the design decisions, in depth
 - [Voyager visualization](docs/advanced/voyager.md) — interactive ER + service diagrams
+- [Federation](docs/advanced/federation.md) — compose multiple nexusx services into one graph (same-architecture; no gateway)
 - [Auto query](docs/guide/graphql_auto_query.md) — `by_id` / `by_filter` without writing `@query`
 - [Clean Architecture comparison](docs/clean-architecture-comparison.md)
 - [Changelog](docs/changelog.md)

@@ -66,6 +66,10 @@ class Renderer:
     ) -> None:
         self.show_fields = show_fields if show_fields in ('single', 'object', 'all') else 'single'
         self.module_color = module_color or {}
+        # Module-name prefixes whose clusters render dashed (federated remote
+        # services). Empty by default; set by DiagramRenderer from the ER
+        # builder's federation knowledge.
+        self.federated_modules: set[str] = set()
         self.schema = schema
         self.show_module = show_module
         self.show_pydantic_resolve_meta = show_pydantic_resolve_meta
@@ -372,6 +376,13 @@ class Renderer:
 
         if show_cluster:
             cluster_id = f'module_{mod.fullname.replace(".", "_")}'
+            # A federated (remote-service) cluster renders dashed to mark the
+            # service boundary; local modules keep the default rounded style.
+            is_federated = any(
+                mod.fullname == fm or mod.fullname.startswith(f'{fm}.')
+                for fm in self.federated_modules
+            )
+            cluster_style = 'rounded,dashed' if is_federated else 'rounded'
             pen_style = ''
 
             if cluster_color:
@@ -388,6 +399,7 @@ class Renderer:
                 border_color=self.colors.border,
                 pen_color=cluster_color,
                 pen_width=3 if color and not cluster_color else None,
+                cluster_style=cluster_style,
                 content=f'{inner_nodes_str}\n{child_str}'
             )
         else:
@@ -541,6 +553,8 @@ class DiagramRenderer(Renderer):
         theme_color: str | None = None,
         edge_minlen: int = 3,
         show_methods: bool = True,
+        module_color: dict[str, str] | None = None,
+        federated_modules: set[str] | None = None,
     ) -> None:
         super().__init__(
             show_fields=show_fields,
@@ -548,9 +562,11 @@ class DiagramRenderer(Renderer):
             config=RenderConfig(),
             theme_color=theme_color,
             show_methods=show_methods,
+            module_color=module_color,
         )
         self.better_cluster_display = better_cluster_display
         self.edge_minlen = edge_minlen
+        self.federated_modules = federated_modules or set()
 
     def render_link(self, link: Link) -> str:
         """Override link rendering for ER diagrams."""

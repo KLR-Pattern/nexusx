@@ -1,8 +1,10 @@
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
 
-from nexusx import Relationship as CustomRelationship
+if TYPE_CHECKING:
+    from .organization import Employee, Room, Workspace
+    from .project import Attachment, Project
 
 
 class Calendar(SQLModel, table=True):

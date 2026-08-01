@@ -1,8 +1,11 @@
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel, select
 
 from nexusx import query
+
+if TYPE_CHECKING:
+    from .tasks import Task
 
 
 class Project(SQLModel, table=True):

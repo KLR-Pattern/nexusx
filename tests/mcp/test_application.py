@@ -61,7 +61,8 @@ class TestSchemaOnlyConstruction:
         assert app.resources is app.resources
 
     def test_resources_entity_names_empty_without_decorators(self):
-        """Without @query decorators, entity_names is empty (expected, matches MultiAppManager tests)."""
+        """Without @query decorators, entity_names is empty (expected, matches
+        MultiAppManager tests)."""
         app = Application(name="x", base=_TestBase)
         # _User is a SQLModel table but has no @query, so it's not in entity_names
         assert isinstance(app.resources.entity_names, set)
@@ -301,7 +302,7 @@ class TestStandaloneUsage:
             app = Application(name="x", base=_TestBase, engine=engine)
             await app.dispose()
             # Engine must still be usable for queries
-            async with engine.connect() as conn:
+            async with engine.connect():
                 # Just verify connection works (no error)
                 pass
         finally:
@@ -337,7 +338,8 @@ class TestUrlRedaction:
         assert redacted == "sqlite+aiosqlite:///:memory:"
 
     def test_repr_with_url_contains_redacted_form(self):
-        """Application.__repr__ routes the URL through _redact_url (covered separately for postgres)."""
+        """Application.__repr__ routes the URL through _redact_url (covered
+        separately for postgres)."""
         app = Application(
             name="x",
             base=_TestBase,
