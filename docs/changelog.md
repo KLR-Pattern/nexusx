@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 4.0.0."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.0.0."
 ---
 
 # Changelog
@@ -9,6 +9,86 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 - **Patch (x.y.Z)**: Bug fixes and minor improvements
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
+
+## 5.0
+
+### 5.0.0 (2026-8-1)
+
+5.0 adds **federation**: any nexusx service can mount other nexusx services into one unified graph, with no privileged router/gateway role. A client queries the entry service exactly as if it were a monolith; the entry service orchestrates cross-service traversal by issuing **one nested GraphQL query per mounted service**, so each member still resolves its own composed subgraph with its own N+1-proof batch executor — federation does not reintroduce N+1 at the network boundary. The work landed in three layered specs (`specs/012` base federation → `specs/013` remote pagination → `specs/014` query-time order/direction), plus a three-service demo (`demo/federation/`: catalog / reviews / users) and a bilingual guide (`docs/advanced/federation.md`, en + zh). **The version bump to 5.0 reflects this major new surface, not a breaking change to existing APIs**: monolith behavior (SQLModel GraphQL, Resolver, Voyager) is unchanged when `federate` is not used, and the in-process federation APIs renamed/removed during 012 → 013 → 014 (e.g. `RemoteRelationship.order`, the old `by_<key>_in_page(sort_field, sort_direction)` root) never shipped under any tag, so there is no external migration burden.
+
+- feat:
+  - **Relative-composition cross-service federation (`specs/012`)**: Mounting is a symmetric capability of every nexusx service — declare a `RemoteRelationship` in `__relationships__` and run `await er.initialize()` at startup; the entry service of a query is its orchestrator (per-query, not per-topology), and mounting a service mounts its entire query surface (including that service's own downstream mounts), so transitive reach is inherent. Composition uses **ER-graph introspection as the source of truth, not SDL** — SDL is a lossy projection that strips FK fields and carries no cardinality/direction, while ER introspection hands over `RelationshipInfo` (with the join key and cardinality) federation actually needs, staying same-source with Voyager and the executor.
+
+    ```python
+    from nexusx import RemoteService, RemoteRelationship, ErManager
+
+    reviews = RemoteService("reviews", url="http://reviews:8021")
+
+    class Product(SQLModel, table=True):
+        id: int = Field(primary_key=True)
+        name: str
+        __relationships__ = {
+            "reviews": RemoteRelationship(
+                fk="id",
+                target=list[reviews.Review],   # to-many; bare reviews.Review = to-one
+                name="reviews",
+                join_remote="product_id",
+            )
+        }
+
+    er = ErManager(base=..., session_factory=...)
+    await er.initialize()   # transitively pulls reviews' ER fragment, validates, materializes
+    ```
+
+    Data fetching is done by `RemoteLoader`, a DataLoader that turns a batch of join keys + a nested selection into **one** GraphQL query against the member's `by_<join_remote>_in` root and returns the rows grouped/aligned to the DataLoader's positional contract (missing keys map to `None` for to-one / `[]` for to-many). Remote types are **materialized at init time** (not lazily at runtime) as bare-named pydantic classes via a two-pass `FederatedTypeRegistry` (BFS pull of reachable ER fragments with a visited-set, then topological `create_model` + `model_rebuild` against a bare-name → class namespace), so the external schema shows only bare type names with no service prefix and multi-hop traversal across services is transparent to the client. The canonical `"<srv>.<typename>"` identity lives only in the registry for routing/validation/disambiguation. `RemoteRelationship.target` takes a `RemoteRef` (`RemoteService("srv").TypeName`); a dotted name is not a valid Python identifier, so it is treated as a declaration marker parsed by the framework and never enters Pydantic forward-ref resolution — avoiding fights with forward-ref / `model_rebuild` / mypy at every layer. `DefineSubset` accepts a `RemoteRef` as its source too, and `resolve_deferred_subsets` (run during `federate`) resolves each to the materialized class. **Seven classes of misconfiguration fail-fast at startup**: unknown service prefix, missing typename, missing/incompatible join field, missing `by_<key>_in` root, duplicate service name, duplicate cross-service bare type name, and a mount-graph cycle. Federation requires the optional `nexusx[federation]` extra (httpx); calling `federate()` without httpx raises an informative `ImportError`.
+
+  - **Member-side offset pagination for remote to-many relationships (`specs/013`)**: A mounted to-many relationship can opt into member-side pagination via `RemoteRelationship(..., pagination=True)`. The **physical ordering is owned by the member** (which controls its indexes); the mounter only selects a named semantic order profile. Profiles are declared in `AutoQueryConfig.batch_pages` → `BatchPageConfig(default_order, orders={profile: PageOrder})` → `PageOrder(terms=[OrderTerm])` → `OrderTerm(field, direction, nulls)`, and the member exposes a `page_by_<key>_in(keys, limit, offset, order)` root that paginates per-parent with a window `ROW_NUMBER()`. The business client only ever passes `limit` / `offset`; `total_count` is computed only when selected; primary-key columns not in the profile are appended as a deterministic tie-breaker; a malformed remote response raises `RemoteQueryError` while a legitimately missing key maps to an empty page. ER introspection exposes only the semantic capability (protocol, default order, profile names + descriptions) — never the physical columns, directions, or null ordering. The never-released predecessor root `by_<key>_in_page(sort_field, sort_direction)` was deleted outright with no compatibility shim.
+
+    ```python
+    # member side — declares the page capability
+    AutoQueryConfig(batch_pages={"Review": {"product_id": BatchPageConfig(
+        default_order="NEWEST",
+        orders={
+            "NEWEST": PageOrder(terms=[OrderTerm(field="created_at", direction="desc")]),
+            "HIGHEST_RATING": PageOrder(
+                terms=[OrderTerm(field="rating", direction="desc", nulls="last")]),
+        },
+    )}})
+    # client side
+    # reviews(limit: 5, offset: 0) { items { title } pagination { has_more total_count } }
+    ```
+
+  - **Query-time order/direction for federated pagination (`specs/014`)**: The order-profile choice moves from a deploy-time static binding to a **query-time caller choice**. The mounter renders the member's profile set as a GraphQL `order` enum (values = profile names, default = the member's `default_order`) plus a mounter-owned global `direction` enum (`ASC` / `DESC`) on the paginated relationship field, so a client flips ordering per-query without the member predefining multiple relationships or redeploying. The member's `page_by_<key>_in` gains a `direction` argument; flipping it overrides each profile term's default direction and **nulls follow the flip** (`desc + nulls_last` ↔ `asc + nulls_first`), with the inner window and outer query using byte-identical order expressions. Only the direction is opened up — the sort field stays closed (the member still owns index control); a caller cannot pass an arbitrary sort field, only pick a name and flip direction. `RemoteRelationship.order` is removed (the sole source of order is now the query argument), `federate` validation is relaxed (`pagination=True` no longer requires `order`; instead it requires the member's `page_capability.orders` to be non-empty), and a `PageOrder` is constrained to a single `OrderTerm` (multi-column profiles are rejected at member startup).
+
+    ```graphql
+    {
+      Product {
+        by_filter {
+          reviews(limit: 5, offset: 0, order: HIGHEST_RATING, direction: DESC) {
+            items { title rating }
+            pagination { has_more total_count }
+          }
+        }
+      }
+    }
+    ```
+
+  - **Voyager renders the full federated graph with ownership tags (`specs/012 US4`)**: After federation init, Voyager / ER draws the complete graph (local + remote materialized entities, bare-named), each remote node tagged by its owning service and cross-service edges rendered correctly; an opt-in `RemoteService("reviews", url=..., color=...)` tints a member's cluster.
+
+- internal:
+  - **Schema generation is now registry-driven**: SDL generation and `__schema` introspection were switched from `get_type_hints`-based field discovery to reading the `ErManager` registry, so custom/remote relationship fields (which are not type annotations) and materialized remote types reach the external schema — making "rendering" and "execution" same-source. This is the largest non-trivial change to existing modules (`sdl_generator`, `introspection`, `query_executor`, `resolver`, `loader/registry`), but the observable behavior for non-federating single-process apps is unchanged.
+  - **RelationshipInfo boolean matrix → kind discriminator**: the local/remote × list/paginated boolean matrix was collapsed into a single `kind` discriminator (plus `target_service`), simplifying executor routing of remote relationships.
+
+- known limitations:
+  - Federation is **read-only** this release (no cross-service writes/mutations).
+  - Cross-service joins are **single-field** (composite keys are rejected by validation).
+  - Join-key types are limited to `{str, int, float, bool, UUID}`; **`Decimal` is rejected** at `federate()` — root cause: the member's `page_by` buckets rows by SQL column value while the federation wire carries string keys, so a non-string-wire type like `Decimal` can't match a bucket (UUID passes only because SQLite stores UUID columns as strings). This is the documented type-gap from `specs/013`.
+  - A federated pagination order profile is **single-column** (multi-column `PageOrder` is rejected at member startup).
+  - Order/direction selection covers only the **β path** (GraphQL direct query into the mounter); choosing order from the **γ path** (Resolver / UseCase business-code composition) is explicitly out of scope for this release.
+  - Cross-service **bare type names must be unique** (duplicates fail-fast at startup), and the federation runs on an **internal trusted network** (no auth / multi-tenant passthrough this release). A member adding fields at runtime is not hot-detected — restart the entry service to re-init.
+
+- compatibility:
+  - **Monolith: zero regression.** Without `federate`, the SQLModel GraphQL surface, Resolver / Core-API path, and Voyager are unchanged (the single-process test suite stays green). The 5.0 major bump is for the major new federation surface, not for breakage.
 
 ## 4.0
 
