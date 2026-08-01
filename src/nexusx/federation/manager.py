@@ -75,13 +75,13 @@ async def federate(
     targets: set[str] = set()
     declared_colors: dict[str, str] = {}
     for _src, rrel in er_manager._pending_remote_rels:
-        targets.add(rrel.target)
+        targets.add(rrel.qualified_name)
         # Collect opt-in voyager cluster colors (RemoteService(color=...)) for
         # the target service; applied to the registry once it exists (step 3).
         target_color = getattr(rrel, "target_color", None)
         if target_color:
             declared_colors.setdefault(
-                parse_qualified_name(rrel.target)[0], target_color
+                parse_qualified_name(rrel.qualified_name)[0], target_color
             )
 
     # 2. Transitive fetch (visited-set prevents cycles/non-termination).
@@ -219,7 +219,7 @@ def _validate_and_wire_remote_relationship(
     # One _check_target per root: page root (or the full root when not
     # paginated), plus the full root when paginated.
     remote_field, page_br = _check_target(
-        rrel.target,
+        rrel.qualified_name,
         rrel.join_remote,
         endpoints,
         fragments,
@@ -227,7 +227,7 @@ def _validate_and_wire_remote_relationship(
         order=rrel.order,
     )
     full_br = (
-        _check_target(rrel.target, rrel.join_remote, endpoints, fragments)[1]
+        _check_target(rrel.qualified_name, rrel.join_remote, endpoints, fragments)[1]
         if rrel.pagination
         else page_br
     )
@@ -245,8 +245,8 @@ def _validate_and_wire_remote_relationship(
             batch_arg_type=full_br.arg_type,
         )
 
-    srv, typename = parse_qualified_name(rrel.target)
-    target_cls = fed_registry.get(rrel.target)
+    srv, typename = parse_qualified_name(rrel.qualified_name)
+    target_cls = fed_registry.get(rrel.qualified_name)
     loader_cls = create_remote_loader(
         typename=typename,
         join_remote=rrel.join_remote,
@@ -273,7 +273,7 @@ def _validate_and_wire_remote_relationship(
         ),
     }
     if rrel.pagination:
-        resolved_order = _validate_page_capability(rrel.target, page_br, rrel.order)
+        resolved_order = _validate_page_capability(rrel.qualified_name, page_br, rrel.order)
         rel_info_kwargs["page_loader"] = create_paginated_remote_loader(
             typename=typename,
             join_remote=rrel.join_remote,
@@ -452,7 +452,7 @@ def _check_join_contract(
     if local_type != remote_type:
         raise FederationError(
             f"Local join field {source_entity.__name__}.{rrel.fk} and remote "
-            f"join field {rrel.target}.{rrel.join_remote} have incompatible "
+            f"join field {rrel.qualified_name}.{rrel.join_remote} have incompatible "
             f"types ({local_type} vs {remote_type})."
         )
 
@@ -460,7 +460,7 @@ def _check_join_contract(
         batch_type = _batch_element_type(batch_arg_type)
         if batch_type != remote_type:
             raise FederationError(
-                f"Batch root for {rrel.target}.{rrel.join_remote} accepts "
+                f"Batch root for {rrel.qualified_name}.{rrel.join_remote} accepts "
                 f"{batch_arg_type!r}, which is incompatible with remote join "
                 f"type {remote_type!r}."
             )

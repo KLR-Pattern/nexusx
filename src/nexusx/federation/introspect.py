@@ -125,7 +125,7 @@ def _batch_roots(entity: type) -> list[BatchRoot]:
                 arg_name=arg_name,
                 arg_type=arg_type,
                 page=(
-                    pagination_root["page_capability"]
+                    pagination_root.page_capability
                     if pagination_root
                     else None
                 ),

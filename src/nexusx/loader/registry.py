@@ -691,7 +691,7 @@ class ErManager:
         for _src, rrel in self._pending_remote_rels:
             target_url = getattr(rrel, "target_url", None)
             if target_url:
-                srv = parse_qualified_name(rrel.target)[0]
+                srv = parse_qualified_name(rrel.qualified_name)[0]
                 services_map.setdefault(srv, target_url)
 
         if self._pending_remote_rels:

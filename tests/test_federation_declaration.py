@@ -33,7 +33,7 @@ def test_remote_relationship_dataclass_fields():
     )
     # RemoteRef input is normalized to the "srv.typename" marker string;
     # is_list is derived from the list[...] wrapping (mirrors Relationship).
-    assert r.target == "reviews.Review"
+    assert r.qualified_name == "reviews.Review"
     assert r.is_list is True
 
 
@@ -51,7 +51,7 @@ def test_remote_relationship_captures_service_url():
         name="g", join_remote="id",
     )
     assert r1.target_url == "http://reviews:8021"
-    assert r1.target == "reviews.Review"
+    assert r1.qualified_name == "reviews.Review"
     assert r2.target_url is None  # no url → transitive-only / unmounted
 
 
@@ -110,7 +110,7 @@ def test_get_custom_relationships_returns_remote_entries(tmp_module):
     # The RemoteRelationship instance passes through unchanged.
     remote = [r for r in rels if isinstance(r, RemoteRelationship)]
     assert len(remote) == 1
-    assert remote[0].target == "reviews.Review"
+    assert remote[0].qualified_name == "reviews.Review"
 
 
 def test_target_service_default_none_on_local_relationship_info():

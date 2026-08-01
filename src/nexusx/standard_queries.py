@@ -22,6 +22,37 @@ from nexusx.decorator import query
 _ORDER_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
+class Direction(str, Enum):
+    """Sort direction exposed to federation pagination callers (ASC|DESC).
+
+    Overrides an order profile's default direction; ``nulls`` follow the flip
+    (see ``_apply_direction``). specs/014.
+    """
+
+    ASC = "ASC"
+    DESC = "DESC"
+
+
+@dataclass(frozen=True)
+class PaginationRootMeta:
+    """Runtime metadata attached to a generated ``page_by_<key>_in`` root.
+
+    Written by ``_create_page_by_keys_in_query`` onto the function object as
+    ``func._pagination_root``; read by sdl_generator / introspection /
+    query_executor for SDL rendering, ``__schema`` introspection, and
+    pagination-root routing. A frozen dataclass (not a bare dict) so the
+    contract is typed and key typos surface at import rather than as a
+    runtime ``KeyError`` at a consumer.
+    """
+
+    entity: type
+    fk_field: str
+    fk_type: type
+    package_name: str
+    order_enum: type
+    page_capability: Any  # BatchPageCapability
+
+
 @dataclass(frozen=True)
 class OrderTerm:
     """One physical member-side ordering term."""
@@ -394,6 +425,12 @@ def _create_page_by_keys_in_query(
             )
             raise ValueError(msg)
         resolved_order = resolved_orders[order_name]
+        # direction (specs/014): caller flips the profile's default direction;
+        # nulls follow. effective_terms feed BOTH the window inner and the
+        # outer order expressions so they stay consistent after the flip.
+        effective_terms = _apply_direction(
+            resolved_order.terms, kwargs.get("direction")
+        )
         pagination_selection = kwargs.get("__nexusx_pagination_selection")
         # Direct Python callers do not provide execution metadata, so preserve
         # the historical full Pagination result for that path.
@@ -408,7 +445,7 @@ def _create_page_by_keys_in_query(
 
         async with session_factory() as session:
             fk_col = getattr(cls, field_name)
-            window_order = _build_order_expressions(cls, resolved_order.terms)
+            window_order = _build_order_expressions(cls, effective_terms)
 
             rn_label = "_nx_rn"
             tc_label = "_nx_tc"
@@ -426,7 +463,7 @@ def _create_page_by_keys_in_query(
 
             rn_col = subq.c[rn_label]
             fk_col_sub = subq.c[field_name]
-            outer_order = _build_order_expressions(subq.c, resolved_order.terms)
+            outer_order = _build_order_expressions(subq.c, effective_terms)
 
             start = page_args.offset + 1
             end = page_args.offset + effective_limit + 1  # peek-by-1
@@ -490,6 +527,7 @@ def _create_page_by_keys_in_query(
     func_obj.__annotations__["limit"] = int | None
     func_obj.__annotations__["offset"] = int
     func_obj.__annotations__["order"] = order_enum
+    func_obj.__annotations__["direction"] = Direction
     page_by_field_in.__annotations__["return"] = list[dict]
     func_obj.__signature__ = inspect.Signature(
         parameters=[
@@ -501,6 +539,10 @@ def _create_page_by_keys_in_query(
             inspect.Parameter(
                 "order", inspect.Parameter.POSITIONAL_OR_KEYWORD,
                 annotation=order_enum,
+            ),
+            inspect.Parameter(
+                "direction", inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=None, annotation=Direction,
             ),
             inspect.Parameter(
                 "limit", inspect.Parameter.POSITIONAL_OR_KEYWORD,
@@ -515,14 +557,14 @@ def _create_page_by_keys_in_query(
     )
     func_obj.__name__ = method_name
     package_name = f"{entity.__name__}{_pascal_case(field_name)}PagePackage"
-    func_obj._pagination_root = {
-        "entity": entity,
-        "fk_field": field_name,
-        "fk_type": field_type,
-        "package_name": package_name,
-        "order_enum": order_enum,
-        "page_capability": capability,
-    }
+    func_obj._pagination_root = PaginationRootMeta(
+        entity=entity,
+        fk_field=field_name,
+        fk_type=field_type,
+        package_name=package_name,
+        order_enum=order_enum,
+        page_capability=capability,
+    )
     return page_by_field_in
 
 
@@ -577,6 +619,12 @@ def _resolve_page_orders(
         if not order.terms:
             raise ValueError(
                 f"Order profile {name!r} on {entity.__name__} cannot be empty"
+            )
+        if len(order.terms) != 1:
+            raise ValueError(
+                f"Order profile {name!r} on {entity.__name__} must have exactly "
+                f"one term (single-column sort, specs/014), "
+                f"got {len(order.terms)}"
             )
 
         terms: list[_ResolvedOrderTerm] = []
@@ -647,6 +695,36 @@ def _build_order_expressions(
             expression = expression.nulls_last()
         expressions.append(expression)
     return expressions
+
+
+def _apply_direction(
+    terms: tuple[_ResolvedOrderTerm, ...], raw_direction: Any
+) -> tuple[_ResolvedOrderTerm, ...]:
+    """Apply a caller-supplied direction to a profile's resolved terms.
+
+    ``None`` direction ⇒ profile default (no flip). Otherwise override each
+    term's direction; ``nulls`` flip (first↔last) only on terms whose direction
+    actually changes; terms already matching the requested direction stay. The
+    result feeds both the window inner and the outer order expressions so they
+    remain consistent. specs/014.
+    """
+    if raw_direction is None:
+        return terms
+    direction = (
+        raw_direction.value if isinstance(raw_direction, Enum) else raw_direction
+    )
+    if isinstance(direction, str):
+        direction = direction.lower()
+    return tuple(
+        t
+        if direction == t.direction
+        else _ResolvedOrderTerm(
+            t.field_name,
+            direction,
+            None if t.nulls is None else ("first" if t.nulls == "last" else "last"),
+        )
+        for t in terms
+    )
 
 
 def add_standard_queries(

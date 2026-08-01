@@ -500,6 +500,21 @@ def _build_config_overrides(config: SubsetConfig) -> dict[str, Any]:
     return overrides
 
 
+def _is_remote_ref(obj: Any) -> bool:
+    """True if ``obj`` is a ``RemoteRef`` (a deferred remote-type reference).
+
+    Prefers ``isinstance`` (precise) when federation is importable; falls back
+    to a name-based check so subset.py keeps working if federation is not
+    installed. Replaces a bare ``type(obj).__name__ == "RemoteRef"`` check that
+    any unrelated class named ``RemoteRef`` would trip.
+    """
+    try:
+        from nexusx.federation.remote_ref import RemoteRef
+    except ImportError:
+        return type(obj).__name__ == "RemoteRef"
+    return isinstance(obj, RemoteRef)
+
+
 class SubsetMeta(type):
     """Metaclass that transforms a DefineSubset class definition into a Pydantic BaseModel.
 
@@ -531,7 +546,7 @@ class SubsetMeta(type):
             if isinstance(subset_info, tuple) and len(subset_info) == 2
             else None
         )
-        if source_candidate is not None and type(source_candidate).__name__ == "RemoteRef":
+        if source_candidate is not None and _is_remote_ref(source_candidate):
             return cls._create_deferred_class(name, source_candidate, subset_info[1], namespace)
 
         entity_kls, subset_fields, auto_excluded = cls._resolve_subset_info(subset_info)

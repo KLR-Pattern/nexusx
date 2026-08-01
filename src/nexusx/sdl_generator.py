@@ -10,8 +10,13 @@ from typing import Any, get_args, get_origin, get_type_hints
 from sqlmodel import SQLModel
 
 from nexusx.introspection import QUERY_META_PARAM  # noqa: F401
-from nexusx.loader.registry import RelationshipKind
 from nexusx.type_converter import TypeConverter
+from nexusx.utils.pagination_schema import (
+    has_any_paginated_relationship,
+    has_any_pagination_root,
+    is_active_paginated_relationship,
+    iter_pagination_roots,
+)
 from nexusx.utils.schema_helpers import get_core_types, is_input_type
 
 logger = logging.getLogger(__name__)
@@ -203,7 +208,7 @@ class SDLGenerator:
                 func = attr.__func__ if hasattr(attr, "__func__") else attr
                 pag_root = getattr(func, "_pagination_root", None)
                 if pag_root:
-                    enum_class = pag_root["order_enum"]
+                    enum_class = pag_root.order_enum
                     enums[enum_class.__name__] = enum_class
 
         result = []
@@ -509,47 +514,17 @@ class SDLGenerator:
 
     def _has_any_paginated_relationship(self) -> bool:
         """True if any registered relationship exposes pagination in this schema."""
-        if not self._loader_registry:
-            return False
-        for entity in self.entities:
-            for rel in self._loader_registry.get_relationships(entity).values():
-                if self._is_active_paginated_relationship(rel):
-                    return True
-        return False
+        return has_any_paginated_relationship(
+            self._loader_registry, self.entities, self._enable_pagination
+        )
 
     def _is_active_paginated_relationship(self, rel_info: Any) -> bool:
         """Apply the local toggle without disabling explicit federation pagination."""
-        return (
-            rel_info is not None
-            and rel_info.is_list
-            and (
-                rel_info.kind == RelationshipKind.REMOTE_PAGED
-                or (
-                    rel_info.kind == RelationshipKind.REMOTE_COALESCED
-                    and getattr(rel_info, "pagination", False)
-                )
-                or (
-                    rel_info.kind == RelationshipKind.LOCAL
-                    and rel_info.page_loader is not None
-                    and self._enable_pagination
-                )
-            )
-        )
+        return is_active_paginated_relationship(rel_info, self._enable_pagination)
 
     def _has_any_pagination_root(self) -> bool:
         """True if any entity has a federation pagination root."""
-        for entity in self.entities:
-            for attr_name in dir(entity):
-                try:
-                    attr = getattr(entity, attr_name)
-                except Exception:
-                    continue
-                if not callable(attr):
-                    continue
-                func = attr.__func__ if hasattr(attr, "__func__") else attr
-                if getattr(func, "_pagination_root", None):
-                    return True
-        return False
+        return has_any_pagination_root(self.entities)
 
     def _generate_page_package_types(self) -> str | None:
         """Generate per-key package types for federation pagination roots.
@@ -559,36 +534,20 @@ class SDLGenerator:
         the named OBJECT type so the member's SDL (get_sdl) is complete.
         """
         parts: list[str] = []
-        seen: set[str] = set()
-        for entity in self.entities:
-            for attr_name in dir(entity):
-                try:
-                    attr = getattr(entity, attr_name)
-                except Exception:
-                    continue
-                if not callable(attr):
-                    continue
-                func = attr.__func__ if hasattr(attr, "__func__") else attr
-                pag_root = getattr(func, "_pagination_root", None)
-                if not pag_root:
-                    continue
-                ent = pag_root["entity"]
-                fk_field = pag_root["fk_field"]
-                fk_type = pag_root["fk_type"]
-                pkg_name = pag_root["package_name"]
-                if pkg_name in seen:
-                    continue
-                seen.add(pkg_name)
-                fk_gql = _python_type_to_graphql(
-                    fk_type, self._converter, self._entity_names
-                )
-                parts.append(
-                    f"type {pkg_name} {{\n"
-                    f"  {fk_field}: {fk_gql}\n"
-                    f"  items: [{ent.__name__}!]!\n"
-                    f"  pagination: Pagination!\n"
-                    f"}}"
-                )
+        for ent, pag_root in iter_pagination_roots(self.entities):
+            fk_field = pag_root.fk_field
+            fk_type = pag_root.fk_type
+            pkg_name = pag_root.package_name
+            fk_gql = _python_type_to_graphql(
+                fk_type, self._converter, self._entity_names
+            )
+            parts.append(
+                f"type {pkg_name} {{\n"
+                f"  {fk_field}: {fk_gql}\n"
+                f"  items: [{ent.__name__}!]!\n"
+                f"  pagination: Pagination!\n"
+                f"}}"
+            )
         if not parts:
             return None
         # Pagination itself is emitted by _generate_pagination_types (whose gate
@@ -757,7 +716,7 @@ class SDLGenerator:
         # Get return type
         pag_root = getattr(func, "_pagination_root", None)
         if pag_root:
-            return_gql_type = f"[{pag_root['package_name']}!]!"
+            return_gql_type = f"[{pag_root.package_name}!]!"
         else:
             return_type = hints.get("return", inspect.Signature.empty)
             if return_type != inspect.Signature.empty:

@@ -19,7 +19,7 @@ dotted name is not a valid Python identifier).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, get_args, get_origin
+from typing import get_args, get_origin
 
 from nexusx.federation.remote_ref import RemoteRef
 
@@ -75,7 +75,7 @@ class RemoteRelationship:
     """
 
     fk: str
-    target: Any  # RemoteRef or list[RemoteRef]; normalized to "srv.typename" str
+    target: RemoteRef | list[RemoteRef]
     name: str
     join_remote: str
     description: str | None = None
@@ -85,20 +85,31 @@ class RemoteRelationship:
     is_list: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
-        # `target_url` is derived from the RemoteRef (so federation can derive
-        # the endpoint from the declaration alone); `target` is then normalized
-        # to the "srv.typename" marker downstream code parses. Neither is a
-        # caller-supplied field.
+        # `target_url`/`target_color` are derived from the RemoteRef (so
+        # federation can derive the endpoint from the declaration alone);
+        # `qualified_name` exposes the "srv.typename" marker downstream parses.
+        # `target` itself stays the caller-supplied RemoteRef/list[RemoteRef] —
+        # input type and stored address are no longer smeared across one field.
         ref, is_list = _unwrap_target(self.target, "RemoteRelationship")
         self.is_list = is_list
         self.target_url = getattr(ref, "url", None)
         # Optional voyager cluster color, carried the same way as target_url.
         self.target_color = getattr(ref, "color", None)
-        self.target = ref.qualified_name
+        self._qualified_name = ref.qualified_name
         if self.order is not None and not self.pagination:
             raise ValueError(
                 "RemoteRelationship.order requires pagination=True"
             )
+
+    @property
+    def qualified_name(self) -> str:
+        """The ``"srv.typename"`` marker parsed from ``target``.
+
+        Consumers address remote types by this qualified name. ``target`` itself
+        stays the caller-supplied RemoteRef (typed precisely), so the input type
+        and the stored address are no longer smeared across one field.
+        """
+        return self._qualified_name
 
 
 def parse_qualified_name(target: str) -> tuple[str, str]:
