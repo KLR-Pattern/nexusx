@@ -9,7 +9,9 @@ deep multi-branch chain:
 
     { Product { by_filter { id name
         reviews(limit: 5) { items {
-          title rating comments { text author { name config { theme } } }
+          title rating
+          comments(limit: 2) { items { text author { name config { theme } } }
+                                pagination { has_more total_count } }
         } pagination { has_more } } } } }
 
 The caller picks the order profile and direction at query time (specs/014) —

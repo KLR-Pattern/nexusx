@@ -55,7 +55,11 @@ class Review(ReviewsBase, table=True):
     title: str
     rating: int
     created_at: int  # epoch seconds — backs the NEWEST order profile
-    comments: list[Comment] = Relationship()
+    comments: list[Comment] = Relationship(
+        # order_by is required for local pagination (enable_pagination below):
+        # Review.comments becomes comments(limit, offset) on the member side.
+        sa_relationship_kwargs={"order_by": "Comment.id"},
+    )
 
 
 engine = create_async_engine("sqlite+aiosqlite:///fed_reviews.db")
@@ -70,10 +74,14 @@ async def init_db() -> None:
             s.add(Review(id=1, product_id=1, title="Great widget", rating=5, created_at=300))
             s.add(Review(id=2, product_id=1, title="Works okay", rating=3, created_at=100))
             s.add(Review(id=3, product_id=2, title="Mediocre", rating=2, created_at=200))
+            # review 1 gets 4 comments so callers can paginate them inside the
+            # reviews page: comments(limit: 2) → C1,C2 + has_more + total_count 4.
             s.add(Comment(id=1, review_id=1, author_id=1, text="Loved it"))
             s.add(Comment(id=2, review_id=1, author_id=2, text="Solid build"))
-            s.add(Comment(id=3, review_id=2, author_id=1, text="Fair enough"))
-            s.add(Comment(id=4, review_id=3, author_id=2, text="Expected more"))
+            s.add(Comment(id=3, review_id=1, author_id=1, text="Works great"))
+            s.add(Comment(id=4, review_id=1, author_id=2, text="Fast delivery"))
+            s.add(Comment(id=5, review_id=2, author_id=1, text="Fair enough"))
+            s.add(Comment(id=6, review_id=3, author_id=2, text="Expected more"))
             await s.commit()
 
 
@@ -108,6 +116,10 @@ handler = GraphQLHandler(
     # services (users) and root services (catalog) don't need this. In production
     # also guard /nexusx/er-introspection with auth (build_federable_app(dependencies=...)).
     expose_mounted_endpoints=True,
+    # Member-side local pagination: Review.comments renders as
+    # comments(limit, offset) { items pagination }. Composes with catalog's
+    # federation pagination on Product.reviews (supported since 5.0.1).
+    enable_pagination=True,
 )
 
 
