@@ -157,6 +157,27 @@ def _contains_remote_ref(annotation: Any) -> RemoteRef | None:
     return None
 
 
+def _remote_ref_cardinality(annotation: Any) -> tuple[RemoteRef | None, bool]:
+    """Return ``(RemoteRef, is_list)`` for an annotation referencing a remote DTO.
+
+    ``list[reviews.ReviewDTO]`` → to-many (``is_list=True``);
+    ``reviews.ReviewDTO`` / ``reviews.ReviewDTO | None`` → to-one. Used by
+    federate() to wire the γ DTO RemoteLoader with the right cardinality.
+    """
+    ref = _contains_remote_ref(annotation)
+    if ref is None:
+        return None, False
+    # Peel Optional (X | None) to inspect the inner container.
+    inner = annotation
+    origin = typing.get_origin(inner)
+    if origin in (typing.Union, types.UnionType):
+        non_none = [a for a in typing.get_args(inner) if a is not type(None)]
+        if len(non_none) == 1:
+            inner = non_none[0]
+    is_list = typing.get_origin(inner) is list
+    return ref, is_list
+
+
 def _record_service_color(fed_registry: Any, ref: RemoteRef) -> None:
     """Record a RemoteRef's declared cluster color onto the registry.
 
@@ -364,6 +385,56 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
                 dto_cls.model_rebuild(force=True)
             except Exception:
                 pass
+
+    return resolved
+
+
+def resolve_remote_field_refs(fed_registry: Any) -> list[type]:
+    """Resolve deferred extra-field RemoteRefs on DefineSubset classes (specs/016).
+
+    Companion to ``SubsetMeta._collect_remote_field_refs``: a mounter DTO whose
+    source is local but which declares an extra field referencing a member public
+    DTO (e.g. ``ProductDTO.reviews: list[reviews.ReviewDTO]``) carries the raw
+    RemoteRef annotation on ``__nexusx_remote_field_refs__``. After federate has
+    materialized the member DTOs, this swaps each placeholder ``Any`` field for
+    the materialized DTO class and rebuilds the model.
+
+    Only refs whose service this ``fed_registry`` actually mounts are resolved;
+    others stay deferred for a subsequent federate() call (multi-app coexistence,
+    same pattern as ``resolve_deferred_subsets``). Idempotent — once a field holds
+    a real class, re-resolution yields the same type.
+    """
+    from nexusx.subset import _subset_registry
+
+    resolved: list[type] = []
+    for dto_cls in list(_subset_registry.keys()):
+        refs = getattr(dto_cls, "__nexusx_remote_field_refs__", None)
+        if not refs:
+            continue
+
+        changed = False
+        for fname, raw_anno in refs.items():
+            ref = _contains_remote_ref(raw_anno)
+            if ref is None:
+                continue
+            if not fed_registry.has(ref.qualified_name):
+                # Target service not mounted by THIS fed_registry — defer to a
+                # subsequent federate() (different ErManager).
+                continue
+            _record_service_color(fed_registry, ref)
+            new_anno = _replace_remote_ref(raw_anno, fed_registry)
+            field_info = dto_cls.model_fields.get(fname)
+            if field_info is not None:
+                field_info.annotation = new_anno
+            dto_cls.__annotations__[fname] = new_anno
+            changed = True
+
+        if changed:
+            try:
+                dto_cls.model_rebuild(force=True)
+            except Exception:  # noqa: BLE001 — rebuild best-effort, mirrors resolve_deferred_subsets
+                pass
+            resolved.append(dto_cls)
 
     return resolved
 

@@ -577,6 +577,23 @@ def _is_remote_ref(obj: Any) -> bool:
     return isinstance(obj, RemoteRef)
 
 
+def _annotation_remote_ref(anno: Any) -> Any:
+    """Return the ``RemoteRef`` inside an annotation, or None.
+
+    Detects a RemoteRef whether bare (``reviews.ReviewDTO``), Optional
+    (``RemoteRef | None``), or wrapped in a generic (``list[RemoteRef]``).
+    Used by SubsetMeta to defer extra fields that reference a member public
+    DTO (specs/016 γ-path). Returns None for string annotations (the
+    ``from __future__ import annotations`` path) — those can't be detected
+    without evaluating the string, so they degrade (caught at federate).
+    """
+    try:
+        from nexusx.federation.remote_ref import _contains_remote_ref
+    except ImportError:
+        return None
+    return _contains_remote_ref(anno)
+
+
 class SubsetMeta(type):
     """Metaclass that transforms a DefineSubset class definition into a Pydantic BaseModel.
 
@@ -621,6 +638,16 @@ class SubsetMeta(type):
         if isinstance(subset_info, SubsetConfig):
             cls._merge_config_overrides(field_definitions, subset_info, local_ns, namespace)
 
+        # specs/016 γ-path: an extra field whose annotation references a member
+        # public DTO (e.g. ``reviews: list[reviews.ReviewDTO]``) carries a
+        # RemoteRef that create_model can't compile. Defer it — placeholder the
+        # field as ``Any`` now, stamp the raw annotation for
+        # resolve_remote_field_refs to swap in the materialized DTO class at
+        # federate time. Source stays local; only the field is deferred.
+        remote_field_refs = cls._collect_remote_field_refs(
+            extra_fields, field_definitions,
+        )
+
         _validate_extra_field_types(extra_fields, entity_kls, global_ns, namespace)
         _validate_omitted_fk_not_needed(
             entity_kls, subset_info, extra_fields,
@@ -632,6 +659,8 @@ class SubsetMeta(type):
         )
         _validate_federation_config(subset_info, subset_class)
         _stamp_federation_metadata(subset_info, subset_class)
+        if remote_field_refs:
+            subset_class.__nexusx_remote_field_refs__ = remote_field_refs
         return subset_class
 
     @staticmethod
@@ -692,6 +721,32 @@ class SubsetMeta(type):
 
         placeholder.__init__ = _guarded_init
         return placeholder
+
+    @staticmethod
+    def _collect_remote_field_refs(
+        extra_fields: dict[str, tuple[Any, Any]],
+        field_definitions: dict[str, tuple[Any, Any]],
+    ) -> dict[str, Any]:
+        """Detect extra fields whose annotation carries a RemoteRef (specs/016).
+
+        For each such field, neutralize the RemoteRef in BOTH ``extra_fields``
+        (so downstream validation sees a plain scalar) and
+        ``field_definitions`` (so ``create_model`` compiles), replacing the
+        annotation with ``Any`` while preserving the field's default/FieldInfo.
+
+        Returns ``{field_name: raw_annotation}`` for the caller to stamp on the
+        class; ``resolve_remote_field_refs`` reads that stamp at federate time.
+        Empty dict when no extra field references a remote DTO.
+        """
+        refs: dict[str, Any] = {}
+        for fname, (anno, default) in list(extra_fields.items()):
+            if _annotation_remote_ref(anno) is None:
+                continue
+            refs[fname] = anno
+            extra_fields[fname] = (Any, default)
+            existing_anno, existing_fi = field_definitions[fname]
+            field_definitions[fname] = (Any, existing_fi)
+        return refs
 
     @staticmethod
     def _resolve_subset_info(

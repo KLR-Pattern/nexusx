@@ -515,6 +515,16 @@ class Resolver:
         if self._registry is None:
             return None
 
+        # specs/016 γ-path: a DTO field referencing a member public DTO is wired
+        # under its field name in _dto_loaders. Check it FIRST so that, when a
+        # β entity relationship of the same name exists (e.g. Product.reviews),
+        # a γ DTO field wins for γ resolution. β entity loading does not go
+        # through _get_loader (the executor resolves entity rels directly), so
+        # this never diverts a β load.
+        dto_loader_cls = self._registry.get_dto_loader(loader_name)
+        if dto_loader_cls is not None:
+            return self._get_or_create_loader(dto_loader_cls)
+
         source_entity = None
         if isinstance(node, BaseModel):
             source_entity = self._resolve_source(type(node))
@@ -535,6 +545,13 @@ class Resolver:
             return self._get_or_create_loader(dep_val)
         if callable(dep_val):
             return self._get_or_create_fn_loader(dep_val)
+        if isinstance(dep_val, str):
+            # Name-based ``Loader("rel_name")``: resolve through the registry's
+            # named lookup. ``_get_loader`` checks γ DTO loaders (specs/016)
+            # first, then the source entity's relationships, then the global
+            # name index — so a γ DTO field and a β entity relationship of the
+            # same name both resolve correctly from a ``Loader("<name>")``.
+            return self._get_loader(node, dep_val)
         return None
 
     def _get_or_create_loader(self, loader_cls: type[DataLoader]) -> DataLoader:

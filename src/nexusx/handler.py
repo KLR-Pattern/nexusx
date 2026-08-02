@@ -127,6 +127,14 @@ class GraphQLHandler:
             dto_classes=dto_classes,
         )
 
+        # specs/016 γ-path: register a DTO batch root per federation-public DTO
+        # the member owns (served by /nexusx/dto-batch). No-op for β-only
+        # members; runs after ErManager is built so the batch root's
+        # create_resolver() sees the wired entity set at query time.
+        from nexusx.standard_queries import add_dto_batch_roots
+
+        add_dto_batch_roots(self._er_manager)
+
         # SDL / introspection generators are built LAZILY off the live ErManager,
         # version-cached: they refresh automatically after er.initialize() adds
         # materialized remote types, with no handler-side rebuild.

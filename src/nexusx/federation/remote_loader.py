@@ -242,6 +242,46 @@ def _to_dict(obj: Any) -> Any:
     return obj
 
 
+def _align_by_join_key(
+    rows: list[Any],
+    keys: list[Any],
+    join_remote: str,
+    is_list: bool,
+    target_cls: type[BaseModel],
+) -> list[Any]:
+    """Bucket resolved rows by join key and align to the input key order.
+
+    Shared by the β entity RemoteLoader (member returns ER rows) and the γ DTO
+    RemoteLoader (member returns resolved DTO trees). Both validate each row
+    into ``target_cls``; the only difference is upstream (gql vs JSON), not here.
+    Missing keys yield ``[]`` (to-many) or ``None`` (to-one).
+    """
+    buckets: dict[Any, list[Any]] = {}
+    for row in rows:
+        row_d = _to_dict(row)
+        if not isinstance(row_d, dict):
+            raise RemoteQueryError(
+                join_remote,
+                [{
+                    "message": (
+                        f"Expected rows in the batch response to be objects, "
+                        f"got {type(row).__name__}"
+                    )
+                }],
+            )
+        k = row_d.get(join_remote)
+        buckets.setdefault(k, []).append(row_d)
+
+    aligned: list[Any] = []
+    for key in keys:
+        matches = buckets.get(_normalize_join_key(key), [])
+        if is_list:
+            aligned.append([target_cls.model_validate(r) for r in matches])
+        else:
+            aligned.append(target_cls.model_validate(matches[0]) if matches else None)
+    return aligned
+
+
 def create_remote_loader(
     *,
     typename: str,
@@ -330,36 +370,80 @@ def create_remote_loader(
                         )
                     }],
                 )
-            rows = [_to_dict(r) for r in group]
-
-            # Group rows by join key, align to input order.
-            buckets: dict[Any, list[Any]] = {}
-            for row in rows:
-                if not isinstance(row, dict):
-                    raise RemoteQueryError(
-                        typename,
-                        [{
-                            "message": (
-                                f"Expected rows in data.{typename}.{entry} to be "
-                                f"objects, got {type(row).__name__}"
-                            )
-                        }],
-                    )
-                k = row.get(join_remote)
-                buckets.setdefault(k, []).append(row)
-
-            aligned: list[Any] = []
-            for key in keys:
-                matches = buckets.get(_normalize_join_key(key), [])
-                if is_list:
-                    aligned.append([target_cls.model_validate(r) for r in matches])
-                else:
-                    aligned.append(target_cls.model_validate(matches[0]) if matches else None)
-            return aligned
+            return _align_by_join_key(
+                rows=list(group),
+                keys=list(keys),
+                join_remote=join_remote,
+                is_list=is_list,
+                target_cls=target_cls,
+            )
 
     _RemoteLoader.__name__ = f"RemoteLoader_{typename}_{join_remote}"
     _RemoteLoader.__qualname__ = _RemoteLoader.__name__
     return _RemoteLoader
+
+
+def create_dto_remote_loader(
+    *,
+    typename: str,
+    join_key: str,
+    endpoint: str,
+    target_cls: type[BaseModel],
+    transport: FederationTransport,
+    is_list: bool,
+) -> type[DataLoader]:  # type: ignore[type-arg]
+    """Build a DataLoader that fetches resolved DTO trees from a member (specs/016).
+
+    γ-path counterpart to ``create_remote_loader``: instead of a gql nested query
+    over ER rows, it POSTs a small JSON body to the member's dedicated
+    ``/nexusx/dto-batch`` endpoint. The member runs its Resolver there and
+    returns an already-resolved DTO tree (a flat list of dicts); the mounter
+    only validates each dict into ``target_cls`` — no ``_orm_to_dto`` projection,
+    because the member owns the business logic and the data is finished.
+
+    One HTTP call per mounted DTO per γ traversal; batching across parents is the
+    DataLoader's job (N+1-proof), same as the entity loader. Selection is the
+    member's concern (self-contained DTO), so — unlike the entity loader — there
+    is no ``_remote_selection`` side-channel: the mounter asks for the DTO and
+    gets the whole resolved tree back.
+    """
+    url = endpoint.rstrip("/") + "/nexusx/dto-batch"
+
+    class _DtoRemoteLoader(DataLoader):  # type: ignore[type-arg]
+        async def batch_load_fn(self, keys: list[Any]) -> list[Any]:
+            resp = await transport.post_json(
+                url,
+                {"dto": typename, "join_key": join_key, "keys": list(keys)},
+            )
+            if not isinstance(resp, dict):
+                raise RemoteQueryError(
+                    typename,
+                    [{"message": f"Expected object response, got {type(resp).__name__}"}],
+                )
+            if resp.get("errors"):
+                raise RemoteQueryError(typename, resp["errors"])
+            data = resp.get("data")
+            if not isinstance(data, list):
+                raise RemoteQueryError(
+                    typename,
+                    [{
+                        "message": (
+                            f"DTO batch response for {typename!r} is missing a "
+                            f"list-valued 'data' field (got {type(data).__name__})"
+                        )
+                    }],
+                )
+            return _align_by_join_key(
+                rows=data,
+                keys=list(keys),
+                join_remote=join_key,
+                is_list=is_list,
+                target_cls=target_cls,
+            )
+
+    _DtoRemoteLoader.__name__ = f"DtoRemoteLoader_{typename}_{join_key}"
+    _DtoRemoteLoader.__qualname__ = _DtoRemoteLoader.__name__
+    return _DtoRemoteLoader
 
 
 def build_paginated_gql_query(

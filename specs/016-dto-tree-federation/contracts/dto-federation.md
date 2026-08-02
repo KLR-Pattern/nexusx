@@ -59,7 +59,11 @@ DTO batch root(join_key values):
   ④ 返 DTO 树(按 join_key 对齐)
 ```
 
-mounter 的 RemoteLoader 发 DTO batch root（跟发实体 by_<key>_in 对称），member 返 DTO 树。
+**传输层**：mounter 的 DTO RemoteLoader 不走 β 的 gql `/graphql`，而是 `POST /nexusx/dto-batch`
+JSON body `{dto, join_key, keys}` → member 派发到 `er._dto_batch_roots[dto]` 的 batch root 函数
+→ 返 `{"data": [DTO 树 dict, ...]}`。命名层仍对称 `by_<join_key>_in`（DTOFragment.batch_root.name
+作诊断标识），但传输是独立 JSON 端点——β gql surface 完全不动（FR-008），γ 与 β 物理隔离。
+mounter 端 `model_validate` 直收 member 已 resolve 的 DTO 树，不做 `_orm_to_dto` 投影。
 
 ## 4. mounter γ 引用 member public DTO（mounter 开发者 API）
 

@@ -19,7 +19,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, create_model
 
-from nexusx.federation.contract import EntityFragment
+from nexusx.federation.contract import DTOFragment, EntityFragment
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +168,69 @@ class FederatedTypeRegistry:
 
     def has(self, qualified: str) -> bool:
         return qualified in self._qualified_to_class
+
+    def materialize_dtos(self, fragments: dict[str, DTOFragment]) -> None:
+        """Create pydantic models from DTO fragments — γ-path composition targets.
+
+        Symmetric to ``materialize`` but for UseCase-layer DTOs (specs/016).
+        Each DTOFragment becomes a plain pydantic class the mounter uses to
+        ``model_validate`` the resolved DTO trees returned by the member's batch
+        root. Runs AFTER ``materialize`` so the namespace already holds every
+        materialized entity a DTO's nested field (``remote_refs``) may reference;
+        pass 2 then rebuilds the DTO models against the full entity+DTO namespace.
+
+        DTOs with no remote_refs (the MVP shape — scalar subset + Resolver-computed
+        fields) produce a flat model; nested-DTO out-edges render as ForwardRefs
+        resolved in pass 2, exactly like entity relationships.
+        """
+        # Pass 1: create DTO models with scalar + remote_ref fields as ForwardRef.
+        for qualified, frag in fragments.items():
+            if qualified in self._qualified_to_class:
+                continue
+            cls = self._create_dto_model(frag, self._namespace)
+            self._qualified_to_class[qualified] = cls
+            self._class_to_qualified[cls] = qualified
+
+        # Pass 2: rebuild DTO models with namespace extended by ALL materialized
+        # types (entities + DTOs), so nested-DTO ForwardRefs resolve.
+        extended_ns = {**self._namespace}
+        for cls in self._class_to_qualified:
+            extended_ns[cls.__name__] = cls
+        for qualified, _frag in fragments.items():
+            cls = self._qualified_to_class[qualified]
+            ok = cls.model_rebuild(_types_namespace=extended_ns)
+            if not ok:
+                unresolved = [
+                    fname for fname, fi in cls.model_fields.items()
+                    if isinstance(fi.annotation, str)
+                ]
+                if unresolved:
+                    logger.warning(
+                        "DTO materialization: %s has unresolved fields %s "
+                        "(falling back to Any); register via federate(extra_types=...).",
+                        cls.__name__, unresolved,
+                    )
+
+    @staticmethod
+    def _create_dto_model(frag: DTOFragment, namespace: dict[str, type]) -> type[BaseModel]:
+        typename = frag.name
+        field_defs: dict[str, Any] = {}
+        for fd in frag.scalar_fields:
+            ann = _safe_annotation(fd.type_name, namespace)
+            field_defs[fd.name] = (ann, None)
+        for rel in frag.remote_refs:
+            if rel.name in field_defs:
+                continue
+            target = rel.target_typename
+            ann = f"list[{target}]" if rel.is_list else target
+            field_defs[rel.name] = (f"{ann} | None", None)
+        model = cast(
+            "type[BaseModel]",
+            create_model(typename, __config__=ConfigDict(extra="allow"), **field_defs),
+        )
+        model.__name__ = typename
+        model.__qualname__ = typename
+        return model
 
     def qualified_of(self, cls: type) -> str | None:
         return self._class_to_qualified.get(cls)

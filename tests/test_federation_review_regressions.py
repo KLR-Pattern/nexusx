@@ -430,7 +430,10 @@ async def test_initialize_reuses_default_transport_across_retries(monkeypatch):
     await er.initialize()
 
     assert created == 1
-    assert transport.get_calls == 2
+    # GET count: 1st initialize's er-introspection fails (call #1); 2nd initialize
+    # succeeds with er-introspection (call #2) + dto-introspection (call #3,
+    # specs/016 γ-path — federation now also pulls the member's DTO introspection).
+    assert transport.get_calls == 3
     assert er._federation_transport is transport
 
 

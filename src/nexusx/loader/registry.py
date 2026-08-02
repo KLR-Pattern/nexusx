@@ -449,6 +449,17 @@ class ErManager:
         # global _subset_registry, which would leak other members' DTOs in a
         # multi-app process (demo catalog+reviews+users, or co-located tests).
         self._dto_classes: list[type[BaseModel]] = list(dto_classes) if dto_classes else []
+        # specs/016 γ-path: member-side DTO batch roots (by_<join_key>_in async
+        # fn, join_key) keyed by public DTO name. Populated by
+        # add_dto_batch_roots at handler init; served by the /nexusx/dto-batch
+        # endpoint. Empty for β-only members.
+        self._dto_batch_roots: dict[str, tuple[Any, str]] = {}
+        # specs/016 γ-path: mounter-side DTO RemoteLoaders keyed by the DTO field
+        # name on a mounter DefineSubset (e.g. ProductDTO.reviews). Populated by
+        # federate() when it scans the mounter's own DTOs for member-public-DTO
+        # references. Separate namespace from _registry (β entity relationships)
+        # so a γ "reviews" and a β "reviews" coexist without collision.
+        self._dto_loaders: dict[str, type[DataLoader]] = {}
         self._mounted_services: dict[str, str] = {}
         self._pending_remote_rels: list[tuple[type, Any]] = []
         self._fed_registry: Any = None
@@ -647,6 +658,20 @@ class ErManager:
             d for d in self._dto_classes
             if getattr(d, "__federation_public__", False)
         ]
+
+    def register_dto_loader(self, field_name: str, loader_cls: type[DataLoader]) -> None:
+        """Register a γ-path DTO RemoteLoader under a mounter DTO field name.
+
+        Called by federate() for each member-public-DTO reference it discovers on
+        the mounter's own DefineSubset DTOs. The Resolver's ``Loader("name")``
+        resolution checks ``_dto_loaders`` first (see Resolver._get_loader), so
+        γ DTO fields and β entity relationships of the same name never collide.
+        """
+        self._dto_loaders[field_name] = loader_cls
+
+    def get_dto_loader(self, field_name: str) -> type[DataLoader] | None:
+        """Look up a γ DTO RemoteLoader by mounter DTO field name (None if absent)."""
+        return self._dto_loaders.get(field_name)
 
     def get_relationship(
         self, entity: type[SQLModel], name: str

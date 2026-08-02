@@ -804,3 +804,104 @@ def add_standard_queries(
                         page_config,
                     ),
                 )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# specs/016 — DTO batch roots (γ-path member public DTO 取数入口)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _create_dto_by_keys_in_query(
+    dto_cls: type,
+    base_entity: type[SQLModel],
+    join_key: str,
+    er_manager: Any,
+    session_factory: Any,
+) -> Any:
+    """Create a ``by_<join_key>_in(values) -> list[dict]`` DTO batch root.
+
+    Unlike ``_create_by_keys_in_query`` (entity batch root via raw SQL), this
+    returns a RESOLVED DTO tree: SQL-fetch entities by join_key → build DTO
+    instances from the subset fields → ``er.create_resolver().resolve()`` runs
+    every ``resolve_*``/``post_*`` (incl. cross-service out-edges, since the
+    member is itself a federation mounter) → ``model_dump(mode="json")``.
+
+    The member Resolver is what makes the DTO self-contained: business logic
+    (discounts, aggregates, transitive ``author → users``) executes here, on the
+    data owner. The mounter receives finished DTO trees, never raw rows.
+
+    Registered as a plain async function (NOT a ``@query``) on
+    ``er_manager._dto_batch_roots`` — served by the dedicated DTO batch HTTP
+    endpoint, not the β GraphQL surface (FR-008: β 不动).
+    """
+    subset_fields = list(getattr(dto_cls, "__subset_fields__", []) or [])
+
+    async def by_key_in(values: list[Any]) -> list[dict]:
+        if not values:
+            return []
+        session_context = await _create_session_context(session_factory)
+        async with session_context as session:
+            stmt = select(base_entity).where(
+                getattr(base_entity, join_key).in_(values)
+            )
+            entities = list((await session.exec(stmt)).all())
+        if not entities:
+            return []
+        # Build DTO instances from entity-sourced subset fields; Resolver-computed
+        # fields stay at their default and are filled by resolve().
+        dtos = [
+            dto_cls(**{f: getattr(e, f, None) for f in subset_fields})
+            for e in entities
+        ]
+        ResolverCls = er_manager.create_resolver()
+        resolved = await ResolverCls().resolve(dtos)
+        return [d.model_dump(mode="json") for d in resolved]
+
+    by_key_in.__name__ = f"by_{join_key}_in"
+    return by_key_in
+
+
+def add_dto_batch_roots(er_manager: Any) -> None:
+    """Register a DTO batch root for each federation-public DTO on the member.
+
+    For every ``er_manager.get_public_dtos()`` entry (SubsetConfig
+    ``federation_public=True``), read its join_key + base entity, fail-fast
+    validate the join_key is a column on the base entity, and store
+    ``(by_<join_key>_in, join_key)`` under ``er_manager._dto_batch_roots[dto_name]``.
+
+    Called from ``GraphQLHandler.__init__`` (symmetric to ``add_standard_queries``)
+    so the batch roots exist at app startup. They're served at query time by the
+    ``POST /nexusx/dto-batch`` endpoint, one HTTP call per mounted DTO per γ
+    traversal (N+1-proof via DataLoader batching on the mounter side).
+
+    Idempotent / additive: no-op when the member declares no public DTOs (β
+    services are unaffected).
+    """
+    from nexusx.subset import get_subset_source
+
+    session_factory = er_manager._session_factory
+    batch_roots: dict[str, tuple[Any, str]] = {}
+    for dto_cls in er_manager.get_public_dtos():
+        join_key = getattr(dto_cls, "__federation_join_key__", None)
+        if not join_key:
+            # get_public_dtos() filters by __federation_public__; a public DTO
+            # without a join_key was already rejected at SubsetMeta validation.
+            continue
+        base_entity = get_subset_source(dto_cls)
+        if base_entity is None:
+            raise ValueError(
+                f"{dto_cls.__name__} is federation-public but has no subset "
+                f"source entity; cannot generate a DTO batch root."
+            )
+        if join_key not in base_entity.model_fields:
+            raise ValueError(
+                f"{dto_cls.__name__} join_key {join_key!r} is not a column on "
+                f"base entity {base_entity.__name__}; cannot batch-fetch by it."
+            )
+        batch_roots[dto_cls.__name__] = (
+            _create_dto_by_keys_in_query(
+                dto_cls, base_entity, join_key, er_manager, session_factory,
+            ),
+            join_key,
+        )
+    er_manager._dto_batch_roots = batch_roots

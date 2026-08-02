@@ -15,18 +15,28 @@ from typing import TYPE_CHECKING, Any
 
 from nexusx.federation.contract import (
     BatchRoot,
+    DTOFragment,
     EntityFragment,
     ERIntrospectionResponse,
     FieldDescriptor,
 )
 from nexusx.federation.http import GraphQLTransport
-from nexusx.federation.introspect import _type_expr, fetch_er_introspection, find_fragment
+from nexusx.federation.introspect import (
+    _type_expr,
+    fetch_dto_introspection,
+    fetch_er_introspection,
+    find_fragment,
+)
 from nexusx.federation.registry import FederatedTypeRegistry
 from nexusx.federation.relationship import (
     RemoteRelationship,
     parse_qualified_name,
 )
-from nexusx.federation.remote_loader import create_paginated_remote_loader, create_remote_loader
+from nexusx.federation.remote_loader import (
+    create_dto_remote_loader,
+    create_paginated_remote_loader,
+    create_remote_loader,
+)
 from nexusx.federation.transport import FederationTransport
 from nexusx.loader.registry import RelationshipInfo, RelationshipKind
 
@@ -143,11 +153,45 @@ async def federate(
     # DefineSubset-declared colors are added by resolve_deferred_subsets below.
     fed_registry._service_colors.update(declared_colors)
 
+    # 3a. γ-path (specs/016): fetch each mounted service's DTO introspection and
+    #     materialize its federation-public DTOs. DTOs are NOT part of the ER
+    #     graph, so they're fetched in their own pass over every reachable
+    #     endpoint (the ER loop above only follows entity relationships). A
+    #     service with no public DTOs returns an empty list — materialize_dtos
+    #     is then a no-op, so β-only topologies are unaffected.
+    dto_fragments: dict[str, DTOFragment] = {}
+    for srv, endpoint in endpoints.items():
+        try:
+            dto_resp = await fetch_dto_introspection(transport, endpoint)
+        except Exception:  # noqa: BLE001 — member may predate the DTO endpoint; skip
+            dto_resp = None
+        if dto_resp is None:
+            continue
+        for dto_frag in dto_resp.dtos:
+            dto_fragments[f"{srv}.{dto_frag.name}"] = dto_frag
+    if dto_fragments:
+        fed_registry.materialize_dtos(dto_fragments)
+
     # 3b. Resolve deferred DefineSubset classes (those with RemoteRef sources).
     #     After materialization, the source classes exist — replace placeholders
     #     with real DefineSubset classes.
     from nexusx.federation.remote_ref import resolve_deferred_subsets
     resolve_deferred_subsets(fed_registry)
+
+    # 3c. γ-path (specs/016): resolve deferred RemoteRef FIELD references on
+    #     mounter DefineSubset DTOs whose source is local (e.g. ProductDTO.reviews:
+    #     list[reviews.ReviewDTO]). Runs after materialize_dtos so the member DTO
+    #     classes exist to swap in for the Any placeholder.
+    from nexusx.federation.remote_ref import resolve_remote_field_refs
+    resolve_remote_field_refs(fed_registry)
+
+    # 3d. γ-path (specs/016): wire a DTO RemoteLoader for each member-public-DTO
+    #     reference discovered on the mounter's OWN DTOs. Discovery scans the
+    #     __nexusx_remote_field_refs__ stamp (set by SubsetMeta); wiring registers
+    #     under the field name in _dto_loaders, the namespace Resolver._get_loader
+    #     checks first. This is independent from β RemoteRelationship wiring below
+    #     (step 4) — the two never share a namespace.
+    _wire_dto_remote_loaders(er_manager, fed_registry, dto_fragments, endpoints, transport)
 
     # 4. Validate + wire declared remote relationships in ONE pass (one
     #    _check_target per root per rrel — no re-validation between a validate
@@ -169,6 +213,10 @@ async def federate(
     for cls in fed_registry.all_classes():
         qualified = fed_registry.qualified_of(cls)
         if qualified is None:
+            continue
+        # γ DTOs (specs/016) are not part of the ER graph — skip coalesced-
+        # relationship registration for them (they have no EntityFragment).
+        if qualified not in fragments:
             continue
         srv, _tname = parse_qualified_name(qualified)
         frag = fragments[qualified]
@@ -192,6 +240,67 @@ async def federate(
                 pagination=rel.pagination,
                 kind=RelationshipKind.REMOTE_COALESCED,
             )
+
+
+def _wire_dto_remote_loaders(
+    er_manager: ErManager,
+    fed_registry: FederatedTypeRegistry,
+    dto_fragments: dict[str, DTOFragment],
+    endpoints: dict[str, str],
+    transport: FederationTransport,
+) -> None:
+    """Wire a γ DTO RemoteLoader per member-public-DTO reference on mounter DTOs.
+
+    Scans the mounter's own DefineSubset DTOs (``er_manager.get_dto_classes()``)
+    for deferred RemoteRef fields (``__nexusx_remote_field_refs__``). For each
+    field referencing a member public DTO this fed_registry has mounted,
+    materializes the target + creates a DTO RemoteLoader keyed by the member
+    DTO's federation join_key, registered under the field name in
+    ``_dto_loaders``. Resolver ``Loader("<field>")`` resolves there first (see
+    Resolver._get_loader), so β entity relationships of the same name coexist.
+
+    Fail-fast: a reference whose service is mounted but whose DTO was not
+    introspected is a genuine config error (raised). A reference to a service
+    this fed_registry did not mount is skipped (multi-app coexistence — same
+    policy as resolve_deferred_subsets / resolve_remote_field_refs).
+    """
+    from nexusx.federation.remote_ref import _remote_ref_cardinality
+
+    for dto_cls in er_manager.get_dto_classes():
+        refs = getattr(dto_cls, "__nexusx_remote_field_refs__", None)
+        if not refs:
+            continue
+        for field_name, raw_anno in refs.items():
+            ref, is_list = _remote_ref_cardinality(raw_anno)
+            if ref is None:
+                continue
+            qn = ref.qualified_name
+            srv, typename = parse_qualified_name(qn)
+            # Service not mounted by THIS fed_registry — leave for another
+            # federate() (different ErManager).
+            if srv not in endpoints:
+                continue
+            if not fed_registry.has(qn):
+                raise FederationError(
+                    f"{dto_cls.__name__}.{field_name} references {qn!r} but "
+                    f"service {srv!r} exposes no such public DTO."
+                )
+            frag = dto_fragments.get(qn)
+            if frag is None or not frag.join_key:
+                raise FederationError(
+                    f"{dto_cls.__name__}.{field_name} references {qn!r} which "
+                    f"has no federation join_key; cannot wire a DTO RemoteLoader."
+                )
+            target_cls = fed_registry.get(qn)
+            loader_cls = create_dto_remote_loader(
+                typename=typename,
+                join_key=frag.join_key,
+                endpoint=endpoints[srv],
+                target_cls=target_cls,
+                transport=transport,
+                is_list=is_list,
+            )
+            er_manager.register_dto_loader(field_name, loader_cls)
 
 
 def _validate_and_wire_remote_relationship(
