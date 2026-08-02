@@ -87,3 +87,36 @@ Foundational + US1 = member public DTO 经 γ 组合端到端通。US2/US3 + Pol
 - member 值只读靠现有 Resolver/DefineSubset 纪律（resolve_* 加字段不覆盖、DefineSubset 选字段不改值）
 - DTOFragment 收集可行性已验证（_subset_registry + model_fields，spec SC-004）
 - member public DTO 自包含（member 自己挂载跨 service，Resolver 加工时解析出边）
+
+---
+
+## US1 实现续点（Foundational 后，2026-08-02）
+
+**Foundational（T001-T003）已完成 @ commit `81c072e`，1379 测试零回归。**
+
+### 实现偏离 spec 之处（已决策）
+
+- **T003 用显式 `dto_classes=` 参数**（非 spec 字面的"扫描全局 `_subset_registry`"）。理由：同进程多 app（demo catalog+reviews+users、co-located 测试）下，全局扫描会让 member A 的 DTO introspection 漏出 member B 的 public DTO。`dto_classes=` 对称于 `entities=`，由 `GraphQLHandler` 透传。`ErManager.get_public_dtos()` 从 `dto_classes` 过滤 `__federation_public__=True`。
+- **SubsetConfig 字段是 `kls`**（`src/nexusx/subset.py:420`），不是 contracts/quickstart/data-model 笔误的 `source=`。demo/测试用 `kls=Entity`。
+- **DTO federation 元数据 stamp**：`SubsetMeta` 把 `__federation_public__` / `__federation_join_key__` stamp 到 DTO class（tuple 语法 DTO 默认 False），`get_public_dtos()` 读它。
+
+### US1（T004-T008）4 个硬架构问题
+
+1. **T004 DTO batch root 暴露**：DTO 不在 `entities`，`MethodScanner`（`src/nexusx/scanning.py`）扫的是 entity `@query` 方法 → GraphQL query root。DTO batch root（按 join_key 取实体 → 造 DTO → `er.create_resolver().resolve()` → 返 DTO 树）怎么进 query root？候选：挂 DTO class 上加 `@query` + 扩 MethodScanner 扫 `er.get_dto_classes()`，或独立注册路径。
+2. **T006 federate 拉 DTO introspection + 物化**：`federation/manager.py` 的 `federate()` 现状拉 ER introspection 物化 entity。要加：拉 DTO introspection（DTOFragment 列表）→ `create_model` 物化 DTO 类。`RemoteRef reviews.ReviewDTO` 解析顺序：先查 DTO introspection（DTO），再查 ER introspection（entity）。
+3. **T007 RemoteLoader 取 DTO 树**：`federation/remote_loader.py` 现状发实体 batch root（`by_<key>_in`）取实体再物化成 DTO。要改成发 DTO batch root 取**已 resolve 的 DTO 树**（member 返的），按 join_key 对齐到 mounter 物化的 DTO 类。
+4. **mounter 物化 DTO ↔ RemoteRef 对齐**：`DTOFragment.name` → `create_model` → `reviews.ReviewDTO` 引用解析到物化类。
+
+### US1 需读文件（fresh context 起手）
+
+- `src/nexusx/scanning.py`（MethodScanner — T004 暴露机制）
+- `src/nexusx/federation/manager.py`（federate — T006 物化）
+- `src/nexusx/federation/remote_loader.py`（T007 取 DTO）
+- `src/nexusx/federation/remote_ref.py`（RemoteRef/RemoteService — 引用解析）
+- `src/nexusx/use_case/compose_executor.py`（γ 物化分派）
+
+### demo 续点（T012）
+
+- `demo/federation/reviews_app.py`：加 public `ReviewDTO`（`subset of Review` + `resolve_*`，`federation_public=True` + `federation_join_key="product_id"`）+ `GraphQLHandler(dto_classes=[ReviewDTO])`
+- `demo/federation/catalog_app.py`：`ProductDTO.reviews: list[reviews.ReviewDTO]`（member public DTO，非现状的实体 RemoteRef）
+- 参考：现状 catalog 的 `ReviewDTO`（line 170）是 mounter 端 subset of 远程**实体**；016 改成 member 端 public DTO，mounter 引用它
