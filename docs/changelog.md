@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.0.1."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.1.0."
 ---
 
 # Changelog
@@ -9,6 +9,17 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 - **Patch (x.y.Z)**: Bug fixes and minor improvements
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
+
+## 5.1
+
+### 5.1.0 (2026-8-2)
+
+- feat:
+  - **Local pagination order/direction (`specs/015`)**: Locally-paginated relationships (`enable_pagination=True`, e.g. `Review.comments`) now support query-time `order`/`direction` selection, matching federation pagination's flexibility. A member declares named order profiles on the entity class via `__pagination_orders__ = {relation_name: BatchPageConfig(default_order, orders={profile: PageOrder([OrderTerm(field, direction, nulls)])})}`, and callers query `comments(limit, offset, order: NEWEST, direction: DESC) { items pagination }` — choosing a profile and flipping direction per-query, without redeploying. The sort field stays closed (member owns index control); only the direction is opened up, same model as federation's specs/014.
+
+    The feature reuses federation's sort core rather than reimplementing it: `_resolve_page_orders` validates profiles (enum-safe names, single-column, SQL column, direction, nullable nulls, default∈keys) at startup; the local `page_loader` (`create_page_one_to_many_loader` / `create_page_many_to_many_loader`) builds ORDER BY via `_build_order_expressions(_apply_direction(...))` instead of the fixed `sort_field`; SDL/introspection render the `order` enum + `direction` via the kind-agnostic `federation_order_enum_layout` (local pagination rides the same render path as `REMOTE_PAGED`); and the executor injects `order`/`direction` from `selection.arguments` into the loader command. nulls follow direction flips (`desc+nulls_last ↔ asc+nulls_first`), inherited from `_apply_direction`.
+
+    Declaration lives on the entity class because SQLModel's ORM `Relationship` is not extensible — `Relationship(page_orders=...)` raises `TypeError` (verified at implement time, correcting the spec's initial "extend Relationship" wording). `__pagination_orders__` coexists with `order_by` (profile takes precedence; `order_by` is the fixed fallback when no profile is declared), so every existing locally-paginated relationship keeps its behavior unchanged (zero regression — `test_loader_pagination` / `test_pagination_mixed` / `test_federation_*` all green). Composes with federation pagination: `Product.reviews(limit) { items { comments(order, direction) } }` exercises outer federation pagination and inner local order/direction independently (built on the 5.0.1 fix that made local pagination traverse the federation items subtree).
 
 ## 5.0
 
