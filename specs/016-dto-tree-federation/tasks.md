@@ -15,9 +15,9 @@
 
 **Purpose**: public DTO 声明 + DTOFragment 数据结构 + ErManager 收集。**⚠️ 阻塞所有 story。**
 
-- [ ] T001 `SubsetConfig` 加 `federation_public: bool = False` + `federation_join_key: str | None = None` 字段；启动期校验（public=True → join_key 必填且 ∈ model_fields） in `src/nexusx/subset.py`
-- [ ] T002 [P] 定义 `DTOFragment`（对称 `EntityFragment`：name/base_entity/fields+类型/join_key/batch_root/remote_refs） in `src/nexusx/federation/contract.py`
-- [ ] T003 `ErManager` 启动期扫描 federation public DTO（`_subset_registry` + `SubsetConfig.federation_public`），收集 public DTO 列表 in `src/nexusx/loader/registry.py`
+- [X] T001 `SubsetConfig` 加 `federation_public: bool = False` + `federation_join_key: str | None = None` 字段；启动期校验（public=True → join_key 必填且 ∈ model_fields） in `src/nexusx/subset.py`
+- [X] T002 [P] 定义 `DTOFragment`（对称 `EntityFragment`：name/base_entity/fields+类型/join_key/batch-root/remote_refs） in `src/nexusx/federation/contract.py`
+- [X] T003 `ErManager` 启动期扫描 federation public DTO（显式 `dto_classes=` 参数，避免全局 `_subset_registry` 跨 member 污染），收集 public DTO 列表 in `src/nexusx/loader/registry.py`
 
 **Checkpoint**: public DTO 可声明 + 收集，DTOFragment 数据结构就位。
 

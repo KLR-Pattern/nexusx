@@ -422,6 +422,7 @@ class ErManager:
         split_loader_by_type: bool = False,
         service_name: str | None = None,
         expose_mounted_endpoints: bool = False,
+        dto_classes: list[type[BaseModel]] | None = None,
     ):
         if base is not None and entities is not None:
             raise ValueError("base and entities are mutually exclusive")
@@ -443,6 +444,11 @@ class ErManager:
         # network topology); the mounter resolves such services from its own
         # services= map instead.
         self._expose_mounted_endpoints: bool = expose_mounted_endpoints
+        # Federation-public DTOs owned by this member (γ-path composition source,
+        # specs/016). Explicit list (symmetric to entities=) — avoids scanning the
+        # global _subset_registry, which would leak other members' DTOs in a
+        # multi-app process (demo catalog+reviews+users, or co-located tests).
+        self._dto_classes: list[type[BaseModel]] = list(dto_classes) if dto_classes else []
         self._mounted_services: dict[str, str] = {}
         self._pending_remote_rels: list[tuple[type, Any]] = []
         self._fed_registry: Any = None
@@ -624,6 +630,23 @@ class ErManager:
     def get_all_relationships(self) -> dict[type[SQLModel], dict[str, RelationshipInfo]]:
         """Get the complete relationship registry."""
         return dict(self._registry)
+
+    def get_dto_classes(self) -> list[type[BaseModel]]:
+        """All DefineSubset DTO classes this member declared (public + private)."""
+        return list(self._dto_classes)
+
+    def get_public_dtos(self) -> list[type[BaseModel]]:
+        """Federation-public DTOs owned by this member (γ-path composition source).
+
+        Filtered from ``dto_classes`` by the ``__federation_public__`` stamp the
+        DefineSubset metaclass sets from SubsetConfig. These are the DTOs the
+        independent DTO introspection endpoint serializes into DTOFragment
+        (specs/016). Returns ``[]`` when no public DTOs are declared.
+        """
+        return [
+            d for d in self._dto_classes
+            if getattr(d, "__federation_public__", False)
+        ]
 
     def get_relationship(
         self, entity: type[SQLModel], name: str

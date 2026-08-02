@@ -59,6 +59,7 @@ class GraphQLHandler:
         enable_pagination: bool = False,
         service_name: str | None = None,
         expose_mounted_endpoints: bool = False,
+        dto_classes: list[type] | None = None,
     ):
         """Initialize the GraphQL handler.
 
@@ -82,6 +83,10 @@ class GraphQLHandler:
                 internal URLs are suppressed from the introspection payload
                 (they leak network topology); mounters must resolve transitive
                 services from their own ``services=`` map instead.
+            dto_classes: Optional list of DefineSubset DTO classes this member
+                owns. Those flagged federation_public (via SubsetConfig) are
+                exposed through the DTO introspection endpoint for γ-path
+                federation (specs/016). Default None — no public DTOs.
         """
         if auto_query_config is not None and session_factory is None:
             # Backward compat: fall back to deprecated session_factory from config.
@@ -119,6 +124,7 @@ class GraphQLHandler:
             enable_pagination=enable_pagination,
             service_name=service_name,
             expose_mounted_endpoints=expose_mounted_endpoints,
+            dto_classes=dto_classes,
         )
 
         # SDL / introspection generators are built LAZILY off the live ErManager,

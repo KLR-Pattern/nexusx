@@ -426,6 +426,12 @@ class SubsetConfig(BaseModel):
     excluded_fields: list[str] | None = None
     expose_as: list[tuple[str, str]] | None = None
     send_to: list[tuple[str, str | tuple[str, ...]]] | None = None
+    # Federation (γ-path): expose this DTO as a member public DTO.
+    # federation_public=True requires federation_join_key (validated against
+    # the generated DTO's subset fields at class creation — see
+    # _validate_federation_config).
+    federation_public: bool = False
+    federation_join_key: str | None = None
 
     @model_validator(mode="after")
     def _validate_config(self) -> SubsetConfig:
@@ -434,6 +440,62 @@ class SubsetConfig(BaseModel):
         if self.fields is None and self.omit_fields is None:
             raise ValueError("fields or omit_fields must be provided")
         return self
+
+
+def _validate_federation_config(
+    subset_info: Any,
+    subset_class: type[BaseModel],
+) -> None:
+    """Validate SubsetConfig federation params against the generated DTO.
+
+    When ``federation_public=True``:
+      * ``federation_join_key`` must be provided, and
+      * it must be one of the DTO's subset fields (so the member batch root
+        can ``WHERE join_key IN [...]`` against the base entity's column — a
+        Resolver-computed field would not be SQL-filterable).
+
+    Fail-fast at class creation: a mistyped or computed join_key is caught
+    here, not at federation query time. Only SubsetConfig can declare a DTO
+    public (the tuple syntax carries no federation params).
+    """
+    if not isinstance(subset_info, SubsetConfig) or not subset_info.federation_public:
+        return
+
+    join_key = subset_info.federation_join_key
+    if not join_key:
+        raise ValueError(
+            f"{subset_class.__name__}: federation_public=True requires "
+            f"federation_join_key (a DTO field name to join on)"
+        )
+
+    subset_fields = getattr(subset_class, "__subset_fields__", None)
+    field_set = set(subset_fields) if subset_fields else set(subset_class.model_fields)
+    if join_key not in field_set:
+        raise ValueError(
+            f"{subset_class.__name__}: federation_join_key '{join_key}' is not "
+            f"a subset field of the DTO (subset fields: {sorted(field_set)}). "
+            f"join_key must be a field sourced from the base entity so the "
+            f"member batch root can filter by it."
+        )
+
+
+def _stamp_federation_metadata(
+    subset_info: Any,
+    subset_class: type[BaseModel],
+) -> None:
+    """Stamp federation public/join_key onto the DTO class (specs/016).
+
+    ``ErManager.get_public_dtos()`` reads these stamps to filter a member's
+    public DTOs without re-reading SubsetConfig. Only SubsetConfig can declare
+    a DTO public; the tuple syntax yields a private DTO (defaults stamped so
+    every DefineSubset class carries the attribute uniformly).
+    """
+    if isinstance(subset_info, SubsetConfig):
+        subset_class.__federation_public__ = subset_info.federation_public
+        subset_class.__federation_join_key__ = subset_info.federation_join_key
+    else:
+        subset_class.__federation_public__ = False
+        subset_class.__federation_join_key__ = None
 
 
 def _apply_config_modifiers(
@@ -564,10 +626,13 @@ class SubsetMeta(type):
             entity_kls, subset_info, extra_fields,
         )
 
-        return cls._create_subset_class(
+        subset_class = cls._create_subset_class(
             name, field_definitions, subset_fields, entity_kls, namespace,
             auto_excluded,
         )
+        _validate_federation_config(subset_info, subset_class)
+        _stamp_federation_metadata(subset_info, subset_class)
+        return subset_class
 
     @staticmethod
     def _create_deferred_class(
