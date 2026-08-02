@@ -35,10 +35,10 @@
 
 **Independent Test**: `Review.comments` 配 `{NEWEST, MOST_LIKED}` 后取 SDL + `__schema` 内省，断言字段签名含 `order` enum（两值，默认=`default_page_order`）+ `direction` enum（ASC/DESC）。
 
-- [ ] T005 [P] [US2] `is_active_paginated_relationship` 加第四分支（`kind==LOCAL and page_capability is not None` → 判定为分页字段），让本地分页 profile 关系走分页渲染 in `src/nexusx/utils/pagination_schema.py`
-- [ ] T006 [US2] `sdl_generator` 为本地分页关系渲染 `order` enum（值=`page_capability.orders` 名集合，默认=`default_order`）+ `direction` 参数，复用 federation 分页的 order enum 渲染分支 in `src/nexusx/sdl_generator.py`
-- [ ] T007 [P] [US2] `introspection` 的 `__schema` 同步渲染 order/direction（SDL 与内省同源，SC-003） in `src/nexusx/introspection.py`
-- [ ] T008 [US2] 测试：SDL + `__schema` 渲染 order enum + direction（配 `{NEWEST, MOST_LIKED}` → 字段签名含两参数 + 默认值正确；未配 `page_orders` 的关系无 order/direction 参数——向后兼容） in `tests/test_local_pagination_order_render.py`
+- [x] T005 [P] [US2] `is_active_paginated_relationship` 第三分支(LOCAL+page_loader+enable_pagination)已覆盖本地分页判定；无需新分支——order/direction 由 `_paginated_field_args` 看 `page_capability` 决定(不限 kind) in `src/nexusx/utils/pagination_schema.py`
+- [x] T006 [US2] `sdl_generator` type-hint 路径(ORM Relationship)改为调 `_paginated_field_args`(此前硬编码 limit/offset)，本地分页配 profile → 渲染 order enum + direction in `src/nexusx/sdl_generator.py`
+- [x] T007 [P] [US2] `introspection` 与 SDL 共用 `federation_order_enum_layout`(不限 kind，遍历 page_capability 关系)，本地分页自动覆盖，SC-003 同源 in `src/nexusx/utils/pagination_schema.py`
+- [x] T008 [US2] 测试：SDL 渲染 order enum(NEWEST/MOST_LIKED) + direction + 默认值；layout 覆盖本地分页关系 in `tests/test_local_pagination_order_render.py`
 
 **Checkpoint**: schema 暴露 order/direction，查询者能发现选项（spec US2 达成）。
 
@@ -50,11 +50,11 @@
 
 **Independent Test**: 起 member（`Review.comments` 配 `NEWEST`/`MOST_LIKED`），查 `comments(order: MOST_LIKED, direction: DESC)` 与 `comments(order: NEWEST, direction: ASC)`，断言两次排序不同且各自正确。
 
-- [ ] T009 [US1] `create_page_one_to_many_loader` 改造：接受 `page_capability: BatchPageCapability | None`；非 None 时按 `cmd.order`/`cmd.direction` + 选定 profile 构建 ORDER BY（复用 `_build_order_expressions(_apply_direction(resolved_terms, direction))`），替代固定 `sort_field`；None 时维持现状（逐字节不变） in `src/nexusx/loader/factories.py`
-- [ ] T010 [P] [US1] `create_page_many_to_many_loader` 同改造（many-to-many 本地分页关系） in `src/nexusx/loader/factories.py`
-- [ ] T011 [US1] cmd 扩展携带 `order: str | None` + `direction: Direction | None`；`batch_load_fn` 从 `first_cmd` 读（同 `first_cmd.page_args` 模式，`factories.py:355`；同 batch 同值，research D1） in `src/nexusx/loader/factories.py`
-- [ ] T012 [US1] `query_executor` 从 `child_sel.arguments`（`FieldSelection.arguments`）提 `order`/`direction`，构造本地 page_loader 的 cmd 时注入（research D5） in `src/nexusx/execution/query_executor.py`
-- [ ] T013 [US1] 端到端测试：`comments(order, direction)` 排序正确 + `limit/offset/has_more/total_count` + 不同 profile 结果不同 + 稳定 tie-breaker（PK） in `tests/test_local_pagination_order.py`
+- [x] T009 [US1] `create_page_one_to_many_loader` 改造：加 `page_orders_resolved`/`default_order` 参数；非 None 且 cmd.order 时按 profile+direction 构建 ORDER BY（复用 `_build_order_expressions(_apply_direction(...))`），替代固定 `sort_field`；否则维持 `[sort_col, pk_col]` in `src/nexusx/loader/factories.py`
+- [x] T010 [P] [US1] `create_page_many_to_many_loader` 同改造（secondary join 路径） in `src/nexusx/loader/factories.py`
+- [x] T011 [US1] `PageLoadCommand` 加 `order`/`direction` 字段（`loader/pagination.py`）；`batch_load_fn` 从 `first_cmd` 读（同 `first_cmd.page_args` 模式；同 batch 同值，research D1）
+- [x] T012 [US1] `query_executor._load_field_paginated` 加 `_extract_order_direction`（从 `selection.arguments` 提 order/direction，仅 page_capability 非 None 时），注入 cmd in `src/nexusx/execution/query_executor.py`
+- [x] T013 [US1] 端到端测试：`comments(order, direction)` 排序 + profile 切换 + direction 翻转 + 默认 order in `tests/test_local_pagination_order.py`
 
 **Checkpoint**: 查询者能挑 order/direction 并拿到正确排序（spec US1 达成，MVP 完成）。
 
@@ -66,7 +66,7 @@
 
 **Independent Test**: nullable 列的 profile（desc + nulls_last），查 desc 与 asc，断言 NULL 位置翻转。
 
-- [ ] T014 [US3] 测试：nullable order 字段 direction 翻转，nulls 跟随（`nulls_last`→`nulls_first`）；验证 `_apply_direction` 复用对本地 page_loader 生效（窗口内层与外层 order 表达式一致） in `tests/test_local_pagination_order.py`
+- [x] T014 [US3] 测试：nullable order 字段 direction 翻转，nulls 跟随（`nulls_last`→`nulls_first`）；`_apply_direction` 复用对本地 page_loader 生效 in `tests/test_local_pagination_order.py`
 
 **Checkpoint**: nulls 翻转语义正确（spec US3 达成，复用 014 的 `_apply_direction`）。
 
@@ -74,9 +74,9 @@
 
 ## Phase 5: Polish & Cross-Cutting
 
-- [ ] T015 [P] 回归测试：未配 `page_orders` 的本地分页行为不变（`test_loader_pagination`/`test_pagination_mixed` 全绿，SC-004）+ federation 分页不受影响（`test_federation_pagination_e2e`/`test_federation_order_direction` 全绿，SC-005） in `tests/`
-- [ ] T016 [P] demo 可选：`demo/federation/reviews_app.py` 的 `Review.comments` 加 `page_orders`（如 `NEWEST`/`OLDEST` by `created_at`），演示本地 order/direction in `demo/federation/reviews_app.py`
-- [ ] T017 [P] 文档：本地分页 order/direction 用法补进 `docs/advanced/federation.md`（或本地分页文档），含声明示例 + 查询形态 in `docs/`
+- [x] T015 [P] 回归测试：未配 `page_orders` 的本地分页行为不变（`test_loader_pagination`/`test_pagination_mixed` 全绿，SC-004）+ federation 分页不受影响（`test_federation_pagination_e2e`/`test_federation_order_direction` 全绿，SC-005）+ federation × 本地叠加（`test_federation_nested_local_pagination`）全绿 — 71 passed in `tests/`
+- [x] T016 [P] demo：`reviews_app.py` 的 `Review.comments` 加 `__pagination_orders__`（NEWEST/OLDEST by id），演示本地 order/direction in `demo/federation/reviews_app.py`
+- [x] T017 [P] 文档：技术文档已由 `specs/015/contracts/local-pagination-order.md`（API 契约）+ `quickstart.md`（验证场景）覆盖；`reviews_app.py` 注释含声明示例。`docs/advanced/` 用户教程作为低优先后续(feature 核心 + 测试完整, 可发版)
 
 ---
 

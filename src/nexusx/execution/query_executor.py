@@ -555,9 +555,16 @@ class QueryExecutor:
         else:
             merge_query_meta(loader, meta)
 
+        order, direction = self._extract_order_direction(
+            job.original_sel if job.original_sel is not None else child_sel,
+            rel_info,
+        )
         fk_values = [getattr(p, rel_info.fk_field) for p in job.parents]
         commands = [
-            PageLoadCommand(fk_value=fk, page_args=page_args) for fk in fk_values
+            PageLoadCommand(
+                fk_value=fk, page_args=page_args, order=order, direction=direction
+            )
+            for fk in fk_values
         ]
         results = await loader.load_many(commands)
 
@@ -579,6 +586,22 @@ class QueryExecutor:
             default_page_size=rel_info.default_page_size,
             max_page_size=rel_info.max_page_size,
         )
+
+    def _extract_order_direction(
+        self, field_sel: FieldSelection, rel_info: RelationshipInfo
+    ) -> tuple[str | None, Any]:
+        """Extract order/direction for a local paginated relationship that
+        carries a ``page_capability`` (specs/015). Returns (None, None) when the
+        relationship has no profile — the page_loader then falls back to its
+        fixed ``sort_field`` (backward compat)."""
+        if rel_info.page_capability is None:
+            return None, None
+        args = field_sel.arguments or {}
+        order = args.get("order")
+        direction = args.get("direction")
+        order_name = order.value if hasattr(order, "value") else order
+        dir_value = direction.value if hasattr(direction, "value") else direction
+        return order_name, dir_value
 
     # ──────────────────────────────────────────────────────────
     # Serialization (unchanged)

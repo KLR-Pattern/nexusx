@@ -127,7 +127,7 @@ def _resolve_local_page_capability(
     entity_kls: type[SQLModel],
     rel_name: str,
     target_entity: type[SQLModel],
-) -> Any:
+) -> tuple[Any, Any]:
     """Build a ``BatchPageCapability`` for a local paginated relationship from
     the entity's class-level ``__pagination_orders__`` declaration.
 
@@ -136,24 +136,27 @@ def _resolve_local_page_capability(
     federation's ``_resolve_page_orders`` (enum-safe names, single-column, SQL
     column, direction, nullable nulls, default∈keys) — fail-fast at startup.
 
-    Returns ``None`` when the relationship has no profile declaration, so the
-    relationship falls back to the fixed ``sort_field`` (backward compat).
+    Returns ``(capability, resolved_orders)`` — ``capability`` is the descriptor
+    (names only) used for schema rendering; ``resolved_orders`` carries the
+    physical ``OrderTerm``s the page_loader needs to build ORDER BY. Both None
+    when the relationship has no profile declaration (falls back to sort_field).
     specs/015.
     """
     cfg = getattr(entity_kls, "__pagination_orders__", {}).get(rel_name)
     if cfg is None:
-        return None
+        return None, None
     from nexusx.federation.contract import BatchPageCapability, PageOrderDescriptor
     from nexusx.standard_queries import _resolve_page_orders
 
     resolved = _resolve_page_orders(target_entity, cfg)
-    return BatchPageCapability(
+    capability = BatchPageCapability(
         default_order=cfg.default_order,
         orders=[
             PageOrderDescriptor(name=n, description=o.description)
             for n, o in resolved.items()
         ],
     )
+    return capability, resolved
 
 
 def _inspect_relationships(
@@ -249,6 +252,9 @@ def _inspect_relationships(
                 )
             else:
                 # List relationship — create regular + optional paginated loader
+                page_capability, page_orders_resolved = _resolve_local_page_capability(
+                    entity_kls, rel_name, target_entity
+                )
                 sort_field = None
                 page_loader = None
 
@@ -266,6 +272,12 @@ def _inspect_relationships(
                         sort_field=sort_field,
                         pk_col_name=pk_col_name,
                         session_factory=session_factory,
+                        page_orders_resolved=page_orders_resolved,
+                        default_order=(
+                            page_capability.default_order
+                            if page_capability is not None
+                            else None
+                        ),
                     )
 
                 loader = create_one_to_many_loader(
@@ -274,10 +286,6 @@ def _inspect_relationships(
                     target_kls=target_entity,
                     target_fk_col_name=remote_col.key,
                     session_factory=session_factory,
-                )
-
-                page_capability = _resolve_local_page_capability(
-                    entity_kls, rel_name, target_entity
                 )
 
                 results.append(
@@ -311,6 +319,9 @@ def _inspect_relationships(
             )
             fk_field = source_col.key
 
+            page_capability, m2m_orders_resolved = _resolve_local_page_capability(
+                entity_kls, rel_name, target_entity
+            )
             sort_field = None
             page_loader = None
 
@@ -331,6 +342,12 @@ def _inspect_relationships(
                     sort_field=sort_field,
                     pk_col_name=pk_col_name,
                     session_factory=session_factory,
+                    page_orders_resolved=m2m_orders_resolved,
+                    default_order=(
+                        page_capability.default_order
+                        if page_capability is not None
+                        else None
+                    ),
                 )
 
             loader = create_many_to_many_loader(
@@ -342,10 +359,6 @@ def _inspect_relationships(
                 secondary_remote_col_name=secondary_remote_col.key,
                 target_match_col_name=target_col.key,
                 session_factory=session_factory,
-            )
-
-            page_capability = _resolve_local_page_capability(
-                entity_kls, rel_name, target_entity
             )
 
             results.append(

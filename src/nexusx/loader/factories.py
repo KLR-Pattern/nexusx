@@ -331,6 +331,8 @@ def create_page_one_to_many_loader(
     pk_col_name: str = "id",
     session_factory: Callable,
     filters: list[Any] | None = None,
+    page_orders_resolved: dict | None = None,
+    default_order: str | None = None,
 ) -> type[DataLoader]:
     """Create a loader that paginates per-parent using ROW_NUMBER().
 
@@ -348,6 +350,13 @@ def create_page_one_to_many_loader(
         async def batch_load_fn(self, keys):
             from sqlalchemy import func, select
 
+            from nexusx.standard_queries import (
+                _apply_direction as _apply_dir,
+            )
+            from nexusx.standard_queries import (
+                _build_order_expressions as _build_order,
+            )
+
             if not keys:
                 return []
 
@@ -359,9 +368,25 @@ def create_page_one_to_many_loader(
             start = page_args.offset + 1
             end = start + effective_limit
 
+            # specs/015: profile + direction 排序(page_orders_resolved 来自
+            # __pagination_orders__); order 缺省用 default_order; None → 固定
+            # sort_field 兜底(向后兼容)。
+            order_terms = None
+            if page_orders_resolved is not None:
+                order_name = first_cmd.order or default_order
+                if order_name and order_name in page_orders_resolved:
+                    order_terms = _apply_dir(
+                        page_orders_resolved[order_name].terms,
+                        first_cmd.direction,
+                    )
+
+            extra_fields = [target_fk_col_name, sort_field, pk_col_name]
+            if order_terms is not None:
+                extra_fields = [
+                    target_fk_col_name, *[t.field_name for t in order_terms]
+                ]
             effective_fields = _get_effective_query_fields(
-                self, target_kls,
-                extra_fields=[target_fk_col_name, sort_field, pk_col_name],
+                self, target_kls, extra_fields=extra_fields,
             )
 
             async with session_factory() as session:
@@ -372,9 +397,14 @@ def create_page_one_to_many_loader(
                 rn_label = "_sg_rn"
                 tc_label = "_sg_tc"
 
+                inner_order = (
+                    _build_order(target_kls, order_terms)
+                    if order_terms is not None
+                    else [sort_col, pk_col]
+                )
                 row_num_col = func.row_number().over(
                     partition_by=fk_col,
-                    order_by=[sort_col, pk_col],
+                    order_by=inner_order,
                 ).label(rn_label)
 
                 total_count_col = func.count().over(
@@ -394,11 +424,14 @@ def create_page_one_to_many_loader(
 
                 rn_col = subq.c[rn_label]
                 fk_col_sub = subq.c[target_fk_col_name]
-                sort_col_sub = subq.c[sort_field]
-                pk_col_sub = subq.c[pk_col_name]
 
+                outer_order = (
+                    [fk_col_sub, *_build_order(subq.c, order_terms)]
+                    if order_terms is not None
+                    else [fk_col_sub, subq.c[sort_field], subq.c[pk_col_name]]
+                )
                 outer = select(subq).where(rn_col.between(start, end)).order_by(
-                    fk_col_sub, sort_col_sub, pk_col_sub,
+                    *outer_order
                 )
                 rows = (await session.exec(outer)).all()
 
@@ -463,6 +496,8 @@ def create_page_many_to_many_loader(
     pk_col_name: str = "id",
     session_factory: Callable,
     filters: list[Any] | None = None,
+    page_orders_resolved: dict | None = None,
+    default_order: str | None = None,
 ) -> type[DataLoader]:
     """Create a loader that paginates per-parent for M2M using ROW_NUMBER().
 
@@ -473,6 +508,13 @@ def create_page_many_to_many_loader(
     class _Loader(DataLoader):
         async def batch_load_fn(self, keys):
             from sqlalchemy import func, select
+
+            from nexusx.standard_queries import (
+                _apply_direction as _apply_dir,
+            )
+            from nexusx.standard_queries import (
+                _build_order_expressions as _build_order,
+            )
 
             if not keys:
                 return []
@@ -485,9 +527,22 @@ def create_page_many_to_many_loader(
             start = page_args.offset + 1
             end = start + effective_limit
 
+            order_terms = None
+            if page_orders_resolved is not None:
+                order_name = first_cmd.order or default_order
+                if order_name and order_name in page_orders_resolved:
+                    order_terms = _apply_dir(
+                        page_orders_resolved[order_name].terms,
+                        first_cmd.direction,
+                    )
+
+            extra_fields = [target_match_col_name, sort_field, pk_col_name]
+            if order_terms is not None:
+                extra_fields = [
+                    target_match_col_name, *[t.field_name for t in order_terms]
+                ]
             effective_fields = _get_effective_query_fields(
-                self, target_kls,
-                extra_fields=[target_match_col_name, sort_field, pk_col_name],
+                self, target_kls, extra_fields=extra_fields,
             )
 
             async with session_factory() as session:
@@ -500,12 +555,17 @@ def create_page_many_to_many_loader(
                 rn_label = "_sg_rn"
                 tc_label = "_sg_tc"
 
+                inner_order = (
+                    _build_order(target_kls, order_terms)
+                    if order_terms is not None
+                    else [sort_col, pk_col]
+                )
                 inner = select(
                     target_kls,
                     sec_local_col.label(secondary_local_col_name),
                     func.row_number().over(
                         partition_by=sec_local_col,
-                        order_by=[sort_col, pk_col],
+                        order_by=inner_order,
                     ).label(rn_label),
                     func.count().over(
                         partition_by=sec_local_col,
@@ -523,11 +583,14 @@ def create_page_many_to_many_loader(
 
                 rn_col = subq.c[rn_label]
                 sec_local_sub = subq.c[secondary_local_col_name]
-                sort_col_sub = subq.c[sort_field]
-                pk_col_sub = subq.c[pk_col_name]
 
+                outer_order = (
+                    [sec_local_sub, *_build_order(subq.c, order_terms)]
+                    if order_terms is not None
+                    else [sec_local_sub, subq.c[sort_field], subq.c[pk_col_name]]
+                )
                 outer = select(subq).where(rn_col.between(start, end)).order_by(
-                    sec_local_sub, sort_col_sub, pk_col_sub,
+                    *outer_order
                 )
                 # Use session.execute() for subquery/aggregate queries.
                 rows = (await session.execute(outer)).all()

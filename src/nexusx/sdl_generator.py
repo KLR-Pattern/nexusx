@@ -447,9 +447,11 @@ class SDLGenerator:
                 # the introspection path — without them, SDL-only clients
                 # cannot tell the field is paginated.
                 if self._is_paginated_relationship(entity, field_name):
-                    fields.append(
-                        f"  {field_name}(limit: Int, offset: Int = 0): {gql_type}"
+                    rel_info = self._loader_registry.get_relationship(
+                        entity, field_name
                     )
+                    args = self._paginated_field_args(entity, field_name, rel_info)
+                    fields.append(f"  {field_name}{args}: {gql_type}")
                 else:
                     fields.append(f"  {field_name}: {gql_type}")
                 rendered_rel_names.add(field_name)

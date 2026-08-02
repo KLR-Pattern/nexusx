@@ -51,12 +51,15 @@ class PageLoadCommand:
     """Key sent to a paginated DataLoader.
 
     The loader's batch_load_fn receives a list of these commands.
-    All commands in a single batch share the same PageArgs
-    (guaranteed by GraphQL query structure).
+    All commands in a single batch share the same PageArgs / order / direction
+    (guaranteed by GraphQL query structure). ``order``/``direction`` are set
+    only for relationships with a ``page_capability`` (specs/015 local order).
     """
 
     fk_value: Any
     page_args: PageArgs
+    order: str | None = None
+    direction: Any = None
 
 
 def _build_pagination_model(pagination_selection: set[str]) -> type[BaseModel]:

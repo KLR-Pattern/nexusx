@@ -60,6 +60,18 @@ class Review(ReviewsBase, table=True):
         # Review.comments becomes comments(limit, offset) on the member side.
         sa_relationship_kwargs={"order_by": "Comment.id"},
     )
+    # specs/015: local pagination order profiles — callers can now query
+    #   comments(order: NEWEST|OLDEST, direction: ASC|DESC)
+    # order_by above stays as the fixed fallback when no profile/order is given.
+    __pagination_orders__ = {
+        "comments": BatchPageConfig(
+            default_order="NEWEST",
+            orders={
+                "NEWEST": PageOrder([OrderTerm("id", "desc")]),
+                "OLDEST": PageOrder([OrderTerm("id", "asc")]),
+            },
+        ),
+    }
 
 
 engine = create_async_engine("sqlite+aiosqlite:///fed_reviews.db")
