@@ -269,7 +269,17 @@ def _align_by_join_key(
                     )
                 }],
             )
-        k = row_d.get(join_remote)
+        if join_remote not in row_d:
+            raise RemoteQueryError(
+                join_remote,
+                [{
+                    "message": (
+                        f"Batch response row is missing required join key "
+                        f"{join_remote!r}"
+                    )
+                }],
+            )
+        k = row_d[join_remote]
         buckets.setdefault(k, []).append(row_d)
 
     aligned: list[Any] = []

@@ -389,7 +389,10 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
     return resolved
 
 
-def resolve_remote_field_refs(fed_registry: Any) -> list[type]:
+def resolve_remote_field_refs(
+    fed_registry: Any,
+    dto_classes: list[type] | None = None,
+) -> list[type]:
     """Resolve deferred extra-field RemoteRefs on DefineSubset classes (specs/016).
 
     Companion to ``SubsetMeta._collect_remote_field_refs``: a mounter DTO whose
@@ -404,10 +407,12 @@ def resolve_remote_field_refs(fed_registry: Any) -> list[type]:
     same pattern as ``resolve_deferred_subsets``). Idempotent — once a field holds
     a real class, re-resolution yields the same type.
     """
-    from nexusx.subset import _subset_registry
-
     resolved: list[type] = []
-    for dto_cls in list(_subset_registry.keys()):
+    if dto_classes is None:
+        from nexusx.subset import _subset_registry
+
+        dto_classes = list(_subset_registry.keys())
+    for dto_cls in dto_classes:
         refs = getattr(dto_cls, "__nexusx_remote_field_refs__", None)
         if not refs:
             continue

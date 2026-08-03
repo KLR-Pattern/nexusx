@@ -64,6 +64,7 @@ async def federate(
     transport: FederationTransport | None = None,
     service_name: str | None = None,
     extra_types: dict[str, type] | None = None,
+    dto_targets: set[str] | None = None,
 ) -> None:
     """Mount ``services`` (name → endpoint) into ``er_manager``.
 
@@ -144,6 +145,18 @@ async def federate(
             if child_qn not in visited:
                 queue.append(child_qn)
 
+    # DTO-only references do not enter the ER traversal queue. After that
+    # traversal has had a chance to discover transitive endpoints, every DTO
+    # target still needs a concrete endpoint or federation cannot wire it.
+    for qn in dto_targets or set():
+        srv, _typename = parse_qualified_name(qn)
+        if srv not in endpoints:
+            raise FederationError(
+                f"Service prefix {srv!r} (referenced by DTO {qn!r}) has no endpoint. "
+                f"Declare RemoteService({srv!r}, url='<url>') or make the service "
+                f"reachable through an endpoint-exposing federation mount."
+            )
+
     # 3. Materialize remote types (bare __name__; qualified identity in registry).
     _check_no_cross_service_barename_dup(fragments)
     fed_registry = FederatedTypeRegistry(extra_types=extra_types)
@@ -160,13 +173,21 @@ async def federate(
     #     service with no public DTOs returns an empty list — materialize_dtos
     #     is then a no-op, so β-only topologies are unaffected.
     dto_fragments: dict[str, DTOFragment] = {}
+    required_dto_services = {
+        parse_qualified_name(qn)[0] for qn in (dto_targets or set())
+    }
     for srv, endpoint in endpoints.items():
         try:
             dto_resp = await fetch_dto_introspection(transport, endpoint)
         except Exception:  # noqa: BLE001 — member may predate the DTO endpoint; skip
-            dto_resp = None
-        if dto_resp is None:
+            if srv in required_dto_services:
+                raise
             continue
+        if dto_resp.service_name != srv:
+            raise FederationError(
+                f"DTO service at {endpoint!r} declares name "
+                f"{dto_resp.service_name!r}, expected {srv!r}"
+            )
         for dto_frag in dto_resp.dtos:
             dto_fragments[f"{srv}.{dto_frag.name}"] = dto_frag
     if dto_fragments:
@@ -183,14 +204,14 @@ async def federate(
     #     list[reviews.ReviewDTO]). Runs after materialize_dtos so the member DTO
     #     classes exist to swap in for the Any placeholder.
     from nexusx.federation.remote_ref import resolve_remote_field_refs
-    resolve_remote_field_refs(fed_registry)
+    resolve_remote_field_refs(fed_registry, er_manager.get_dto_classes())
 
     # 3d. γ-path (specs/016): wire a DTO RemoteLoader for each member-public-DTO
     #     reference discovered on the mounter's OWN DTOs. Discovery scans the
     #     __nexusx_remote_field_refs__ stamp (set by SubsetMeta); wiring registers
-    #     under the field name in _dto_loaders, the namespace Resolver._get_loader
-    #     checks first. This is independent from β RemoteRelationship wiring below
-    #     (step 4) — the two never share a namespace.
+    #     under the owner DTO + field name in _dto_loaders, the namespace
+    #     Resolver._get_loader checks first. This is independent from β
+    #     RemoteRelationship wiring below (step 4) — the two never share a namespace.
     _wire_dto_remote_loaders(er_manager, fed_registry, dto_fragments, endpoints, transport)
 
     # 4. Validate + wire declared remote relationships in ONE pass (one
@@ -255,7 +276,7 @@ def _wire_dto_remote_loaders(
     for deferred RemoteRef fields (``__nexusx_remote_field_refs__``). For each
     field referencing a member public DTO this fed_registry has mounted,
     materializes the target + creates a DTO RemoteLoader keyed by the member
-    DTO's federation join_key, registered under the field name in
+    DTO's federation join_key, registered under the owner DTO + field name in
     ``_dto_loaders``. Resolver ``Loader("<field>")`` resolves there first (see
     Resolver._get_loader), so β entity relationships of the same name coexist.
 
@@ -300,7 +321,7 @@ def _wire_dto_remote_loaders(
                 transport=transport,
                 is_list=is_list,
             )
-            er_manager.register_dto_loader(field_name, loader_cls)
+            er_manager.register_dto_loader(dto_cls, field_name, loader_cls)
 
 
 def _validate_and_wire_remote_relationship(

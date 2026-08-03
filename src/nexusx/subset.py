@@ -583,9 +583,8 @@ def _annotation_remote_ref(anno: Any) -> Any:
     Detects a RemoteRef whether bare (``reviews.ReviewDTO``), Optional
     (``RemoteRef | None``), or wrapped in a generic (``list[RemoteRef]``).
     Used by SubsetMeta to defer extra fields that reference a member public
-    DTO (specs/016 γ-path). Returns None for string annotations (the
-    ``from __future__ import annotations`` path) — those can't be detected
-    without evaluating the string, so they degrade (caught at federate).
+    DTO (specs/016 γ-path). SubsetMeta resolves string annotations before
+    calling this helper.
     """
     try:
         from nexusx.federation.remote_ref import _contains_remote_ref
@@ -629,11 +628,11 @@ class SubsetMeta(type):
             return cls._create_deferred_class(name, source_candidate, subset_info[1], namespace)
 
         entity_kls, subset_fields, auto_excluded = cls._resolve_subset_info(subset_info)
+        global_ns = cls._build_global_ns(namespace)
+        local_ns = cls._build_local_ns(global_ns)
         field_definitions, extra_fields, override_annotations = cls._build_field_definitions(
             entity_kls, subset_fields, namespace, auto_excluded, subset_info,
         )
-        global_ns = cls._build_global_ns(namespace)
-        local_ns = cls._build_local_ns(global_ns)
         cls._merge_overrides(field_definitions, override_annotations, global_ns, namespace)
         if isinstance(subset_info, SubsetConfig):
             cls._merge_config_overrides(field_definitions, subset_info, local_ns, namespace)
@@ -645,7 +644,7 @@ class SubsetMeta(type):
         # resolve_remote_field_refs to swap in the materialized DTO class at
         # federate time. Source stays local; only the field is deferred.
         remote_field_refs = cls._collect_remote_field_refs(
-            extra_fields, field_definitions,
+            extra_fields, field_definitions, global_ns, local_ns,
         )
 
         _validate_extra_field_types(extra_fields, entity_kls, global_ns, namespace)
@@ -726,6 +725,8 @@ class SubsetMeta(type):
     def _collect_remote_field_refs(
         extra_fields: dict[str, tuple[Any, Any]],
         field_definitions: dict[str, tuple[Any, Any]],
+        global_ns: dict[str, Any],
+        local_ns: dict[str, Any],
     ) -> dict[str, Any]:
         """Detect extra fields whose annotation carries a RemoteRef (specs/016).
 
@@ -740,11 +741,17 @@ class SubsetMeta(type):
         """
         refs: dict[str, Any] = {}
         for fname, (anno, default) in list(extra_fields.items()):
-            if _annotation_remote_ref(anno) is None:
+            resolved_anno = anno
+            if isinstance(resolved_anno, str):
+                try:
+                    resolved_anno = eval(resolved_anno, global_ns, local_ns)  # noqa: S307
+                except (NameError, TypeError):
+                    continue
+            if _annotation_remote_ref(resolved_anno) is None:
                 continue
-            refs[fname] = anno
+            refs[fname] = resolved_anno
             extra_fields[fname] = (Any, default)
-            existing_anno, existing_fi = field_definitions[fname]
+            _existing_anno, existing_fi = field_definitions[fname]
             field_definitions[fname] = (Any, existing_fi)
         return refs
 

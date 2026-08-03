@@ -516,14 +516,14 @@ class Resolver:
             return None
 
         # specs/016 γ-path: a DTO field referencing a member public DTO is wired
-        # under its field name in _dto_loaders. Check it FIRST so that, when a
-        # β entity relationship of the same name exists (e.g. Product.reviews),
-        # a γ DTO field wins for γ resolution. β entity loading does not go
-        # through _get_loader (the executor resolves entity rels directly), so
-        # this never diverts a β load.
-        dto_loader_cls = self._registry.get_dto_loader(loader_name)
-        if dto_loader_cls is not None:
-            return self._get_or_create_loader(dto_loader_cls)
+        # under its owner DTO + field name in _dto_loaders. Check it FIRST so
+        # that, when a β entity relationship of the same name exists (e.g.
+        # Product.reviews), a γ DTO field wins for γ resolution. β entity loading
+        # does not go through _get_loader, so this never diverts a β load.
+        if isinstance(node, BaseModel):
+            dto_loader_cls = self._registry.get_dto_loader(type(node), loader_name)
+            if dto_loader_cls is not None:
+                return self._get_or_create_loader(dto_loader_cls)
 
         source_entity = None
         if isinstance(node, BaseModel):

@@ -454,12 +454,10 @@ class ErManager:
         # add_dto_batch_roots at handler init; served by the /nexusx/dto-batch
         # endpoint. Empty for β-only members.
         self._dto_batch_roots: dict[str, tuple[Any, str]] = {}
-        # specs/016 γ-path: mounter-side DTO RemoteLoaders keyed by the DTO field
-        # name on a mounter DefineSubset (e.g. ProductDTO.reviews). Populated by
-        # federate() when it scans the mounter's own DTOs for member-public-DTO
-        # references. Separate namespace from _registry (β entity relationships)
-        # so a γ "reviews" and a β "reviews" coexist without collision.
-        self._dto_loaders: dict[str, type[DataLoader]] = {}
+        # specs/016 γ-path: mounter-side DTO RemoteLoaders keyed by owner DTO +
+        # field name. The owner is required because unrelated DTOs may legally
+        # use the same field name for different remote services.
+        self._dto_loaders: dict[tuple[type, str], type[DataLoader]] = {}
         self._mounted_services: dict[str, str] = {}
         self._pending_remote_rels: list[tuple[type, Any]] = []
         self._fed_registry: Any = None
@@ -659,19 +657,44 @@ class ErManager:
             if getattr(d, "__federation_public__", False)
         ]
 
-    def register_dto_loader(self, field_name: str, loader_cls: type[DataLoader]) -> None:
-        """Register a γ-path DTO RemoteLoader under a mounter DTO field name.
+    def register_dto_loader(
+        self,
+        owner_dto: type,
+        field_name: str,
+        loader_cls: type[DataLoader],
+    ) -> None:
+        """Register a γ-path DTO RemoteLoader for one DTO field.
 
         Called by federate() for each member-public-DTO reference it discovers on
-        the mounter's own DefineSubset DTOs. The Resolver's ``Loader("name")``
-        resolution checks ``_dto_loaders`` first (see Resolver._get_loader), so
-        γ DTO fields and β entity relationships of the same name never collide.
+        the mounter's own DefineSubset DTOs. Owner-scoped keys prevent two DTOs
+        with the same field name from overwriting each other's remote loader.
         """
-        self._dto_loaders[field_name] = loader_cls
+        self._dto_loaders[(owner_dto, field_name)] = loader_cls
 
-    def get_dto_loader(self, field_name: str) -> type[DataLoader] | None:
-        """Look up a γ DTO RemoteLoader by mounter DTO field name (None if absent)."""
-        return self._dto_loaders.get(field_name)
+    def get_dto_loader(
+        self,
+        owner_dto: type | str,
+        field_name: str | None = None,
+    ) -> type[DataLoader] | None:
+        """Look up a γ DTO RemoteLoader.
+
+        The two-argument form is the precise runtime API. The one-argument
+        field-name form remains for compatibility and succeeds only when the
+        name is unambiguous across all owner DTOs.
+        """
+        if field_name is not None:
+            return self._dto_loaders.get((owner_dto, field_name))
+        matches = [
+            loader_cls
+            for (_owner, name), loader_cls in self._dto_loaders.items()
+            if name == owner_dto
+        ]
+        if len(matches) > 1:
+            raise ValueError(
+                f"Ambiguous DTO loader lookup for field {owner_dto!r}; "
+                f"provide the owner DTO class."
+            )
+        return matches[0] if matches else None
 
     def get_relationship(
         self, entity: type[SQLModel], name: str
@@ -777,10 +800,10 @@ class ErManager:
         """Bring up the ER diagram: run federation for declared remote relationships.
 
         The services to mount (and their endpoints) are **derived from the
-        declarations** — each ``RemoteRelationship`` carries its service url via
-        ``RemoteService(url=…)``. No ``services`` argument. Services referenced
-        only transitively, or whose ``RemoteService`` has no url, are skipped
-        here (transitive ones are discovered during the fetch).
+        declarations** — each ``RemoteRelationship`` or DTO ``RemoteRef`` carries
+        its service url via ``RemoteService(url=…)``. No ``services`` argument.
+        Services without a direct URL may still be discovered transitively;
+        otherwise initialization fails before serving.
 
         Call once at startup (app lifespan), before serving. Bumps ``_version``
         so any GraphQL view built off this ErManager (SDL / ``__schema``)
@@ -792,10 +815,9 @@ class ErManager:
                 scalar fields (shared enums / custom scalars). Unregistered names
                 fall back to ``Any``.
         """
-        # Endpoints come only from declarations whose RemoteService has a url.
-        # Targets whose service has no url are still fetched (queued inside
-        # federate from _pending_remote_rels) and resolved transitively — or
-        # fail fast with "no endpoint" if neither applies.
+        # Endpoints and targets come from both β RemoteRelationships and γ DTO
+        # RemoteRef fields. A DTO-only mounter must initialize federation without
+        # declaring a synthetic ER relationship.
         services_map: dict[str, str] = {}
         for _src, rrel in self._pending_remote_rels:
             target_url = getattr(rrel, "target_url", None)
@@ -803,7 +825,21 @@ class ErManager:
                 srv = parse_qualified_name(rrel.qualified_name)[0]
                 services_map.setdefault(srv, target_url)
 
-        if self._pending_remote_rels:
+        from nexusx.federation.remote_ref import _remote_ref_cardinality
+
+        dto_targets: set[str] = set()
+        for dto_cls in self._dto_classes:
+            refs = getattr(dto_cls, "__nexusx_remote_field_refs__", None) or {}
+            for raw_annotation in refs.values():
+                ref, _is_list = _remote_ref_cardinality(raw_annotation)
+                if ref is None:
+                    continue
+                dto_targets.add(ref.qualified_name)
+                if ref.url:
+                    srv = parse_qualified_name(ref.qualified_name)[0]
+                    services_map.setdefault(srv, ref.url)
+
+        if self._pending_remote_rels or dto_targets:
             from nexusx.federation.manager import federate as _federate
 
             await _federate(
@@ -811,6 +847,7 @@ class ErManager:
                 services_map,
                 transport=transport,
                 extra_types=extra_types,
+                dto_targets=dto_targets,
             )
         self._version += 1
 

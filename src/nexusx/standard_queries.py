@@ -855,7 +855,15 @@ def _create_dto_by_keys_in_query(
         ]
         ResolverCls = er_manager.create_resolver()
         resolved = await ResolverCls().resolve(dtos)
-        return [d.model_dump(mode="json") for d in resolved]
+        rows: list[dict] = []
+        for dto in resolved:
+            row = dto.model_dump(mode="json")
+            # The federation join key is transport metadata. It must remain on
+            # the wire even when the DTO hides an auto-included FK from normal
+            # business serialization.
+            row[join_key] = getattr(dto, join_key)
+            rows.append(row)
+        return rows
 
     by_key_in.__name__ = f"by_{join_key}_in"
     return by_key_in

@@ -183,11 +183,19 @@ class FederatedTypeRegistry:
         fields) produce a flat model; nested-DTO out-edges render as ForwardRefs
         resolved in pass 2, exactly like entity relationships.
         """
+        self._check_unique_bare_names(fragments)
+        # Treat every DTO name in this response as a valid forward reference.
+        # The concrete classes do not exist until pass 1 completes.
+        declaration_ns = {
+            **self._namespace,
+            **{frag.name: Any for frag in fragments.values()},
+        }
+
         # Pass 1: create DTO models with scalar + remote_ref fields as ForwardRef.
         for qualified, frag in fragments.items():
             if qualified in self._qualified_to_class:
                 continue
-            cls = self._create_dto_model(frag, self._namespace)
+            cls = self._create_dto_model(frag, declaration_ns)
             self._qualified_to_class[qualified] = cls
             self._class_to_qualified[cls] = qualified
 
@@ -205,10 +213,11 @@ class FederatedTypeRegistry:
                     if isinstance(fi.annotation, str)
                 ]
                 if unresolved:
-                    logger.warning(
-                        "DTO materialization: %s has unresolved fields %s "
-                        "(falling back to Any); register via federate(extra_types=...).",
-                        cls.__name__, unresolved,
+                    raise RuntimeError(
+                        f"DTO materialization failed for {cls.__name__}. "
+                        f"Unresolved fields: {unresolved}. Ensure every nested "
+                        f"DTO type is included in DTO introspection or registered "
+                        f"via federate(extra_types=...)."
                     )
 
     @staticmethod
@@ -219,8 +228,6 @@ class FederatedTypeRegistry:
             ann = _safe_annotation(fd.type_name, namespace)
             field_defs[fd.name] = (ann, None)
         for rel in frag.remote_refs:
-            if rel.name in field_defs:
-                continue
             target = rel.target_typename
             ann = f"list[{target}]" if rel.is_list else target
             field_defs[rel.name] = (f"{ann} | None", None)
@@ -231,6 +238,25 @@ class FederatedTypeRegistry:
         model.__name__ = typename
         model.__qualname__ = typename
         return model
+
+    def _check_unique_bare_names(
+        self,
+        fragments: dict[str, DTOFragment],
+    ) -> None:
+        """Reject DTO/entity bare-name collisions before ForwardRef rebuilding."""
+        owners: dict[str, str] = {
+            cls.__name__: qualified
+            for cls, qualified in self._class_to_qualified.items()
+        }
+        for qualified, frag in fragments.items():
+            previous = owners.get(frag.name)
+            if previous is not None and previous != qualified:
+                raise ValueError(
+                    f"Federation type name {frag.name!r} is exposed by both "
+                    f"{previous!r} and {qualified!r}; bare GraphQL type names "
+                    f"must be unique."
+                )
+            owners[frag.name] = qualified
 
     def qualified_of(self, cls: type) -> str | None:
         return self._class_to_qualified.get(cls)

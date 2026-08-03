@@ -10,7 +10,7 @@ import pytest
 from sqlmodel import Field as SQLField
 from sqlmodel import SQLModel
 
-from nexusx import DefineSubset, GraphQLHandler
+from nexusx import DefineSubset, GraphQLHandler, SubsetConfig
 from nexusx.federation import RemoteService
 from nexusx.federation.contract import BatchRoot, DTOFragment, FieldDescriptor
 from nexusx.federation.introspect import build_federable_app
@@ -35,6 +35,15 @@ class _MounterRef(DefineSubset):
 
     __subset__ = (_WireProduct, ("id", "name"))
     ref: list[rev_svc.NobodyDTO] = SQLField(default_factory=list)
+
+
+class _PublicWireDTO(DefineSubset):
+    __subset__ = SubsetConfig(
+        kls=_WireProduct,
+        fields=("id", "name"),
+        federation_public=True,
+        federation_join_key="id",
+    )
 
 
 def test_wire_dto_loaders_failfast_unknown_dto():
@@ -89,5 +98,30 @@ async def test_dto_batch_endpoint_unknown_dto_returns_errors():
         assert "errors" in payload
         assert any("Nonexistent" in e.get("message", "") for e in payload["errors"])
         assert "data" not in payload
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_dto_batch_endpoint_rejects_join_key_mismatch():
+    handler = GraphQLHandler(
+        base=_WireBase,
+        session_factory=lambda: None,
+        service_name="reviews",
+        dto_classes=[_PublicWireDTO],
+    )
+    app = build_federable_app(handler)
+    client = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    )
+    try:
+        resp = await client.post(
+            "http://test/nexusx/dto-batch",
+            json={"dto": "_PublicWireDTO", "join_key": "wrong", "keys": [1]},
+        )
+        payload = resp.json()
+        assert "errors" in payload
+        assert "uses join_key 'id'" in payload["errors"][0]["message"]
     finally:
         await client.aclose()

@@ -336,11 +336,13 @@ def build_federable_app(
     *,
     dependencies: Sequence[Any] | None = None,
 ) -> Any:
-    """Build a FastAPI app exposing the two routes a federable member needs.
+    """Build a FastAPI app exposing the routes a federable member needs.
 
     Routes:
       - ``POST /graphql`` → ``{data, errors}`` (wraps ``handler.execute``)
       - ``GET  /nexusx/er-introspection`` → ER introspection payload
+      - ``GET  /nexusx/dto-introspection`` → public DTO introspection payload
+      - ``POST /nexusx/dto-batch`` → resolved DTO rows
 
     Args:
         dependencies: Optional FastAPI dependencies (e.g.
@@ -414,7 +416,17 @@ def build_federable_app(
                     )
                 }]
             }
-        batch_fn, _join_key = entry
+        batch_fn, registered_join_key = entry
+        requested_join_key = payload.get("join_key")
+        if requested_join_key != registered_join_key:
+            return {
+                "errors": [{
+                    "message": (
+                        f"DTO {dto_name!r} uses join_key "
+                        f"{registered_join_key!r}, got {requested_join_key!r}"
+                    )
+                }]
+            }
         keys = payload.get("keys") or []
         try:
             rows = await batch_fn(keys)
