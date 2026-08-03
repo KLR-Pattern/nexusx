@@ -95,6 +95,43 @@ def test_resolve_skips_unmounted_refs():
     assert "reviews" in ProductDTO.model_fields
 
 
+def test_materialize_dtos_raises_on_unresolved_remote_ref():
+    """DTO remote_ref 引用 mounter 未物化的类型 → 物化期 fail-fast。
+
+    materialize_dtos 显式检查每个 remote_ref 的 target 是否已物化：缺失则 raise，
+    而非静默降级 Any（否则 model_validate 会无声丢类型）。比依赖 model_rebuild
+    返回值可靠——后者对良性 scalar 注解怪异也返回 False，无法区分。
+    """
+    import pytest
+
+    from nexusx.federation.contract import (
+        BatchRoot,
+        DTOFragment,
+        FieldDescriptor,
+        RelDescriptor,
+    )
+    from nexusx.federation.registry import FederatedTypeRegistry
+
+    reg = FederatedTypeRegistry()
+    frag = DTOFragment(
+        name="ReviewDTO",
+        base_entity="Review",
+        scalar_fields=[FieldDescriptor(name="title", type_name="str")],
+        join_key="id",
+        batch_root=BatchRoot(name="by_id_in", arg_name="id_list"),
+        remote_refs=[
+            RelDescriptor(
+                name="author",
+                direction="MANYTOONE",
+                fk_field="author_id",
+                target_typename="MissingUser",  # mounter 未物化此类型
+            ),
+        ],
+    )
+    with pytest.raises(RuntimeError, match="did not materialize"):
+        reg.materialize_dtos({"reviews.ReviewDTO": frag})
+
+
 def _flatten_types(anno):
     """把注解里所有 type 对象摊平成集合（list[X] → {list, X}）。"""
     import typing

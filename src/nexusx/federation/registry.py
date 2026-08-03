@@ -204,10 +204,33 @@ class FederatedTypeRegistry:
         extended_ns = {**self._namespace}
         for cls in self._class_to_qualified:
             extended_ns[cls.__name__] = cls
+        # Fail-fast on remote_ref targets the mounter did not materialize: a DTO
+        # field referencing a missing type would otherwise degrade to Any and
+        # silently drop type info on every model_validate. Check the target
+        # explicitly rather than relying on model_rebuild's return value — that
+        # returns False for benign scalar-annotation quirks too (see the e2e
+        # ReviewDTO), so it can't distinguish a genuine missing type from a
+        # harmless fallback.
+        known = set(extended_ns.keys())
+        for frag in fragments.values():
+            for rel in frag.remote_refs:
+                if rel.target_typename not in known:
+                    raise RuntimeError(
+                        f"DTO {frag.name} remote_ref {rel.name!r} targets "
+                        f"{rel.target_typename!r}, which the mounter did not "
+                        f"materialize. A federation-public DTO's remote_refs "
+                        f"must all resolve; check the member exposes every "
+                        f"referenced type."
+                    )
         for qualified, _frag in fragments.items():
             cls = self._qualified_to_class[qualified]
             ok = cls.model_rebuild(_types_namespace=extended_ns)
             if not ok:
+                # Companion to the remote_ref target check above: that one catches
+                # a missing target even when pydantic degrades it to Any (the
+                # annotation is then not a str, so this loop wouldn't see it);
+                # this one catches any ForwardRef left as a raw string annotation
+                # after rebuild.
                 unresolved = [
                     fname for fname, fi in cls.model_fields.items()
                     if isinstance(fi.annotation, str)

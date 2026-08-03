@@ -421,9 +421,17 @@ def create_dto_remote_loader(
 
     class _DtoRemoteLoader(DataLoader):  # type: ignore[type-arg]
         async def batch_load_fn(self, keys: list[Any]) -> list[Any]:
+            # Normalize keys into their JSON wire form BEFORE posting.
+            # ``post_json`` serializes via standard ``json.dumps``, which rejects
+            # non-native types (UUID/Decimal/datetime) — a UUID-PK parent would
+            # otherwise raise ``TypeError: Object of type UUID is not JSON
+            # serializable`` mid-traversal. β's gql path renders keys via
+            # ``_render_value``; γ's JSON path normalizes here, symmetric with
+            # ``_normalize_join_key`` applied on the response-alignment side.
+            wire_keys = [_normalize_join_key(k) for k in keys]
             resp = await transport.post_json(
                 url,
-                {"dto": typename, "join_key": join_key, "keys": list(keys)},
+                {"dto": typename, "join_key": join_key, "keys": wire_keys},
             )
             if not isinstance(resp, dict):
                 raise RemoteQueryError(

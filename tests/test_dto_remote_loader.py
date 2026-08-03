@@ -148,3 +148,59 @@ async def test_dto_remote_loader_rejects_non_dict_response():
     )
     with pytest.raises(RemoteQueryError):
         await loader_cls().load_many([10])
+
+
+class _JsonSerializingTransport:
+    """Transport that mimics httpx ``json=body`` standard serialization.
+
+    The other FakeTransport in this module stores the body verbatim (no
+    serialization), which HIDES wire-format bugs: a UUID join key never has to
+    survive ``json.dumps``. This transport runs ``json.dumps(body)`` so a key
+    that is not JSON-native (UUID/Decimal/datetime) surfaces as a TypeError —
+    exactly what httpx does in production. specs/016 γ-path uses ``post_json``
+    (not β's gql ``_render_value``), so keys must be normalized before sending.
+    """
+
+    def __init__(self, data):
+        import json
+
+        self._json = json
+        self.data = data
+
+    async def post_json(self, url, body):
+        self._json.dumps(body)  # reproduce httpx serialization
+        return {"data": self.data}
+
+
+@pytest.mark.asyncio
+async def test_dto_remote_loader_uuid_join_key_roundtrips_over_json():
+    """A UUID join key must survive the JSON wire (regression guard, specs/016).
+
+    mounter keys come from the parent DTO's field (e.g. ProductDTO.id), which is
+    a UUID for the common UUID-PK case. ``post_json`` serializes via standard
+    ``json.dumps`` (UUID is NOT JSON-native), so ``batch_load_fn`` MUST normalize
+    keys before posting — otherwise httpx raises ``TypeError: Object of type
+    UUID is not JSON serializable`` mid-traversal. β avoids this via gql
+    ``_render_value``; γ must do the equivalent in the loader.
+
+    Before the fix this test fails on ``json.dumps([UUID(...)])``; after, the
+    loader normalizes UUID→str (symmetric with ``_normalize_join_key``) and the
+    member's str-valued response aligns back.
+    """
+    import uuid
+
+    from nexusx.federation.remote_loader import create_dto_remote_loader
+
+    uid = uuid.UUID("12345678-1234-5678-1234-567812345678")
+    target_cls = create_model("R", product_id=(str, None), title=(str, None))
+    transport = _JsonSerializingTransport(
+        [{"product_id": str(uid), "title": "Great"}]
+    )
+    loader_cls = create_dto_remote_loader(
+        typename="ReviewDTO", join_key="product_id",
+        endpoint="http://test/r", target_cls=target_cls,
+        transport=transport, is_list=True,
+    )
+    result = await loader_cls().load_many([uid])
+    assert len(result[0]) == 1
+    assert result[0][0].title == "Great"

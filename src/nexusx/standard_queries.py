@@ -885,6 +885,8 @@ def add_dto_batch_roots(er_manager: Any) -> None:
     Idempotent / additive: no-op when the member declares no public DTOs (β
     services are unaffected).
     """
+    from nexusx.federation.introspect import _type_expr
+    from nexusx.federation.manager import _SUPPORTED_JOIN_TYPES, _normalize_join_type
     from nexusx.subset import get_subset_source
 
     session_factory = er_manager._session_factory
@@ -905,6 +907,24 @@ def add_dto_batch_roots(er_manager: Any) -> None:
             raise ValueError(
                 f"{dto_cls.__name__} join_key {join_key!r} is not a column on "
                 f"base entity {base_entity.__name__}; cannot batch-fetch by it."
+            )
+        # Join-key type gate (specs/016, symmetric to β's _check_join_contract):
+        # DTO federation ships keys over JSON and aligns them back via
+        # _normalize_join_key (UUID→str). A key type outside _SUPPORTED_JOIN_TYPES
+        # would either fail json.dumps (UUID without normalization) or silently
+        # miss its bucket (Decimal serializes to str on the response side but
+        # isn't normalized on the lookup side). Reject at startup on the member
+        # — it owns the base-entity column type, so this is the earliest fail-fast.
+        join_type_name = _normalize_join_type(
+            _type_expr(base_entity.model_fields[join_key].annotation)
+        )
+        if join_type_name is None or join_type_name not in _SUPPORTED_JOIN_TYPES:
+            supported = ", ".join(sorted(_SUPPORTED_JOIN_TYPES))
+            raise ValueError(
+                f"{dto_cls.__name__} federation_join_key {join_key!r} has "
+                f"unsupported type {join_type_name!r} on {base_entity.__name__}; "
+                f"DTO federation serializes keys over JSON — supported join-key "
+                f"types: {supported}."
             )
         batch_roots[dto_cls.__name__] = (
             _create_dto_by_keys_in_query(

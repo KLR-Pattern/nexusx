@@ -120,3 +120,63 @@ def test_public_dto_join_key_validated_at_class_creation():
                 federation_public=True,
                 federation_join_key="nonexistent",
             )
+
+
+def test_add_dto_batch_roots_rejects_unsupported_join_key_type():
+    """Decimal 等 _SUPPORTED_JOIN_TYPES 外的 join key → member 启动期 fail-fast。
+
+    对称 β 的 _check_join_contract：DTO federation 走 JSON wire，非支持类型的
+    join key 会静默落空（Decimal 响应侧被 model_dump 转成 str、lookup 侧未归一化，
+    永远对不上桶）。member 端 add_dto_batch_roots 拿得到 base_entity 列类型，
+    是最早的 fail-fast 点。
+    """
+    from decimal import Decimal
+
+    class _DecReview(_BRBase, table=True):
+        __tablename__ = "dto_br_decimal"
+        id: int | None = SQLField(default=None, primary_key=True)
+        amount: Decimal | None = SQLField(default=None)
+
+    class _DecDTO(DefineSubset):
+        __subset__ = SubsetConfig(
+            kls=_DecReview,
+            fields=("amount",),
+            federation_public=True,
+            federation_join_key="amount",
+        )
+
+    er = ErManager(
+        entities=[_DecReview], session_factory=lambda: None, service_name="reviews",
+    )
+    er._dto_classes = [_DecDTO]
+    with pytest.raises(ValueError, match="unsupported type"):
+        add_dto_batch_roots(er)
+
+
+def test_add_dto_batch_roots_accepts_uuid_join_key():
+    """UUID join key 是 _SUPPORTED_JOIN_TYPES 成员 → 放行（配合 wire 归一化可用）。
+
+    UUID 是最常见的 PK 类型之一；任务 1 的 wire 归一化让它能跨 JSON 往返，
+    本测试确认类型校验不会误拒它。
+    """
+    from uuid import UUID
+
+    class _UuidReview(_BRBase, table=True):
+        __tablename__ = "dto_br_uuid"
+        id: UUID | None = SQLField(default=None, primary_key=True)
+        owner_id: UUID | None = SQLField(default=None)
+
+    class _UuidDTO(DefineSubset):
+        __subset__ = SubsetConfig(
+            kls=_UuidReview,
+            fields=("owner_id",),
+            federation_public=True,
+            federation_join_key="owner_id",
+        )
+
+    er = ErManager(
+        entities=[_UuidReview], session_factory=lambda: None, service_name="reviews",
+    )
+    er._dto_classes = [_UuidDTO]
+    add_dto_batch_roots(er)  # 不抛
+    assert _UuidDTO.__name__ in er._dto_batch_roots
