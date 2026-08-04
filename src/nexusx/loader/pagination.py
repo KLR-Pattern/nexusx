@@ -62,6 +62,35 @@ class PageLoadCommand:
     direction: Any = None
 
 
+@dataclass(frozen=True)
+class Paged:
+    """Declarative top-N marker for a DefineSubset DTO field.
+
+    Attached via ``Annotated[list[Target], Paged(...)]`` on a DefineSubset
+    field whose name matches a source-entity relationship. It tells the
+    Resolver to fetch a limited, ordered slice (top-N) instead of the full
+    list — the typical "thread.comments top 10" shape.
+
+    The order profiles AND the page_loader itself come from the SOURCE
+    ENTITY's ``__pagination_orders__`` declaration (specs/015): Paged only
+    sets the limit and selects which declared order to use. Physical ORDER BY
+    terms stay on the data-owning entity — the same split as γ remote
+    federation (orders sourced from the member), so the DTO never pins
+    physical sort terms it doesn't own.
+
+    limit: max items per parent (the top-N).
+    default_order: name of the source entity's order profile to use; None ⇒
+        the entity's declared default_order.
+    """
+
+    limit: int
+    default_order: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.limit < 0:
+            raise ValueError(f"Paged.limit must be >= 0, got {self.limit}")
+
+
 def _build_pagination_model(pagination_selection: set[str]) -> type[BaseModel]:
     """Create a Pagination model containing only the selected fields."""
     fields = {}

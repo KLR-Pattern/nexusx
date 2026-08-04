@@ -1498,6 +1498,15 @@ class Resolver:
             is_remote_entry = first_rel.kind in (
                 RelationshipKind.REMOTE_PAGED, RelationshipKind.REMOTE_PLAIN
             )
+            # Annotated[..., Paged(...)] field: route to page_loader with a
+            # constructed PageLoadCommand (top-N slice). Computed per group,
+            # consumed in the loader branch + result unpack below.
+            paged_marker = getattr(type(first_node), "__paged_fields__", {}).get(rel_name)
+            is_paged = (
+                paged_marker is not None
+                and not is_remote_entry
+                and first_rel.page_loader is not None
+            )
 
             # Collect FK/PK values + valid entries (shared by both paths).
             keys: list[Any] = []
@@ -1525,12 +1534,39 @@ class Resolver:
                 )
             else:
                 type_key = generate_type_key_from_dto(first_dto) if first_dto else None
-                loader = self._get_loader(first_node, rel_name, type_key=type_key)
+                if is_paged:
+                    # Paged field: route to page_loader (from the source entity's
+                    # __pagination_orders__) and load via PageLoadCommand so the
+                    # PO2M batch_load_fn gets limit/order (top-N per parent).
+                    loader = self._registry.get_loader(
+                        first_rel.page_loader, type_key=type_key,
+                    )
+                else:
+                    loader = self._get_loader(first_node, rel_name, type_key=type_key)
                 if loader is None:
                     continue
                 if first_dto is not None and type_key is not None:
                     set_query_meta(loader, generate_query_meta_from_dto(first_dto))
-                results = await loader.load_many(keys)
+                if is_paged:
+                    from nexusx.loader.pagination import PageArgs, PageLoadCommand
+
+                    page_args = PageArgs(
+                        limit=paged_marker.limit,
+                        offset=0,
+                        default_page_size=first_rel.default_page_size,
+                        max_page_size=first_rel.max_page_size,
+                    )
+                    commands = [
+                        PageLoadCommand(
+                            fk_value=k,
+                            page_args=page_args,
+                            order=paged_marker.default_order,
+                        )
+                        for k in keys
+                    ]
+                    results = await loader.load_many(commands)
+                else:
+                    results = await loader.load_many(keys)
 
             # Map results back to nodes
             for j, (idx, node, field_name, dto_cls) in enumerate(valid_entries):
@@ -1540,6 +1576,9 @@ class Resolver:
 
                 if is_list:
                     items_list = result if result is not None else []
+                    if is_paged and isinstance(result, dict):
+                        # page_loader returns {items, pagination}; take items.
+                        items_list = result.get("items") or []
                     if dto_cls and items_list:
                         if is_custom:
                             # CUSTOM rels may already yield the right DTO

@@ -593,6 +593,26 @@ def _annotation_remote_ref(anno: Any) -> Any:
     return _contains_remote_ref(anno)
 
 
+def _annotation_paged(anno: Any) -> Any:
+    """Return the ``Paged`` marker inside an ``Annotated`` annotation, or None.
+
+    Detects ``Annotated[list[Target], Paged(...)]`` — Paged is carried as
+    Annotated metadata. Returns None for non-Annotated annotations or
+    Annotated without a Paged marker.
+    """
+    metadata = getattr(anno, "__metadata__", None)
+    if not metadata:
+        return None
+    try:
+        from nexusx.loader.pagination import Paged
+    except ImportError:
+        return None
+    for meta in metadata:
+        if isinstance(meta, Paged):
+            return meta
+    return None
+
+
 class SubsetMeta(type):
     """Metaclass that transforms a DefineSubset class definition into a Pydantic BaseModel.
 
@@ -646,6 +666,9 @@ class SubsetMeta(type):
         remote_field_refs = cls._collect_remote_field_refs(
             extra_fields, field_definitions, global_ns, local_ns,
         )
+        # Annotated[..., Paged(...)] marks a top-N field. Collected, NOT
+        # neutralized — Paged is metadata on a valid pydantic type.
+        paged_fields = cls._collect_paged_fields(extra_fields, global_ns, local_ns)
 
         _validate_extra_field_types(extra_fields, entity_kls, global_ns, namespace)
         _validate_omitted_fk_not_needed(
@@ -660,6 +683,8 @@ class SubsetMeta(type):
         _stamp_federation_metadata(subset_info, subset_class)
         if remote_field_refs:
             subset_class.__nexusx_remote_field_refs__ = remote_field_refs
+        if paged_fields:
+            subset_class.__paged_fields__ = paged_fields
         return subset_class
 
     @staticmethod
@@ -754,6 +779,36 @@ class SubsetMeta(type):
             _existing_anno, existing_fi = field_definitions[fname]
             field_definitions[fname] = (Any, existing_fi)
         return refs
+
+    @staticmethod
+    def _collect_paged_fields(
+        extra_fields: dict[str, tuple[Any, Any]],
+        global_ns: dict[str, Any],
+        local_ns: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Detect extra fields annotated ``Annotated[..., Paged]`` (top-N marker).
+
+        Returns ``{field_name: Paged}`` for the caller to stamp on the class
+        as ``__paged_fields__``; the Resolver reads it to route the field to
+        ``rel_info.page_loader``. Unlike ``_collect_remote_field_refs``, the
+        annotation is NOT neutralized — Annotated's inner type (e.g.
+        ``list[Comment]``) is a valid pydantic type and ``Paged`` is metadata
+        pydantic ignores. String annotations are resolved against the class
+        namespaces first (mirrors _collect_remote_field_refs).
+        """
+        paged: dict[str, Any] = {}
+        for fname, (anno, default) in list(extra_fields.items()):
+            resolved_anno = anno
+            if isinstance(resolved_anno, str):
+                try:
+                    resolved_anno = eval(resolved_anno, global_ns, local_ns)  # noqa: S307
+                except (NameError, TypeError):
+                    continue
+            marker = _annotation_paged(resolved_anno)
+            if marker is None:
+                continue
+            paged[fname] = marker
+        return paged
 
     @staticmethod
     def _resolve_subset_info(
