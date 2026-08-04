@@ -304,17 +304,44 @@ def serialize_dto_introspection(er_manager: Any) -> DTOIntrospectionResponse:
             FieldDescriptor(name=fname, type_name=_type_expr(fi.annotation))
             for fname, fi in dto.model_fields.items()
         ]
+        batch_root = BatchRoot(
+            name=f"by_{join_key}_in",
+            arg_name=f"{join_key}_list",
+            arg_type="",
+        )
+        # γ remote top-N (specs/016 Phase 2): a DTO-level __pagination_orders__
+        # (BatchPageConfig) exposes the order profiles the member can sort by.
+        # Validated against the base entity's physical columns via
+        # _resolve_page_orders — same gate as entity __pagination_orders__,
+        # so a DTO order field that isn't a base-entity column fails fast.
+        cfg = getattr(dto, "__pagination_orders__", None)
+        if cfg is not None and source is not None:
+            from nexusx.federation.contract import (
+                BatchPageCapability,
+                PageOrderDescriptor,
+            )
+            from nexusx.standard_queries import _resolve_page_orders
+
+            resolved = _resolve_page_orders(source, cfg)
+            batch_root = BatchRoot(
+                name=f"by_{join_key}_in",
+                arg_name=f"{join_key}_list",
+                arg_type="",
+                page=BatchPageCapability(
+                    default_order=cfg.default_order,
+                    orders=[
+                        PageOrderDescriptor(name=n, description=o.description)
+                        for n, o in resolved.items()
+                    ],
+                ),
+            )
         dtos.append(
             DTOFragment(
                 name=dto.__name__,
                 base_entity=base_entity,
                 scalar_fields=scalar_fields,
                 join_key=join_key,
-                batch_root=BatchRoot(
-                    name=f"by_{join_key}_in",
-                    arg_name=f"{join_key}_list",
-                    arg_type="",
-                ),
+                batch_root=batch_root,
                 remote_refs=_dto_remote_refs(dto),
             )
         )
@@ -428,8 +455,16 @@ def build_federable_app(
                 }]
             }
         keys = payload.get("keys") or []
+        # specs/016 Phase 2: order/direction/limit drive per-parent top-N in
+        # the member batch root (ROW_NUMBER). Omitted (None) ⇒ full fetch
+        # (back-compat for un-paged DTOs).
+        order = payload.get("order")
+        direction = payload.get("direction")
+        limit = payload.get("limit")
         try:
-            rows = await batch_fn(keys)
+            rows = await batch_fn(
+                keys, order=order, direction=direction, limit=limit,
+            )
         except Exception as exc:  # noqa: BLE001 — member Resolver failure surfaces
             # spec Edge Case: member Resolver/computation failing during the
             # batch root must NOT crash this endpoint with a 500 — return an

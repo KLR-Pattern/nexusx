@@ -663,12 +663,14 @@ class SubsetMeta(type):
         # field as ``Any`` now, stamp the raw annotation for
         # resolve_remote_field_refs to swap in the materialized DTO class at
         # federate time. Source stays local; only the field is deferred.
+        # Annotated[..., Paged(...)] marks a top-N field. Collected BEFORE
+        # _collect_remote_field_refs — that step neutralizes RemoteRef
+        # annotations to Any, which would hide the Paged metadata on a
+        # remote-DTO field (Annotated[list[RemoteRef], Paged(...)]).
+        paged_fields = cls._collect_paged_fields(extra_fields, global_ns, local_ns)
         remote_field_refs = cls._collect_remote_field_refs(
             extra_fields, field_definitions, global_ns, local_ns,
         )
-        # Annotated[..., Paged(...)] marks a top-N field. Collected, NOT
-        # neutralized — Paged is metadata on a valid pydantic type.
-        paged_fields = cls._collect_paged_fields(extra_fields, global_ns, local_ns)
 
         _validate_extra_field_types(extra_fields, entity_kls, global_ns, namespace)
         _validate_omitted_fk_not_needed(
@@ -1043,6 +1045,13 @@ class SubsetMeta(type):
         _subset_registry[subset_class] = entity_kls
         subset_class.__subset_fields__ = list(subset_fields)
         subset_class.__subset_auto_excluded__ = auto_excluded or set()
+
+        # Preserve a DTO-level __pagination_orders__ (BatchPageConfig) so
+        # serialize_dto_introspection can expose it for γ remote top-N.
+        # create_model drops custom class attrs, so re-attach from namespace.
+        pagination_orders = namespace.get("__pagination_orders__")
+        if pagination_orders is not None:
+            subset_class.__pagination_orders__ = pagination_orders
 
         return subset_class
 

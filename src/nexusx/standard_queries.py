@@ -817,6 +817,8 @@ def _create_dto_by_keys_in_query(
     join_key: str,
     er_manager: Any,
     session_factory: Any,
+    page_orders_resolved: dict | None = None,
+    default_order: str | None = None,
 ) -> Any:
     """Create a ``by_<join_key>_in(values) -> list[dict]`` DTO batch root.
 
@@ -836,15 +838,67 @@ def _create_dto_by_keys_in_query(
     """
     subset_fields = list(getattr(dto_cls, "__subset_fields__", []) or [])
 
-    async def by_key_in(values: list[Any]) -> list[dict]:
+    async def by_key_in(
+        values: list[Any],
+        order: str | None = None,
+        direction: Any = None,
+        limit: int | None = None,
+    ) -> list[dict]:
         if not values:
             return []
+        from sqlalchemy import func
+
+        # Resolve the effective order profile: caller order → default → None.
+        order_terms = None
+        if page_orders_resolved is not None:
+            order_name = order or default_order
+            if order_name and order_name in page_orders_resolved:
+                order_terms = _apply_direction(
+                    page_orders_resolved[order_name].terms, direction,
+                )
+
         session_context = await _create_session_context(session_factory)
         async with session_context as session:
-            stmt = select(base_entity).where(
-                getattr(base_entity, join_key).in_(values)
-            )
-            entities = list((await session.exec(stmt)).all())
+            fk_col = getattr(base_entity, join_key)
+            # Per-parent top-N (specs/016 Phase 2): ROW_NUMBER OVER (PARTITION
+            # BY join_key ORDER BY <order>) keeps the slice in SQL — before DTO
+            # build + Resolver — so the member never fetches/resolves the full
+            # collection (no wasted cross-service hops). Mirrors PO2M
+            # (factories.py:397-436). Falls back to full fetch when there's no
+            # order profile or no limit (back-compat for un-paged batch roots).
+            if order_terms is not None and limit:
+                rn_label = "_nx_rn"
+                inner_order = _build_order_expressions(base_entity, order_terms)
+                row_num_col = func.row_number().over(
+                    partition_by=fk_col, order_by=inner_order,
+                ).label(rn_label)
+                inner = select(base_entity, row_num_col).where(fk_col.in_(values))
+                subq = inner.subquery()
+                rn_col = subq.c[rn_label]
+                fk_col_sub = subq.c[join_key]
+                outer = (
+                    select(subq)
+                    .where(rn_col <= limit)
+                    .order_by(fk_col_sub, *_build_order_expressions(subq.c, order_terms))
+                )
+                # session.execute (not .exec): SQLModel's .exec yields the
+                # first column's scalars for select(subq); .execute returns
+                # Rows with ._mapping. Suppress the "use exec" hint.
+                import warnings as _warnings
+
+                with _warnings.catch_warnings():
+                    _warnings.simplefilter("ignore", DeprecationWarning)
+                    rows = (await session.execute(outer)).all()
+                entity_fields = set(base_entity.model_fields.keys())
+                entities = [
+                    base_entity(**{
+                        k: r._mapping[k] for k in entity_fields if k in r._mapping
+                    })
+                    for r in rows
+                ]
+            else:
+                stmt = select(base_entity).where(fk_col.in_(values))
+                entities = list((await session.exec(stmt)).all())
         if not entities:
             return []
         # Build DTO instances from entity-sourced subset fields; Resolver-computed
@@ -926,9 +980,22 @@ def add_dto_batch_roots(er_manager: Any) -> None:
                 f"DTO federation serializes keys over JSON — supported join-key "
                 f"types: {supported}."
             )
+        # specs/016 Phase 2: resolve a DTO-level __pagination_orders__
+        # (BatchPageConfig) into physical OrderTerms, validated against the
+        # base entity's columns (fail-fast at startup — same gate as entity
+        # __pagination_orders__). Fed to the batch root for per-parent top-N
+        # when the mounter sends order+limit.
+        cfg = getattr(dto_cls, "__pagination_orders__", None)
+        page_orders_resolved = None
+        default_order = None
+        if cfg is not None:
+            page_orders_resolved = _resolve_page_orders(base_entity, cfg)
+            default_order = cfg.default_order
         batch_roots[dto_cls.__name__] = (
             _create_dto_by_keys_in_query(
                 dto_cls, base_entity, join_key, er_manager, session_factory,
+                page_orders_resolved=page_orders_resolved,
+                default_order=default_order,
             ),
             join_key,
         )

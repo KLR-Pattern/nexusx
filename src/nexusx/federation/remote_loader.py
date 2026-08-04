@@ -401,6 +401,9 @@ def create_dto_remote_loader(
     target_cls: type[BaseModel],
     transport: FederationTransport,
     is_list: bool,
+    order: str | None = None,
+    direction: str | None = None,
+    limit: int | None = None,
 ) -> type[DataLoader]:  # type: ignore[type-arg]
     """Build a DataLoader that fetches resolved DTO trees from a member (specs/016).
 
@@ -429,10 +432,20 @@ def create_dto_remote_loader(
             # ``_render_value``; γ's JSON path normalizes here, symmetric with
             # ``_normalize_join_key`` applied on the response-alignment side.
             wire_keys = [_normalize_join_key(k) for k in keys]
-            resp = await transport.post_json(
-                url,
-                {"dto": typename, "join_key": join_key, "keys": wire_keys},
-            )
+            body: dict[str, Any] = {
+                "dto": typename, "join_key": join_key, "keys": wire_keys,
+            }
+            # specs/016 Phase 2: order/direction/limit drive the member's
+            # per-parent top-N (ROW_NUMBER). Omitted ⇒ member full-fetches
+            # (back-compat). Bound at create time (per-loader), so the whole
+            # batch shares one slice spec — matches DataLoader's batch model.
+            if order is not None:
+                body["order"] = order
+            if direction is not None:
+                body["direction"] = direction
+            if limit is not None:
+                body["limit"] = limit
+            resp = await transport.post_json(url, body)
             if not isinstance(resp, dict):
                 raise RemoteQueryError(
                     typename,
