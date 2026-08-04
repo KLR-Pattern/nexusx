@@ -27,6 +27,8 @@ gql query and resolves its own subgraph.
 """
 
 
+from typing import Annotated
+
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -42,6 +44,7 @@ from nexusx import (
     query,
 )
 from nexusx.federation import RemoteRelationship, RemoteService
+from nexusx.loader.pagination import Paged
 from nexusx.voyager import create_use_case_voyager
 
 REVIEWS_URL = "http://localhost:8021"  # base URL of the reviews service
@@ -50,6 +53,9 @@ REVIEWS_URL = "http://localhost:8021"  # base URL of the reviews service
 # `reviews` is mounted by catalog, so it carries its url; `users` is reached
 # only transitively (through reviews), so it needs no url here.
 reviews = RemoteService("reviews", url=REVIEWS_URL, color="#3b82f6")
+# Alias for DTO field annotations — a field named `reviews` would shadow the
+# RemoteService in the class body (Python name lookup), so use rev_svc there.
+rev_svc = reviews
 
 
 class CatalogBase(SQLModel):
@@ -175,10 +181,15 @@ class ReviewDTO(DefineSubset):
 
 
 class ProductDTO(DefineSubset):
-    """Subset of the local Product + nested reviews."""
+    """Subset of the local Product + nested reviews (member public DTO, Paged)."""
 
     __subset__ = (Product, ("id", "name"))
-    reviews: list[ReviewDTO] = Field(default_factory=list)
+    # γ DTO federation: reviews references the member public ReviewDTO (reviews
+    # service), with Paged(limit=2, order=HIGHEST_RATING) as default. The
+    # Resolver slices per-parent via the member batch root's ROW_NUMBER top-N.
+    reviews: Annotated[list[rev_svc.ReviewDTO], Paged(limit=2, order="HIGHEST_RATING")] = Field(
+        default_factory=list
+    )
 
 
 _resolver_cls = None

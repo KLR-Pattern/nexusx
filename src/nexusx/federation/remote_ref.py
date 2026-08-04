@@ -167,8 +167,15 @@ def _remote_ref_cardinality(annotation: Any) -> tuple[RemoteRef | None, bool]:
     ref = _contains_remote_ref(annotation)
     if ref is None:
         return None, False
-    # Peel Optional (X | None) to inspect the inner container.
+    # Peel Annotated (Annotated[list[Ref], Paged(...)] → list[Ref]) so the
+    # list/union inspection sees the real container, not the Annotated generic.
+    # specs/016: Paged marker on a remote-DTO field.
     inner = annotation
+    if hasattr(inner, "__metadata__"):
+        args = typing.get_args(inner)
+        if args:
+            inner = args[0]
+    # Peel Optional (X | None) to inspect the inner container.
     origin = typing.get_origin(inner)
     if origin in (typing.Union, types.UnionType):
         non_none = [a for a in typing.get_args(inner) if a is not type(None)]

@@ -16,9 +16,11 @@ from demo.federation._common import initialize_with_retry, make_app
 from nexusx import (
     AutoQueryConfig,
     BatchPageConfig,
+    DefineSubset,
     GraphQLHandler,
     OrderTerm,
     PageOrder,
+    SubsetConfig,
 )
 from nexusx.federation import RemoteRelationship, RemoteService
 
@@ -74,6 +76,26 @@ class Review(ReviewsBase, table=True):
     }
 
 
+class ReviewDTO(DefineSubset):
+    """member public DTO: subset of Review + federation order profiles.
+
+    Exposed via dto_classes below; catalog's ProductDTO.reviews references it
+    (γ DTO federation). __pagination_orders__ drives the member batch root's
+    ROW_NUMBER top-N when catalog sends order+limit via Paged.
+    """
+
+    __subset__ = SubsetConfig(
+        kls=Review,
+        fields=("title", "rating", "product_id"),
+        federation_public=True,
+        federation_join_key="product_id",
+    )
+    __pagination_orders__ = BatchPageConfig(
+        default_order="HIGHEST_RATING",
+        orders={"HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")])},
+    )
+
+
 engine = create_async_engine("sqlite+aiosqlite:///fed_reviews.db")
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -123,6 +145,7 @@ handler = GraphQLHandler(
         },
     ),
     service_name="reviews",
+    dto_classes=[ReviewDTO],
     # reviews is itself mounted by catalog AND mounts users — opting in lets
     # catalog discover users' endpoint transitively through reviews. Leaf
     # services (users) and root services (catalog) don't need this. In production
