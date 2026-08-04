@@ -185,9 +185,10 @@ class ProductDTO(DefineSubset):
 
     __subset__ = (Product, ("id", "name"))
     # γ DTO federation: reviews references the member public ReviewDTO (reviews
-    # service), with Paged(limit=2, order=HIGHEST_RATING) as default. The
-    # Resolver slices per-parent via the member batch root's ROW_NUMBER top-N.
-    reviews: Annotated[list[rev_svc.ReviewDTO], Paged(limit=2, order="HIGHEST_RATING")] = Field(
+    # service), with Paged(limit=2) as default (order omitted → member
+    # __pagination_orders__ default_order HIGHEST_RATING). The Resolver slices
+    # per-parent via the member batch root's ROW_NUMBER top-N.
+    reviews: Annotated[list[rev_svc.ReviewDTO], Paged(limit=2)] = Field(
         default_factory=list
     )
 

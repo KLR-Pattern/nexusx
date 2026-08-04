@@ -81,7 +81,7 @@ class ReviewDTO(DefineSubset):
 # ── mounter DTO(reviews 挂 Paged,引用 member public ReviewDTO)─────────────
 class ProductDTO(DefineSubset):
     __subset__ = (Product, ("id", "name"))
-    reviews: Annotated[list[rev_svc.ReviewDTO], Paged(limit=2, order="TOP")] = SQLField(
+    reviews: Annotated[list[rev_svc.ReviewDTO], Paged(limit=2)] = SQLField(
         default_factory=list
     )
 

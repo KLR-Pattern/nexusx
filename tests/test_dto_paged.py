@@ -60,12 +60,10 @@ class DPCommentDTO(DefineSubset):
 
 
 class DPThreadDTO(DefineSubset):
-    """comments 挂 Paged(limit=2, order=MOST_LIKED) 默认(ER relationship 字段)。"""
+    """comments 挂 Paged(limit=2) 默认(order 省略 → entity default_order MOST_LIKED)。"""
 
     __subset__ = (DPThread, ("id", "title"))
-    comments: Annotated[list[DPCommentDTO], Paged(limit=2, order="MOST_LIKED")] = Field(
-        default_factory=list
-    )
+    comments: Annotated[list[DPCommentDTO], Paged(limit=2)] = Field(default_factory=list)
 
 
 _engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -107,7 +105,7 @@ def test_paged_stamp_at_class_creation():
     paged = DPThreadDTO.__paged_fields__["comments"]
     assert isinstance(paged, Paged)
     assert paged.limit == 2
-    assert paged.order == "MOST_LIKED"
+    assert paged.order is None  # omitted → entity default_order at runtime
     assert paged.offset == 0
     assert paged.direction is None
     # 内层 list[DPCommentDTO] 仍是有效字段(Paged 只是 metadata)。
