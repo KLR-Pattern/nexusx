@@ -291,7 +291,6 @@ def _wire_dto_remote_loaders(
         refs = getattr(dto_cls, "__nexusx_remote_field_refs__", None)
         if not refs:
             continue
-        paged_fields = getattr(dto_cls, "__paged_fields__", {})
         for field_name, raw_anno in refs.items():
             ref, is_list = _remote_ref_cardinality(raw_anno)
             if ref is None:
@@ -313,35 +312,6 @@ def _wire_dto_remote_loaders(
                     f"{dto_cls.__name__}.{field_name} references {qn!r} which "
                     f"has no federation join_key; cannot wire a DTO RemoteLoader."
                 )
-            # specs/016 Phase 2: Paged(limit, default_order) on this remote
-            # field → member per-parent top-N. The mounter only picks a limit
-            # + an order NAME; physical terms stay on the member (its
-            # __pagination_orders__, exposed via batch_root.page). Fail-fast
-            # if the member exposes no orders or the picked name isn't among them.
-            paged = paged_fields.get(field_name)
-            order = None
-            limit = None
-            if paged is not None:
-                limit = paged.limit
-                page_cap = frag.batch_root.page if frag.batch_root else None
-                if page_cap is None:
-                    raise FederationError(
-                        f"{dto_cls.__name__}.{field_name} is Paged but member "
-                        f"DTO {qn!r} exposes no order profiles "
-                        f"(__pagination_orders__); cannot slice."
-                    )
-                order_names = {o.name for o in page_cap.orders}
-                if paged.default_order is not None:
-                    if paged.default_order not in order_names:
-                        raise FederationError(
-                            f"{dto_cls.__name__}.{field_name} "
-                            f"Paged.default_order {paged.default_order!r} is "
-                            f"not among member {qn!r} orders "
-                            f"{sorted(order_names)}."
-                        )
-                    order = paged.default_order
-                else:
-                    order = page_cap.default_order
             target_cls = fed_registry.get(qn)
             loader_cls = create_dto_remote_loader(
                 typename=typename,
@@ -350,8 +320,6 @@ def _wire_dto_remote_loaders(
                 target_cls=target_cls,
                 transport=transport,
                 is_list=is_list,
-                order=order,
-                limit=limit,
             )
             er_manager.register_dto_loader(dto_cls, field_name, loader_cls)
 

@@ -64,31 +64,27 @@ class PageLoadCommand:
 
 @dataclass(frozen=True)
 class Paged:
-    """Declarative top-N marker for a DefineSubset DTO field.
+    """Page params for an ER-relationship DTO field — declarative default
+    (``Annotated[list[Target], Paged(...)]`` on the field) AND the merged
+    result (Paged default + caller context override).
 
-    Attached via ``Annotated[list[Target], Paged(...)]`` on a DefineSubset
-    field whose name matches a source-entity relationship. It tells the
-    Resolver to fetch a limited, ordered slice (top-N) instead of the full
-    list — the typical "thread.comments top 10" shape.
+    All four params map 1:1 to ``PageLoadCommand`` → PO2M (limit/offset via
+    PageArgs → ROW_NUMBER BETWEEN; order → ``page_orders_resolved[order]``;
+    direction → ``_apply_direction``). ``order=None`` falls back to the source
+    entity's ``__pagination_orders__`` default_order; ``direction=None`` to
+    the order profile's default direction.
 
-    The order profiles AND the page_loader itself come from the SOURCE
-    ENTITY's ``__pagination_orders__`` declaration (specs/015): Paged only
-    sets the limit and selects which declared order to use. Physical ORDER BY
-    terms stay on the data-owning entity — the same split as γ remote
-    federation (orders sourced from the member), so the DTO never pins
-    physical sort terms it doesn't own.
-
-    limit: max items per parent (the top-N).
-    default_order: name of the source entity's order profile to use; None ⇒
-        the entity's declared default_order.
+    ``params_key()`` gives a hashable cache key for per-params split
+    (different merged params → different loader instance → different batch).
     """
 
-    limit: int
-    default_order: str | None = None
+    limit: int | None = None
+    offset: int = 0
+    order: str | None = None
+    direction: str | None = None
 
-    def __post_init__(self) -> None:
-        if self.limit < 0:
-            raise ValueError(f"Paged.limit must be >= 0, got {self.limit}")
+    def params_key(self) -> tuple:
+        return (self.limit, self.offset, self.order, self.direction)
 
 
 def _build_pagination_model(pagination_selection: set[str]) -> type[BaseModel]:

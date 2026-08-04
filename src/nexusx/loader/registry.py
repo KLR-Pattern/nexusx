@@ -708,6 +708,7 @@ class ErManager:
         loader_cls: type[DataLoader],
         type_key: frozenset[str] | None = None,
         force_split: bool = False,
+        params_key: tuple | None = None,
     ) -> DataLoader:
         """Get or create a DataLoader instance (cached per request).
 
@@ -718,22 +719,29 @@ class ErManager:
             force_split: If True, always creates per-type_key instances
                 regardless of ``_split_mode``. Used by federation RemoteLoaders
                 to isolate ``_remote_selection`` per distinct selection.
+            params_key: Optional hashable key for per-params split — different
+                page params (limit/order/direction) MUST get separate instances
+                so aiodataloader batches don't mix slice specs (one batch holds
+                one set of params). When set, forces split.
         """
         use_split = (self._split_mode or force_split) and type_key is not None
+        if params_key is not None:
+            use_split = True
 
         if not use_split:
-            # Default mode / no type_key: shared instance per loader_cls
+            # Default mode / no type_key / no params: shared instance per loader_cls
             if loader_cls not in self._loader_instances:
                 self._loader_instances[loader_cls] = loader_cls()
             return self._loader_instances[loader_cls]
 
-        # Split mode: per-type_key instances
+        # Split mode: per-(type_key, params_key) instances
+        cache_key: tuple = (type_key, params_key)
         if loader_cls not in self._loader_instances:
             self._loader_instances[loader_cls] = {}
-        inner: dict[frozenset[str], DataLoader] = self._loader_instances[loader_cls]
-        if type_key not in inner:
-            inner[type_key] = loader_cls()
-        return inner[type_key]
+        inner: dict[tuple, DataLoader] = self._loader_instances[loader_cls]
+        if cache_key not in inner:
+            inner[cache_key] = loader_cls()
+        return inner[cache_key]
 
     def clear_cache(self) -> None:
         """Clear cached loader instances (call at start of each request)."""

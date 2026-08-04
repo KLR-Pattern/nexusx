@@ -393,6 +393,18 @@ def create_remote_loader(
     return _RemoteLoader
 
 
+def set_dto_page_params(loader: Any, params: Any) -> None:
+    """Set per-call page params on a DTO RemoteLoader instance (side-channel).
+
+    Mirrors ``set_remote_selection``: the Resolver sets this from context
+    before ``load_many``, and ``batch_load_fn`` reads it (``_dto_page_params``)
+    to override the create-time closure. Pair with per-params split
+    (registry.get_loader ``params_key``) so different params get different
+    instances/batches.
+    """
+    loader._dto_page_params = params
+
+
 def create_dto_remote_loader(
     *,
     typename: str,
@@ -404,6 +416,7 @@ def create_dto_remote_loader(
     order: str | None = None,
     direction: str | None = None,
     limit: int | None = None,
+    offset: int = 0,
 ) -> type[DataLoader]:  # type: ignore[type-arg]
     """Build a DataLoader that fetches resolved DTO trees from a member (specs/016).
 
@@ -435,16 +448,22 @@ def create_dto_remote_loader(
             body: dict[str, Any] = {
                 "dto": typename, "join_key": join_key, "keys": wire_keys,
             }
-            # specs/016 Phase 2: order/direction/limit drive the member's
-            # per-parent top-N (ROW_NUMBER). Omitted ⇒ member full-fetches
-            # (back-compat). Bound at create time (per-loader), so the whole
-            # batch shares one slice spec — matches DataLoader's batch model.
-            if order is not None:
-                body["order"] = order
-            if direction is not None:
-                body["direction"] = direction
-            if limit is not None:
-                body["limit"] = limit
+            # Page params: side-channel (per-call, set by Resolver from context
+            # via set_dto_page_params) wins over closure (create-time fallback).
+            # Omitted ⇒ member full-fetches (back-compat).
+            p = getattr(self, "_dto_page_params", None)
+            eff_order = (p.order if p else None) or order
+            eff_direction = (p.direction if p else None) or direction
+            eff_limit = (p.limit if p else None) or limit
+            eff_offset = (p.offset if p else 0) or offset
+            if eff_order is not None:
+                body["order"] = eff_order
+            if eff_direction is not None:
+                body["direction"] = eff_direction
+            if eff_limit is not None:
+                body["limit"] = eff_limit
+            if eff_offset:
+                body["offset"] = eff_offset
             resp = await transport.post_json(url, body)
             if not isinstance(resp, dict):
                 raise RemoteQueryError(

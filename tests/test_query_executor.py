@@ -581,12 +581,13 @@ class TestQueryExecutorSplitMode:
         assert isinstance(inner, dict)  # split mode: nested dict
         assert len(inner) == 2
 
-        type_keys = set(inner.keys())
+        # Cache key is (type_key, params_key); params_key is None here.
+        type_keys = {k[0] for k in inner}
         assert frozenset({"id", "name"}) in type_keys
         assert frozenset({"id", "email"}) in type_keys
 
         # Each loader has its own _query_meta matching its type_key
-        for tk, loader in inner.items():
+        for (tk, _params), loader in inner.items():
             meta_fields = set(loader._query_meta["fields"])
             assert meta_fields == tk
 

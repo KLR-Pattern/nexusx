@@ -1,11 +1,10 @@
-"""specs/016 γ+local: DefineSubset 字段 ``Annotated[..., Paged(...)]`` top-N。
+"""specs/016 Paged 字段声明分页(完整四参 limit/offset/order/direction + caller 覆盖)。
 
-DTO 字段引用 source entity 的 ``__pagination_orders__`` page_loader(specs/015),
-Resolver(Core API 路径,非 β gql)检测 ``__paged_fields__`` → 路由 ``page_loader``
-→ 构造 ``PageLoadCommand(limit, order)`` → per-parent top-N。
+``Paged(...)`` 挂 ER relationship 字段(``Annotated[list[Target], Paged(...)]``),
+提供默认分页参数;caller ``Resolver(context=...)`` 可逐字段覆盖。映射 PO2M 完整
+分页(ROW_NUMBER BETWEEN offset+1 AND offset+limit,ORDER BY <order> <direction>)。
 
-种子: T1 三条 comment,likes 5/3/None → MOST_LIKED desc nulls_last = [C1,C2,C3]。
-Paged(limit=2) → top-2 = [C1,C2](C3 NULL 排末,被 limit 切掉)。
+种子: T1 三条 comment(likes 5/3/1)。MOST_LIKED(likes desc nulls_last)=[C5,C3,C1]。
 """
 from typing import Annotated, Optional
 
@@ -30,16 +29,16 @@ class DPBase(SQLModel):
 
 
 class DPComment(DPBase, table=True):
-    __tablename__ = "dp_comment"
+    __tablename__ = "dpp_comment"
     id: int | None = Field(default=None, primary_key=True)
     text: str
-    likes: int | None = Field(default=None)  # nullable → MOST_LIKED 用 nulls
-    thread_id: int = Field(foreign_key="dp_thread.id")
+    likes: int | None = Field(default=None)
+    thread_id: int = Field(foreign_key="dpp_thread.id")
     thread: Optional["DPThread"] = Relationship(back_populates="comments")
 
 
 class DPThread(DPBase, table=True):
-    __tablename__ = "dp_thread"
+    __tablename__ = "dpp_thread"
     id: int | None = Field(default=None, primary_key=True)
     title: str
     comments: list[DPComment] = Relationship(
@@ -61,10 +60,10 @@ class DPCommentDTO(DefineSubset):
 
 
 class DPThreadDTO(DefineSubset):
-    """comments 字段声明 top-N:Paged(limit=2, default_order=MOST_LIKED)。"""
+    """comments 挂 Paged(limit=2, order=MOST_LIKED) 默认(ER relationship 字段)。"""
 
     __subset__ = (DPThread, ("id", "title"))
-    comments: Annotated[list[DPCommentDTO], Paged(limit=2, default_order="MOST_LIKED")] = Field(
+    comments: Annotated[list[DPCommentDTO], Paged(limit=2, order="MOST_LIKED")] = Field(
         default_factory=list
     )
 
@@ -82,9 +81,9 @@ async def _seed() -> None:
         await c.run_sync(SQLModel.metadata.create_all)
     async with _sf() as s:
         s.add(DPThread(id=1, title="T1"))
-        s.add(DPComment(id=1, thread_id=1, text="C1", likes=5))
-        s.add(DPComment(id=2, thread_id=1, text="C2", likes=3))
-        s.add(DPComment(id=3, thread_id=1, text="C3", likes=None))
+        s.add(DPComment(id=1, thread_id=1, text="C5", likes=5))
+        s.add(DPComment(id=2, thread_id=1, text="C3", likes=3))
+        s.add(DPComment(id=3, thread_id=1, text="C1", likes=1))
         await s.commit()
     _seeded = True
 
@@ -102,47 +101,105 @@ async def handler() -> GraphQLHandler:
     return h
 
 
-def test_paged_marker_stamped_at_class_creation():
-    """SubsetMeta 识别 Annotated[..., Paged] → stamp __paged_fields__。"""
+def test_paged_stamp_at_class_creation():
+    """SubsetMeta 识别 Annotated[..., Paged] → stamp __paged_fields__(完整四参)。"""
     assert hasattr(DPThreadDTO, "__paged_fields__")
     paged = DPThreadDTO.__paged_fields__["comments"]
     assert isinstance(paged, Paged)
     assert paged.limit == 2
-    assert paged.default_order == "MOST_LIKED"
-    # 内层 list[DPCommentDTO] 仍是有效字段(Paged 只是 metadata,未占位)。
+    assert paged.order == "MOST_LIKED"
+    assert paged.offset == 0
+    assert paged.direction is None
+    # 内层 list[DPCommentDTO] 仍是有效字段(Paged 只是 metadata)。
     assert "comments" in DPThreadDTO.model_fields
 
 
 @pytest.mark.asyncio
-async def test_dto_paged_field_top_n_slice(handler):
-    """Paged(limit=2) → resolve 后 comments 只 2 条 + 按 MOST_LIKED desc。
+async def test_paged_default_top_n(handler):
+    """Paged(limit=2, order=MOST_LIKED) 默认 → top-2 by likes desc(无 caller context)。
 
-    MOST_LIKED(likes desc nulls_last) 全序 = [C1(5), C2(3), C3(None)];
-    limit=2 切掉 C3 → top-2 = [C1, C2]。证明 Core API 路径打通了 page_loader
-    (之前 resolver.py 完全不走 page_loader)。
+    证明 Paged 提供默认:不传 context 也能分页(不像 context-only 版要 caller 传)。
     """
-    resolver_cls = handler._er_manager.create_resolver()
-    resolved = await resolver_cls().resolve([DPThreadDTO(id=1, title="T1")])
+    ResolverCls = handler._er_manager.create_resolver()
+    resolver = ResolverCls()  # 无 context
+    resolved = await resolver.resolve([DPThreadDTO(id=1, title="T1")])
 
     comments = resolved[0].comments
-    assert len(comments) == 2  # top-N 生效(原本会返 3 条)
-    assert [c.text for c in comments] == ["C1", "C2"]  # likes desc: 5, 3
-    # 返的是 DTO 实例(_orm_to_dto 投影过)
-    assert all(isinstance(c, DPCommentDTO) for c in comments)
-    assert comments[0].likes == 5
+    assert len(comments) == 2  # top-N(Paged 默认 limit=2)
+    assert [c.text for c in comments] == ["C5", "C3"]  # likes desc: 5, 3
 
 
 @pytest.mark.asyncio
-async def test_dto_paged_default_order_uses_entity_default(handler):
-    """Paged(default_order=None) → 用 source entity 的 default_order(MOST_LIKED)。"""
+async def test_caller_overrides_paged_default(handler):
+    """caller context {limit:1} 覆盖 Paged 默认 limit=2 → top-1。
 
-    class _DTODefault(DefineSubset):
+    Paged 默认 limit=2,caller 传 limit=1 → merged limit=1(caller 赢)。
+    static-ness 解:Paged 是默认,caller 可覆盖。
+    """
+    ResolverCls = handler._er_manager.create_resolver()
+    resolver = ResolverCls(context={"limit": 1})
+    resolved = await resolver.resolve([DPThreadDTO(id=1, title="T1")])
+    assert [c.text for c in resolved[0].comments] == ["C5"]  # top-1
+
+
+@pytest.mark.asyncio
+async def test_paged_offset_second_page(handler):
+    """caller context {offset:1} → 第 2 页(merged offset=1 覆盖 Paged 默认 0)。
+
+    MOST_LIKED 全序 [C5,C3,C1];offset=1 limit=2 → rn BETWEEN 2 AND 3 → [C3,C1]。
+    """
+    ResolverCls = handler._er_manager.create_resolver()
+    resolver = ResolverCls(context={"offset": 1})
+    resolved = await resolver.resolve([DPThreadDTO(id=1, title="T1")])
+    assert [c.text for c in resolved[0].comments] == ["C3", "C1"]
+
+
+@pytest.mark.asyncio
+async def test_paged_order_none_uses_entity_default(handler):
+    """Paged(order=None) + caller 不传 → 用 entity default_order(MOST_LIKED)。"""
+
+    class _DTO(DefineSubset):
         __subset__ = (DPThread, ("id", "title"))
         comments: Annotated[list[DPCommentDTO], Paged(limit=2)] = Field(
             default_factory=list
         )
 
-    resolver_cls = handler._er_manager.create_resolver()
-    resolved = await resolver_cls().resolve([_DTODefault(id=1, title="T1")])
-    # entity default_order=MOST_LIKED → 同上 [C1, C2]
-    assert [c.text for c in resolved[0].comments] == ["C1", "C2"]
+    ResolverCls = handler._er_manager.create_resolver()
+    resolver = ResolverCls()
+    resolved = await resolver.resolve([_DTO(id=1, title="T1")])
+    assert [c.text for c in resolved[0].comments] == ["C5", "C3"]  # entity default
+
+
+@pytest.mark.asyncio
+async def test_paged_multi_parent_batch(handler):
+    """多 parent batch(各 top-N per-parent ROW_NUMBER 独立)。"""
+    async with _sf() as s:
+        s.add(DPThread(id=2, title="T2"))
+        s.add(DPComment(id=4, thread_id=2, text="C4", likes=4))
+        s.add(DPComment(id=5, thread_id=2, text="C2", likes=2))
+        await s.commit()
+
+    ResolverCls = handler._er_manager.create_resolver()
+    resolver = ResolverCls()
+    resolved = await resolver.resolve([
+        DPThreadDTO(id=1, title="T1"), DPThreadDTO(id=2, title="T2"),
+    ])
+    by_id = {t.id: t for t in resolved}
+    assert [c.text for c in by_id[1].comments] == ["C5", "C3"]
+    assert [c.text for c in by_id[2].comments] == ["C4", "C2"]
+
+
+@pytest.mark.asyncio
+async def test_caller_only_no_paged_default(handler):
+    """DTO 无 Paged + caller context → caller 驱动(back-compat,Paged default None)。
+
+    没有 Paged 默认时,caller context 单独驱动分页(merged = merge(None, caller) = caller)。
+    """
+    class _DTO(DefineSubset):
+        __subset__ = (DPThread, ("id", "title"))
+        comments: list[DPCommentDTO] = Field(default_factory=list)  # 无 Paged
+
+    ResolverCls = handler._er_manager.create_resolver()
+    resolver = ResolverCls(context={"limit": 1, "order": "MOST_LIKED"})
+    resolved = await resolver.resolve([_DTO(id=1, title="T1")])
+    assert [c.text for c in resolved[0].comments] == ["C5"]  # caller limit=1

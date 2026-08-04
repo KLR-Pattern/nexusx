@@ -657,17 +657,18 @@ class SubsetMeta(type):
         if isinstance(subset_info, SubsetConfig):
             cls._merge_config_overrides(field_definitions, subset_info, local_ns, namespace)
 
+        # Annotated[..., Paged(...)] marks an ER-relationship field with page
+        # params (default; caller context may override at resolve time).
+        # Collected BEFORE _collect_remote_field_refs — that step neutralizes
+        # RemoteRef annotations to Any, which would hide the Paged metadata on
+        # a remote-DTO field (Annotated[list[RemoteRef], Paged(...)]).
+        paged_fields = cls._collect_paged_fields(extra_fields, global_ns, local_ns)
         # specs/016 γ-path: an extra field whose annotation references a member
         # public DTO (e.g. ``reviews: list[reviews.ReviewDTO]``) carries a
         # RemoteRef that create_model can't compile. Defer it — placeholder the
         # field as ``Any`` now, stamp the raw annotation for
         # resolve_remote_field_refs to swap in the materialized DTO class at
         # federate time. Source stays local; only the field is deferred.
-        # Annotated[..., Paged(...)] marks a top-N field. Collected BEFORE
-        # _collect_remote_field_refs — that step neutralizes RemoteRef
-        # annotations to Any, which would hide the Paged metadata on a
-        # remote-DTO field (Annotated[list[RemoteRef], Paged(...)]).
-        paged_fields = cls._collect_paged_fields(extra_fields, global_ns, local_ns)
         remote_field_refs = cls._collect_remote_field_refs(
             extra_fields, field_definitions, global_ns, local_ns,
         )
@@ -788,15 +789,12 @@ class SubsetMeta(type):
         global_ns: dict[str, Any],
         local_ns: dict[str, Any],
     ) -> dict[str, Any]:
-        """Detect extra fields annotated ``Annotated[..., Paged]`` (top-N marker).
-
-        Returns ``{field_name: Paged}`` for the caller to stamp on the class
-        as ``__paged_fields__``; the Resolver reads it to route the field to
-        ``rel_info.page_loader``. Unlike ``_collect_remote_field_refs``, the
-        annotation is NOT neutralized — Annotated's inner type (e.g.
-        ``list[Comment]``) is a valid pydantic type and ``Paged`` is metadata
-        pydantic ignores. String annotations are resolved against the class
-        namespaces first (mirrors _collect_remote_field_refs).
+        """Detect extra fields annotated ``Annotated[..., Paged]`` (page params
+        default on an ER-relationship field). Returns ``{field_name: Paged}``
+        stamped as ``__paged_fields__``; the Resolver merges it with caller
+        context overrides. The annotation is NOT neutralized — Annotated's
+        inner type (e.g. ``list[Comment]``) is a valid pydantic type and
+        Paged is metadata pydantic ignores.
         """
         paged: dict[str, Any] = {}
         for fname, (anno, default) in list(extra_fields.items()):

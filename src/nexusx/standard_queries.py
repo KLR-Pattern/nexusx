@@ -843,6 +843,7 @@ def _create_dto_by_keys_in_query(
         order: str | None = None,
         direction: Any = None,
         limit: int | None = None,
+        offset: int = 0,
     ) -> list[dict]:
         if not values:
             return []
@@ -876,9 +877,12 @@ def _create_dto_by_keys_in_query(
                 subq = inner.subquery()
                 rn_col = subq.c[rn_label]
                 fk_col_sub = subq.c[join_key]
+                # rn BETWEEN offset+1 AND offset+limit (offset=0 → top-N).
+                start = offset + 1
+                end = offset + limit
                 outer = (
                     select(subq)
-                    .where(rn_col <= limit)
+                    .where(rn_col.between(start, end))
                     .order_by(fk_col_sub, *_build_order_expressions(subq.c, order_terms))
                 )
                 # session.execute (not .exec): SQLModel's .exec yields the

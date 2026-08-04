@@ -461,9 +461,10 @@ def build_federable_app(
         order = payload.get("order")
         direction = payload.get("direction")
         limit = payload.get("limit")
+        offset = payload.get("offset", 0)
         try:
             rows = await batch_fn(
-                keys, order=order, direction=direction, limit=limit,
+                keys, order=order, direction=direction, limit=limit, offset=offset,
             )
         except Exception as exc:  # noqa: BLE001 — member Resolver failure surfaces
             # spec Edge Case: member Resolver/computation failing during the
