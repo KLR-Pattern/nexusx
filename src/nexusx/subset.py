@@ -797,7 +797,7 @@ class SubsetMeta(type):
         Paged is metadata pydantic ignores.
         """
         paged: dict[str, Any] = {}
-        for fname, (anno, default) in list(extra_fields.items()):
+        for fname, (anno, _default) in list(extra_fields.items()):
             resolved_anno = anno
             if isinstance(resolved_anno, str):
                 try:
