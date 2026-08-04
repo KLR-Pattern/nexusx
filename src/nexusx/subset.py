@@ -442,6 +442,26 @@ class SubsetConfig(BaseModel):
         return self
 
 
+def _entity_fk_fields(entity: type) -> list[str]:
+    """FK field names on a SQLModel entity (columns carrying a foreign_key).
+
+    Used to auto-derive ``federation_join_key`` when a public DTO omits it and
+    the subset contains exactly one FK. Mirrors the FK detection in
+    ``standard_queries._get_primary_key_fields``.
+    """
+    fks: list[str] = []
+    for fname, fi in entity.model_fields.items():
+        if hasattr(fi, "foreign_key") and isinstance(fi.foreign_key, str):
+            fks.append(fname)
+            continue
+        if hasattr(fi, "metadata"):
+            for meta in fi.metadata:
+                if hasattr(meta, "foreign_key") and isinstance(meta.foreign_key, str):
+                    fks.append(fname)
+                    break
+    return fks
+
+
 def _validate_federation_config(
     subset_info: Any,
     subset_class: type[BaseModel],
@@ -449,10 +469,11 @@ def _validate_federation_config(
     """Validate SubsetConfig federation params against the generated DTO.
 
     When ``federation_public=True``:
-      * ``federation_join_key`` must be provided, and
-      * it must be one of the DTO's subset fields (so the member batch root
-        can ``WHERE join_key IN [...]`` against the base entity's column — a
-        Resolver-computed field would not be SQL-filterable).
+      * ``federation_join_key`` must be one of the DTO's subset fields (so the
+        member batch root can ``WHERE join_key IN [...]`` against the base
+        entity's column — a Resolver-computed field would not be SQL-filterable).
+      * If omitted, it's auto-derived when the subset contains exactly one FK
+        field (no ambiguity). Zero/multiple FKs → must specify explicitly.
 
     Fail-fast at class creation: a mistyped or computed join_key is caught
     here, not at federation query time. Only SubsetConfig can declare a DTO
@@ -461,15 +482,27 @@ def _validate_federation_config(
     if not isinstance(subset_info, SubsetConfig) or not subset_info.federation_public:
         return
 
-    join_key = subset_info.federation_join_key
-    if not join_key:
-        raise ValueError(
-            f"{subset_class.__name__}: federation_public=True requires "
-            f"federation_join_key (a DTO field name to join on)"
-        )
-
     subset_fields = getattr(subset_class, "__subset_fields__", None)
     field_set = set(subset_fields) if subset_fields else set(subset_class.model_fields)
+
+    join_key = subset_info.federation_join_key
+    if not join_key:
+        # Auto-derive: if the subset contains exactly one FK field, use it as
+        # the federation join key (no ambiguity, no need to repeat the name).
+        # Zero or multiple FKs in the subset → must specify explicitly.
+        entity = subset_info.kls
+        fk_in_subset = [f for f in _entity_fk_fields(entity) if f in field_set]
+        if len(fk_in_subset) == 1:
+            join_key = fk_in_subset[0]
+            subset_info.federation_join_key = join_key
+        else:
+            raise ValueError(
+                f"{subset_class.__name__}: federation_public=True requires "
+                f"federation_join_key. Could not auto-derive — subset has "
+                f"{len(fk_in_subset)} FK field(s) ({sorted(fk_in_subset)}); "
+                f"specify federation_join_key explicitly."
+            )
+
     if join_key not in field_set:
         raise ValueError(
             f"{subset_class.__name__}: federation_join_key '{join_key}' is not "

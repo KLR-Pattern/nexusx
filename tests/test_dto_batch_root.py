@@ -122,6 +122,45 @@ def test_public_dto_join_key_validated_at_class_creation():
             )
 
 
+def test_public_dto_join_key_auto_derived_single_fk():
+    """public + 无 join_key + entity 单 FK(∈ subset)→ 自动推导(免手配)。"""
+
+    class _FkEnt(_BRBase, table=True):
+        __tablename__ = "dto_br_autofk"
+        id: int | None = SQLField(default=None, primary_key=True)
+        product_id: int = SQLField(foreign_key="dto_br_review.id")
+        title: str
+
+    class _DTOAuto(DefineSubset):
+        __subset__ = SubsetConfig(
+            kls=_FkEnt,
+            fields=("title", "product_id"),
+            federation_public=True,
+            # 无 federation_join_key → 自动 product_id(单 FK ∈ subset)
+        )
+
+    assert _DTOAuto.__federation_join_key__ == "product_id"
+
+
+def test_public_dto_join_key_auto_ambiguous_multiple_fks():
+    """public + 无 join_key + 多 FK → raise(ambiguous,须显式指定)。"""
+
+    class _MultiFk(_BRBase, table=True):
+        __tablename__ = "dto_br_multifk"
+        id: int | None = SQLField(default=None, primary_key=True)
+        a_id: int = SQLField(foreign_key="dto_br_review.id")
+        b_id: int = SQLField(foreign_key="dto_br_review.id")
+
+    with pytest.raises(ValueError, match="auto-derive"):
+
+        class _DTOMulti(DefineSubset):
+            __subset__ = SubsetConfig(
+                kls=_MultiFk,
+                fields=("a_id", "b_id"),
+                federation_public=True,
+            )
+
+
 def test_add_dto_batch_roots_rejects_unsupported_join_key_type():
     """Decimal 等 _SUPPORTED_JOIN_TYPES 外的 join key → member 启动期 fail-fast。
 
