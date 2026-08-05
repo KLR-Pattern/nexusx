@@ -17,6 +17,7 @@ from nexusx.execution.argument_builder import ArgumentBuilder
 from nexusx.loader.pagination import PageArgs, PageLoadCommand
 from nexusx.loader.registry import RelationshipKind
 from nexusx.query_parser import FieldSelection
+from nexusx.response_builder import serialize_with_model
 
 if TYPE_CHECKING:
     from nexusx.loader.registry import ErManager, RelationshipInfo
@@ -609,6 +610,45 @@ class QueryExecutor:
     # Serialization (unchanged)
     # ──────────────────────────────────────────────────────────
 
+    def _serialize_via_response_builder(
+        self,
+        result: Any,
+        entity: type[SQLModel],
+        field_sel: FieldSelection | None,
+    ) -> Any:
+        """Serialize via response_builder.build_response_model (specs/018 US1).
+
+        Routes through ``serialize_with_model`` (model-based field filtering)
+        instead of the legacy dict-based ``_serialize``. The output MUST be
+        dict-equal to ``_serialize`` for any input — equivalence is verified
+        by tests/test_query_executor_dto_first.py.
+
+        ``federation_namespace`` is sourced from ``ErManager._fed_registry``
+        (set by ``federate()``); when None (no federation), response_builder
+        falls back to local SQLModel subclasses only.
+        """
+        if result is None:
+            return None
+
+        field_tree = _field_sel_to_tree(field_sel)
+        federation_namespace = self._get_federation_namespace()
+        return serialize_with_model(
+            result, entity, field_tree,
+            federation_namespace=federation_namespace,
+        )
+
+    def _get_federation_namespace(self) -> dict[str, type] | None:
+        """Return the federation materialized-type namespace, if any.
+
+        ``ErManager._fed_registry`` is set by ``federate()``; its ``_namespace``
+        maps ``__name__`` to the materialized pydantic type. None when the
+        handler is not federated.
+        """
+        fed_registry = getattr(self._registry, "_fed_registry", None)
+        if fed_registry is None:
+            return None
+        return getattr(fed_registry, "_namespace", None)
+
     def _serialize(
         self,
         result: Any,
@@ -823,3 +863,29 @@ class QueryExecutor:
         except Exception:
             pass
         return names
+
+
+def _field_sel_to_tree(field_sel: FieldSelection | None) -> dict[str, Any] | None:
+    """Convert a ``FieldSelection`` to ``response_builder``'s ``field_tree`` dict.
+
+    Mapping:
+      - ``field_sel = None`` → ``None`` (all scalar fields)
+      - sub_field has no children → ``{name: None}`` (scalar)
+      - sub_field has children → ``{name: <recurse>}`` (nested relationship);
+        if children are exactly ``{items, pagination}`` the recursion naturally
+        yields a paginated-package tree, which response_builder handles.
+
+    Used by ``_serialize_via_response_builder`` (specs/018 US1) to bridge the
+    parsed gql AST shape and ``build_response_model``'s input format.
+    """
+    if field_sel is None:
+        return None
+    if not field_sel.sub_fields:
+        return None
+    tree: dict[str, Any] = {}
+    for name, child in field_sel.sub_fields.items():
+        if not child.sub_fields:
+            tree[name] = None
+        else:
+            tree[name] = _field_sel_to_tree(child)
+    return tree
