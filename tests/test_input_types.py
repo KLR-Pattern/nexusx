@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from enum import Enum
+
 import pytest
+from graphql import build_client_schema
+from pydantic import BaseModel
 from sqlmodel import Field, SQLModel
 
 from nexusx import GraphQLHandler, mutation
@@ -39,6 +43,19 @@ class UserWithAddressInput(SQLModel):
     address: AddressInput
 
 
+class ServiceMethodStatus(str, Enum):
+    IN_DEVELOP = "in develop"
+    DEVELOPED = "developed"
+    VALIDATED = "validated"
+
+
+class MethodPayload(BaseModel):
+    """Input matching a service method payload."""
+
+    id: str
+    status: ServiceMethodStatus = ServiceMethodStatus.IN_DEVELOP
+
+
 # Define entity
 class InputTestUser(InputTestBase, table=False):
     __test__ = False  # Tell pytest this is not a test class
@@ -61,6 +78,13 @@ class InputTestUser(InputTestBase, table=False):
     ) -> InputTestUser:
         """Create user with address."""
         return InputTestUser(id=1, name=input.name, email="test@test.com")
+
+    @mutation
+    async def create_with_method(
+        cls, input: MethodPayload
+    ) -> InputTestUser:
+        """Create user from a method payload."""
+        return InputTestUser(id=1, name=input.id, email="test@test.com")
 
 
 class TestInputTypesSDL:
@@ -110,6 +134,20 @@ class TestInputTypesSDL:
 
 class TestInputTypesIntrospection:
     """Test Input type introspection."""
+
+    def test_enum_nested_in_input_builds_complete_client_schema(self) -> None:
+        handler = GraphQLHandler(base=InputTestBase)
+        introspection = handler.get_introspection_data()
+
+        schema = build_client_schema({"__schema": introspection})
+
+        enum_type = schema.get_type("ServiceMethodStatus")
+        assert enum_type is not None
+        assert set(enum_type.values) == {
+            "IN_DEVELOP",
+            "DEVELOPED",
+            "VALIDATED",
+        }
 
     def test_input_type_in_introspection(self) -> None:
         handler = GraphQLHandler(base=InputTestBase)
@@ -212,6 +250,33 @@ class TestInputTypesExecution:
 
         assert "data" in result
         assert result["data"]["InputTestUser"]["create_with_address"]["name"] == "Bob"
+
+    @pytest.mark.asyncio
+    async def test_enum_nested_in_input_conversion(self) -> None:
+        handler = GraphQLHandler(base=InputTestBase)
+
+        result = await handler.execute(
+            """
+            mutation {
+                InputTestUser {
+                    create_with_method(input: {
+                        id: "method-1",
+                        status: DEVELOPED
+                    }) {
+                        name
+                    }
+                }
+            }
+            """
+        )
+
+        assert result == {
+            "data": {
+                "InputTestUser": {
+                    "create_with_method": {"name": "method-1"}
+                }
+            }
+        }
 
 
 class TestInputTypesMCP:

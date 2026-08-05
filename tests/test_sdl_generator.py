@@ -323,9 +323,8 @@ class TestSDLGeneratorEnums:
         sdl = generator.generate()
 
         assert "enum StatusEnum" in sdl
-        # Enum values use .value (lowercase), not the enum member names
-        assert "active" in sdl
-        assert "inactive" in sdl
+        assert "ACTIVE" in sdl
+        assert "INACTIVE" in sdl
 
     def test_enum_type_field(self) -> None:
         """Test that enum fields have correct type."""

@@ -20,7 +20,11 @@ from nexusx.utils.pagination_schema import (
     is_active_paginated_relationship,
     iter_pagination_roots,
 )
-from nexusx.utils.schema_helpers import get_core_types, is_input_type
+from nexusx.utils.schema_helpers import (
+    collect_reachable_enum_types,
+    get_core_types,
+    is_input_type,
+)
 
 QUERY_META_PARAM = "query_meta"
 
@@ -329,12 +333,12 @@ class IntrospectionGenerator:
         """Build introspection data for an enum type."""
         enum_values = [
             {
-                "name": v.value,
+                "name": member.name,
                 "description": None,
                 "isDeprecated": False,
                 "deprecationReason": None,
             }
-            for v in enum_class
+            for member in enum_class
         ]
 
         return {
@@ -642,8 +646,8 @@ class IntrospectionGenerator:
         return json.dumps(value)
 
     def _collect_enum_types(self) -> dict[str, type[Enum]]:
-        """Collect all enum types used in entities."""
-        enums: dict[str, type[Enum]] = {}
+        """Collect all enum types reachable from schema field types."""
+        root_types: list[Any] = []
 
         for entity in self.entities:
             try:
@@ -651,13 +655,7 @@ class IntrospectionGenerator:
             except Exception:
                 continue
 
-            for field_type in hints.values():
-                # Unwrap to base type (handles Optional, list, Mapped)
-                base_type = self._converter.unwrap_to_base_type(field_type)
-
-                # Check if it's an enum
-                if self._converter.is_enum_type(base_type):
-                    enums[base_type.__name__] = base_type
+            root_types.extend(hints.values())
 
         # Also collect enums from query/mutation method signatures
         for methods in [self._query_methods, self._mutation_methods]:
@@ -669,11 +667,9 @@ class IntrospectionGenerator:
                     except Exception:
                         continue
 
-                    for hint in hints.values():
-                        if self._converter.is_enum_type(hint):
-                            enums[hint.__name__] = hint
+                    root_types.extend(hints.values())
 
-        return enums
+        return collect_reachable_enum_types(root_types, self._converter)
 
     def _collect_input_types(self) -> dict[str, type]:
         """Collect all Input types from query and mutation parameters."""
