@@ -20,7 +20,11 @@ from nexusx.utils.pagination_schema import (
     is_active_paginated_relationship,
     iter_pagination_roots,
 )
-from nexusx.utils.schema_helpers import get_core_types, is_input_type
+from nexusx.utils.schema_helpers import (
+    collect_reachable_enum_types,
+    get_core_types,
+    is_input_type,
+)
 
 QUERY_META_PARAM = "query_meta"
 
@@ -643,25 +647,7 @@ class IntrospectionGenerator:
 
     def _collect_enum_types(self) -> dict[str, type[Enum]]:
         """Collect all enum types reachable from schema field types."""
-        enums: dict[str, type[Enum]] = {}
-        visited_models: set[type] = set()
-
-        def collect_from_type(python_type: Any) -> None:
-            for core_type in get_core_types(python_type):
-                if self._converter.is_enum_type(core_type):
-                    enums[core_type.__name__] = core_type
-                    continue
-
-                if not is_input_type(core_type) or core_type in visited_models:
-                    continue
-
-                visited_models.add(core_type)
-                try:
-                    hints = get_type_hints(core_type)
-                except Exception:
-                    continue
-                for field_type in hints.values():
-                    collect_from_type(field_type)
+        root_types: list[Any] = []
 
         for entity in self.entities:
             try:
@@ -669,8 +655,7 @@ class IntrospectionGenerator:
             except Exception:
                 continue
 
-            for field_type in hints.values():
-                collect_from_type(field_type)
+            root_types.extend(hints.values())
 
         # Also collect enums from query/mutation method signatures
         for methods in [self._query_methods, self._mutation_methods]:
@@ -682,10 +667,9 @@ class IntrospectionGenerator:
                     except Exception:
                         continue
 
-                    for hint in hints.values():
-                        collect_from_type(hint)
+                    root_types.extend(hints.values())
 
-        return enums
+        return collect_reachable_enum_types(root_types, self._converter)
 
     def _collect_input_types(self) -> dict[str, type]:
         """Collect all Input types from query and mutation parameters."""

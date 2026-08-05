@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import inspect
 import logging
-from enum import Enum
 from typing import Any, get_args, get_origin, get_type_hints
 
 from sqlmodel import SQLModel
@@ -18,7 +17,11 @@ from nexusx.utils.pagination_schema import (
     is_active_paginated_relationship,
     iter_pagination_roots,
 )
-from nexusx.utils.schema_helpers import get_core_types, is_input_type
+from nexusx.utils.schema_helpers import (
+    collect_reachable_enum_types,
+    get_core_types,
+    is_input_type,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -193,25 +196,7 @@ class SDLGenerator:
 
     def _generate_enums(self) -> list[str]:
         """Generate GraphQL enum types reachable from schema field types."""
-        enums: dict[str, type[Enum]] = {}
-        visited_models: set[type] = set()
-
-        def collect_from_type(python_type: Any) -> None:
-            for core_type in get_core_types(python_type):
-                if self._converter.is_enum_type(core_type):
-                    enums[core_type.__name__] = core_type
-                    continue
-
-                if not is_input_type(core_type) or core_type in visited_models:
-                    continue
-
-                visited_models.add(core_type)
-                try:
-                    hints = get_type_hints(core_type)
-                except Exception:
-                    continue
-                for field_type in hints.values():
-                    collect_from_type(field_type)
+        root_types: list[Any] = []
 
         for entity in self.entities:
             try:
@@ -220,8 +205,7 @@ class SDLGenerator:
                 # Materialized remote types have dynamic ForwardRef annotations
                 # that get_type_hints can't resolve from module globals.
                 hints = {}
-            for field_type in hints.values():
-                collect_from_type(field_type)
+            root_types.extend(hints.values())
             for attr_name in dir(entity):
                 try:
                     attr = getattr(entity, attr_name)
@@ -235,13 +219,11 @@ class SDLGenerator:
                         method_hints = get_type_hints(func)
                     except Exception:
                         method_hints = {}
-                    for hint in method_hints.values():
-                        collect_from_type(hint)
+                    root_types.extend(method_hints.values())
 
                 pag_root = getattr(func, "_pagination_root", None)
                 if pag_root:
-                    enum_class = pag_root.order_enum
-                    enums[enum_class.__name__] = enum_class
+                    root_types.append(pag_root.order_enum)
                     # Also collect any enum-typed params on the pagination root
                     # signature (e.g. ``direction: Direction``) so the SDL defines
                     # every enum the field references — without this, the member
@@ -254,12 +236,10 @@ class SDLGenerator:
                     if pag_sig is not None:
                         for _pname, param in pag_sig.parameters.items():
                             ann = param.annotation
-                            if (
-                                ann is not inspect.Parameter.empty
-                                and isinstance(ann, type)
-                                and issubclass(ann, Enum)
-                            ):
-                                enums[ann.__name__] = ann
+                            if ann is not inspect.Parameter.empty:
+                                root_types.append(ann)
+
+        enums = collect_reachable_enum_types(root_types, self._converter)
 
         # Mounter-side federation order enums (one per distinct order set on a
         # federation-paginated relationship) + the shared Direction enum. These
