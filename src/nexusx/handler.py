@@ -60,7 +60,6 @@ class GraphQLHandler:
         service_name: str | None = None,
         expose_mounted_endpoints: bool = False,
         dto_classes: list[type] | None = None,
-        use_response_builder: bool = False,
     ):
         """Initialize the GraphQL handler.
 
@@ -88,11 +87,6 @@ class GraphQLHandler:
                 owns. Those flagged federation_public (via SubsetConfig) are
                 exposed through the DTO introspection endpoint for γ-path
                 federation (specs/016). Default None — no public DTOs.
-            use_response_builder: When True, ``QueryExecutor._serialize`` routes
-                through ``response_builder.build_response_model`` (specs/018
-                DTO-first path). Default False — legacy dict-based serialization
-                (``_serialize_legacy``). The flag is read by T007; until then
-                setting it has no behavioral effect.
         """
         if auto_query_config is not None and session_factory is None:
             # Backward compat: fall back to deprecated session_factory from config.
@@ -162,7 +156,6 @@ class GraphQLHandler:
             loader_registry=self._er_manager,
             enable_pagination=enable_pagination,
             introspection_generator=_LiveIntrospection(self),
-            use_response_builder=use_response_builder,
         )
 
     @property

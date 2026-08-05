@@ -7,12 +7,10 @@ dynamic model field 走 page_loader 链路的前提（T013）。
 
 from typing import Annotated
 
-import pytest
 from pydantic import BaseModel, create_model
 
 from nexusx.loader.pagination import Paged
 from nexusx.resolver import Resolver
-from nexusx.response_builder import build_response_model
 
 
 class InnerStub(BaseModel):
@@ -25,29 +23,9 @@ class InnerStub(BaseModel):
 # ──────────────────────────────────────────────────────────
 
 
-def test_extract_paged_metadata_from_pydantic_fieldinfo():
-    """build_response_model 输出的字段：Paged 进 FieldInfo.metadata。"""
-    field_tree = {
-        "reviews": {"items": {"title": None}, "pagination": {"has_more": None}},
-    }
-    metadata = {"reviews": Paged(limit=5, order="HIGHEST_RATING")}
-    # Minimal fake entity so build_response_model can run.
-    from pydantic import BaseModel, create_model
-    FakeEntity = create_model("FakeEntity", id=(int, ...), name=(str, ...))
-    # Use response_builder to materialize an Annotated[Result, Paged] field.
-    model = build_response_model(
-        # Use a real SQLModel entity is required for relationship lookup; but
-        # without one, build_response_model falls back to Any. Use a direct
-        # create_model to mirror what response_builder outputs:
-        FakeEntity, field_tree, pagination_metadata=metadata,
-    )
-    # Field type ends up Any because FakeEntity has no relationships; skip
-    # this case — covered by tests/test_response_builder_pagination.py instead.
-
-
 def test_extract_paged_metadata_from_fieldinfo_metadata_list():
     """直接构造 pydantic FieldInfo（模拟 build_response_model 输出形态）."""
-    from pydantic import BaseModel, create_model
+    from pydantic import create_model
     Inner = create_model("Inner", title=(str, ...))
     paged = Paged(limit=5, order="HIGHEST_RATING")
     Model = create_model(

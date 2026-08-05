@@ -1,17 +1,17 @@
-"""specs/018 T002 — US1 等价性 fixture。
+"""specs/018 T002 — response_builder serialize 正确性（Phase 7 后 legacy 移除）。
 
-同一个 gql query 在 ``use_response_builder=True`` 和 ``=False`` 两个值下跑，
-响应 dict 必须完全一致。这是 US1 的硬 gate（spec.md US1 Acceptance Scenario 1-3）。
+entity-first gql 的 serialize 现在唯一走 ``response_builder``（specs/018 US1 +
+Phase 7 T028 删除 legacy dict-based loop）。这些 fixture 验证 response_builder
+路径在 scalar / nested / paginated 各形状下产出正确结构。
+
+历史：T002 原为 flag-on/off 等价性 gate（证明 response_builder 可替换 legacy）；
+Phase 7 T028 删除 legacy 后等价性不再需要（legacy 不存在），改为直接断言
+response_builder 输出的正确性。
 
 覆盖：
-  (a) scalar + nested 关系
+  (a) scalar + nested 关系（to-one / to-many）
   (b) paginated package（``{ items, pagination }``）
-  (c) federation materialized remote type —— TODO，等 T003-T007 实现后补
-
-当前阶段（T001 之后、T003 之前）：flag 还未被 ``_serialize`` 真正读取，
-所以 flag-on / flag-off 跑同一段代码，本 fixture 必然全绿——这建立等价性
-baseline。T003-T007 实现 ``_serialize_via_response_builder`` 后，本 fixture
-若失败即说明 ``build_response_model`` 路径行为偏移。
+  (c) federation materialized remote type —— 由 tests/test_federation_*.py 覆盖
 """
 
 from typing import Optional
@@ -77,14 +77,12 @@ async def _seed() -> None:
     _seeded = True
 
 
-def _make_handler(*, use_response_builder: bool) -> GraphQLHandler:
-    """Two handler instances that differ ONLY in the flag value."""
+def _make_handler(*, enable_pagination: bool = False) -> GraphQLHandler:
     return GraphQLHandler(
         base=US1Base,
         session_factory=_sf,
         auto_query_config=AutoQueryConfig(),
-        enable_pagination=True,
-        use_response_builder=use_response_builder,
+        enable_pagination=enable_pagination,
     )
 
 
@@ -99,36 +97,36 @@ async def seeded() -> None:
 
 
 @pytest.mark.asyncio
-async def test_scalar_fields_equivalence(seeded):
-    """(a) scalar-only query: flag-on == flag-off."""
-    h_old = _make_handler(use_response_builder=False)
-    h_new = _make_handler(use_response_builder=True)
+async def test_scalar_fields(seeded):
+    """(a) scalar-only query via response_builder."""
+    h = _make_handler()
     q = "{ US1User { by_filter { id name } } }"
-    r_old = await h_old.execute(q)
-    r_new = await h_new.execute(q)
-    assert r_old == r_new
+    r = await h.execute(q)
+    users = {u["id"]: u for u in r["data"]["US1User"]["by_filter"]}
+    assert users[1] == {"id": 1, "name": "Alice"}
+    assert users[2] == {"id": 2, "name": "Bob"}
 
 
 @pytest.mark.asyncio
-async def test_nested_to_many_equivalence(seeded):
-    """(a) nested to-many (non-paginated): flag-on == flag-off."""
-    h_old = _make_handler(use_response_builder=False)
-    h_new = _make_handler(use_response_builder=True)
+async def test_nested_to_many(seeded):
+    """(a) nested to-many (non-paginated) via response_builder."""
+    h = _make_handler()
     q = "{ US1User { by_filter { id name posts { id title } } } }"
-    r_old = await h_old.execute(q)
-    r_new = await h_new.execute(q)
-    assert r_old == r_new
+    r = await h.execute(q)
+    users = {u["id"]: u for u in r["data"]["US1User"]["by_filter"]}
+    assert [p["title"] for p in users[1]["posts"]] == ["A1", "A2"]
+    assert [p["title"] for p in users[2]["posts"]] == ["B1"]
 
 
 @pytest.mark.asyncio
-async def test_nested_to_one_equivalence(seeded):
-    """(a) nested to-one: flag-on == flag-off."""
-    h_old = _make_handler(use_response_builder=False)
-    h_new = _make_handler(use_response_builder=True)
+async def test_nested_to_one(seeded):
+    """(a) nested to-one via response_builder."""
+    h = _make_handler()
     q = "{ US1Post { by_filter { id title author { id name } } } }"
-    r_old = await h_old.execute(q)
-    r_new = await h_new.execute(q)
-    assert r_old == r_new
+    r = await h.execute(q)
+    posts = {p["id"]: p for p in r["data"]["US1Post"]["by_filter"]}
+    assert posts[1]["author"]["name"] == "Alice"
+    assert posts[3]["author"]["name"] == "Bob"
 
 
 # ──────────────────────────────────────────────────────────
@@ -137,26 +135,26 @@ async def test_nested_to_one_equivalence(seeded):
 
 
 @pytest.mark.asyncio
-async def test_paginated_relationship_equivalence(seeded):
-    """(b) paginated package {items, pagination}: flag-on == flag-off."""
-    h_old = _make_handler(use_response_builder=False)
-    h_new = _make_handler(use_response_builder=True)
+async def test_paginated_relationship(seeded):
+    """(b) paginated package {items, pagination} via response_builder."""
+    h = _make_handler(enable_pagination=True)
     q = (
         "{ US1User { by_filter { id "
         "posts(limit: 2) { items { title } pagination { has_more } } "
         "} } }"
     )
-    r_old = await h_old.execute(q)
-    r_new = await h_new.execute(q)
-    assert r_old == r_new
+    r = await h.execute(q)
+    users = {u["id"]: u for u in r["data"]["US1User"]["by_filter"]}
+    # Alice has 2 posts (A1, A2); limit=2 → both, has_more False.
+    assert [it["title"] for it in users[1]["posts"]["items"]] == ["A1", "A2"]
+    assert users[1]["posts"]["pagination"]["has_more"] is False
+    # Bob has 1 post (B1); limit=2 → 1 item, has_more False.
+    assert [it["title"] for it in users[2]["posts"]["items"]] == ["B1"]
 
 
 # ──────────────────────────────────────────────────────────
 # (c) federation materialized remote type — covered by federation suite
 # ──────────────────────────────────────────────────────────
 #
-# T002b 完成：(c) 的 flag-on/off parity 不在这里复刻 federation fixture
-# （复杂度不划算），而是依赖 tests/test_federation_*.py 的 24 个 federation
-# e2e 测试在 ``NEXUSX_USE_RESPONSE_BUILDER=1`` 下全部跑通——它们基于 flag-off
-# 行为写的 assertion，flag-on 也成立即等价于 parity。conftest.py 的
-# ``_force_use_response_builder`` autouse fixture 让 flag-on 跑同一段代码。
+# Phase 7 后 flag 移除：tests/test_federation_*.py 的 24 个 federation e2e 默认走
+# response_builder（handler 唯一路径），覆盖 materialized remote type parity。

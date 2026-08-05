@@ -17,13 +17,10 @@ T013 完成后才能在 Resolver e2e 验证）：
 
 from typing import Annotated, Optional, get_args, get_origin
 
-import pytest
-from pydantic import BaseModel
 from sqlmodel import Field, Relationship, SQLModel
 
-from nexusx.loader.pagination import Paged, create_result_type
+from nexusx.loader.pagination import Paged
 from nexusx.response_builder import build_response_model
-
 
 # ──────────────────────────────────────────────────────────
 # Test entities
@@ -95,7 +92,9 @@ def test_paginated_field_with_limit_metadata_wraps_in_annotated():
     )
     field = model.model_fields["posts"]
     paged = _paged_metadata_in(field)
-    assert paged is not None, f"expected Paged metadata on FieldInfo, got metadata={field.metadata!r}"
+    assert paged is not None, (
+        f"expected Paged metadata on FieldInfo, got metadata={field.metadata!r}"
+    )
     assert paged.limit == 5
 
 

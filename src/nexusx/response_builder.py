@@ -7,6 +7,7 @@ unwanted fields (like foreign keys) during serialization.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Callable
 from typing import Annotated, Any, get_args, get_origin
 
@@ -21,6 +22,48 @@ from nexusx.utils.type_utils import get_field_type
 # RelationshipInfo-like object with ``.target_entity`` (type) and ``.is_list``
 # (bool); None when no federation relationship matches. specs/018 T002b.
 RelationshipEntityResolver = Callable[[type, str], Any]
+
+
+# Process-level LRU cache of built response models (specs/018 T026 mitigation).
+# Without it, per-entity ``create_model`` dominates flag-on latency — cProfile
+# showed it at 73% of Q2's flag-on time (10–30× slower than legacy _serialize).
+# gql selections are discrete, so the key space is normally small; the first
+# build pays the create_model cost and identical subsequent selections reuse the
+# class. ``_MODEL_CACHE_MAX`` bounds it so a malicious/looping caller passing
+# arbitrary gql args (e.g. ``limit``) cannot grow it without bound.
+_MODEL_CACHE_MAX = 1024
+_MODEL_CACHE: OrderedDict[tuple, type[BaseModel]] = OrderedDict()
+
+
+def _cache_key(
+    entity: type,
+    field_tree: dict[str, Any] | None,
+    model_name: str,
+    federation_namespace: dict[str, type] | None,
+    pagination_metadata: dict[str, Paged] | None,
+) -> tuple:
+    """Stable hashable key capturing every input that shapes the built model.
+
+    ``relation_entity_resolver`` is a callable (not hashable) and intentionally
+    excluded — its result (``target_entity`` / ``is_list``) is determined by the
+    ErManager's stable relationship registry, so the same ``(entity, field_tree)``
+    always yields the same model shape within a process. Assumption: an entity
+    class has one consistent relationship configuration across the process
+    (the normal single-ErManager case). ``federation_namespace`` types are keyed
+    by ``id()`` (stable for long-lived registered materialized types).
+
+    ``pagination_metadata`` Paged values are keyed by ``repr`` (frozen dataclass,
+    stable). Different limit/order/direction combos yield distinct models because
+    ``build_response_model`` stamps the value onto the field's
+    ``Annotated[..., Paged(...)]`` metadata (specs/018 US2); the cache is bounded
+    by ``_MODEL_CACHE_MAX`` (LRU eviction) so arbitrary gql args cannot grow it
+    without bound.
+    """
+    ns = federation_namespace or {}
+    ns_key = tuple(sorted((k, id(v)) for k, v in ns.items()))
+    pm = pagination_metadata or {}
+    pm_key = tuple(sorted((k, repr(v)) for k, v in pm.items()))
+    return (entity, model_name, repr(field_tree), ns_key, pm_key)
 
 
 def build_response_model(
@@ -68,6 +111,33 @@ def build_response_model(
     Returns:
         Dynamically created Pydantic model class.
     """
+    key = _cache_key(
+        entity, field_tree, model_name, federation_namespace, pagination_metadata,
+    )
+    cached = _MODEL_CACHE.get(key)
+    if cached is not None:
+        _MODEL_CACHE.move_to_end(key)  # LRU: mark most-recently-used
+        return cached
+    model = _build_response_model_uncached(
+        entity, field_tree, model_name, federation_namespace,
+        relation_entity_resolver, pagination_metadata,
+    )
+    _MODEL_CACHE[key] = model
+    if len(_MODEL_CACHE) > _MODEL_CACHE_MAX:
+        _MODEL_CACHE.popitem(last=False)  # evict least-recently-used
+    return model
+
+
+def _build_response_model_uncached(
+    entity: type,
+    field_tree: dict[str, Any] | None,
+    model_name: str,
+    federation_namespace: dict[str, type] | None,
+    relation_entity_resolver: RelationshipEntityResolver | None,
+    pagination_metadata: dict[str, Paged] | None,
+) -> type[BaseModel]:
+    """Build the model (cache-miss path). Split out so ``build_response_model``
+    can memoize the result (specs/018 T026)."""
     if field_tree is None:
         return _build_scalar_model(entity, model_name)
 
