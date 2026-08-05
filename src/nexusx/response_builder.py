@@ -111,10 +111,32 @@ def _is_paginated_package(nested: Any) -> bool:
     )
 
 
+def _coerce_to_dict(value: Any) -> Any:
+    """Coerce a value to a plain dict if possible (model_dump / dict / iter).
+
+    Returns ``None`` when the value can't be reasonably coerced. Used by
+    paginated package serialization (specs/018 T005) where the package may
+    arrive as a pydantic model or a plain dict.
+    """
+    if value is None:
+        return None
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "__iter__"):
+        try:
+            return dict(value)
+        except Exception:
+            return None
+    return None
+
+
 def serialize_with_model(
     value: Any,
     entity: type,
     field_tree: dict[str, Any] | None,
+    federation_namespace: dict[str, type] | None = None,
 ) -> Any:
     """Serialize data using dynamically built Pydantic model.
 
@@ -122,6 +144,8 @@ def serialize_with_model(
         value: Data to serialize (SQLModel instance or list).
         entity: SQLModel entity class.
         field_tree: Field selection tree.
+        federation_namespace: Optional map of federation-materialized remote types
+            (specs/018 T004 / T005).
 
     Returns:
         Serialized dictionary or list of dictionaries.
@@ -129,22 +153,39 @@ def serialize_with_model(
     if value is None:
         return None
 
-    model = build_response_model(entity, field_tree)
+    model = build_response_model(
+        entity, field_tree, federation_namespace=federation_namespace
+    )
 
     if isinstance(value, list):
-        return [_validate_and_dump(model, item, field_tree) for item in value]
+        return [
+            _validate_and_dump(
+                model, item, field_tree,
+                federation_namespace=federation_namespace,
+            )
+            for item in value
+        ]
 
-    return _validate_and_dump(model, value, field_tree)
+    return _validate_and_dump(
+        model, value, field_tree,
+        federation_namespace=federation_namespace,
+    )
 
 
 def _validate_and_dump(
     model: type[BaseModel],
     value: Any,
     field_tree: dict[str, Any] | None,
+    *,
+    federation_namespace: dict[str, type] | None = None,
 ) -> dict[str, Any]:
     """Validate value with model and dump to dict.
 
     Handles SQLModel instances by recursively serializing nested relationships.
+    Recognizes paginated package field_tree (specs/018 T005): when the nested
+    tree has ``items`` + ``pagination`` sub-keys, the corresponding value is
+    treated as a ``{items, pagination}`` package — items are recursively
+    serialized, pagination is filtered to the requested sub-keys.
     """
     if value is None:
         return None
@@ -162,15 +203,53 @@ def _validate_and_dump(
     # If we have nested field_tree, recursively serialize relationships
     if field_tree and isinstance(data, dict):
         for field_name, nested_tree in field_tree.items():
-            if nested_tree is not None:
-                # Get nested entity type
-                nested_entity = get_relation_entity(value_type, field_name)
-                if nested_entity:
-                    nested_value = getattr(value, field_name, None)
-                    if nested_value is not None:
-                        data[field_name] = serialize_with_model(
-                            nested_value, nested_entity, nested_tree
-                        )
+            if nested_tree is None:
+                continue
+
+            nested_entity = get_relation_entity(
+                value_type, field_name,
+                federation_namespace=federation_namespace,
+            )
+            if nested_entity is None:
+                continue
+
+            nested_value = getattr(value, field_name, None)
+            if nested_value is None:
+                continue
+
+            # Paginated package: nested_value is {items: [...], pagination: {...}}
+            # or a pydantic model with items/pagination. Mirror the runtime
+            # handling in _serialize_paginated_package: recursively serialize
+            # items, filter pagination to the requested sub-keys (specs/018 T005).
+            if _is_paginated_package(nested_tree):
+                pkg = _coerce_to_dict(nested_value)
+                if not isinstance(pkg, dict):
+                    continue
+                pag_pkg: dict[str, Any] = {}
+                items_value = pkg.get("items") or []
+                items_tree = nested_tree.get("items") or {}
+                pag_pkg["items"] = [
+                    serialize_with_model(
+                        it, nested_entity, items_tree,
+                        federation_namespace=federation_namespace,
+                    )
+                    for it in items_value
+                ]
+                pagination_tree = nested_tree.get("pagination") or {}
+                pagination_value = _coerce_to_dict(pkg.get("pagination")) or {}
+                if pagination_tree:
+                    pag_pkg["pagination"] = {
+                        k: v for k, v in pagination_value.items()
+                        if k in pagination_tree
+                    }
+                else:
+                    pag_pkg["pagination"] = pagination_value
+                data[field_name] = pag_pkg
+            else:
+                data[field_name] = serialize_with_model(
+                    nested_value, nested_entity, nested_tree,
+                    federation_namespace=federation_namespace,
+                )
 
     try:
         validated = model.model_validate(data)
