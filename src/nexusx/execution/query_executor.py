@@ -53,10 +53,12 @@ class QueryExecutor:
         loader_registry: ErManager,
         enable_pagination: bool = False,
         introspection_generator: Any | None = None,
+        use_response_builder: bool = False,
     ):
         self._registry = loader_registry
         self._enable_pagination = enable_pagination
         self._introspection_generator = introspection_generator
+        self._use_response_builder = use_response_builder
         self._argument_builder = ArgumentBuilder()
         # (id(entity), field_name) -> resolved value
         self._results: dict[tuple[int, str], Any] = {}
