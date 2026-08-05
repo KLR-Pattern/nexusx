@@ -11,6 +11,7 @@ from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel, create_model
 
+from nexusx.loader.pagination import create_result_type
 from nexusx.utils.type_utils import get_field_type
 
 
@@ -27,6 +28,9 @@ def build_response_model(
             - None: Include all scalar fields
             - {"field": None}: Scalar field
             - {"field": {...}}: Nested relationship field
+            - {"field": {"items": {...}, "pagination": {...}}}: Paginated package
+              (renders as ``{items: list[nested], pagination: Pagination}``),
+              specs/018 T003.
         model_name: Suffix for generated model name.
 
     Returns:
@@ -41,25 +45,59 @@ def build_response_model(
             # Scalar field - get type from entity
             field_type = get_field_type(entity, field_name)
             fields[field_name] = (field_type, ...)
-        else:
-            # Relationship field - build nested model
-            relation_entity = get_relation_entity(entity, field_name)
-            if relation_entity is None:
-                # Fallback to Any if relation type cannot be determined
-                fields[field_name] = (Any, ...)
-                continue
+            continue
 
-            nested_model = build_response_model(
-                relation_entity, nested, f"{field_name.capitalize()}Response"
+        # Relationship field - build nested model
+        relation_entity = get_relation_entity(entity, field_name)
+        if relation_entity is None:
+            # Fallback to Any if relation type cannot be determined
+            fields[field_name] = (Any, ...)
+            continue
+
+        # Paginated package: {items: {...}, pagination: {...}} (specs/018 T003).
+        # Reuses pagination.create_result_type to assemble the {items, pagination}
+        # shape so behavior matches _serialize_paginated_package in query_executor.
+        if _is_paginated_package(nested):
+            items_tree = nested.get("items") or {}
+            pagination_tree = nested.get("pagination") or {}
+            nested_item_model = build_response_model(
+                relation_entity, items_tree, f"{field_name.capitalize()}ItemResponse"
             )
+            pag_selection = set(pagination_tree.keys()) if pagination_tree else None
+            result_type = create_result_type(
+                item_type=nested_item_model,
+                pagination_selection=pag_selection,
+            )
+            fields[field_name] = (result_type, ...)
+            continue
 
-            # Check if it's a list relationship
-            if _is_list_relationship(entity, field_name):
-                fields[field_name] = (list[nested_model], ...)  # type: ignore[valid-type]
-            else:
-                fields[field_name] = (nested_model | None, ...)
+        nested_model = build_response_model(
+            relation_entity, nested, f"{field_name.capitalize()}Response"
+        )
+
+        # Check if it's a list relationship
+        if _is_list_relationship(entity, field_name):
+            fields[field_name] = (list[nested_model], ...)  # type: ignore[valid-type]
+        else:
+            fields[field_name] = (nested_model | None, ...)
 
     return create_model(f"{entity.__name__}{model_name}", **fields)
+
+
+def _is_paginated_package(nested: Any) -> bool:
+    """True if ``nested`` field_tree represents a paginated package.
+
+    A paginated package carries both ``items`` and ``pagination`` sub-keys —
+    matching the ``{items, pagination}`` shape produced by ``page_by_<key>_in``
+    gql roots or paginated relationship fields. Mirrors the runtime detection
+    in ``query_executor._serialize_paginated_package`` (the dict-based path):
+    "items" in pkg and "pagination" in pkg.
+    """
+    return (
+        isinstance(nested, dict)
+        and "items" in nested
+        and "pagination" in nested
+    )
 
 
 def serialize_with_model(
