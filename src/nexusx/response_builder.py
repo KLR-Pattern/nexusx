@@ -19,6 +19,7 @@ def build_response_model(
     entity: type,
     field_tree: dict[str, Any] | None,
     model_name: str = "Response",
+    federation_namespace: dict[str, type] | None = None,
 ) -> type[BaseModel]:
     """Build a Pydantic model dynamically based on field selection tree.
 
@@ -32,6 +33,11 @@ def build_response_model(
               (renders as ``{items: list[nested], pagination: Pagination}``),
               specs/018 T003.
         model_name: Suffix for generated model name.
+        federation_namespace: Optional map of federation-materialized remote
+            types (keyed by ``__name__``). When resolving string forward refs,
+            checked BEFORE local SQLModel subclasses — federation types don't
+            appear in ``all_subclasses`` because they're pydantic ``create_model``
+            products, not SQLModel children. specs/018 T004.
 
     Returns:
         Dynamically created Pydantic model class.
@@ -48,7 +54,9 @@ def build_response_model(
             continue
 
         # Relationship field - build nested model
-        relation_entity = get_relation_entity(entity, field_name)
+        relation_entity = get_relation_entity(
+            entity, field_name, federation_namespace=federation_namespace
+        )
         if relation_entity is None:
             # Fallback to Any if relation type cannot be determined
             fields[field_name] = (Any, ...)
@@ -61,7 +69,9 @@ def build_response_model(
             items_tree = nested.get("items") or {}
             pagination_tree = nested.get("pagination") or {}
             nested_item_model = build_response_model(
-                relation_entity, items_tree, f"{field_name.capitalize()}ItemResponse"
+                relation_entity, items_tree,
+                f"{field_name.capitalize()}ItemResponse",
+                federation_namespace=federation_namespace,
             )
             pag_selection = set(pagination_tree.keys()) if pagination_tree else None
             result_type = create_result_type(
@@ -72,7 +82,8 @@ def build_response_model(
             continue
 
         nested_model = build_response_model(
-            relation_entity, nested, f"{field_name.capitalize()}Response"
+            relation_entity, nested, f"{field_name.capitalize()}Response",
+            federation_namespace=federation_namespace,
         )
 
         # Check if it's a list relationship
@@ -174,18 +185,26 @@ def _validate_and_dump(
 def _resolve_forward_reference(
     annotation: str,
     all_subclasses: set[type],
+    federation_namespace: dict[str, type] | None = None,
 ) -> type | None:
     """Resolve a string forward reference to an actual entity class.
 
     Args:
         annotation: String annotation (e.g., "EntityName", "list[EntityName]").
         all_subclasses: Set of all SQLModel subclasses to search.
+        federation_namespace: Optional map of federation-materialized remote types
+            keyed by ``__name__``. Checked BEFORE ``all_subclasses`` so federation
+            types (pydantic ``create_model`` products, not SQLModel children)
+            resolve ahead of local entity classes of the same name.
+            specs/018 T004.
 
     Returns:
         Entity class or None if not found.
     """
     # Simple case: "EntityName"
     if "[" not in annotation:
+        if federation_namespace and annotation in federation_namespace:
+            return federation_namespace[annotation]
         for subclass in all_subclasses:
             if subclass.__name__ == annotation:
                 return subclass
@@ -206,6 +225,8 @@ def _resolve_forward_reference(
         else:
             return None
 
+    if federation_namespace and entity_name in federation_namespace:
+        return federation_namespace[entity_name]
     for subclass in all_subclasses:
         if subclass.__name__ == entity_name:
             return subclass
@@ -216,6 +237,7 @@ def get_relation_entity(
     entity: type,
     field_name: str,
     all_subclasses: set[type] | None = None,
+    federation_namespace: dict[str, type] | None = None,
 ) -> type | None:
     """Get the target entity type for a relationship field.
 
@@ -223,6 +245,8 @@ def get_relation_entity(
         entity: SQLModel entity class.
         field_name: Name of the relationship field.
         all_subclasses: Optional set of all SQLModel subclasses for resolving forward references.
+        federation_namespace: Optional map of federation-materialized remote types
+            (specs/018 T004).
 
     Returns:
         Target entity class or None if not found.
@@ -245,23 +269,33 @@ def get_relation_entity(
         if rel_info is not None and hasattr(entity, "__annotations__"):
             annotation = entity.__annotations__.get(field_name)
             if annotation:
-                result = _extract_entity_from_annotation(annotation, all_subclasses)
+                result = _extract_entity_from_annotation(
+                    annotation, all_subclasses, federation_namespace=federation_namespace
+                )
                 if result:
                     return result
                 # Handle string forward references
                 if isinstance(annotation, str) and all_subclasses:
-                    return _resolve_forward_reference(annotation, all_subclasses)
+                    return _resolve_forward_reference(
+                        annotation, all_subclasses,
+                        federation_namespace=federation_namespace,
+                    )
 
     # Fallback: try to get from annotations
     if hasattr(entity, "__annotations__"):
         annotation = entity.__annotations__.get(field_name)
         if annotation:
-            result = _extract_entity_from_annotation(annotation, all_subclasses)
+            result = _extract_entity_from_annotation(
+                annotation, all_subclasses, federation_namespace=federation_namespace
+            )
             if result:
                 return result
             # Handle string forward references
             if isinstance(annotation, str) and all_subclasses:
-                return _resolve_forward_reference(annotation, all_subclasses)
+                return _resolve_forward_reference(
+                    annotation, all_subclasses,
+                    federation_namespace=federation_namespace,
+                )
 
     return None
 
@@ -269,6 +303,7 @@ def get_relation_entity(
 def _extract_entity_from_annotation(
     annotation: Any,
     all_subclasses: set[type] | None = None,
+    federation_namespace: dict[str, type] | None = None,
 ) -> type | None:
     """Extract entity class from type annotation.
 
@@ -277,6 +312,8 @@ def _extract_entity_from_annotation(
     Args:
         annotation: Type annotation (can be string, ForwardRef, or actual type).
         all_subclasses: Set of all SQLModel subclasses for resolving string forward references.
+        federation_namespace: Optional map of federation-materialized remote types
+            (specs/018 T004).
     """
     origin = get_origin(annotation)
 
@@ -289,12 +326,17 @@ def _extract_entity_from_annotation(
             if isinstance(arg, type):
                 return arg
             # Handle nested generics like list[Entity]
-            nested = _extract_entity_from_annotation(arg, all_subclasses)
+            nested = _extract_entity_from_annotation(
+                arg, all_subclasses, federation_namespace=federation_namespace
+            )
             if nested:
                 return nested
             # Handle string forward references in generic args
             if isinstance(arg, str) and all_subclasses:
-                result = _resolve_forward_reference(arg, all_subclasses)
+                result = _resolve_forward_reference(
+                    arg, all_subclasses,
+                    federation_namespace=federation_namespace,
+                )
                 if result:
                     return result
 
@@ -304,7 +346,10 @@ def _extract_entity_from_annotation(
 
     # Handle string forward references
     if isinstance(annotation, str) and all_subclasses:
-        return _resolve_forward_reference(annotation, all_subclasses)
+        return _resolve_forward_reference(
+            annotation, all_subclasses,
+            federation_namespace=federation_namespace,
+        )
 
     return None
 
