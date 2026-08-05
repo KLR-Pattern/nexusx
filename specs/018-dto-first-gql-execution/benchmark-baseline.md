@@ -55,25 +55,34 @@ ncalls   cumtime  function
 ## 5. 缓存实现（`response_builder._MODEL_CACHE`）
 
 ```python
-_MODEL_CACHE: dict[tuple, type[BaseModel]] = {}
+_MODEL_CACHE: OrderedDict[tuple, type[BaseModel]] = OrderedDict()  # LRU, 上限 1024
 
 def build_response_model(entity, field_tree, ...):
     key = _cache_key(entity, field_tree, model_name, federation_namespace, pagination_metadata)
-    cached = _MODEL_CACHE.get(key)
-    if cached is not None:
+    if cached := _MODEL_CACHE.get(key):
+        _MODEL_CACHE.move_to_end(key)            # LRU
         return cached
     model = _build_response_model_uncached(...)
     _MODEL_CACHE[key] = model
+    if len(_MODEL_CACHE) > _MODEL_CACHE_MAX:
+        _MODEL_CACHE.popitem(last=False)         # evict LRU
     return model
 ```
 
-- key 稳定性：`field_tree` repr（gql selection 保序）；`federation_namespace` 按 type `id()`；`pagination_metadata` 按 Paged `repr()`（frozen dataclass）。
+- key 稳定性：`field_tree` repr（gql selection 保序）；`federation_namespace` 按 type `id()`；
+  `pagination_metadata` **019 后**按 `frozenset(字段名)`——paged 字段标 `PAGED_MARKER`
+  占位符,无视值（动态 limit 不碎片化;018 旧方案按 Paged `repr()` 区分值,100 独特 limit
+  撑 100 个 model）。
 - `relation_entity_resolver` 是 callable（不可 hash），不进 key——假设同 entity class 在 process 内 relationship 配置一致（单 ErManager 常态）。
-- 跨测试零回归：1456 passed（含 T002 flag-on/off 等价性 + 24 federation e2e）。
+- 跨测试零回归：1457 passed（含 24 federation e2e）。
 
-## 6. further 优化（单独立项，不在 018 范围）
+## 6. further 优化
 
-- `model_construct` 跳过 pydantic 验证（response_builder 的 subset model 字段已过滤，输入可信）：消除 per-item validate 开销，Q1/Q3 应回到 < 10%。
+- ✅ **019 占位符 + provider（已做）**：paged 字段标 `PAGED_MARKER`，cache key 无视 paged
+  值（`frozenset(字段名)`）；paged 真值经 `paged_provider` 闭包注入。消除 018 pm repr 的
+  动态 limit 碎片化（实验：100 独特 limit，占位符 cache=1 / 0.26ms vs 旧 pm repr cache=100 /
+  14.7ms，**56×**）。详见 `docs/migration/018-dto-first.md`。
+- `model_construct` 跳过 pydantic 验证（response_builder 的 subset model 字段已过滤，输入可信）：消除 per-item validate 开销，Q1/Q3 应回到 < 10%（仍未做）。
 - DTO schema 预构建（启动期常见 selection）：field_tree 组合无穷，仅预构建高频，复杂度高。
 
 ## 7. 复现

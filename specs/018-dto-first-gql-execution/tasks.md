@@ -216,6 +216,21 @@ Task: T016-T019 [US3] _bfs_resolve 搬迁 + grep 验证
 
 ---
 
+## 019 follow-up 偏离记录（paged provider 注入）
+
+018 Phase 7 后，US2 的"paged 值注入 model Annotated"暴露两个问题：
+1. US2 注入是 dead code（US3 dispatch 从 `field_sel.arguments` 读，不读 model metadata）
+2. paged 缓存按值（pm repr）碎片化——动态 limit 撑大缓存
+
+019 用依赖反转解决：model 标 `PAGED_MARKER` 占位符（cache key `frozenset(字段名)`，无视值）；
+paged 真值由 executor 注入的 `paged_provider` 闭包在 resolve 时算（rel default + gql merge），
+Resolver 不读 `field_sel.arguments`。实验：100 独特 limit，占位符 cache=1（0.26ms）vs 旧 pm repr
+cache=100（14.7ms，56×）。
+
+偏离 spec US2 字面（"reviews(limit:5) → Annotated[..., Paged(limit=5)]"），但达成 US2 精神
+（pagination 进 DTO 心智模型）——"DTO field"从"携带值的 Annotated"变成"被 provider 识别的
+paged 形状"。plan 见 `~/.claude/plans/parsed-mapping-barto.md`。
+
 ## Notes
 
 - 每个 US 完成后跑全量 1429 测试 + 对应的 Independent Test，才算 done

@@ -35,12 +35,13 @@ GraphQLHandler(base=...)   # response_builder 是唯一路径,无 flag
 selection 复用——消除 per-entity `pydantic.create_model` 开销(缓存前占 flag-on
 serialize 73% cumtime,导致 flag-on 比 legacy 慢 10–30×)。
 
-**缓存 key**:`(entity, model_name, field_tree, federation_namespace type ids, paged metadata repr)`。
+**缓存 key**:`(entity, model_name, field_tree, federation_namespace type ids, paged 字段名集合)`。
 
-- gql selection 是离散的(用户固定几个 query 模式),正常命中率很高。
-- `limit`/`offset`/`order`/`direction` 等 gql args 进 key(因 US2 把 `Paged` 值注入
-  model 的 `Annotated[..., Paged(...)]` metadata,不同值必须区分),LRU 上限兜底
-  防止循环/恶意调用膨胀。
+- paged 字段标 `PAGED_MARKER` 占位符(019),cache key **无视 paged 值**——动态
+  `limit`/`offset`/`order`/`direction` 不再碎片化缓存(018 旧方案按 `repr` 区分值,
+  100 独特 limit 撑 100 个 model;019 占位符恒定 1 个,实验 56× 优势)。
+- gql selection 是离散的(用户固定几个 query 模式),正常命中率很高;LRU 上限兜底
+  防止其他维度的循环/恶意调用膨胀。
 - benchmark 见 `specs/018-dto-first-gql-execution/benchmark-baseline.md`。
 
 ## 内部架构变化(贡献者参考)
@@ -50,17 +51,18 @@ serialize 73% cumtime,导致 flag-on 比 legacy 慢 10–30×)。
   的调用方收敛到只在 Resolver 内部(`grep -rn fetch_remote_subtree src/`)。
 - **fetch primitive 对称**(US4):`fetch_remote_subtree`(β)+ `fetch_dto_subtree`
   (γ)对称,`set_dto_page_params` 的唯一调用方收敛到 `fetch_dto_subtree`。
-- **pagination dispatch 的实际数据源**:entity-first 路径的 page_loader dispatch
-  仍从 `field_sel.arguments` 读 limit/offset(`Resolver._extract_entity_page_args`),
-  **不是**从 model 的 `Annotated[..., Paged]` metadata 读——US2 注入的 metadata 是
-  为未来 metadata-driven dispatch 预留的 plug point(`_resolve_paged_for_dynamic_field`,
-  当前未接入)。所以缓存 model 时 Paged 值进 key 是为了 US2 注入的正确性,不是为了
-  dispatch 行为(后者由 field_sel 决定)。
+- **pagination dispatch 走 paged_provider 闭包**(019):entity-first 路径的 paged
+  参数由 executor 构造的 `paged_provider` 闭包算(rel default + gql args merge),
+  per-call 透传给 `_bfs_dispatch_entity_fields`,Resolver 不读 `field_sel.arguments`
+  (gql 知识只停在 executor)。Resolver 删了 `_extract_entity_page_args` /
+  `_extract_entity_order_direction`;`_load_entity_field_paginated` 改读 `job.paged`。
+  model 标 `PAGED_MARKER` 占位符(形状),真值在 provider——形状和值分离,cache key
+  无视 paged 值。
 
 ## 复现 / 验证
 
 ```bash
-uv run pytest -q                                         # 全量 1451 测试
+uv run pytest -q                                         # 全量 1457 测试
 uv run python benchmarks/gql_benchmark.py                # response_builder 延迟
 uv run python benchmarks/gql_benchmark.py --profile      # + cProfile
 ```
