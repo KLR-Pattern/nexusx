@@ -192,8 +192,26 @@ class SDLGenerator:
         return "\n\n".join(parts)
 
     def _generate_enums(self) -> list[str]:
-        """Generate GraphQL enum types from Python enums used in entities."""
+        """Generate GraphQL enum types reachable from schema field types."""
         enums: dict[str, type[Enum]] = {}
+        visited_models: set[type] = set()
+
+        def collect_from_type(python_type: Any) -> None:
+            for core_type in get_core_types(python_type):
+                if self._converter.is_enum_type(core_type):
+                    enums[core_type.__name__] = core_type
+                    continue
+
+                if not is_input_type(core_type) or core_type in visited_models:
+                    continue
+
+                visited_models.add(core_type)
+                try:
+                    hints = get_type_hints(core_type)
+                except Exception:
+                    continue
+                for field_type in hints.values():
+                    collect_from_type(field_type)
 
         for entity in self.entities:
             try:
@@ -203,8 +221,7 @@ class SDLGenerator:
                 # that get_type_hints can't resolve from module globals.
                 hints = {}
             for field_type in hints.values():
-                if isinstance(field_type, type) and issubclass(field_type, Enum):
-                    enums[field_type.__name__] = field_type
+                collect_from_type(field_type)
             for attr_name in dir(entity):
                 try:
                     attr = getattr(entity, attr_name)
@@ -213,6 +230,14 @@ class SDLGenerator:
                 if not callable(attr):
                     continue
                 func = attr.__func__ if hasattr(attr, "__func__") else attr
+                if hasattr(func, "_graphql_query") or hasattr(func, "_graphql_mutation"):
+                    try:
+                        method_hints = get_type_hints(func)
+                    except Exception:
+                        method_hints = {}
+                    for hint in method_hints.values():
+                        collect_from_type(hint)
+
                 pag_root = getattr(func, "_pagination_root", None)
                 if pag_root:
                     enum_class = pag_root.order_enum
@@ -244,7 +269,7 @@ class SDLGenerator:
 
         result = []
         for enum_name, enum_class in enums.items():
-            values = "\n".join(f"  {v.value}" for v in enum_class)
+            values = "\n".join(f"  {member.name}" for member in enum_class)
             result.append(f"enum {enum_name} {{\n{values}\n}}")
 
         return result

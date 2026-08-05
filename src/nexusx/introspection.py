@@ -329,12 +329,12 @@ class IntrospectionGenerator:
         """Build introspection data for an enum type."""
         enum_values = [
             {
-                "name": v.value,
+                "name": member.name,
                 "description": None,
                 "isDeprecated": False,
                 "deprecationReason": None,
             }
-            for v in enum_class
+            for member in enum_class
         ]
 
         return {
@@ -642,8 +642,26 @@ class IntrospectionGenerator:
         return json.dumps(value)
 
     def _collect_enum_types(self) -> dict[str, type[Enum]]:
-        """Collect all enum types used in entities."""
+        """Collect all enum types reachable from schema field types."""
         enums: dict[str, type[Enum]] = {}
+        visited_models: set[type] = set()
+
+        def collect_from_type(python_type: Any) -> None:
+            for core_type in get_core_types(python_type):
+                if self._converter.is_enum_type(core_type):
+                    enums[core_type.__name__] = core_type
+                    continue
+
+                if not is_input_type(core_type) or core_type in visited_models:
+                    continue
+
+                visited_models.add(core_type)
+                try:
+                    hints = get_type_hints(core_type)
+                except Exception:
+                    continue
+                for field_type in hints.values():
+                    collect_from_type(field_type)
 
         for entity in self.entities:
             try:
@@ -652,12 +670,7 @@ class IntrospectionGenerator:
                 continue
 
             for field_type in hints.values():
-                # Unwrap to base type (handles Optional, list, Mapped)
-                base_type = self._converter.unwrap_to_base_type(field_type)
-
-                # Check if it's an enum
-                if self._converter.is_enum_type(base_type):
-                    enums[base_type.__name__] = base_type
+                collect_from_type(field_type)
 
         # Also collect enums from query/mutation method signatures
         for methods in [self._query_methods, self._mutation_methods]:
@@ -670,8 +683,7 @@ class IntrospectionGenerator:
                         continue
 
                     for hint in hints.values():
-                        if self._converter.is_enum_type(hint):
-                            enums[hint.__name__] = hint
+                        collect_from_type(hint)
 
         return enums
 
