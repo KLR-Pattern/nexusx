@@ -626,15 +626,29 @@ class QueryExecutor:
         ``federation_namespace`` is sourced from ``ErManager._fed_registry``
         (set by ``federate()``); when None (no federation), response_builder
         falls back to local SQLModel subclasses only.
+
+        ``value_accessor`` checks ``self._results`` (BFS-resolved relationship
+        cache) BEFORE ``getattr`` — without this, accessing a relationship
+        attribute on a detached SQLModel instance triggers SQLAlchemy
+        ``DetachedInstanceError`` (the session was closed post-query; the
+        resolved values live in ``_results``, not in the DB).
         """
         if result is None:
             return None
 
         field_tree = _field_sel_to_tree(field_sel)
         federation_namespace = self._get_federation_namespace()
+
+        def accessor(value: Any, field_name: str) -> Any:
+            cached = self._retrieve(value, field_name)
+            if cached is not None:
+                return cached
+            return getattr(value, field_name, None)
+
         return serialize_with_model(
             result, entity, field_tree,
             federation_namespace=federation_namespace,
+            value_accessor=accessor,
         )
 
     def _get_federation_namespace(self) -> dict[str, type] | None:
@@ -655,10 +669,28 @@ class QueryExecutor:
         entity: type[SQLModel],
         field_sel: FieldSelection | None,
     ) -> Any:
-        """Serialize result to JSON-compatible dict."""
+        """Serialize result to JSON-compatible dict.
+
+        Dispatches between the legacy dict-based path and the new
+        ``response_builder`` path based on ``self._use_response_builder``
+        (specs/018 US1). Failures on the new path propagate — no fallback
+        to legacy (spec clarify Q3: fail-fast prevents hidden issues).
+        """
         if result is None:
             return None
 
+        if self._use_response_builder:
+            return self._serialize_via_response_builder(result, entity, field_sel)
+
+        return self._serialize_legacy(result, entity, field_sel)
+
+    def _serialize_legacy(
+        self,
+        result: Any,
+        entity: type[SQLModel],
+        field_sel: FieldSelection | None,
+    ) -> Any:
+        """Legacy dict-based serialization (pre-specs/018)."""
         if isinstance(result, list):
             return [self._serialize_item(item, entity, field_sel) for item in result]
 

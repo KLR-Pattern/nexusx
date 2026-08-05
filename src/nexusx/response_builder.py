@@ -132,11 +132,17 @@ def _coerce_to_dict(value: Any) -> Any:
     return None
 
 
+def _default_value_accessor(value: Any, field_name: str) -> Any:
+    """Default ``value_accessor``: plain attribute lookup."""
+    return getattr(value, field_name, None)
+
+
 def serialize_with_model(
     value: Any,
     entity: type,
     field_tree: dict[str, Any] | None,
     federation_namespace: dict[str, type] | None = None,
+    value_accessor: Any = None,
 ) -> Any:
     """Serialize data using dynamically built Pydantic model.
 
@@ -146,6 +152,11 @@ def serialize_with_model(
         field_tree: Field selection tree.
         federation_namespace: Optional map of federation-materialized remote types
             (specs/018 T004 / T005).
+        value_accessor: Optional callable ``(value, field_name) -> nested_value``
+            used to read nested relationship values. Defaults to ``getattr``.
+            QueryExecutor passes a wrapper that checks its BFS-resolved
+            ``_results`` cache first (avoiding SQLAlchemy DetachedInstanceError
+            when the session is closed post-query); specs/018 T007.
 
     Returns:
         Serialized dictionary or list of dictionaries.
@@ -162,6 +173,7 @@ def serialize_with_model(
             _validate_and_dump(
                 model, item, field_tree,
                 federation_namespace=federation_namespace,
+                value_accessor=value_accessor,
             )
             for item in value
         ]
@@ -169,6 +181,7 @@ def serialize_with_model(
     return _validate_and_dump(
         model, value, field_tree,
         federation_namespace=federation_namespace,
+        value_accessor=value_accessor,
     )
 
 
@@ -178,6 +191,7 @@ def _validate_and_dump(
     field_tree: dict[str, Any] | None,
     *,
     federation_namespace: dict[str, type] | None = None,
+    value_accessor: Any = None,
 ) -> dict[str, Any]:
     """Validate value with model and dump to dict.
 
@@ -189,6 +203,9 @@ def _validate_and_dump(
     """
     if value is None:
         return None
+
+    if value_accessor is None:
+        value_accessor = _default_value_accessor
 
     value_type = type(value)
 
@@ -213,7 +230,7 @@ def _validate_and_dump(
             if nested_entity is None:
                 continue
 
-            nested_value = getattr(value, field_name, None)
+            nested_value = value_accessor(value, field_name)
             if nested_value is None:
                 continue
 
@@ -232,6 +249,7 @@ def _validate_and_dump(
                     serialize_with_model(
                         it, nested_entity, items_tree,
                         federation_namespace=federation_namespace,
+                        value_accessor=value_accessor,
                     )
                     for it in items_value
                 ]
@@ -249,6 +267,7 @@ def _validate_and_dump(
                 data[field_name] = serialize_with_model(
                     nested_value, nested_entity, nested_tree,
                     federation_namespace=federation_namespace,
+                    value_accessor=value_accessor,
                 )
 
     try:

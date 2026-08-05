@@ -46,7 +46,10 @@ class US1User(US1Base, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str
-    posts: list[US1Post] = Relationship(back_populates="author")  # type: ignore[type-arg]
+    posts: list[US1Post] = Relationship(  # type: ignore[type-arg]
+        back_populates="author",
+        sa_relationship_kwargs={"order_by": "US1Post.id"},
+    )
 
 
 # ──────────────────────────────────────────────────────────
