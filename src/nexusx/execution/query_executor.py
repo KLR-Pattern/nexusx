@@ -612,16 +612,16 @@ class QueryExecutor:
 
     def _serialize_via_response_builder(
         self,
-        result: Any,
+        item: Any,
         entity: type[SQLModel],
         field_sel: FieldSelection | None,
     ) -> Any:
-        """Serialize via response_builder.build_response_model (specs/018 US1).
+        """Serialize a single entity-shaped result via response_builder (specs/018 US1).
 
         Routes through ``serialize_with_model`` (model-based field filtering)
-        instead of the legacy dict-based ``_serialize``. The output MUST be
-        dict-equal to ``_serialize`` for any input — equivalence is verified
-        by tests/test_query_executor_dto_first.py.
+        instead of the legacy dict-based loop in ``_serialize_item``. The
+        output MUST be dict-equal to legacy for any entity-with-field_sel
+        input — equivalence is verified by tests/test_query_executor_dto_first.py.
 
         ``federation_namespace`` is sourced from ``ErManager._fed_registry``
         (set by ``federate()``); when None (no federation), response_builder
@@ -633,9 +633,6 @@ class QueryExecutor:
         ``DetachedInstanceError`` (the session was closed post-query; the
         resolved values live in ``_results``, not in the DB).
         """
-        if result is None:
-            return None
-
         field_tree = _field_sel_to_tree(field_sel)
         federation_namespace = self._get_federation_namespace()
 
@@ -646,7 +643,7 @@ class QueryExecutor:
             return getattr(value, field_name, None)
 
         return serialize_with_model(
-            result, entity, field_tree,
+            item, entity, field_tree,
             federation_namespace=federation_namespace,
             value_accessor=accessor,
         )
@@ -671,26 +668,15 @@ class QueryExecutor:
     ) -> Any:
         """Serialize result to JSON-compatible dict.
 
-        Dispatches between the legacy dict-based path and the new
-        ``response_builder`` path based on ``self._use_response_builder``
-        (specs/018 US1). Failures on the new path propagate — no fallback
-        to legacy (spec clarify Q3: fail-fast prevents hidden issues).
+        Dispatch on ``self._use_response_builder`` (specs/018 US1) lives in
+        ``_serialize_item``'s "entity with field_sel" branch — scalar / dict /
+        paginated-package returns are flag-invariant (response_builder only
+        models entity-shaped results). Failures on the new path propagate —
+        no fallback (spec clarify Q3: fail-fast prevents hidden issues).
         """
         if result is None:
             return None
 
-        if self._use_response_builder:
-            return self._serialize_via_response_builder(result, entity, field_sel)
-
-        return self._serialize_legacy(result, entity, field_sel)
-
-    def _serialize_legacy(
-        self,
-        result: Any,
-        entity: type[SQLModel],
-        field_sel: FieldSelection | None,
-    ) -> Any:
-        """Legacy dict-based serialization (pre-specs/018)."""
         if isinstance(result, list):
             return [self._serialize_item(item, entity, field_sel) for item in result]
 
@@ -715,6 +701,10 @@ class QueryExecutor:
             if hasattr(item, "model_dump"):
                 return self._filter_output(item.model_dump(mode="json"), entity)
             return self._serialize_scalar_value(item)
+
+        # Entity instance with field_sel: dispatch on flag (specs/018 US1).
+        if self._use_response_builder:
+            return self._serialize_via_response_builder(item, entity, field_sel)
 
         entity_rels = self._registry.get_relationships(entity)
         result = {}

@@ -1,7 +1,9 @@
 """Test infrastructure: database setup and shared fixtures."""
 
+import os
 from typing import Optional
 
+import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, Relationship, SQLModel, select
@@ -241,3 +243,34 @@ async def test_db_m2m():
     engine = _get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.drop_all)
+
+
+# ──────────────────────────────────────────────────────────
+# specs/018 T008 — flag-on 全量回归 hook
+# ──────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _force_use_response_builder(request, monkeypatch):
+    """Force ``GraphQLHandler`` to construct with ``use_response_builder=True``
+    when ``NEXUSX_USE_RESPONSE_BUILDER=1`` is set.
+
+    Used by T008 (specs/018) to run the full 1429-test suite under flag-on
+    and verify zero regression vs. flag-off default. Skip the dedicated
+    equivalence fixtures (``test_query_executor_dto_first``), which manage
+    both flag values themselves.
+    """
+    if os.environ.get("NEXUSX_USE_RESPONSE_BUILDER") != "1":
+        return
+    if "test_query_executor_dto_first" in str(request.fspath):
+        return
+
+    from nexusx.handler import GraphQLHandler
+
+    original_init = GraphQLHandler.__init__
+
+    def patched_init(self, *args, **kwargs):
+        kwargs.setdefault("use_response_builder", True)
+        return original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(GraphQLHandler, "__init__", patched_init)
