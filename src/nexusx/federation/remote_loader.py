@@ -197,7 +197,6 @@ def build_gql_query(
     arg_name: str,
     keys: list[Any],
     selection: Any,
-    target_cls: type,
     join_remote: str,
 ) -> str:
     """Construct the nested GraphQL query document."""
@@ -279,7 +278,7 @@ def _align_by_join_key(
                     )
                 }],
             )
-        k = row_d[join_remote]
+        k = _normalize_join_key(row_d[join_remote])
         buckets.setdefault(k, []).append(row_d)
 
     aligned: list[Any] = []
@@ -292,6 +291,57 @@ def _align_by_join_key(
     return aligned
 
 
+def _unwrap_gql_response(
+    resp: Any,
+    typename: str,
+    entry: str,
+) -> list[Any]:
+    """Validate the ``{data: {Typename: {entry: [...]}}}`` envelope; return list.
+
+    Shared by the entity RemoteLoader (rows) and the paginated RemoteLoader
+    (packages). Both expect the gql batch root to return a list under
+    ``data.<typename>.<entry>``; this returns that list, raising
+    ``RemoteQueryError`` on any shape divergence (non-object resp, gql errors,
+    missing data/typename/entry, non-list entry).
+    """
+    if not isinstance(resp, dict):
+        raise RemoteQueryError(
+            typename,
+            [{"message": f"Expected object response, got {type(resp).__name__}"}],
+        )
+    if resp.get("errors"):
+        raise RemoteQueryError(typename, resp["errors"])
+    data = resp.get("data")
+    if not isinstance(data, dict):
+        raise RemoteQueryError(
+            typename,
+            [{"message": "Response is missing an object-valued 'data' field"}],
+        )
+    type_group = data.get(typename)
+    if not isinstance(type_group, dict):
+        raise RemoteQueryError(
+            typename,
+            [{"message": f"Response is missing data.{typename}"}],
+        )
+    if entry not in type_group:
+        raise RemoteQueryError(
+            typename,
+            [{"message": f"Response is missing data.{typename}.{entry}"}],
+        )
+    items = type_group[entry]
+    if not isinstance(items, list):
+        raise RemoteQueryError(
+            typename,
+            [{
+                "message": (
+                    f"Expected data.{typename}.{entry} to be a list, "
+                    f"got {type(items).__name__}"
+                )
+            }],
+        )
+    return items
+
+
 def create_remote_loader(
     *,
     typename: str,
@@ -300,7 +350,7 @@ def create_remote_loader(
     target_cls: type[BaseModel],
     transport: FederationTransport,
     is_list: bool,
-    arg_name: str | None = None,
+    arg_name: str,
 ) -> type[DataLoader]:  # type: ignore[type-arg]
     """Build a DataLoader subclass that fetches from a mounted service.
 
@@ -309,13 +359,12 @@ def create_remote_loader(
 
     Args:
         arg_name: The GraphQL argument name the member's ``by_<join_remote>_in``
-            root expects, taken from the introspection contract (BatchRoot).
-            Defaults to the ``<join_remote>_list`` convention when unknown —
-            callers should pass the contract's value so a member that renamed
-            the argument is caught at ``federate()``, not at query time.
+            root expects. Required: ``federate()`` validates this against the
+            member's introspection contract (``BatchRoot.arg_name``) at mount
+            time and rejects empty values, so the loader never falls back to a
+            naming convention.
     """
     entry = f"by_{join_remote}_in"
-    resolved_arg_name = arg_name or f"{join_remote}_list"
     gql_url = endpoint.rstrip("/") + "/graphql"
 
     class _RemoteLoader(DataLoader):  # type: ignore[type-arg]
@@ -338,48 +387,13 @@ def create_remote_loader(
             query = build_gql_query(
                 typename=typename,
                 entry=entry,
-                arg_name=resolved_arg_name,
+                arg_name=arg_name,
                 keys=list(keys),
                 selection=selection,
-                target_cls=target_cls,
                 join_remote=join_remote,
             )
             resp = await transport.post_json(gql_url, {"query": query})
-            if not isinstance(resp, dict):
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": f"Expected object response, got {type(resp).__name__}"}],
-                )
-            if resp.get("errors"):
-                raise RemoteQueryError(typename, resp["errors"])
-            data = resp.get("data")
-            if not isinstance(data, dict):
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": "Response is missing an object-valued 'data' field"}],
-                )
-            type_group = data.get(typename)
-            if not isinstance(type_group, dict):
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": f"Response is missing data.{typename}"}],
-                )
-            if entry not in type_group:
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": f"Response is missing data.{typename}.{entry}"}],
-                )
-            group = type_group[entry]
-            if not isinstance(group, list):
-                raise RemoteQueryError(
-                    typename,
-                    [{
-                        "message": (
-                            f"Expected data.{typename}.{entry} to be a list, "
-                            f"got {type(group).__name__}"
-                        )
-                    }],
-                )
+            group = _unwrap_gql_response(resp, typename, entry)
             return _align_by_join_key(
                 rows=list(group),
                 keys=list(keys),
@@ -611,41 +625,7 @@ def create_paginated_remote_loader(
                 limit=limit, offset=offset, want_total_count=want_tc,
             )
             resp = await transport.post_json(gql_url, {"query": query})
-            if not isinstance(resp, dict):
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": f"Expected object response, got {type(resp).__name__}"}],
-                )
-            if resp.get("errors"):
-                raise RemoteQueryError(typename, resp["errors"])
-            data = resp.get("data")
-            if not isinstance(data, dict):
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": "Response is missing an object-valued 'data' field"}],
-                )
-            type_group = data.get(typename)
-            if not isinstance(type_group, dict):
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": f"Response is missing data.{typename}"}],
-                )
-            if entry not in type_group:
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": f"Response is missing data.{typename}.{entry}"}],
-                )
-            packages = type_group[entry]
-            if not isinstance(packages, list):
-                raise RemoteQueryError(
-                    typename,
-                    [{
-                        "message": (
-                            f"Expected data.{typename}.{entry} to be a list, "
-                            f"got {type(packages).__name__}"
-                        )
-                    }],
-                )
+            packages = _unwrap_gql_response(resp, typename, entry)
             buckets: dict[Any, Any] = {}
             expected_keys = {_normalize_join_key(key) for key in keys}
             for pkg in packages:

@@ -232,7 +232,6 @@ def test_nested_selection_preserves_object_field_arguments():
         arg_name="product_id_list",
         keys=[1],
         selection=selection,
-        target_cls=object,
         join_remote="product_id",
     )
 
@@ -283,7 +282,6 @@ def test_supported_join_key_types_pass_validation_and_render(
         arg_name="product_id_list",
         keys=[value],
         selection=FieldSelection(name="review"),
-        target_cls=object,
         join_remote="product_id",
     )
 
@@ -376,6 +374,7 @@ async def test_remote_loader_rejects_missing_batch_entry_in_response():
         target_cls=target_cls,
         transport=_MalformedGraphQLTransport(),
         is_list=True,
+        arg_name="product_id_list",
     )
     loader = loader_cls()
     set_remote_selection(
