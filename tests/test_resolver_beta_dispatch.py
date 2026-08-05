@@ -67,23 +67,20 @@ def _fake_rel(kind, **over):
 # ── Migrated from test_query_executor.py (methods moved into Resolver) ──
 
 
-class TestExtractEntityPageArgs:
+class TestPageArgsValidation:
     def test_rejects_negative_values(self):
-        """Negative pagination arguments should fail fast (PageArgs validator)."""
-        resolver = _make_resolver(enable_pagination=True)
+        """Negative pagination arguments fail fast (PageArgs validator).
 
-        class Rel:
-            default_page_size = 20
-            max_page_size = 100
+        specs/019: ``_extract_entity_page_args`` removed; the limit>=0 /
+        offset>=0 check lives in ``PageArgs.__post_init__``, invoked from
+        ``_load_entity_field_paginated`` via ``PageArgs(limit=job.paged.limit, ...)``.
+        """
+        from nexusx.loader.pagination import PageArgs
 
         with pytest.raises(ValueError, match="limit must be greater than or equal to 0"):
-            resolver._extract_entity_page_args(
-                FieldSelection(arguments={"limit": -1}), Rel(),
-            )
+            PageArgs(limit=-1)
         with pytest.raises(ValueError, match="offset must be greater than or equal to 0"):
-            resolver._extract_entity_page_args(
-                FieldSelection(arguments={"offset": -1}), Rel(),
-            )
+            PageArgs(offset=-1)
 
 
 class TestBuildEntityFieldJobsEdgeCases:

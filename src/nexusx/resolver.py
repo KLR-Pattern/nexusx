@@ -107,6 +107,7 @@ class _EntityFieldJob:
     rel_info: Any  # RelationshipInfo
     child_sel: FieldSelection
     original_sel: FieldSelection | None = None
+    paged: Any = None  # Paged | None — effective pagination params (specs/019 paged_provider)
 
 
 # ──────────────────────────────────────────────────────────
@@ -1783,6 +1784,7 @@ class Resolver:
         *,
         store: Callable[[Any, str, Any], None],
         enable_pagination: bool = False,
+        paged_provider: Callable[..., Any] | None = None,
     ) -> None:
         """Level-by-level BFS relationship resolution using DataLoaders.
 
@@ -1806,7 +1808,7 @@ class Resolver:
         ``enable_pagination`` mirrors ``QueryExecutor._enable_pagination``.
         """
         queue: list[_EntityFieldJob] = self._build_entity_field_jobs(
-            parents, parent_entity, field_sel, enable_pagination,
+            parents, parent_entity, field_sel, enable_pagination, paged_provider,
         )
 
         while queue:
@@ -1827,6 +1829,7 @@ class Resolver:
                         job.rel_info.target_entity,
                         job.child_sel,
                         enable_pagination,
+                        paged_provider,
                     )
                 )
             queue = next_jobs
@@ -1837,6 +1840,7 @@ class Resolver:
         parent_entity: type[SQLModel],
         field_sel: FieldSelection,
         enable_pagination: bool,
+        paged_provider: Callable[..., Any] | None = None,
     ) -> list[_EntityFieldJob]:
         """Extract relationship fields that need loading and build jobs."""
         if not parents or not field_sel.sub_fields:
@@ -1881,6 +1885,17 @@ class Resolver:
                 continue
 
             valid_parents = [parents[i] for i in valid_indices]
+            # specs/019: paged params from the injected provider closure
+            # (executor encapsulates gql args); Resolver doesn't read
+            # field_sel.arguments here. None for non-paged / no provider.
+            paged = None
+            if (
+                paged_provider is not None
+                and enable_pagination
+                and rel_info.is_list
+                and rel_info.page_loader is not None
+            ):
+                paged = paged_provider(rel_info, field_sel, field_name)
             jobs.append(
                 _EntityFieldJob(
                     parents=valid_parents,
@@ -1888,6 +1903,7 @@ class Resolver:
                     rel_info=rel_info,
                     child_sel=effective_sel,
                     original_sel=child_sel if effective_sel is not child_sel else None,
+                    paged=paged,
                 )
             )
         return jobs
@@ -2009,13 +2025,15 @@ class Resolver:
 
         rel_info = job.rel_info
         child_sel = job.child_sel
+        paged = job.paged  # specs/019: effective Paged (default + gql merge via paged_provider)
 
-        # Extract page args from original field selection (before items adjustment).
-        # job.original_sel holds the original child_sel when it was replaced by
-        # items_sel; otherwise fall back to child_sel (no pagination adjustment).
-        page_args = self._extract_entity_page_args(
-            job.original_sel if job.original_sel is not None else child_sel,
-            rel_info,
+        # page-size bounds stay on rel_info (applied as PageArgs boundary);
+        # limit/offset/order/direction come from the merged Paged on the job.
+        page_args = PageArgs(
+            limit=paged.limit if paged is not None else None,
+            offset=paged.offset if paged is not None else 0,
+            default_page_size=rel_info.default_page_size,
+            max_page_size=rel_info.max_page_size,
         )
 
         target_rels = self._registry.get_relationships(rel_info.target_entity)
@@ -2034,10 +2052,8 @@ class Resolver:
         else:
             merge_query_meta(loader, meta)
 
-        order, direction = self._extract_entity_order_direction(
-            job.original_sel if job.original_sel is not None else child_sel,
-            rel_info,
-        )
+        order = paged.order if paged is not None else None
+        direction = paged.direction if paged is not None else None
         fk_values = [getattr(p, rel_info.fk_field) for p in job.parents]
         commands = [
             PageLoadCommand(
@@ -2053,34 +2069,6 @@ class Resolver:
             if page_result and page_result.get("items"):
                 all_children.extend(page_result["items"])
         return all_children
-
-    def _extract_entity_page_args(
-        self, field_sel: FieldSelection, rel_info: Any
-    ) -> PageArgs:
-        """Extract PageArgs from GraphQL field arguments."""
-        args = field_sel.arguments or {}
-        return PageArgs(
-            limit=args.get("limit"),
-            offset=args.get("offset", 0),
-            default_page_size=rel_info.default_page_size,
-            max_page_size=rel_info.max_page_size,
-        )
-
-    def _extract_entity_order_direction(
-        self, field_sel: FieldSelection, rel_info: Any
-    ) -> tuple[str | None, Any]:
-        """Extract order/direction for a local paginated relationship that
-        carries a ``page_capability`` (specs/015). Returns (None, None) when the
-        relationship has no profile — the page_loader then falls back to its
-        fixed ``sort_field`` (backward compat)."""
-        if rel_info.page_capability is None:
-            return None, None
-        args = field_sel.arguments or {}
-        order = args.get("order")
-        direction = args.get("direction")
-        order_name = order.value if hasattr(order, "value") else order
-        dir_value = direction.value if hasattr(direction, "value") else direction
-        return order_name, dir_value
 
     async def resolve(self, node: T) -> T:
         """Resolve a model tree: execute resolve_* and post_* methods.

@@ -35,6 +35,14 @@ _MODEL_CACHE_MAX = 1024
 _MODEL_CACHE: OrderedDict[tuple, type[BaseModel]] = OrderedDict()
 
 
+# specs/019: paged fields are stamped with this empty sentinel (not the
+# gql-derived Paged value). The real pagination params are injected at resolve
+# time via a ``paged_provider`` closure (QueryExecutor → Resolver), so the model
+# only carries "this field is paged" shape — letting the cache key ignore paged
+# values entirely (dynamic ``limit`` can't fragment the cache).
+PAGED_MARKER = Paged()
+
+
 def _cache_key(
     entity: type,
     field_tree: dict[str, Any] | None,
@@ -52,17 +60,17 @@ def _cache_key(
     (the normal single-ErManager case). ``federation_namespace`` types are keyed
     by ``id()`` (stable for long-lived registered materialized types).
 
-    ``pagination_metadata`` Paged values are keyed by ``repr`` (frozen dataclass,
-    stable). Different limit/order/direction combos yield distinct models because
-    ``build_response_model`` stamps the value onto the field's
-    ``Annotated[..., Paged(...)]`` metadata (specs/018 US2); the cache is bounded
-    by ``_MODEL_CACHE_MAX`` (LRU eviction) so arbitrary gql args cannot grow it
-    without bound.
+    ``pagination_metadata`` contributes only WHICH fields are paged (the set of
+    field names) — specs/019. ``build_response_model`` stamps the empty
+    ``PAGED_MARKER`` (not the gql-derived value) onto paged fields, so the model
+    carries shape only; the real params arrive via a ``paged_provider`` closure at
+    resolve time. Keying on the field-name set (not the values) means dynamic gql
+    ``limit`` cannot fragment the cache.
     """
     ns = federation_namespace or {}
     ns_key = tuple(sorted((k, id(v)) for k, v in ns.items()))
     pm = pagination_metadata or {}
-    pm_key = tuple(sorted((k, repr(v)) for k, v in pm.items()))
+    pm_key = frozenset(pm.keys())
     return (entity, model_name, repr(field_tree), ns_key, pm_key)
 
 
@@ -188,12 +196,13 @@ def _build_response_model_uncached(
                 item_type=nested_item_model,
                 pagination_selection=pag_selection,
             )
-            # specs/018 US2: when gql args provided a Paged for this field,
-            # wrap the result_type in Annotated so Resolver can read metadata
-            # and dispatch to page_loader. Absent → plain shape (US1 path).
-            paged_meta = pagination_metadata.get(field_name) if pagination_metadata else None
-            if paged_meta is not None:
-                fields[field_name] = (Annotated[result_type, paged_meta], ...)
+            # specs/019: stamp the empty PAGED_MARKER (shape only) when this field
+            # is paged — the real limit/offset/order/direction are injected at
+            # resolve time via paged_provider, not baked into the model. This keeps
+            # the cache key value-agnostic (dynamic limit can't fragment it).
+            is_paged = bool(pagination_metadata) and field_name in pagination_metadata
+            if is_paged:
+                fields[field_name] = (Annotated[result_type, PAGED_MARKER], ...)
             else:
                 fields[field_name] = (result_type, ...)
             continue

@@ -82,7 +82,13 @@ def _paged_metadata_in(field_info: object) -> Paged | None:
 
 
 def test_paginated_field_with_limit_metadata_wraps_in_annotated():
-    """(a) gql ``reviews(limit: 5)`` triggers ``Annotated[..., Paged(limit=5)]``."""
+    """(a) gql ``reviews(limit: 5)`` triggers ``Annotated[..., PAGED_MARKER]`` (specs/019).
+
+    The model carries only the shape marker (empty Paged) — the real limit value
+    is injected at resolve time via paged_provider, not baked into the model, so
+    the cache key can ignore paged values. Value correctness is covered by the
+    provider tests (test_paged_provider).
+    """
     field_tree = {
         "posts": {"items": {"title": None}, "pagination": {"has_more": None}},
     }
@@ -93,9 +99,9 @@ def test_paginated_field_with_limit_metadata_wraps_in_annotated():
     field = model.model_fields["posts"]
     paged = _paged_metadata_in(field)
     assert paged is not None, (
-        f"expected Paged metadata on FieldInfo, got metadata={field.metadata!r}"
+        f"expected PAGED_MARKER on FieldInfo, got metadata={field.metadata!r}"
     )
-    assert paged.limit == 5
+    assert isinstance(paged, Paged)  # marker present; value empty (see provider tests)
 
 
 # ──────────────────────────────────────────────────────────
@@ -131,8 +137,13 @@ def test_paginated_field_without_metadata_keeps_plain_result_type():
 # ──────────────────────────────────────────────────────────
 
 
-def test_paginated_field_with_order_metadata_carries_order():
-    """(c) gql ``reviews(limit: 5, order: HIGHEST_RATING)`` carries order in metadata."""
+def test_paginated_field_with_order_metadata_carries_marker_only():
+    """(c) specs/019: model carries PAGED_MARKER only (no order value).
+
+    order/limit values now flow through paged_provider at resolve time, not the
+    model. The order-merge correctness moved to provider tests; here we only
+    assert the field is still marked paged.
+    """
     field_tree = {
         "posts": {"items": {"title": None}, "pagination": {"has_more": None}},
     }
@@ -143,8 +154,7 @@ def test_paginated_field_with_order_metadata_carries_order():
     field = model.model_fields["posts"]
     paged = _paged_metadata_in(field)
     assert paged is not None
-    assert paged.limit == 5
-    assert paged.order == "HIGHEST_RATING"
+    assert isinstance(paged, Paged)  # marker; value empty (order verified via provider)
 
 
 # ──────────────────────────────────────────────────────────

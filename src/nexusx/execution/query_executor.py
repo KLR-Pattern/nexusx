@@ -347,14 +347,39 @@ class QueryExecutor:
         ``store`` callback; ``_serialize`` reads them exactly as before.
         """
         resolver = self._get_entity_resolver()
+        # specs/019: inject a paged_provider closure (encapsulates gql args →
+        # Paged merge) so the Resolver stays gql-agnostic. None when pagination
+        # is off (plain relationship loads need no provider).
+        paged_provider = self._make_paged_provider() if self._enable_pagination else None
         await resolver._bfs_dispatch_entity_fields(
             parents,
             entity,
             field_sel,
-            None,  # response_model: reserved for US3+ metadata-driven dispatch
+            None,  # response_model: reserved for future metadata-driven dispatch
             store=self._store,
             enable_pagination=self._enable_pagination,
+            paged_provider=paged_provider,
         )
+
+    def _make_paged_provider(self) -> Any:
+        """Build the ``paged_provider`` closure (specs/019).
+
+        Encapsulates the gql → Paged merge (default from RelationshipInfo + gql
+        args override via ``Resolver._merge_paged``). This is the ONLY place
+        ``field_sel.arguments`` is read for pagination; the closure is injected
+        per-call into ``Resolver._bfs_dispatch_entity_fields``, keeping the
+        Resolver free of gql knowledge. Stateless (closes over nothing), so it
+        could be cached at executor level — left per-call for simplicity.
+        """
+        from nexusx.resolver import Resolver
+
+        def provider(rel_info: Any, field_sel: Any, field_name: str) -> Any:
+            return Resolver._merge_paged(
+                _rel_default_paged(rel_info),
+                _gql_args_to_paged(field_sel, field_name),
+            )
+
+        return provider
 
     def _get_entity_resolver(self) -> Any:
         """Lazily build the Resolver instance used for entity-field dispatch.
@@ -660,3 +685,50 @@ def _field_sel_to_pagination_metadata(
             direction=direction,
         )
     return metadata or None
+
+
+def _gql_args_to_paged(
+    field_sel: FieldSelection | None, field_name: str
+) -> Any:
+    """gql field args → ``Paged`` (specs/019). The single place entity-first
+    gql's ``field_sel.arguments`` is read for pagination — lives outside the
+    Resolver so the Resolver stays gql-agnostic. Reads ``limit`` / ``offset`` /
+    ``order`` / ``direction`` and unwraps enum values (``.value``) so the result
+    is wire-ready for ``PageLoadCommand``. Empty ``Paged()`` when the field has
+    no page args (defaults fill in via ``_merge_paged``).
+    """
+    from nexusx.loader.pagination import Paged
+
+    child = (
+        field_sel.sub_fields.get(field_name)
+        if field_sel and field_sel.sub_fields
+        else None
+    )
+    args = (child.arguments if child else None) or {}
+    order = args.get("order")
+    direction = args.get("direction")
+    return Paged(
+        limit=args.get("limit"),
+        offset=args.get("offset") if args.get("offset") is not None else 0,
+        order=order.value if hasattr(order, "value") else order,
+        direction=direction.value if hasattr(direction, "value") else direction,
+    )
+
+
+def _rel_default_paged(rel_info: Any) -> Any:
+    """``RelationshipInfo`` → default ``Paged`` (specs/019).
+
+    β (entity-first gql) has no field-level Paged default (unlike γ's
+    ``__paged_fields__``), so only ``order`` is derivable — from
+    ``page_capability.default_order``. ``limit`` / ``offset`` / ``direction``
+    have no rel-level default (None / 0 / None); the page_loader's
+    ``default_page_size`` applies separately as a ``PageArgs`` boundary in the
+    Resolver.
+    """
+    from nexusx.loader.pagination import Paged
+
+    order = None
+    cap = getattr(rel_info, "page_capability", None)
+    if cap is not None:
+        order = getattr(cap, "default_order", None)
+    return Paged(order=order)
