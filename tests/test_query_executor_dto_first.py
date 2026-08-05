@@ -152,15 +152,11 @@ async def test_paginated_relationship_equivalence(seeded):
 
 
 # ──────────────────────────────────────────────────────────
-# (c) federation materialized remote type — TODO
+# (c) federation materialized remote type — covered by federation suite
 # ──────────────────────────────────────────────────────────
-
-
-@pytest.mark.skip(
-    reason="T002 (c) federation materialized remote type — "
-    "等 T003-T007 实现后补；需要起两个 handler + federate()，"
-    "fixture 复杂度高，单独立 task（T002b）做。"
-)
-@pytest.mark.asyncio
-async def test_federation_remote_type_equivalence():
-    """(c) federation materialized remote type: flag-on == flag-off."""
+#
+# T002b 完成：(c) 的 flag-on/off parity 不在这里复刻 federation fixture
+# （复杂度不划算），而是依赖 tests/test_federation_*.py 的 24 个 federation
+# e2e 测试在 ``NEXUSX_USE_RESPONSE_BUILDER=1`` 下全部跑通——它们基于 flag-off
+# 行为写的 assertion，flag-on 也成立即等价于 parity。conftest.py 的
+# ``_force_use_response_builder`` autouse fixture 让 flag-on 跑同一段代码。

@@ -627,6 +627,12 @@ class QueryExecutor:
         (set by ``federate()``); when None (no federation), response_builder
         falls back to local SQLModel subclasses only.
 
+        ``relation_entity_resolver`` lets response_builder find
+        federation-materialized relationships (fields declared via
+        ``__relationships__ = [RemoteRelationship(...)]``); these live in
+        ``ErManager._registry`` and are invisible to SQLAlchemy /
+        ``__annotations__`` lookups. specs/018 T002b.
+
         ``value_accessor`` checks ``self._results`` (BFS-resolved relationship
         cache) BEFORE ``getattr`` — without this, accessing a relationship
         attribute on a detached SQLModel instance triggers SQLAlchemy
@@ -642,10 +648,22 @@ class QueryExecutor:
                 return cached
             return getattr(value, field_name, None)
 
+        def resolver(ent: Any, fname: str) -> Any:
+            """Return RelationshipInfo for federation-materialized fields.
+
+            Returns the RelationshipInfo object directly (response_builder
+            unwraps ``.target_entity`` and reads ``.is_list``); None for
+            local SQLModel relationships — those resolve via the SQLAlchemy /
+            annotations fallback in get_relation_entity.
+            """
+            rel_info = self._registry.get_relationship(ent, fname)
+            return rel_info
+
         return serialize_with_model(
             item, entity, field_tree,
             federation_namespace=federation_namespace,
             value_accessor=accessor,
+            relation_entity_resolver=resolver,
         )
 
     def _get_federation_namespace(self) -> dict[str, type] | None:

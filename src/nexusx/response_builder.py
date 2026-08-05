@@ -7,6 +7,7 @@ unwanted fields (like foreign keys) during serialization.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel, create_model
@@ -14,12 +15,20 @@ from pydantic import BaseModel, create_model
 from nexusx.loader.pagination import create_result_type
 from nexusx.utils.type_utils import get_field_type
 
+# Resolver callable injected by QueryExecutor so build_response_model can find
+# federation-materialized relationships (which live in ErManager._registry, not
+# on the entity's SQLAlchemy mapper / __annotations__). Returns a duck-typed
+# RelationshipInfo-like object with ``.target_entity`` (type) and ``.is_list``
+# (bool); None when no federation relationship matches. specs/018 T002b.
+RelationshipEntityResolver = Callable[[type, str], Any]
+
 
 def build_response_model(
     entity: type,
     field_tree: dict[str, Any] | None,
     model_name: str = "Response",
     federation_namespace: dict[str, type] | None = None,
+    relation_entity_resolver: RelationshipEntityResolver | None = None,
 ) -> type[BaseModel]:
     """Build a Pydantic model dynamically based on field selection tree.
 
@@ -38,6 +47,13 @@ def build_response_model(
             checked BEFORE local SQLModel subclasses — federation types don't
             appear in ``all_subclasses`` because they're pydantic ``create_model``
             products, not SQLModel children. specs/018 T004.
+        relation_entity_resolver: Optional callable injected by QueryExecutor
+            to look up federation-materialized relationships in
+            ``ErManager._registry`` (the source of truth for fields declared
+            via ``__relationships__ = [RemoteRelationship(...)]`` — these don't
+            appear on the entity's SQLAlchemy mapper or ``__annotations__``).
+            Without it, ``reviews`` on ``Product`` is invisible to the builder.
+            specs/018 T002b.
 
     Returns:
         Dynamically created Pydantic model class.
@@ -53,10 +69,22 @@ def build_response_model(
             fields[field_name] = (field_type, ...)
             continue
 
-        # Relationship field - build nested model
-        relation_entity = get_relation_entity(
-            entity, field_name, federation_namespace=federation_namespace
+        # Federation registry first (source of truth for __relationships__
+        # fields): carries both target_entity and is_list. specs/018 T002b.
+        fed_rel = (
+            relation_entity_resolver(entity, field_name)
+            if relation_entity_resolver is not None
+            else None
         )
+        if fed_rel is not None:
+            relation_entity = getattr(fed_rel, "target_entity", None)
+            is_list = bool(getattr(fed_rel, "is_list", False))
+        else:
+            relation_entity = get_relation_entity(
+                entity, field_name, federation_namespace=federation_namespace
+            )
+            is_list = _is_list_relationship(entity, field_name)
+
         if relation_entity is None:
             # Fallback to Any if relation type cannot be determined
             fields[field_name] = (Any, ...)
@@ -72,6 +100,7 @@ def build_response_model(
                 relation_entity, items_tree,
                 f"{field_name.capitalize()}ItemResponse",
                 federation_namespace=federation_namespace,
+                relation_entity_resolver=relation_entity_resolver,
             )
             pag_selection = set(pagination_tree.keys()) if pagination_tree else None
             result_type = create_result_type(
@@ -84,10 +113,10 @@ def build_response_model(
         nested_model = build_response_model(
             relation_entity, nested, f"{field_name.capitalize()}Response",
             federation_namespace=federation_namespace,
+            relation_entity_resolver=relation_entity_resolver,
         )
 
-        # Check if it's a list relationship
-        if _is_list_relationship(entity, field_name):
+        if is_list:
             fields[field_name] = (list[nested_model], ...)  # type: ignore[valid-type]
         else:
             fields[field_name] = (nested_model | None, ...)
@@ -143,6 +172,7 @@ def serialize_with_model(
     field_tree: dict[str, Any] | None,
     federation_namespace: dict[str, type] | None = None,
     value_accessor: Any = None,
+    relation_entity_resolver: RelationshipEntityResolver | None = None,
 ) -> Any:
     """Serialize data using dynamically built Pydantic model.
 
@@ -157,6 +187,9 @@ def serialize_with_model(
             QueryExecutor passes a wrapper that checks its BFS-resolved
             ``_results`` cache first (avoiding SQLAlchemy DetachedInstanceError
             when the session is closed post-query); specs/018 T007.
+        relation_entity_resolver: Optional callable to look up
+            federation-materialized relationships in ErManager._registry
+            (specs/018 T002b).
 
     Returns:
         Serialized dictionary or list of dictionaries.
@@ -165,7 +198,9 @@ def serialize_with_model(
         return None
 
     model = build_response_model(
-        entity, field_tree, federation_namespace=federation_namespace
+        entity, field_tree,
+        federation_namespace=federation_namespace,
+        relation_entity_resolver=relation_entity_resolver,
     )
 
     if isinstance(value, list):
@@ -174,6 +209,7 @@ def serialize_with_model(
                 model, item, field_tree,
                 federation_namespace=federation_namespace,
                 value_accessor=value_accessor,
+                relation_entity_resolver=relation_entity_resolver,
             )
             for item in value
         ]
@@ -182,6 +218,7 @@ def serialize_with_model(
         model, value, field_tree,
         federation_namespace=federation_namespace,
         value_accessor=value_accessor,
+        relation_entity_resolver=relation_entity_resolver,
     )
 
 
@@ -192,6 +229,7 @@ def _validate_and_dump(
     *,
     federation_namespace: dict[str, type] | None = None,
     value_accessor: Any = None,
+    relation_entity_resolver: RelationshipEntityResolver | None = None,
 ) -> dict[str, Any]:
     """Validate value with model and dump to dict.
 
@@ -226,6 +264,7 @@ def _validate_and_dump(
             nested_entity = get_relation_entity(
                 value_type, field_name,
                 federation_namespace=federation_namespace,
+                relation_entity_resolver=relation_entity_resolver,
             )
             if nested_entity is None:
                 continue
@@ -250,6 +289,7 @@ def _validate_and_dump(
                         it, nested_entity, items_tree,
                         federation_namespace=federation_namespace,
                         value_accessor=value_accessor,
+                        relation_entity_resolver=relation_entity_resolver,
                     )
                     for it in items_value
                 ]
@@ -268,6 +308,7 @@ def _validate_and_dump(
                     nested_value, nested_entity, nested_tree,
                     federation_namespace=federation_namespace,
                     value_accessor=value_accessor,
+                    relation_entity_resolver=relation_entity_resolver,
                 )
 
     try:
@@ -336,6 +377,7 @@ def get_relation_entity(
     field_name: str,
     all_subclasses: set[type] | None = None,
     federation_namespace: dict[str, type] | None = None,
+    relation_entity_resolver: RelationshipEntityResolver | None = None,
 ) -> type | None:
     """Get the target entity type for a relationship field.
 
@@ -345,10 +387,31 @@ def get_relation_entity(
         all_subclasses: Optional set of all SQLModel subclasses for resolving forward references.
         federation_namespace: Optional map of federation-materialized remote types
             (specs/018 T004).
+        relation_entity_resolver: Optional callable to look up
+            federation-materialized relationships in ErManager._registry. Tried
+            BEFORE the SQLAlchemy / SQLModel / annotations fallbacks because
+            federation fields declared via ``__relationships__`` never appear
+            on the SQLAlchemy mapper or ``__annotations__`` (specs/018 T002b).
 
     Returns:
         Target entity class or None if not found.
     """
+    # Federation registry lookup (source of truth for __relationships__ fields).
+    if relation_entity_resolver is not None:
+        try:
+            resolved = relation_entity_resolver(entity, field_name)
+        except Exception:
+            resolved = None
+        if resolved is not None:
+            # Resolver returns a RelationshipInfo-like object; callers of this
+            # function want the target type. Unwrap defensively (specs/018 T002b).
+            target = getattr(resolved, "target_entity", None)
+            if target is not None:
+                return target
+            if isinstance(resolved, type):
+                return resolved
+            return None
+
     # Check SQLAlchemy relationships first (more reliable for actual entity types)
     try:
         from sqlalchemy import inspect as sa_inspect
@@ -452,7 +515,10 @@ def _extract_entity_from_annotation(
     return None
 
 
-def _is_list_relationship(entity: type, field_name: str) -> bool:
+def _is_list_relationship(
+    entity: type,
+    field_name: str,
+) -> bool:
     """Check if a relationship field is a list type.
 
     Args:
