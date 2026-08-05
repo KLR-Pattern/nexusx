@@ -8,11 +8,11 @@ unwanted fields (like foreign keys) during serialization.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, get_args, get_origin
+from typing import Annotated, Any, get_args, get_origin
 
 from pydantic import BaseModel, create_model
 
-from nexusx.loader.pagination import create_result_type
+from nexusx.loader.pagination import Paged, create_result_type
 from nexusx.utils.type_utils import get_field_type
 
 # Resolver callable injected by QueryExecutor so build_response_model can find
@@ -29,6 +29,7 @@ def build_response_model(
     model_name: str = "Response",
     federation_namespace: dict[str, type] | None = None,
     relation_entity_resolver: RelationshipEntityResolver | None = None,
+    pagination_metadata: dict[str, Paged] | None = None,
 ) -> type[BaseModel]:
     """Build a Pydantic model dynamically based on field selection tree.
 
@@ -54,6 +55,15 @@ def build_response_model(
             appear on the entity's SQLAlchemy mapper or ``__annotations__``).
             Without it, ``reviews`` on ``Product`` is invisible to the builder.
             specs/018 T002b.
+        pagination_metadata: Optional map of gql field args (``limit`` / ``offset``
+            / ``order`` / ``direction``) packed as ``Paged`` per field name,
+            derived from the gql selection (e.g. ``reviews(limit: 5)`` →
+            ``{"reviews": Paged(limit=5)}``). When a paginated-package field
+            appears in this map, the field type is upgraded to
+            ``Annotated[{items, pagination} shape, Paged(...)]`` so Resolver can
+            read the metadata and trigger page_loader (specs/018 US2). Absent
+            for a field → plain ``{items, pagination}`` shape (US1 behavior,
+            backward compatible).
 
     Returns:
         Dynamically created Pydantic model class.
@@ -101,19 +111,28 @@ def build_response_model(
                 f"{field_name.capitalize()}ItemResponse",
                 federation_namespace=federation_namespace,
                 relation_entity_resolver=relation_entity_resolver,
+                pagination_metadata=_restrict_metadata(pagination_metadata, items_tree),
             )
             pag_selection = set(pagination_tree.keys()) if pagination_tree else None
             result_type = create_result_type(
                 item_type=nested_item_model,
                 pagination_selection=pag_selection,
             )
-            fields[field_name] = (result_type, ...)
+            # specs/018 US2: when gql args provided a Paged for this field,
+            # wrap the result_type in Annotated so Resolver can read metadata
+            # and dispatch to page_loader. Absent → plain shape (US1 path).
+            paged_meta = pagination_metadata.get(field_name) if pagination_metadata else None
+            if paged_meta is not None:
+                fields[field_name] = (Annotated[result_type, paged_meta], ...)
+            else:
+                fields[field_name] = (result_type, ...)
             continue
 
         nested_model = build_response_model(
             relation_entity, nested, f"{field_name.capitalize()}Response",
             federation_namespace=federation_namespace,
             relation_entity_resolver=relation_entity_resolver,
+            pagination_metadata=_restrict_metadata(pagination_metadata, nested),
         )
 
         if is_list:
@@ -122,6 +141,28 @@ def build_response_model(
             fields[field_name] = (nested_model | None, ...)
 
     return create_model(f"{entity.__name__}{model_name}", **fields)
+
+
+def _restrict_metadata(
+    pagination_metadata: dict[str, Paged] | None,
+    nested_tree: dict[str, Any],
+) -> dict[str, Paged] | None:
+    """Trim ``pagination_metadata`` to keys that appear in ``nested_tree``.
+
+    A field's Paged metadata applies at its own level; nested fields' metadata
+    travels with them under their own keys. Restricting the dict before
+    recursing into build_response_model keeps the lookup scoped to the child
+    tree (and prevents accidental cross-branch matches when sibling fields
+    share names with descendants).
+    """
+    if pagination_metadata is None:
+        return None
+    if not nested_tree:
+        return None
+    restricted = {
+        k: v for k, v in pagination_metadata.items() if k in nested_tree
+    }
+    return restricted or None
 
 
 def _is_paginated_package(nested: Any) -> bool:
@@ -173,6 +214,7 @@ def serialize_with_model(
     federation_namespace: dict[str, type] | None = None,
     value_accessor: Any = None,
     relation_entity_resolver: RelationshipEntityResolver | None = None,
+    pagination_metadata: dict[str, Paged] | None = None,
 ) -> Any:
     """Serialize data using dynamically built Pydantic model.
 
@@ -190,6 +232,9 @@ def serialize_with_model(
         relation_entity_resolver: Optional callable to look up
             federation-materialized relationships in ErManager._registry
             (specs/018 T002b).
+        pagination_metadata: Optional gql-args-derived ``{field_name: Paged}``;
+            forwarded to ``build_response_model`` to stamp ``Annotated[..., Paged]``
+            on paginated-package fields (specs/018 US2 / T014).
 
     Returns:
         Serialized dictionary or list of dictionaries.
@@ -201,6 +246,7 @@ def serialize_with_model(
         entity, field_tree,
         federation_namespace=federation_namespace,
         relation_entity_resolver=relation_entity_resolver,
+        pagination_metadata=pagination_metadata,
     )
 
     if isinstance(value, list):

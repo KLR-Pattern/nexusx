@@ -641,6 +641,11 @@ class QueryExecutor:
         """
         field_tree = _field_sel_to_tree(field_sel)
         federation_namespace = self._get_federation_namespace()
+        # specs/018 US2 / T014: derive ``Paged`` per field from gql args
+        # (``reviews(limit: 5)`` → ``{"reviews": Paged(limit=5)}``) so
+        # build_response_model stamps ``Annotated[..., Paged]`` on the field,
+        # which Resolver (US3 BFS relocation) reads to dispatch page_loader.
+        pagination_metadata = _field_sel_to_pagination_metadata(field_sel)
 
         def accessor(value: Any, field_name: str) -> Any:
             cached = self._retrieve(value, field_name)
@@ -664,6 +669,7 @@ class QueryExecutor:
             federation_namespace=federation_namespace,
             value_accessor=accessor,
             relation_entity_resolver=resolver,
+            pagination_metadata=pagination_metadata,
         )
 
     def _get_federation_namespace(self) -> dict[str, type] | None:
@@ -929,3 +935,49 @@ def _field_sel_to_tree(field_sel: FieldSelection | None) -> dict[str, Any] | Non
         else:
             tree[name] = _field_sel_to_tree(child)
     return tree
+
+
+def _field_sel_to_pagination_metadata(
+    field_sel: FieldSelection | None,
+) -> dict[str, Any] | None:
+    """Derive ``{field_name: Paged}`` from gql field args (specs/018 US2 / T014).
+
+    Walks ``field_sel.sub_fields`` and, for each child carrying ``limit`` /
+    ``offset`` / ``order`` / ``direction`` arguments, packs them into a
+    ``Paged``. Used by ``_serialize_via_response_builder`` to feed
+    ``build_response_model(pagination_metadata=...)``, which stamps the
+    metadata onto the field's ``Annotated[..., Paged]`` so Resolver (US3 BFS
+    relocation) can route to ``page_loader``.
+
+    Returns ``None`` when no field carries page args (preserves US1 callers'
+    plain ``{items, pagination}`` shape — backward compatible).
+    """
+    if field_sel is None or not field_sel.sub_fields:
+        return None
+    from nexusx.loader.pagination import Paged
+
+    metadata: dict[str, Any] = {}
+    for name, child in field_sel.sub_fields.items():
+        args = getattr(child, "arguments", None) or {}
+        if not args:
+            continue
+        limit = args.get("limit")
+        offset = args.get("offset")
+        order = args.get("order")
+        direction = args.get("direction")
+        # Only emit Paged when at least one page-arg was supplied; absence
+        # everywhere → leave the field plain (US1 backward-compat).
+        if (
+            limit is None
+            and offset is None
+            and order is None
+            and direction is None
+        ):
+            continue
+        metadata[name] = Paged(
+            limit=limit,
+            offset=offset if offset is not None else 0,
+            order=order,
+            direction=direction,
+        )
+    return metadata or None

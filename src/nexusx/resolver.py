@@ -634,6 +634,61 @@ class Resolver:
             direction=c.direction if c.direction is not None else d.direction,
         )
 
+    @staticmethod
+    def _extract_paged_metadata(field_info_or_hint: Any) -> Any:
+        """Return the ``Paged`` marker carried on a field, or None.
+
+        Reads two carry-mechanisms (specs/018 US2 / T012):
+          1. ``pydantic.FieldInfo.metadata`` — when ``build_response_model`` /
+             ``create_model`` consumes ``Annotated[X, Paged(...)]``, pydantic v2
+             stashes the metadata in ``FieldInfo.metadata`` (a list).
+          2. Raw ``typing.Annotated[X, Paged(...)]`` alias — when the caller
+             passes the annotation itself (no FieldInfo wrapper); reads
+             ``__metadata__`` via ``get_args``.
+
+        Used by entity-first dynamic model dispatch (US3 will plug it into the
+        Resolver's BFS-relocated entity branch): if a field carries ``Paged``
+        metadata, dispatch routes through ``page_loader`` (vs. plain loader for
+        non-paginated fields).
+        """
+        from nexusx.loader.pagination import Paged
+
+        metadata = getattr(field_info_or_hint, "metadata", None) or []
+        for meta in metadata:
+            if isinstance(meta, Paged):
+                return meta
+
+        annotation = getattr(field_info_or_hint, "annotation", field_info_or_hint)
+        if annotation is not None and get_origin(annotation) is typing.Annotated:
+            for meta in get_args(annotation)[1:]:
+                if isinstance(meta, Paged):
+                    return meta
+        return None
+
+    def _resolve_paged_for_dynamic_field(
+        self,
+        field_info: Any,
+        field_name: str,
+    ) -> Any:
+        """Compute the effective ``Paged`` for a dynamic-model field.
+
+        Combines the field's metadata ``Paged`` (set by ``build_response_model``
+        from gql args — specs/018 US2 / T010-T011) with the caller-context
+        override (gql-level per-field page params coming through the use case
+        method context). Field metadata wins per-attribute when set; caller
+        context fills the rest. Both None → None (no pagination; the field is
+        a plain ``{items, pagination}`` shape served by ``_serialize``'s
+        back-compat path, no ``page_loader`` dispatch).
+
+        Plug point for US3 BFS-relocation: the entity-field dispatch branch in
+        ``Resolver._bfs_dispatch_entity_fields`` (T016) will call this to decide
+        between ``page_loader`` and plain ``loader`` for a dynamic-model field.
+        Until US3 lands, exercised by unit tests only.
+        """
+        paged_default = self._extract_paged_metadata(field_info)
+        paged_caller = self._extract_page_params(field_name)
+        return self._merge_paged(paged_default, paged_caller)
+
     # ──────────────────────────────────────────────────────
     # Implicit auto-loading — automatic relationship loading
     # ──────────────────────────────────────────────────────
