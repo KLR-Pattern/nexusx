@@ -18,6 +18,7 @@ from pydantic import Field, create_model
 from sqlmodel import SQLModel, select
 
 from nexusx.decorator import query
+from nexusx.utils.type_utils import get_fk_fields
 
 _ORDER_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
@@ -184,10 +185,11 @@ def _get_primary_key_fields(entity: type[SQLModel]) -> list[tuple[str, Any]]:
         if table is not None and getattr(table, "primary_key", None) is not None
         else set()
     )
+    fk_fields = get_fk_fields(entity)
 
     for field_name, field_info in entity.model_fields.items():
         has_primary_key = field_name in table_primary_keys
-        has_foreign_key = False
+        has_foreign_key = field_name in fk_fields
 
         if hasattr(field_info, "primary_key"):
             if field_info.primary_key is True:
@@ -197,15 +199,6 @@ def _get_primary_key_fields(entity: type[SQLModel]) -> list[tuple[str, Any]]:
             for meta in field_info.metadata:
                 if hasattr(meta, "primary_key") and meta.primary_key is True:
                     has_primary_key = True
-                    break
-
-        if hasattr(field_info, "foreign_key") and isinstance(field_info.foreign_key, str):
-            has_foreign_key = True
-
-        if not has_foreign_key and hasattr(field_info, "metadata"):
-            for meta in field_info.metadata:
-                if hasattr(meta, "foreign_key") and isinstance(meta.foreign_key, str):
-                    has_foreign_key = True
                     break
 
         if has_primary_key and not has_foreign_key:

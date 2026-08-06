@@ -10,10 +10,12 @@ from graphql import DocumentNode, FieldNode, OperationDefinitionNode
 from pydantic import TypeAdapter
 from sqlmodel import SQLModel
 
+from nexusx.core_builder import is_paginated_package
 from nexusx.execution.argument_builder import ArgumentBuilder
 from nexusx.loader.registry import RelationshipKind
 from nexusx.query_parser import FieldSelection
 from nexusx.response_builder import get_relationship_names, serialize_with_model
+from nexusx.utils.type_utils import get_fk_fields
 
 if TYPE_CHECKING:
     from nexusx.loader.registry import ErManager
@@ -509,7 +511,7 @@ class QueryExecutor:
         if isinstance(item, dict):
             # A page_by_<key>_in root returns per-key packages
             # {fk, items:[entity], pagination}; serialize specially.
-            if "items" in item and "pagination" in item:
+            if is_paginated_package(item):
                 return self._serialize_paginated_package(item, entity, field_sel)
             return item
 
@@ -583,36 +585,19 @@ class QueryExecutor:
         self, data: dict[str, Any], entity: type[SQLModel]
     ) -> dict[str, Any]:
         """Remove FK fields and relationship fields from output dict."""
-        fk_fields = self._get_fk_fields(entity)
+        fk_fields = get_fk_fields(entity)
         relationship_names = get_relationship_names(entity)
         excluded = fk_fields | relationship_names | {"metadata"}
         return {k: v for k, v in data.items() if k not in excluded}
-
-    def _get_fk_fields(self, entity: type[SQLModel]) -> set[str]:
-        """Get foreign key field names for an entity."""
-        fk_fields: set[str] = set()
-        for field_name, field_info in entity.model_fields.items():
-            if hasattr(field_info, "foreign_key") and isinstance(
-                field_info.foreign_key, str
-            ):
-                fk_fields.add(field_name)
-            if hasattr(field_info, "metadata"):
-                for meta in field_info.metadata:
-                    if hasattr(meta, "foreign_key") and isinstance(
-                        meta.foreign_key, str
-                    ):
-                        fk_fields.add(field_name)
-        return fk_fields
 
 def _gql_args_to_paged(
     field_sel: FieldSelection | None, field_name: str
 ) -> Any:
     """gql field args → ``Paged`` (specs/019). The single place entity-first
     gql's ``field_sel.arguments`` is read for pagination — lives outside the
-    Resolver so the Resolver stays gql-agnostic. Reads ``limit`` / ``offset`` /
-    ``order`` / ``direction`` and unwraps enum values (``.value``) so the result
-    is wire-ready for ``PageLoadCommand``. Omitted args remain ``None`` so
-    ``_merge_paged`` can distinguish them from explicit zero values.
+    Resolver so the Resolver stays gql-agnostic. Delegates to
+    ``_PagedOverride.from_dict`` (specs/021 P1-8); a None result means no
+    caller args (``_merge_paged`` treats it as no override).
     """
     from nexusx.loader.pagination import _PagedOverride
 
@@ -622,14 +607,7 @@ def _gql_args_to_paged(
         else None
     )
     args = (child.arguments if child else None) or {}
-    order = args.get("order")
-    direction = args.get("direction")
-    return _PagedOverride(
-        limit=args.get("limit"),
-        offset=args.get("offset") if "offset" in args else None,
-        order=order.value if hasattr(order, "value") else order,
-        direction=direction.value if hasattr(direction, "value") else direction,
-    )
+    return _PagedOverride.from_dict(args)
 
 
 def _rel_default_paged(rel_info: Any) -> Any:

@@ -88,13 +88,22 @@ class FieldResolver(Protocol):
         ...
 
 
+def is_paginated_package(tree: Any) -> bool:
+    """True if a field_tree dict (or dict value) is a ``{items, pagination}``
+    package. Shared by the build path (dict → FieldSelection), the recursive
+    serializer (response_builder) and the resolver's duck-type checks
+    (specs/021 P1-6 convergence).
+    """
+    return isinstance(tree, dict) and "items" in tree and "pagination" in tree
+
+
 def _is_paginated_package_sel(selection: FieldSelection) -> bool:
     """True if selection represents a paginated package (``{items, pagination}``).
 
-    Mirrors ``response_builder._is_paginated_package`` but works on
-    ``FieldSelection`` (not field_tree dict). entity-first gql produces this
-    shape when the query selects ``field { items { ... } pagination { ... } }``;
-    UseCase never does (no paginated package in DTO land).
+    FieldSelection variant of ``is_paginated_package``. entity-first gql
+    produces this shape when the query selects
+    ``field { items { ... } pagination { ... } }``; UseCase never does (no
+    paginated package in DTO land).
     """
     return (
         selection.sub_fields is not None

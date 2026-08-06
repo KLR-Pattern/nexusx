@@ -23,6 +23,7 @@ from aiodataloader import DataLoader
 from pydantic import BaseModel
 
 from nexusx.federation.transport import FederationTransport
+from nexusx.utils.type_utils import coerce_to_dict
 
 
 class RemoteQueryError(RuntimeError):
@@ -278,12 +279,6 @@ def build_gql_query(
     )
 
 
-def _to_dict(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return obj
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump(mode="json")
-    return obj
 
 
 def _align_by_join_key(
@@ -302,7 +297,7 @@ def _align_by_join_key(
     """
     buckets: dict[Any, list[Any]] = {}
     for row in rows:
-        row_d = _to_dict(row)
+        row_d = coerce_to_dict(row, mode="json")
         if not isinstance(row_d, dict):
             raise RemoteQueryError(
                 join_remote,
@@ -685,7 +680,7 @@ def create_paginated_remote_loader(
             buckets: dict[Any, Any] = {}
             expected_keys = {_normalize_join_key(key) for key in keys}
             for pkg in packages:
-                pkg_d = _to_dict(pkg)
+                pkg_d = coerce_to_dict(pkg, mode="json")
                 if not isinstance(pkg_d, dict):
                     raise RemoteQueryError(
                         typename,
@@ -754,7 +749,7 @@ def create_paginated_remote_loader(
                     )
                 else:
                     items = [
-                        target_cls.model_validate(_to_dict(r))
+                        target_cls.model_validate(coerce_to_dict(r, mode="json"))
                         for r in pkg_d["items"]
                     ]
                     aligned.append({

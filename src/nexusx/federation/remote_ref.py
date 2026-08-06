@@ -26,6 +26,8 @@ import types
 import typing
 from typing import Any
 
+from nexusx.utils.type_utils import map_annotation
+
 logger = logging.getLogger(__name__)
 
 
@@ -479,55 +481,22 @@ def resolve_remote_field_refs(
 
 def _replace_classes_in_annotation(annotation: Any, replacements: dict[type, type]) -> Any:
     """Recursively replace placeholder classes in a type annotation."""
-    if isinstance(annotation, type) and annotation in replacements:
-        return replacements[annotation]
-
-    origin = typing.get_origin(annotation)
-    args = typing.get_args(annotation)
-    if origin is None or not args:
-        return annotation
-
-    new_args = tuple(_replace_classes_in_annotation(a, replacements) for a in args)
-    if new_args == args:
-        return annotation
-
-    if origin is list and len(new_args) == 1:
-        return list[new_args[0]]
-    if origin is types.UnionType:
-        result = new_args[0]
-        for a in new_args[1:]:
-            result = result | a
-        return result
-    try:
-        return origin[new_args] if len(new_args) > 1 else origin[new_args[0]]
-    except Exception:
-        return annotation
+    return map_annotation(
+        annotation,
+        lambda a: replacements[a]
+        if isinstance(a, type) and a in replacements
+        else a,
+    )
 
 
 def _replace_remote_ref(annotation: Any, fed_registry: Any) -> Any:
     """Recursively replace RemoteRef in a generic annotation with real types."""
-    if isinstance(annotation, RemoteRef):
-        return fed_registry.get(annotation.qualified_name)
-    if isinstance(annotation, _RemoteRefOptional):
-        return fed_registry.get(annotation.inner.qualified_name) | None
 
-    origin = typing.get_origin(annotation)
-    args = typing.get_args(annotation)
-    if origin is None or not args:
-        return annotation
+    def leaf(a: Any) -> Any:
+        if isinstance(a, RemoteRef):
+            return fed_registry.get(a.qualified_name)
+        if isinstance(a, _RemoteRefOptional):
+            return fed_registry.get(a.inner.qualified_name) | None
+        return a
 
-    new_args = tuple(_replace_remote_ref(arg, fed_registry) for arg in args)
-    if new_args == args:
-        return annotation
-
-    if origin is list and len(new_args) == 1:
-        return list[new_args[0]]
-    if origin is types.UnionType:
-        result = new_args[0]
-        for arg in new_args[1:]:
-            result = result | arg
-        return result
-    try:
-        return origin[new_args] if len(new_args) > 1 else origin[new_args[0]]
-    except Exception:
-        return annotation
+    return map_annotation(annotation, leaf)

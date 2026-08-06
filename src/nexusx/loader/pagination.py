@@ -96,6 +96,26 @@ class _PagedOverride:
     order: str | None = None
     direction: str | None = None
 
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> _PagedOverride | None:
+        """Build from a raw args/context dict (specs/021 P1-8).
+
+        Shared by the two caller-parameter readers (entity-first gql
+        ``field_sel.arguments`` and γ Resolver ``context``). Omitted keys stay
+        ``None`` so callers can distinguish "not provided" from explicit zero
+        values (e.g. ``offset=0``); enum values are unwrapped (``.value``).
+        Returns None when nothing is set (→ no override).
+        """
+        order = raw.get("order")
+        direction = raw.get("direction")
+        limit = raw.get("limit")
+        offset = raw.get("offset") if "offset" in raw else None
+        order = order.value if hasattr(order, "value") else order
+        direction = direction.value if hasattr(direction, "value") else direction
+        if limit is None and offset is None and order is None and direction is None:
+            return None
+        return cls(limit=limit, offset=offset, order=order, direction=direction)
+
 
 def _build_pagination_model(pagination_selection: set[str]) -> type[BaseModel]:
     """Create a Pagination model containing only the selected fields."""

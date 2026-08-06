@@ -19,6 +19,7 @@ from pydantic_core import PydanticUndefined
 
 from nexusx.core_builder import FieldResolution, SelectionError, build_model
 from nexusx.query_parser import FieldSelection, QueryParser
+from nexusx.utils.type_utils import map_annotation
 
 _UNION_ORIGINS = (typing.Union, _UnionType)
 _RESULT_FIELD = "__result"
@@ -245,29 +246,18 @@ def _replace_model_type(annotation: Any, nested_model: type[BaseModel]) -> Any:
     if annotation is None or annotation is inspect.Parameter.empty:
         return nested_model
 
-    if _is_list_annotation(annotation):
-        args = get_args(annotation)
-        inner = args[0] if args else Any
-        return list[_replace_model_type(inner, nested_model)]
+    def leaf(a: Any) -> Any:
+        # Bare BaseModel (possibly the core of a wrapper) → nested model.
+        # list / union nodes are rebuilt by map_annotation, not replaced.
+        if (
+            _get_pydantic_core_type(a) is not None
+            and not _is_list_annotation(a)
+            and get_origin(a) not in _UNION_ORIGINS
+        ):
+            return nested_model
+        return a
 
-    if get_origin(annotation) in _UNION_ORIGINS:
-        replaced_args = [_replace_model_type(arg, nested_model) for arg in get_args(annotation)]
-        return _build_union_type(replaced_args)
-
-    if _get_pydantic_core_type(annotation) is not None:
-        return nested_model
-
-    return annotation
-
-
-def _build_union_type(args: list[Any]) -> Any:
-    if not args:
-        return Any
-
-    union_type = args[0]
-    for arg in args[1:]:
-        union_type = union_type | arg
-    return union_type
+    return map_annotation(annotation, leaf)
 
 
 def _field_default(field_info: Any) -> Any:

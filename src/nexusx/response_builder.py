@@ -13,9 +13,9 @@ from typing import Any, ForwardRef, get_args, get_origin
 
 from pydantic import BaseModel, create_model
 
-from nexusx.core_builder import FieldResolution, build_model
+from nexusx.core_builder import FieldResolution, build_model, is_paginated_package
 from nexusx.query_parser import FieldSelection
-from nexusx.utils.type_utils import get_field_type, is_list_annotation
+from nexusx.utils.type_utils import coerce_to_dict, get_field_type, is_list_annotation
 
 # Resolver callable injected by QueryExecutor so build_response_model can find
 # federation-materialized relationships (which live in ErManager._registry, not
@@ -258,43 +258,6 @@ def _sub_tree_to_selection(nested: Any) -> FieldSelection:
     return sel
 
 
-def _is_paginated_package(nested: Any) -> bool:
-    """True if ``nested`` field_tree represents a paginated package.
-
-    A paginated package carries both ``items`` and ``pagination`` sub-keys —
-    matching the ``{items, pagination}`` shape produced by ``page_by_<key>_in``
-    gql roots or paginated relationship fields. Mirrors the runtime detection
-    in ``query_executor._serialize_paginated_package`` (the dict-based path):
-    "items" in pkg and "pagination" in pkg.
-    """
-    return (
-        isinstance(nested, dict)
-        and "items" in nested
-        and "pagination" in nested
-    )
-
-
-def _coerce_to_dict(value: Any) -> Any:
-    """Coerce a value to a plain dict if possible (model_dump / dict / iter).
-
-    Returns ``None`` when the value can't be reasonably coerced. Used by
-    paginated package serialization (specs/018 T005) where the package may
-    arrive as a pydantic model or a plain dict.
-    """
-    if value is None:
-        return None
-    if hasattr(value, "model_dump"):
-        return value.model_dump()
-    if isinstance(value, dict):
-        return value
-    if hasattr(value, "__iter__"):
-        try:
-            return dict(value)
-        except Exception:
-            return None
-    return None
-
-
 def _default_value_accessor(value: Any, field_name: str) -> Any:
     """Default ``value_accessor``: plain attribute lookup."""
     return getattr(value, field_name, None)
@@ -451,8 +414,8 @@ def _validate_and_dump(
             # or a pydantic model with items/pagination. Mirror the runtime
             # handling in _serialize_paginated_package: recursively serialize
             # items, filter pagination to the requested sub-keys (specs/018 T005).
-            if _is_paginated_package(nested_tree):
-                pkg = _coerce_to_dict(nested_value)
+            if is_paginated_package(nested_tree):
+                pkg = coerce_to_dict(nested_value)
                 if not isinstance(pkg, dict):
                     continue
                 pag_pkg: dict[str, Any] = {}
@@ -468,7 +431,7 @@ def _validate_and_dump(
                     for it in items_value
                 ]
                 pagination_tree = nested_tree.get("pagination") or {}
-                pagination_value = _coerce_to_dict(pkg.get("pagination")) or {}
+                pagination_value = coerce_to_dict(pkg.get("pagination")) or {}
                 if pagination_tree:
                     pag_pkg["pagination"] = {
                         k: v for k, v in pagination_value.items()

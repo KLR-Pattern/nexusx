@@ -11,6 +11,7 @@ from nexusx.execution.query_executor import QueryExecutor
 from nexusx.loader.registry import ErManager
 from nexusx.query_parser import FieldSelection, QueryParser
 from nexusx.response_builder import get_relationship_names
+from nexusx.utils.type_utils import get_fk_fields
 from tests.conftest import (
     FixtureSprint,
     FixtureTask,
@@ -800,9 +801,8 @@ class TestQueryExecutorSerializationExtras:
         assert executor._serialize_item({"id": 1}, FixtureUser, None) == {"id": 1}
 
     def test_get_fk_fields(self):
-        """_get_fk_fields should return FK field names."""
-        executor = _make_executor()
-        fk_fields = executor._get_fk_fields(FixtureTask)
+        """get_fk_fields (type_utils, shared) should return FK field names."""
+        fk_fields = get_fk_fields(FixtureTask)
         assert "sprint_id" in fk_fields
         assert "owner_id" in fk_fields
 

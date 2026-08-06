@@ -53,6 +53,7 @@ from nexusx.context import (
     scan_expose_fields,
     scan_send_to_fields,
 )
+from nexusx.core_builder import is_paginated_package
 from nexusx.loader.pagination import PageArgs, PageLoadCommand
 from nexusx.loader.registry import RelationshipKind
 from nexusx.query_parser import FieldSelection
@@ -106,7 +107,6 @@ class _EntityFieldJob:
     parent_entity: type[SQLModel]
     rel_info: Any  # RelationshipInfo
     child_sel: FieldSelection
-    original_sel: FieldSelection | None = None
     paged: Any = None  # Paged | None — effective pagination params (specs/019 paged_provider)
 
 
@@ -669,15 +669,7 @@ class Resolver:
         raw = self._context.get(field_name)
         if not isinstance(raw, dict):
             raw = self._context
-        limit = raw.get("limit")
-        order = raw.get("order")
-        direction = raw.get("direction")
-        offset = raw.get("offset") if "offset" in raw else None
-        if limit is None and order is None and direction is None and offset is None:
-            return None
-        return _PagedOverride(
-            limit=limit, offset=offset, order=order, direction=direction,
-        )
+        return _PagedOverride.from_dict(raw)
 
     @staticmethod
     def _merge_paged(default: Any, caller: Any) -> Any:
@@ -1864,7 +1856,6 @@ class Resolver:
                     parent_entity=parent_entity,
                     rel_info=rel_info,
                     child_sel=effective_sel,
-                    original_sel=child_sel if effective_sel is not child_sel else None,
                     paged=paged,
                 )
             )
@@ -1943,7 +1934,7 @@ class Resolver:
 
         all_children: list = []
         for parent, result in zip(job.parents, results, strict=True):
-            if isinstance(result, dict) and "items" in result and "pagination" in result:
+            if is_paginated_package(result):
                 # Paginated result: {items, pagination} — store whole, items to BFS.
                 items = result.get("items") or []
                 store(parent, rel_info.name, result)

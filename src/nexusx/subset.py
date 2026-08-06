@@ -37,6 +37,7 @@ from pydantic.fields import FieldInfo
 from sqlmodel import SQLModel
 
 from nexusx.resolver import POST_PREFIX, RESOLVE_PREFIX  # noqa: F401
+from nexusx.utils.type_utils import get_fk_fields
 
 # ──────────────────────────────────────────────────────────
 # Constants
@@ -442,24 +443,6 @@ class SubsetConfig(BaseModel):
         return self
 
 
-def _entity_fk_fields(entity: type) -> list[str]:
-    """FK field names on a SQLModel entity (columns carrying a foreign_key).
-
-    Used to auto-derive ``federation_join_key`` when a public DTO omits it and
-    the subset contains exactly one FK. Mirrors the FK detection in
-    ``standard_queries._get_primary_key_fields``.
-    """
-    fks: list[str] = []
-    for fname, fi in entity.model_fields.items():
-        if hasattr(fi, "foreign_key") and isinstance(fi.foreign_key, str):
-            fks.append(fname)
-            continue
-        if hasattr(fi, "metadata"):
-            for meta in fi.metadata:
-                if hasattr(meta, "foreign_key") and isinstance(meta.foreign_key, str):
-                    fks.append(fname)
-                    break
-    return fks
 
 
 def _validate_federation_config(
@@ -491,7 +474,7 @@ def _validate_federation_config(
         # the federation join key (no ambiguity, no need to repeat the name).
         # Zero or multiple FKs in the subset → must specify explicitly.
         entity = subset_info.kls
-        fk_in_subset = [f for f in _entity_fk_fields(entity) if f in field_set]
+        fk_in_subset = [f for f in get_fk_fields(entity) if f in field_set]
         if len(fk_in_subset) == 1:
             join_key = fk_in_subset[0]
             subset_info.federation_join_key = join_key

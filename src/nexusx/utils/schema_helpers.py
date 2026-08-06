@@ -7,7 +7,6 @@ to eliminate code duplication.
 from __future__ import annotations
 
 import types
-from enum import Enum
 from typing import Any, Union, get_args, get_origin
 
 from pydantic import BaseModel
@@ -87,45 +86,3 @@ def is_input_type(python_type: type) -> bool:
     return False
 
 
-def collect_enum_types(
-    entities: list[type[SQLModel]],
-    type_converter: Any,  # TypeConverter type hint would cause circular import
-) -> dict[str, type[Enum]]:
-    """Collect all enum types used in entities.
-
-    Args:
-        entities: List of SQLModel entity classes.
-        type_converter: TypeConverter instance for type inspection.
-
-    Returns:
-        Dictionary mapping enum name to enum class.
-
-    Examples:
-        >>> from enum import Enum
-        >>> class Status(Enum):
-        ...     ACTIVE = "active"
-        >>> class User(SQLModel):
-        ...     status: Status
-        >>> enums = collect_enum_types([User], converter)
-        >>> "Status" in enums
-        True
-    """
-    from typing import get_type_hints
-
-    enums: dict[str, type[Enum]] = {}
-
-    for entity in entities:
-        try:
-            hints = get_type_hints(entity)
-        except Exception:
-            continue
-
-        for field_type in hints.values():
-            # Unwrap to base type (handles Optional, list, Mapped)
-            base_type = type_converter.unwrap_to_base_type(field_type)
-
-            # Check if it's an enum
-            if type_converter.is_enum_type(base_type):
-                enums[base_type.__name__] = base_type
-
-    return enums
