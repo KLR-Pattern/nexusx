@@ -35,11 +35,12 @@ GraphQLHandler(base=...)   # response_builder 是唯一路径,无 flag
 selection 复用——消除 per-entity `pydantic.create_model` 开销(缓存前占 flag-on
 serialize 73% cumtime,导致 flag-on 比 legacy 慢 10–30×)。
 
-**缓存 key**:`(entity, model_name, field_tree, federation_namespace type ids, paged 字段名集合)`。
+**缓存 key**:`(entity, model_name, repr(field_tree), federation_namespace type ids)`。
 
-- paged 字段标 `PAGED_MARKER` 占位符(019),cache key **无视 paged 值**——动态
-  `limit`/`offset`/`order`/`direction` 不再碎片化缓存(018 旧方案按 `repr` 区分值,
-  100 独特 limit 撑 100 个 model;019 占位符恒定 1 个,实验 56× 优势)。
+- paged 字段是 plain `result_type`(020 删了 019 的 `PAGED_MARKER`——功能性无人读),
+  cache key **不含 paged 维**(`field_tree` repr 已区分 paged 形状)——动态
+  `limit`/`offset`/`order`/`direction` 不碎片化缓存(018 旧方案按 `repr` 区分值,
+  100 独特 limit 撑 100 个 model;020 plain 恒定 1 个,实验 56× 优势)。
 - gql selection 是离散的(用户固定几个 query 模式),正常命中率很高;LRU 上限兜底
   防止其他维度的循环/恶意调用膨胀。
 - benchmark 见 `specs/018-dto-first-gql-execution/benchmark-baseline.md`。
@@ -56,8 +57,8 @@ serialize 73% cumtime,导致 flag-on 比 legacy 慢 10–30×)。
   per-call 透传给 `_bfs_dispatch_entity_fields`,Resolver 不读 `field_sel.arguments`
   (gql 知识只停在 executor)。Resolver 删了 `_extract_entity_page_args` /
   `_extract_entity_order_direction`;`_load_entity_field_paginated` 改读 `job.paged`。
-  model 标 `PAGED_MARKER` 占位符(形状),真值在 provider——形状和值分离,cache key
-  无视 paged 值。
+  model 是纯形状(paged 字段 plain `result_type`,020 删 marker),真值在 provider——
+  形状和值分离,cache key 不含 paged 维。
 
 ## 复现 / 验证
 

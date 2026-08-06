@@ -44,31 +44,30 @@ serialized = serialize_with_model(
 
 行为：`build_response_model` + `model_validate(value)` + `model_dump(mode="json")`。paginated package 走专门分支（拼 items + pagination）。
 
-## 2. Paged field metadata 协议（Step 2 + 019 占位符化）
+## 2. Paged field（020：model 纯形状，无 marker）
 
-### Annotated 表达（019 后：占位符，值不进 model）
+### Annotated 表达（020 后：plain result_type，无 marker）
 
-gql selection 的 `reviews(limit: 5, order: HIGHEST_RATING)` 在 build_response_model 输出 DTO 上只标**占位符**（空 `Paged`），真实值不进 model：
+gql selection 的 `reviews(limit: 5, order: HIGHEST_RATING)` 在 build_response_model
+输出 DTO 上是 **plain `result_type`**（{items, pagination} shape），**不标任何 paged
+marker**——paged 信息完全不进 model：
 
 ```python
 class ProductResponse:
-    reviews: Annotated[
-        ResultType,        # {items, pagination} shape
-        PAGED_MARKER,      # 空 Paged() sentinel，只表"这字段是 paged"
-    ]
+    reviews: ResultType    # {items, pagination} shape,plain(无 Annotated marker)
 ```
 
 约定：
-- paged 字段标 `PAGED_MARKER`（空 Paged，无视 gql args 值）——cache key 只看字段名集合
-  （`frozenset`），动态 limit 不碎片化。
+- paged 字段 = plain `result_type`（020 删 `PAGED_MARKER`：它功能性无人读）。
+- 判 paged 在 dispatch 用 `rel_info.page_loader`（`_build_entity_field_jobs`），不读 model。
 - 真实 `limit/offset/order/direction` 由 executor 注入的 `paged_provider` 闭包在 resolve
-  时算（rel default + gql args merge），**不** bake 进 model。
-- 缺省（无 gql args）→ 字段是 plain `result_type`（不带 Annotated）。
+  时算（rel default + gql args merge）。
+- cache key 用 `field_tree` repr（已区分 paged 形状——含 items/pagination 子键），无 paged 维。
 
-### Resolver 处理（019：provider，不读 model metadata）
+### Resolver 处理（019 provider，不读 model）
 
-Resolver 不扫 model metadata 取 paged 值；effective Paged 在 BFS job 构建时由
-`paged_provider` 算好，塞进 `_EntityFieldJob.paged`：
+Resolver 不扫 model 取 paged；effective Paged 在 BFS job 构建时由 `paged_provider` 算好，
+塞进 `_EntityFieldJob.paged`：
 
 ```python
 # executor 构造 provider 闭包（gql 知识只在此）
@@ -78,12 +77,11 @@ def provider(rel_info, field_sel, field_name):
         _gql_args_to_paged(field_sel, field_name), # gql args（含 enum 解包）
     )
 
-# _build_entity_field_jobs 遇 paged 字段调 provider，塞 job.paged
+# _build_entity_field_jobs 用 rel_info.page_loader 判 paged,调 provider 塞 job.paged
 # _load_entity_field_paginated 读 job.paged → PageArgs + PageLoadCommand
 ```
 
-跟 specs/015 + γ `_merge_paged` 链路对齐（同一 helper）；γ 的 default 来自
-`__paged_fields__`，entity-first 的 default 来自 `RelationshipInfo.page_capability`。
+跟 specs/015 + γ `_merge_paged` 链路对齐（同一 helper）。
 
 ## 3. Resolver entity dispatch 契约（Step 3）
 

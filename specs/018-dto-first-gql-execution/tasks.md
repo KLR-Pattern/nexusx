@@ -231,6 +231,20 @@ cache=100（14.7ms，56×）。
 （pagination 进 DTO 心智模型）——"DTO field"从"携带值的 Annotated"变成"被 provider 识别的
 paged 形状"。plan 见 `~/.claude/plans/parsed-mapping-barto.md`。
 
+## 020 follow-up 偏离记录（删 PAGED_MARKER,pure 减法）
+
+019 的 `PAGED_MARKER` 占位符经审查发现**功能性无人消费**:dispatch 判 paged 用
+`rel_info.page_loader`(不读 model);cache key 用 `field_tree` repr 已区分 paged
+形状(paged 字段含 `items`/`pagination` 子键);serialize 不 dump Annotated metadata。
+marker 标在 model 上但没人读。
+
+020 删除:`PAGED_MARKER` + `pagination_metadata` 参数链 + `_restrict_metadata` +
+`_field_sel_to_pagination_metadata` + dead plug point(`_extract_paged_metadata` /
+`_resolve_paged_for_dynamic_field`)。model paged 字段回到 plain `result_type`(纯
+形状容器)。判 paged = `rel_info.page_loader`;值 = `paged_provider`。零行为变化
+(1444 passed)。本文件/contracts/data-model 里 019 写的 `PAGED_MARKER` 提及保留作
+历史,以本段为准(020 后 model 无 marker)。
+
 ## Notes
 
 - 每个 US 完成后跑全量 1429 测试 + 对应的 Independent Test，才算 done

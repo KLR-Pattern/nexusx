@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Callable
-from typing import Annotated, Any, get_args, get_origin
+from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel, create_model
 
-from nexusx.loader.pagination import Paged, create_result_type
+from nexusx.loader.pagination import create_result_type
 from nexusx.utils.type_utils import get_field_type
 
 # Resolver callable injected by QueryExecutor so build_response_model can find
@@ -35,43 +35,27 @@ _MODEL_CACHE_MAX = 1024
 _MODEL_CACHE: OrderedDict[tuple, type[BaseModel]] = OrderedDict()
 
 
-# specs/019: paged fields are stamped with this empty sentinel (not the
-# gql-derived Paged value). The real pagination params are injected at resolve
-# time via a ``paged_provider`` closure (QueryExecutor → Resolver), so the model
-# only carries "this field is paged" shape — letting the cache key ignore paged
-# values entirely (dynamic ``limit`` can't fragment the cache).
-PAGED_MARKER = Paged()
-
-
 def _cache_key(
     entity: type,
     field_tree: dict[str, Any] | None,
     model_name: str,
     federation_namespace: dict[str, type] | None,
-    pagination_metadata: dict[str, Paged] | None,
 ) -> tuple:
     """Stable hashable key capturing every input that shapes the built model.
 
     ``relation_entity_resolver`` is a callable (not hashable) and intentionally
-    excluded — its result (``target_entity`` / ``is_list``) is determined by the
-    ErManager's stable relationship registry, so the same ``(entity, field_tree)``
-    always yields the same model shape within a process. Assumption: an entity
-    class has one consistent relationship configuration across the process
-    (the normal single-ErManager case). ``federation_namespace`` types are keyed
-    by ``id()`` (stable for long-lived registered materialized types).
+    excluded — its result is determined by the ErManager's stable relationship
+    registry. ``federation_namespace`` types are keyed by ``id()``.
 
-    ``pagination_metadata`` contributes only WHICH fields are paged (the set of
-    field names) — specs/019. ``build_response_model`` stamps the empty
-    ``PAGED_MARKER`` (not the gql-derived value) onto paged fields, so the model
-    carries shape only; the real params arrive via a ``paged_provider`` closure at
-    resolve time. Keying on the field-name set (not the values) means dynamic gql
-    ``limit`` cannot fragment the cache.
+    paged values are NOT in the key (specs/020): the model is a pure shape
+    container (paged fields are plain ``result_type``, no marker); paged params
+    flow through a ``paged_provider`` closure at resolve time. ``field_tree``'s
+    repr already distinguishes paged fields (they carry ``items``/``pagination``
+    sub-keys), so no separate paged dimension is needed.
     """
     ns = federation_namespace or {}
     ns_key = tuple(sorted((k, id(v)) for k, v in ns.items()))
-    pm = pagination_metadata or {}
-    pm_key = frozenset(pm.keys())
-    return (entity, model_name, repr(field_tree), ns_key, pm_key)
+    return (entity, model_name, repr(field_tree), ns_key)
 
 
 def build_response_model(
@@ -80,9 +64,13 @@ def build_response_model(
     model_name: str = "Response",
     federation_namespace: dict[str, type] | None = None,
     relation_entity_resolver: RelationshipEntityResolver | None = None,
-    pagination_metadata: dict[str, Paged] | None = None,
 ) -> type[BaseModel]:
     """Build a Pydantic model dynamically based on field selection tree.
+
+    The model is a pure shape container (scalar / nested / paginated-package);
+    paged params (limit/offset/order/direction) are NOT baked in — they flow
+    through a ``paged_provider`` closure at resolve time (specs/019). Paged
+    detection at dispatch uses ``rel_info.page_loader``, not model metadata.
 
     Args:
         entity: SQLModel entity class.
@@ -95,32 +83,17 @@ def build_response_model(
               specs/018 T003.
         model_name: Suffix for generated model name.
         federation_namespace: Optional map of federation-materialized remote
-            types (keyed by ``__name__``). When resolving string forward refs,
-            checked BEFORE local SQLModel subclasses — federation types don't
-            appear in ``all_subclasses`` because they're pydantic ``create_model``
-            products, not SQLModel children. specs/018 T004.
+            types (keyed by ``__name__``), checked before local SQLModel
+            subclasses when resolving forward refs. specs/018 T004.
         relation_entity_resolver: Optional callable injected by QueryExecutor
             to look up federation-materialized relationships in
-            ``ErManager._registry`` (the source of truth for fields declared
-            via ``__relationships__ = [RemoteRelationship(...)]`` — these don't
-            appear on the entity's SQLAlchemy mapper or ``__annotations__``).
-            Without it, ``reviews`` on ``Product`` is invisible to the builder.
-            specs/018 T002b.
-        pagination_metadata: Optional map of gql field args (``limit`` / ``offset``
-            / ``order`` / ``direction``) packed as ``Paged`` per field name,
-            derived from the gql selection (e.g. ``reviews(limit: 5)`` →
-            ``{"reviews": Paged(limit=5)}``). When a paginated-package field
-            appears in this map, the field type is upgraded to
-            ``Annotated[{items, pagination} shape, Paged(...)]`` so Resolver can
-            read the metadata and trigger page_loader (specs/018 US2). Absent
-            for a field → plain ``{items, pagination}`` shape (US1 behavior,
-            backward compatible).
+            ``ErManager._registry``. specs/018 T002b.
 
     Returns:
         Dynamically created Pydantic model class.
     """
     key = _cache_key(
-        entity, field_tree, model_name, federation_namespace, pagination_metadata,
+        entity, field_tree, model_name, federation_namespace,
     )
     cached = _MODEL_CACHE.get(key)
     if cached is not None:
@@ -128,7 +101,7 @@ def build_response_model(
         return cached
     model = _build_response_model_uncached(
         entity, field_tree, model_name, federation_namespace,
-        relation_entity_resolver, pagination_metadata,
+        relation_entity_resolver,
     )
     _MODEL_CACHE[key] = model
     if len(_MODEL_CACHE) > _MODEL_CACHE_MAX:
@@ -142,7 +115,6 @@ def _build_response_model_uncached(
     model_name: str,
     federation_namespace: dict[str, type] | None,
     relation_entity_resolver: RelationshipEntityResolver | None,
-    pagination_metadata: dict[str, Paged] | None,
 ) -> type[BaseModel]:
     """Build the model (cache-miss path). Split out so ``build_response_model``
     can memoize the result (specs/018 T026)."""
@@ -189,29 +161,22 @@ def _build_response_model_uncached(
                 f"{field_name.capitalize()}ItemResponse",
                 federation_namespace=federation_namespace,
                 relation_entity_resolver=relation_entity_resolver,
-                pagination_metadata=_restrict_metadata(pagination_metadata, items_tree),
             )
             pag_selection = set(pagination_tree.keys()) if pagination_tree else None
             result_type = create_result_type(
                 item_type=nested_item_model,
                 pagination_selection=pag_selection,
             )
-            # specs/019: stamp the empty PAGED_MARKER (shape only) when this field
-            # is paged — the real limit/offset/order/direction are injected at
-            # resolve time via paged_provider, not baked into the model. This keeps
-            # the cache key value-agnostic (dynamic limit can't fragment it).
-            is_paged = bool(pagination_metadata) and field_name in pagination_metadata
-            if is_paged:
-                fields[field_name] = (Annotated[result_type, PAGED_MARKER], ...)
-            else:
-                fields[field_name] = (result_type, ...)
+            # specs/020: paged fields are plain result_type (no marker) — paged
+            # detection uses rel_info.page_loader at dispatch, paged values arrive
+            # via paged_provider. The model is a pure shape container.
+            fields[field_name] = (result_type, ...)
             continue
 
         nested_model = build_response_model(
             relation_entity, nested, f"{field_name.capitalize()}Response",
             federation_namespace=federation_namespace,
             relation_entity_resolver=relation_entity_resolver,
-            pagination_metadata=_restrict_metadata(pagination_metadata, nested),
         )
 
         if is_list:
@@ -220,28 +185,6 @@ def _build_response_model_uncached(
             fields[field_name] = (nested_model | None, ...)
 
     return create_model(f"{entity.__name__}{model_name}", **fields)
-
-
-def _restrict_metadata(
-    pagination_metadata: dict[str, Paged] | None,
-    nested_tree: dict[str, Any],
-) -> dict[str, Paged] | None:
-    """Trim ``pagination_metadata`` to keys that appear in ``nested_tree``.
-
-    A field's Paged metadata applies at its own level; nested fields' metadata
-    travels with them under their own keys. Restricting the dict before
-    recursing into build_response_model keeps the lookup scoped to the child
-    tree (and prevents accidental cross-branch matches when sibling fields
-    share names with descendants).
-    """
-    if pagination_metadata is None:
-        return None
-    if not nested_tree:
-        return None
-    restricted = {
-        k: v for k, v in pagination_metadata.items() if k in nested_tree
-    }
-    return restricted or None
 
 
 def _is_paginated_package(nested: Any) -> bool:
@@ -293,7 +236,6 @@ def serialize_with_model(
     federation_namespace: dict[str, type] | None = None,
     value_accessor: Any = None,
     relation_entity_resolver: RelationshipEntityResolver | None = None,
-    pagination_metadata: dict[str, Paged] | None = None,
 ) -> Any:
     """Serialize data using dynamically built Pydantic model.
 
@@ -311,9 +253,6 @@ def serialize_with_model(
         relation_entity_resolver: Optional callable to look up
             federation-materialized relationships in ErManager._registry
             (specs/018 T002b).
-        pagination_metadata: Optional gql-args-derived ``{field_name: Paged}``;
-            forwarded to ``build_response_model`` to stamp ``Annotated[..., Paged]``
-            on paginated-package fields (specs/018 US2 / T014).
 
     Returns:
         Serialized dictionary or list of dictionaries.
@@ -325,7 +264,6 @@ def serialize_with_model(
         entity, field_tree,
         federation_namespace=federation_namespace,
         relation_entity_resolver=relation_entity_resolver,
-        pagination_metadata=pagination_metadata,
     )
 
     if isinstance(value, list):

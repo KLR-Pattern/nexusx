@@ -46,3 +46,10 @@ selection 动态构建 DTO schema → Resolver 解析),删除 legacy dict-based
   (executor 构造,per-call 透传 `_bfs_dispatch_entity_fields`,不挂 cached resolver
   实例)。model 用 `PAGED_MARKER` 占位符,cache key 的 paged 维改成
   `frozenset(字段名)`(无视值,零碎片化)。
+- **020 删 PAGED_MARKER(纯减法)**:019 的占位符经审查功能性无人读(dispatch 用
+  `rel_info.page_loader`,cache key 用 `field_tree` repr 已区分 paged 形状)。删
+  `PAGED_MARKER` + `pagination_metadata` 参数链 + `_restrict_metadata` +
+  `_field_sel_to_pagination_metadata` + dead plug point(`_extract_paged_metadata` /
+  `_resolve_paged_for_dynamic_field`)。model paged 字段回到 plain `result_type`,
+  build_response_model / serialize_with_model 删 `pagination_metadata` 参数。
+  1444 passed 零回归。
