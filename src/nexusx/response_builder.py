@@ -624,14 +624,44 @@ def _is_list_relationship(
     if hasattr(entity, "__annotations__"):
         annotation = entity.__annotations__.get(field_name)
         if annotation:
-            origin = get_origin(annotation)
-            if origin is list:
-                return True
-            # Check for List from typing
-            if origin is not None:
-                origin_name = getattr(origin, "__name__", "")
-                if origin_name == "list" or str(origin).startswith("list"):
-                    return True
+            return _annotation_is_list(annotation)
+    return False
+
+
+def _annotation_is_list(annotation: Any) -> bool:
+    """True if ``annotation`` is a list type, unwrapping SQLModel's
+    ``Mapped[...]`` wrapper and Optional unions.
+
+    specs/021: SQLModel rewrites relationship annotations to
+    ``Mapped[list['X']]`` (or ``Mapped[Optional[list['X']]]``) at class
+    creation; checking ``get_origin is list`` alone misses every to-many
+    relationship on a ``table=True`` model, which silently produced
+    ``X | None`` shapes (list values then fell back to the raw-filtered
+    serialize path instead of validating against the model).
+    """
+    if isinstance(annotation, str):
+        return False
+    origin = get_origin(annotation)
+    if origin is None:
+        return False
+    # SQLModel Mapped[...] wrapper — unwrap before checking.
+    if getattr(origin, "__name__", "") == "Mapped":
+        args = get_args(annotation)
+        if not args:
+            return False
+        return _annotation_is_list(args[0])
+    if origin is list:
+        return True
+    if str(origin).startswith("list"):
+        return True
+    # Optional[list[X]] / list[X] | None — recurse past None.
+    args = get_args(annotation)
+    if args:
+        return any(
+            _annotation_is_list(arg)
+            for arg in args
+            if arg is not type(None)
+        )
     return False
 
 

@@ -95,8 +95,29 @@ class TestCreateResultType:
 
         # Verify SQLModel sets from_attributes — the config that create_result_type checks
         assert SimpleModel.model_config.get("from_attributes") is True
-        # create_result_type reads this and passes {"from_attributes": True} to create_model
-        # Full create_model call can't be tested with list[SQLModel] due to pydantic limitation
+        # (完整调用见 test_from_attributes_item_type_full_call — 旧注释声称的
+        #  "pydantic limitation" 已过时, list[SQLModel] 实际可以 create_model)
+
+    def test_from_attributes_item_type_full_call(self):
+        """specs/021 回归: item_type 带 from_attributes 时完整调用必须成功。
+
+        旧的 ``**config`` 写法会把 ``from_attributes=True`` 展开成名为
+        from_attributes 的字段(annotation 是裸 True) → pydantic schema 生成
+        失败。该路径此前从未被触发(旧 builder 的嵌套模型不带
+        from_attributes), 迁移后才暴露。
+        """
+        from sqlmodel import SQLModel
+
+        class SimpleModel(SQLModel, table=False):
+            x: int
+
+        assert SimpleModel.model_config.get("from_attributes") is True
+        Result = create_result_type(
+            SimpleModel, pagination_selection={"has_more", "total_count"},
+        )
+        assert "items" in Result.model_fields
+        assert "pagination" in Result.model_fields
+        assert Result.model_config.get("from_attributes") is True
 
     def test_no_from_attributes(self):
         Result = create_result_type(int)
