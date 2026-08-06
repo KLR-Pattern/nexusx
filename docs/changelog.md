@@ -12,6 +12,11 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 
 ## 5.1
 
+### 5.1.1 (2026-8-6)
+
+- fix:
+  - **Support enums nested in input models (#126)**: When an input model field was itself another input model containing an enum, the SDL/introspection enum-collection walk stopped at the outer model and never reached the nested enum — so the generated schema omitted that enum type (or rendered a dangling reference). The walk now recurses through nested input models to collect all reachable enums, and the collection logic is shared between SDL generation and introspection via one helper (`schema_helpers`).
+
 ### 5.1.0 (2026-8-2)
 
 - feat:
