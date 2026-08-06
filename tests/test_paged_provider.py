@@ -88,3 +88,43 @@ def test_provider_returns_paged_instance():
     """Provider always returns a Paged (never None for a paged field)."""
     p = _provider()(_rel(), _field_sel({"limit": 5}), "reviews")
     assert isinstance(p, Paged)
+
+
+def test_multi_paged_fields_each_get_own_effective():
+    """同层多个 paged 字段,provider 按 field_name 各算 effective,不串。
+
+    specs/019 多 paged 兜底:_build_entity_field_jobs 遍历 sub_fields,每个 paged
+    字段各调一次 provider,field_name 区分 gql args。这覆盖 reviews(limit:5) +
+    comments(limit:10) 同层的情况。
+    """
+    reviews = FieldSelection(name="reviews", arguments={"limit": 5})
+    comments = FieldSelection(name="comments", arguments={"limit": 10})
+    root = FieldSelection(name="root")
+    root.sub_fields = {"reviews": reviews, "comments": comments}
+
+    provider = _provider()
+    p_reviews = provider(_rel(), root, "reviews")
+    p_comments = provider(_rel(), root, "comments")
+
+    assert p_reviews.limit == 5
+    assert p_comments.limit == 10
+    # 不串:reviews 不拿 comments 的 limit,反之亦然
+    assert p_reviews.limit != p_comments.limit
+
+
+def test_multi_paged_fields_distinct_defaults():
+    """多 paged 字段各自的 rel default 独立(reviews order=NEWEST,comments 无 default)。
+
+    specs/019:provider 每次调接该字段的 rel_info,default 跟着 rel 走,不共享。
+    """
+    reviews = FieldSelection(name="reviews", arguments={"limit": 5})
+    comments = FieldSelection(name="comments", arguments={"limit": 10})
+    root = FieldSelection(name="root")
+    root.sub_fields = {"reviews": reviews, "comments": comments}
+
+    provider = _provider()
+    p_reviews = provider(_rel(default_order="NEWEST"), root, "reviews")
+    p_comments = provider(_rel(), root, "comments")  # comments 的 rel 无 default_order
+
+    assert p_reviews.order == "NEWEST"  # reviews rel default
+    assert p_comments.order is None     # comments rel 无 default,各自独立
