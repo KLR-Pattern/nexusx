@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 
 class Pagination(BaseModel):
@@ -128,8 +128,19 @@ def create_result_type(
         pag_model = _build_pagination_model(pagination_selection)
         fields["pagination"] = (pag_model, Field(default_factory=pag_model))
 
-    config = {}
+    # NOTE: ``from_attributes`` must go through ``__config__`` — spreading it
+    # via ``**config`` would register it as a *field* named "from_attributes"
+    # with annotation ``True`` (pydantic then fails to build its schema).
+    # specs/021: the branch became reachable once build_model started emitting
+    # nested models with from_attributes=True (entity-first's old builder never
+    # set it, which hid this bug). Only set the config when the item type
+    # carries it — absence keeps the pre-existing behavior (and the
+    # ``test_no_from_attributes`` contract).
     if getattr(item_type, "model_config", {}).get("from_attributes"):
-        config = {"from_attributes": True}
+        return create_model(
+            model_name,
+            __config__=ConfigDict(from_attributes=True),
+            **fields,
+        )
 
-    return create_model(model_name, **config, **fields)
+    return create_model(model_name, **fields)

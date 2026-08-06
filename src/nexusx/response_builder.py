@@ -13,8 +13,8 @@ from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel, create_model
 
-from nexusx.core_builder import FieldResolution
-from nexusx.loader.pagination import create_result_type
+from nexusx.core_builder import FieldResolution, build_model
+from nexusx.query_parser import FieldSelection
 from nexusx.utils.type_utils import get_field_type
 
 # Resolver callable injected by QueryExecutor so build_response_model can find
@@ -28,8 +28,8 @@ RelationshipEntityResolver = Callable[[type, str], Any]
 class ERFieldResolver:
     """FieldResolver for entity-first gql (specs/021 path-merge).
 
-    Wraps the relationship-resolution logic that ``_build_response_model_uncached``
-    used inline (federation ``__relationships__`` → SQLAlchemy mapper →
+    Wraps the relationship-resolution logic the old builder used inline
+    (federation ``__relationships__`` → SQLAlchemy mapper →
     ``__sqlmodel_relationships__`` → ``__annotations__`` fallback) into the
     ``FieldResolver`` protocol so ``core_builder.build_model`` can consume it.
     """
@@ -55,12 +55,19 @@ class ERFieldResolver:
                 nested_type=getattr(fed_rel, "target_entity", None),
                 is_list=bool(getattr(fed_rel, "is_list", False)),
             )
-        # SQLAlchemy / SQLModel / annotations fallback.
+        # SQLAlchemy / SQLModel / annotations fallback. ``get_relation_entity``
+        # also returns scalar field types (str/int, extracted from annotations),
+        # so only a BaseModel target counts as a nested relationship — the
+        # builder would otherwise recurse into ``str`` and mint a bogus model
+        # (specs/021 strTitle bug: MPPost.title became a strTitle class).
+        rel_entity = get_relation_entity(
+            entity, field_name, federation_namespace=self._fed_ns
+        )
+        if not (isinstance(rel_entity, type) and issubclass(rel_entity, BaseModel)):
+            rel_entity = None
         return FieldResolution(
             annotation=get_field_type(entity, field_name),
-            nested_type=get_relation_entity(
-                entity, field_name, federation_namespace=self._fed_ns
-            ),
+            nested_type=rel_entity,
             is_list=_is_list_relationship(entity, field_name),
         )
 
@@ -140,7 +147,7 @@ def build_response_model(
     if cached is not None:
         _MODEL_CACHE.move_to_end(key)  # LRU: mark most-recently-used
         return cached
-    model = _build_response_model_uncached(
+    model = _build_model_uncached(
         entity, field_tree, model_name, federation_namespace,
         relation_entity_resolver,
     )
@@ -150,82 +157,55 @@ def build_response_model(
     return model
 
 
-def _build_response_model_uncached(
+def _build_model_uncached(
     entity: type,
     field_tree: dict[str, Any] | None,
     model_name: str,
     federation_namespace: dict[str, type] | None,
     relation_entity_resolver: RelationshipEntityResolver | None,
 ) -> type[BaseModel]:
-    """Build the model (cache-miss path). Split out so ``build_response_model``
-    can memoize the result (specs/018 T026)."""
+    """Build the model (cache-miss path).
+
+    specs/021: delegates to ``core_builder.build_model`` with an
+    ``ERFieldResolver`` — the relationship/annotation resolution this function
+    did inline now lives in the resolver. ``field_tree is None`` keeps its
+    "all scalar fields" meaning (UseCase never hits this shape).
+    """
     if field_tree is None:
         return _build_scalar_model(entity, model_name)
 
-    fields = {}
-    for field_name, nested in field_tree.items():
-        if nested is None:
-            # Scalar field - get type from entity
-            field_type = get_field_type(entity, field_name)
-            fields[field_name] = (field_type, ...)
-            continue
+    selection = _field_tree_to_selection(field_tree)
+    return build_model(
+        entity, selection,
+        resolver=ERFieldResolver(relation_entity_resolver, federation_namespace),
+        model_name=model_name,
+    )
 
-        # Federation registry first (source of truth for __relationships__
-        # fields): carries both target_entity and is_list. specs/018 T002b.
-        fed_rel = (
-            relation_entity_resolver(entity, field_name)
-            if relation_entity_resolver is not None
-            else None
-        )
-        if fed_rel is not None:
-            relation_entity = getattr(fed_rel, "target_entity", None)
-            is_list = bool(getattr(fed_rel, "is_list", False))
-        else:
-            relation_entity = get_relation_entity(
-                entity, field_name, federation_namespace=federation_namespace
-            )
-            is_list = _is_list_relationship(entity, field_name)
 
-        if relation_entity is None:
-            # Fallback to Any if relation type cannot be determined
-            fields[field_name] = (Any, ...)
-            continue
+def _field_tree_to_selection(field_tree: dict[str, Any]) -> FieldSelection:
+    """Convert a response field_tree dict into a ``FieldSelection`` tree.
 
-        # Paginated package: {items: {...}, pagination: {...}} (specs/018 T003).
-        # Reuses pagination.create_result_type to assemble the {items, pagination}
-        # shape so behavior matches _serialize_paginated_package in query_executor.
-        if _is_paginated_package(nested):
-            items_tree = nested.get("items") or {}
-            pagination_tree = nested.get("pagination") or {}
-            nested_item_model = build_response_model(
-                relation_entity, items_tree,
-                f"{field_name.capitalize()}ItemResponse",
-                federation_namespace=federation_namespace,
-                relation_entity_resolver=relation_entity_resolver,
-            )
-            pag_selection = set(pagination_tree.keys()) if pagination_tree else None
-            result_type = create_result_type(
-                item_type=nested_item_model,
-                pagination_selection=pag_selection,
-            )
-            # specs/020: paged fields are plain result_type (no marker) — paged
-            # detection uses rel_info.page_loader at dispatch, paged values arrive
-            # via paged_provider. The model is a pure shape container.
-            fields[field_name] = (result_type, ...)
-            continue
+    specs/021: ``core_builder.build_model`` consumes ``FieldSelection``; the
+    entity-first shell converts its dict-shaped selection (``{"field": None}``
+    scalar, ``{"field": {...}}`` nested, ``{"items": ..., "pagination": ...}``
+    paginated package) before delegating.
+    """
+    root = FieldSelection()
+    root.sub_fields = {
+        name: _sub_tree_to_selection(nested)
+        for name, nested in field_tree.items()
+    }
+    return root
 
-        nested_model = build_response_model(
-            relation_entity, nested, f"{field_name.capitalize()}Response",
-            federation_namespace=federation_namespace,
-            relation_entity_resolver=relation_entity_resolver,
-        )
 
-        if is_list:
-            fields[field_name] = (list[nested_model], ...)  # type: ignore[valid-type]
-        else:
-            fields[field_name] = (nested_model | None, ...)
-
-    return create_model(f"{entity.__name__}{model_name}", **fields)
+def _sub_tree_to_selection(nested: Any) -> FieldSelection:
+    sel = FieldSelection()
+    if isinstance(nested, dict):
+        sel.sub_fields = {
+            name: _sub_tree_to_selection(sub)
+            for name, sub in nested.items()
+        }
+    return sel
 
 
 def _is_paginated_package(nested: Any) -> bool:
