@@ -33,6 +33,20 @@ class MPPost(MPBase, table=True):
     author_id: int = Field(foreign_key="mp_user.id")
 
     author: Optional["MPUser"] = Relationship(back_populates="posts")
+    reviews: list["MPReview"] = Relationship(  # type: ignore[type-arg]
+        back_populates="post",
+        sa_relationship_kwargs={"order_by": "MPReview.id"},
+    )
+
+
+class MPReview(MPBase, table=True):
+    __tablename__ = "mp_review"
+
+    id: int | None = Field(default=None, primary_key=True)
+    content: str
+    post_id: int = Field(foreign_key="mp_post.id")
+
+    post: Optional["MPPost"] = Relationship(back_populates="reviews")
 
 
 class MPComment(MPBase, table=True):
@@ -85,6 +99,11 @@ async def _seed() -> None:
             [("C1", 1), ("C2", 1), ("C3", 1), ("C4", 1), ("C5", 2)], start=1
         ):
             s.add(MPComment(id=i, content=content, author_id=aid))
+        # reviews: A1 post 3 reviews (R1-R3), A2 post 2 reviews (R4-R5)
+        for i, (content, pid) in enumerate(
+            [("R1", 1), ("R2", 1), ("R3", 1), ("R4", 2), ("R5", 2)], start=1
+        ):
+            s.add(MPReview(id=i, content=content, post_id=pid))
         await s.commit()
     _seeded = True
 
@@ -160,3 +179,40 @@ async def test_multi_paged_fields_one_silent(seeded):
     # comments(无 limit): 走 default_page_size, 返 Alice 全部 4 comments(默认足够大)
     assert len(alice["comments"]["items"]) == 4
     assert alice["comments"]["pagination"]["total_count"] == 4
+
+
+@pytest.mark.asyncio
+async def test_nested_paged_fields_provider_handoff(seeded):
+    """嵌套 paged:posts(limit) → items(Post) → Post.reviews(limit)。
+
+    BFS 两层 paged,provider 每层接当前 field_sel(跨层接力):
+    - 层 1(User):provider(User field_sel, 'posts') → Paged(limit:5)
+    - 层 2(Post items):provider(items child_sel, 'reviews') → Paged(limit:2)
+    验证 provider 跨层 field_sel 正确(不拿成 User 层的 posts args)。
+    """
+    h = GraphQLHandler(
+        base=MPBase,
+        session_factory=_sf,
+        auto_query_config=AutoQueryConfig(),
+        enable_pagination=True,
+    )
+    q = (
+        "{ MPUser { by_filter { id "
+        "posts(limit: 5) { items { title "
+        "reviews(limit: 2) { items { content } pagination { has_more total_count } } "
+        "} pagination { has_more total_count } } "
+        "} } }"
+    )
+    r = await h.execute(q)
+    assert "errors" not in r, f"errors: {r.get('errors')}"
+    alice = next(u for u in r["data"]["MPUser"]["by_filter"] if u["id"] == 1)
+
+    # posts(limit:5): Alice 3 posts → 3 items (A1, A2, A3)
+    posts = alice["posts"]["items"]
+    assert [p["title"] for p in posts] == ["A1", "A2", "A3"]
+
+    # A1 post 有 3 reviews,reviews(limit:2) → 2 items (R1, R2), has_more True, total 3
+    a1 = next(p for p in posts if p["title"] == "A1")
+    assert [it["content"] for it in a1["reviews"]["items"]] == ["R1", "R2"]
+    assert a1["reviews"]["pagination"]["has_more"] is True
+    assert a1["reviews"]["pagination"]["total_count"] == 3

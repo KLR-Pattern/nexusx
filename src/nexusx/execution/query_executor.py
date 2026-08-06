@@ -355,7 +355,6 @@ class QueryExecutor:
             parents,
             entity,
             field_sel,
-            None,  # response_model: reserved for future metadata-driven dispatch
             store=self._store,
             enable_pagination=self._enable_pagination,
             paged_provider=paged_provider,

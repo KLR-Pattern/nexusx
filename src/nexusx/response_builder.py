@@ -270,6 +270,7 @@ def serialize_with_model(
         return [
             _validate_and_dump(
                 model, item, field_tree,
+                entity=entity,
                 federation_namespace=federation_namespace,
                 value_accessor=value_accessor,
                 relation_entity_resolver=relation_entity_resolver,
@@ -279,6 +280,7 @@ def serialize_with_model(
 
     return _validate_and_dump(
         model, value, field_tree,
+        entity=entity,
         federation_namespace=federation_namespace,
         value_accessor=value_accessor,
         relation_entity_resolver=relation_entity_resolver,
@@ -290,6 +292,7 @@ def _validate_and_dump(
     value: Any,
     field_tree: dict[str, Any] | None,
     *,
+    entity: type,
     federation_namespace: dict[str, type] | None = None,
     value_accessor: Any = None,
     relation_entity_resolver: RelationshipEntityResolver | None = None,
@@ -301,14 +304,17 @@ def _validate_and_dump(
     tree has ``items`` + ``pagination`` sub-keys, the corresponding value is
     treated as a ``{items, pagination}`` package — items are recursively
     serialized, pagination is filtered to the requested sub-keys.
+
+    ``entity`` is the declared SQLModel type — used for relationship lookup
+    instead of ``type(value)`` because local paged loaders return SQLAlchemy
+    ``RowMapping`` (not entity instances), and the registry keys on entity
+    classes (specs/020 nested-paged fix).
     """
     if value is None:
         return None
 
     if value_accessor is None:
         value_accessor = _default_value_accessor
-
-    value_type = type(value)
 
     # Convert to dict if it's a model instance
     if hasattr(value, "model_dump"):
@@ -318,14 +324,16 @@ def _validate_and_dump(
     else:
         data = dict(value) if hasattr(value, "__iter__") else value
 
-    # If we have nested field_tree, recursively serialize relationships
+    # If we have nested field_tree, recursively serialize relationships.
+    # Use ``entity`` (declared type), NOT type(value) — paged loaders return
+    # RowMapping; relationship lookup must key on the entity class.
     if field_tree and isinstance(data, dict):
         for field_name, nested_tree in field_tree.items():
             if nested_tree is None:
                 continue
 
             nested_entity = get_relation_entity(
-                value_type, field_name,
+                entity, field_name,
                 federation_namespace=federation_namespace,
                 relation_entity_resolver=relation_entity_resolver,
             )

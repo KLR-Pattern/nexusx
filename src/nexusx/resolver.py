@@ -1725,7 +1725,6 @@ class Resolver:
         parents: list,
         parent_entity: type[SQLModel],
         field_sel: FieldSelection,
-        response_model: type[BaseModel] | None,
         *,
         store: Callable[[Any, str, Any], None],
         enable_pagination: bool = False,
@@ -1743,14 +1742,9 @@ class Resolver:
         are written there and read back by ``QueryExecutor._serialize``. The
         Resolver owns no entity-result cache — it is a pure dispatcher here.
 
-        ``response_model`` is the dynamic DTO built by ``build_response_model``
-        (US2 stamps ``Annotated[..., Paged(...)]`` on paginated fields). It is
-        accepted for contract parity and as the future hook for
-        metadata-driven dispatch; this relocation still drives pagination off
-        ``enable_pagination`` + gql field args (verbatim from the executor) to
-        guarantee zero regression. Metadata-driven routing is a follow-up.
-
-        ``enable_pagination`` mirrors ``QueryExecutor._enable_pagination``.
+        Paged detection uses ``rel_info.page_loader`` (not model metadata);
+        paged values come from the ``paged_provider`` closure (specs/019,
+        per-call). ``enable_pagination`` mirrors ``QueryExecutor._enable_pagination``.
         """
         queue: list[_EntityFieldJob] = self._build_entity_field_jobs(
             parents, parent_entity, field_sel, enable_pagination, paged_provider,
