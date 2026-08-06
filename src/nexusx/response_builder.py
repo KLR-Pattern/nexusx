@@ -13,6 +13,7 @@ from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel, create_model
 
+from nexusx.core_builder import FieldResolution
 from nexusx.loader.pagination import create_result_type
 from nexusx.utils.type_utils import get_field_type
 
@@ -22,6 +23,46 @@ from nexusx.utils.type_utils import get_field_type
 # RelationshipInfo-like object with ``.target_entity`` (type) and ``.is_list``
 # (bool); None when no federation relationship matches. specs/018 T002b.
 RelationshipEntityResolver = Callable[[type, str], Any]
+
+
+class ERFieldResolver:
+    """FieldResolver for entity-first gql (specs/021 path-merge).
+
+    Wraps the relationship-resolution logic that ``_build_response_model_uncached``
+    used inline (federation ``__relationships__`` → SQLAlchemy mapper →
+    ``__sqlmodel_relationships__`` → ``__annotations__`` fallback) into the
+    ``FieldResolver`` protocol so ``core_builder.build_model`` can consume it.
+    """
+
+    def __init__(
+        self,
+        relation_entity_resolver: RelationshipEntityResolver | None = None,
+        federation_namespace: dict[str, type] | None = None,
+    ):
+        self._rel_resolver = relation_entity_resolver
+        self._fed_ns = federation_namespace
+
+    def resolve_field(self, entity: type, field_name: str) -> FieldResolution | None:
+        # Federation registry first (source of truth for __relationships__).
+        fed_rel = (
+            self._rel_resolver(entity, field_name)
+            if self._rel_resolver is not None
+            else None
+        )
+        if fed_rel is not None:
+            return FieldResolution(
+                annotation=get_field_type(entity, field_name),
+                nested_type=getattr(fed_rel, "target_entity", None),
+                is_list=bool(getattr(fed_rel, "is_list", False)),
+            )
+        # SQLAlchemy / SQLModel / annotations fallback.
+        return FieldResolution(
+            annotation=get_field_type(entity, field_name),
+            nested_type=get_relation_entity(
+                entity, field_name, federation_namespace=self._fed_ns
+            ),
+            is_list=_is_list_relationship(entity, field_name),
+        )
 
 
 # Process-level LRU cache of built response models (specs/018 T026 mitigation).

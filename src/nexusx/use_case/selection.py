@@ -16,6 +16,7 @@ from typing import Any, get_args, get_origin
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, create_model
 from pydantic_core import PydanticUndefined
 
+from nexusx.core_builder import FieldResolution
 from nexusx.query_parser import FieldSelection, QueryParser
 
 _UNION_ORIGINS = (typing.Union, _UnionType)
@@ -67,6 +68,28 @@ def parse_selection(selection: str) -> FieldSelection:
 
     _reject_arguments(root)
     return root
+
+
+class DTOFieldResolver:
+    """FieldResolver for UseCase compose (specs/021 path-merge).
+
+    Wraps the annotation-unwrapping logic that ``build_subset_model`` used
+    inline (``_get_pydantic_core_type`` to detect nested BaseModel) into the
+    ``FieldResolver`` protocol so ``core_builder.build_model`` can consume it.
+    """
+
+    def resolve_field(self, dto_type: type, field_name: str) -> FieldResolution | None:
+        if field_name not in dto_type.model_fields:
+            return None
+        field_info = dto_type.model_fields[field_name]
+        field_type = field_info.annotation
+        nested_type = _get_pydantic_core_type(field_type)
+        is_list = get_origin(field_type) is list
+        return FieldResolution(
+            annotation=field_type,
+            nested_type=nested_type,
+            is_list=is_list,
+        )
 
 
 def build_subset_model(
