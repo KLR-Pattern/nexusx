@@ -26,6 +26,8 @@ import types
 import typing
 from typing import Any
 
+from nexusx.utils.type_utils import map_annotation
+
 logger = logging.getLogger(__name__)
 
 
@@ -157,6 +159,34 @@ def _contains_remote_ref(annotation: Any) -> RemoteRef | None:
     return None
 
 
+def _remote_ref_cardinality(annotation: Any) -> tuple[RemoteRef | None, bool]:
+    """Return ``(RemoteRef, is_list)`` for an annotation referencing a remote DTO.
+
+    ``list[reviews.ReviewDTO]`` → to-many (``is_list=True``);
+    ``reviews.ReviewDTO`` / ``reviews.ReviewDTO | None`` → to-one. Used by
+    federate() to wire the γ DTO RemoteLoader with the right cardinality.
+    """
+    ref = _contains_remote_ref(annotation)
+    if ref is None:
+        return None, False
+    # Peel Annotated (Annotated[list[Ref], Paged(...)] → list[Ref]) so the
+    # list/union inspection sees the real container, not the Annotated generic.
+    # specs/016: Paged marker on a remote-DTO field.
+    inner = annotation
+    if hasattr(inner, "__metadata__"):
+        args = typing.get_args(inner)
+        if args:
+            inner = args[0]
+    # Peel Optional (X | None) to inspect the inner container.
+    origin = typing.get_origin(inner)
+    if origin in (typing.Union, types.UnionType):
+        non_none = [a for a in typing.get_args(inner) if a is not type(None)]
+        if len(non_none) == 1:
+            inner = non_none[0]
+    is_list = typing.get_origin(inner) is list
+    return ref, is_list
+
+
 def _record_service_color(fed_registry: Any, ref: RemoteRef) -> None:
     """Record a RemoteRef's declared cluster color onto the registry.
 
@@ -198,6 +228,16 @@ def get_pending_subsets() -> list[tuple[str, type, RemoteRef, list[str], dict[st
 
 def clear_pending_subsets() -> None:
     _pending_subsets.clear()
+
+
+def replace_resolved_placeholders(classes: list[type]) -> list[type]:
+    """Replace deferred DTO placeholders with their latest resolved classes."""
+    replaced: list[type] = []
+    for cls in classes:
+        while cls in _resolved_placeholders:
+            cls = _resolved_placeholders[cls]
+        replaced.append(cls)
+    return replaced
 
 
 def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
@@ -274,18 +314,32 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
 
         # Build resolved annotations.
         resolved_annotations: dict[str, Any] = {}
+        remote_field_refs: dict[str, Any] = {}
         try:
             for fname, anno in namespace.get("__annotations__", {}).items():
-                ref = _contains_remote_ref(anno)
+                raw_anno = anno
+                if isinstance(raw_anno, str):
+                    try:
+                        raw_anno = eval(  # noqa: S307
+                            raw_anno,
+                            vars(module) if module is not None else {},
+                            namespace,
+                        )
+                    except (NameError, TypeError):
+                        pass
+                ref = _contains_remote_ref(raw_anno)
                 if ref is not None:
                     target = _resolve_ref(ref, f"{name}.{fname}")
                     _record_service_color(fed_registry, ref)
-                    if isinstance(anno, _RemoteRefOptional):
+                    remote_field_refs[fname] = raw_anno
+                    if isinstance(raw_anno, _RemoteRefOptional):
                         resolved_annotations[fname] = target | None
-                    elif isinstance(anno, RemoteRef):
+                    elif isinstance(raw_anno, RemoteRef):
                         resolved_annotations[fname] = target
                     else:
-                        resolved_annotations[fname] = _replace_remote_ref(anno, fed_registry)
+                        resolved_annotations[fname] = _replace_remote_ref(
+                            raw_anno, fed_registry,
+                        )
                 else:
                     resolved_annotations[fname] = anno
         except _NotResolvable:
@@ -318,6 +372,8 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
                 new_namespace[key] = value
 
         new_cls = type(name, (DefineSubset,), new_namespace)
+        if remote_field_refs:
+            new_cls.__nexusx_remote_field_refs__ = remote_field_refs
 
         if module is not None:
             setattr(module, name, new_cls)
@@ -368,49 +424,79 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
     return resolved
 
 
+def resolve_remote_field_refs(
+    fed_registry: Any,
+    dto_classes: list[type] | None = None,
+) -> list[type]:
+    """Resolve deferred extra-field RemoteRefs on DefineSubset classes (specs/016).
+
+    Companion to ``SubsetMeta._collect_remote_field_refs``: a mounter DTO whose
+    source is local but which declares an extra field referencing a member public
+    DTO (e.g. ``ProductDTO.reviews: list[reviews.ReviewDTO]``) carries the raw
+    RemoteRef annotation on ``__nexusx_remote_field_refs__``. After federate has
+    materialized the member DTOs, this swaps each placeholder ``Any`` field for
+    the materialized DTO class and rebuilds the model.
+
+    Only refs whose service this ``fed_registry`` actually mounts are resolved;
+    others stay deferred for a subsequent federate() call (multi-app coexistence,
+    same pattern as ``resolve_deferred_subsets``). Idempotent — once a field holds
+    a real class, re-resolution yields the same type.
+    """
+    resolved: list[type] = []
+    if dto_classes is None:
+        from nexusx.subset import _subset_registry
+
+        dto_classes = list(_subset_registry.keys())
+    for dto_cls in dto_classes:
+        refs = getattr(dto_cls, "__nexusx_remote_field_refs__", None)
+        if not refs:
+            continue
+
+        changed = False
+        for fname, raw_anno in refs.items():
+            ref = _contains_remote_ref(raw_anno)
+            if ref is None:
+                continue
+            if not fed_registry.has(ref.qualified_name):
+                # Target service not mounted by THIS fed_registry — defer to a
+                # subsequent federate() (different ErManager).
+                continue
+            _record_service_color(fed_registry, ref)
+            new_anno = _replace_remote_ref(raw_anno, fed_registry)
+            field_info = dto_cls.model_fields.get(fname)
+            if field_info is not None:
+                field_info.annotation = new_anno
+            dto_cls.__annotations__[fname] = new_anno
+            changed = True
+
+        if changed:
+            try:
+                dto_cls.model_rebuild(force=True)
+            except Exception:  # noqa: BLE001 — rebuild best-effort, mirrors resolve_deferred_subsets
+                pass
+            resolved.append(dto_cls)
+
+    return resolved
+
+
 def _replace_classes_in_annotation(annotation: Any, replacements: dict[type, type]) -> Any:
     """Recursively replace placeholder classes in a type annotation."""
-    if isinstance(annotation, type) and annotation in replacements:
-        return replacements[annotation]
-
-    origin = typing.get_origin(annotation)
-    args = typing.get_args(annotation)
-    if origin is None or not args:
-        return annotation
-
-    new_args = tuple(_replace_classes_in_annotation(a, replacements) for a in args)
-    if new_args == args:
-        return annotation
-
-    if origin is list and len(new_args) == 1:
-        return list[new_args[0]]
-    if origin is types.UnionType:
-        result = new_args[0]
-        for a in new_args[1:]:
-            result = result | a
-        return result
-    try:
-        return origin[new_args] if len(new_args) > 1 else origin[new_args[0]]
-    except Exception:
-        return annotation
+    return map_annotation(
+        annotation,
+        lambda a: replacements[a]
+        if isinstance(a, type) and a in replacements
+        else a,
+    )
 
 
 def _replace_remote_ref(annotation: Any, fed_registry: Any) -> Any:
     """Recursively replace RemoteRef in a generic annotation with real types."""
-    ref = _contains_remote_ref(annotation)
-    if ref is not None and not isinstance(annotation, (RemoteRef, _RemoteRefOptional)):
-        origin = typing.get_origin(annotation)
-        args = typing.get_args(annotation)
-        new_args = tuple(
-            fed_registry.get(_contains_remote_ref(a).qualified_name)
-            if _contains_remote_ref(a) is not None
-            else _replace_remote_ref(a, fed_registry)
-            for a in args
-        )
-        if origin is list and len(new_args) == 1:
-            return list[new_args[0]]
-        try:
-            return origin[new_args] if len(new_args) > 1 else origin[new_args[0]]
-        except Exception:
-            return annotation
-    return annotation
+
+    def leaf(a: Any) -> Any:
+        if isinstance(a, RemoteRef):
+            return fed_registry.get(a.qualified_name)
+        if isinstance(a, _RemoteRefOptional):
+            return fed_registry.get(a.inner.qualified_name) | None
+        return a
+
+    return map_annotation(annotation, leaf)

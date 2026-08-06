@@ -37,6 +37,7 @@ from pydantic.fields import FieldInfo
 from sqlmodel import SQLModel
 
 from nexusx.resolver import POST_PREFIX, RESOLVE_PREFIX  # noqa: F401
+from nexusx.utils.type_utils import get_fk_fields
 
 # ──────────────────────────────────────────────────────────
 # Constants
@@ -426,6 +427,12 @@ class SubsetConfig(BaseModel):
     excluded_fields: list[str] | None = None
     expose_as: list[tuple[str, str]] | None = None
     send_to: list[tuple[str, str | tuple[str, ...]]] | None = None
+    # Federation (γ-path): expose this DTO as a member public DTO.
+    # federation_public=True requires federation_join_key (validated against
+    # the generated DTO's subset fields at class creation — see
+    # _validate_federation_config).
+    federation_public: bool = False
+    federation_join_key: str | None = None
 
     @model_validator(mode="after")
     def _validate_config(self) -> SubsetConfig:
@@ -434,6 +441,77 @@ class SubsetConfig(BaseModel):
         if self.fields is None and self.omit_fields is None:
             raise ValueError("fields or omit_fields must be provided")
         return self
+
+
+
+
+def _validate_federation_config(
+    subset_info: Any,
+    subset_class: type[BaseModel],
+) -> None:
+    """Validate SubsetConfig federation params against the generated DTO.
+
+    When ``federation_public=True``:
+      * ``federation_join_key`` must be one of the DTO's subset fields (so the
+        member batch root can ``WHERE join_key IN [...]`` against the base
+        entity's column — a Resolver-computed field would not be SQL-filterable).
+      * If omitted, it's auto-derived when the subset contains exactly one FK
+        field (no ambiguity). Zero/multiple FKs → must specify explicitly.
+
+    Fail-fast at class creation: a mistyped or computed join_key is caught
+    here, not at federation query time. Only SubsetConfig can declare a DTO
+    public (the tuple syntax carries no federation params).
+    """
+    if not isinstance(subset_info, SubsetConfig) or not subset_info.federation_public:
+        return
+
+    subset_fields = getattr(subset_class, "__subset_fields__", None)
+    field_set = set(subset_fields) if subset_fields else set(subset_class.model_fields)
+
+    join_key = subset_info.federation_join_key
+    if not join_key:
+        # Auto-derive: if the subset contains exactly one FK field, use it as
+        # the federation join key (no ambiguity, no need to repeat the name).
+        # Zero or multiple FKs in the subset → must specify explicitly.
+        entity = subset_info.kls
+        fk_in_subset = [f for f in get_fk_fields(entity) if f in field_set]
+        if len(fk_in_subset) == 1:
+            join_key = fk_in_subset[0]
+            subset_info.federation_join_key = join_key
+        else:
+            raise ValueError(
+                f"{subset_class.__name__}: federation_public=True requires "
+                f"federation_join_key. Could not auto-derive — subset has "
+                f"{len(fk_in_subset)} FK field(s) ({sorted(fk_in_subset)}); "
+                f"specify federation_join_key explicitly."
+            )
+
+    if join_key not in field_set:
+        raise ValueError(
+            f"{subset_class.__name__}: federation_join_key '{join_key}' is not "
+            f"a subset field of the DTO (subset fields: {sorted(field_set)}). "
+            f"join_key must be a field sourced from the base entity so the "
+            f"member batch root can filter by it."
+        )
+
+
+def _stamp_federation_metadata(
+    subset_info: Any,
+    subset_class: type[BaseModel],
+) -> None:
+    """Stamp federation public/join_key onto the DTO class (specs/016).
+
+    ``ErManager.get_public_dtos()`` reads these stamps to filter a member's
+    public DTOs without re-reading SubsetConfig. Only SubsetConfig can declare
+    a DTO public; the tuple syntax yields a private DTO (defaults stamped so
+    every DefineSubset class carries the attribute uniformly).
+    """
+    if isinstance(subset_info, SubsetConfig):
+        subset_class.__federation_public__ = subset_info.federation_public
+        subset_class.__federation_join_key__ = subset_info.federation_join_key
+    else:
+        subset_class.__federation_public__ = False
+        subset_class.__federation_join_key__ = None
 
 
 def _apply_config_modifiers(
@@ -515,6 +593,42 @@ def _is_remote_ref(obj: Any) -> bool:
     return isinstance(obj, RemoteRef)
 
 
+def _annotation_remote_ref(anno: Any) -> Any:
+    """Return the ``RemoteRef`` inside an annotation, or None.
+
+    Detects a RemoteRef whether bare (``reviews.ReviewDTO``), Optional
+    (``RemoteRef | None``), or wrapped in a generic (``list[RemoteRef]``).
+    Used by SubsetMeta to defer extra fields that reference a member public
+    DTO (specs/016 γ-path). SubsetMeta resolves string annotations before
+    calling this helper.
+    """
+    try:
+        from nexusx.federation.remote_ref import _contains_remote_ref
+    except ImportError:
+        return None
+    return _contains_remote_ref(anno)
+
+
+def _annotation_paged(anno: Any) -> Any:
+    """Return the ``Paged`` marker inside an ``Annotated`` annotation, or None.
+
+    Detects ``Annotated[list[Target], Paged(...)]`` — Paged is carried as
+    Annotated metadata. Returns None for non-Annotated annotations or
+    Annotated without a Paged marker.
+    """
+    metadata = getattr(anno, "__metadata__", None)
+    if not metadata:
+        return None
+    try:
+        from nexusx.loader.pagination import Paged
+    except ImportError:
+        return None
+    for meta in metadata:
+        if isinstance(meta, Paged):
+            return meta
+    return None
+
+
 class SubsetMeta(type):
     """Metaclass that transforms a DefineSubset class definition into a Pydantic BaseModel.
 
@@ -550,24 +664,47 @@ class SubsetMeta(type):
             return cls._create_deferred_class(name, source_candidate, subset_info[1], namespace)
 
         entity_kls, subset_fields, auto_excluded = cls._resolve_subset_info(subset_info)
+        global_ns = cls._build_global_ns(namespace)
+        local_ns = cls._build_local_ns(global_ns)
         field_definitions, extra_fields, override_annotations = cls._build_field_definitions(
             entity_kls, subset_fields, namespace, auto_excluded, subset_info,
         )
-        global_ns = cls._build_global_ns(namespace)
-        local_ns = cls._build_local_ns(global_ns)
         cls._merge_overrides(field_definitions, override_annotations, global_ns, namespace)
         if isinstance(subset_info, SubsetConfig):
             cls._merge_config_overrides(field_definitions, subset_info, local_ns, namespace)
+
+        # Annotated[..., Paged(...)] marks an ER-relationship field with page
+        # params (default; caller context may override at resolve time).
+        # Collected BEFORE _collect_remote_field_refs — that step neutralizes
+        # RemoteRef annotations to Any, which would hide the Paged metadata on
+        # a remote-DTO field (Annotated[list[RemoteRef], Paged(...)]).
+        paged_fields = cls._collect_paged_fields(extra_fields, global_ns, local_ns)
+        # specs/016 γ-path: an extra field whose annotation references a member
+        # public DTO (e.g. ``reviews: list[reviews.ReviewDTO]``) carries a
+        # RemoteRef that create_model can't compile. Defer it — placeholder the
+        # field as ``Any`` now, stamp the raw annotation for
+        # resolve_remote_field_refs to swap in the materialized DTO class at
+        # federate time. Source stays local; only the field is deferred.
+        remote_field_refs = cls._collect_remote_field_refs(
+            extra_fields, field_definitions, global_ns, local_ns,
+        )
 
         _validate_extra_field_types(extra_fields, entity_kls, global_ns, namespace)
         _validate_omitted_fk_not_needed(
             entity_kls, subset_info, extra_fields,
         )
 
-        return cls._create_subset_class(
+        subset_class = cls._create_subset_class(
             name, field_definitions, subset_fields, entity_kls, namespace,
             auto_excluded,
         )
+        _validate_federation_config(subset_info, subset_class)
+        _stamp_federation_metadata(subset_info, subset_class)
+        if remote_field_refs:
+            subset_class.__nexusx_remote_field_refs__ = remote_field_refs
+        if paged_fields:
+            subset_class.__paged_fields__ = paged_fields
+        return subset_class
 
     @staticmethod
     def _create_deferred_class(
@@ -627,6 +764,67 @@ class SubsetMeta(type):
 
         placeholder.__init__ = _guarded_init
         return placeholder
+
+    @staticmethod
+    def _collect_remote_field_refs(
+        extra_fields: dict[str, tuple[Any, Any]],
+        field_definitions: dict[str, tuple[Any, Any]],
+        global_ns: dict[str, Any],
+        local_ns: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Detect extra fields whose annotation carries a RemoteRef (specs/016).
+
+        For each such field, neutralize the RemoteRef in BOTH ``extra_fields``
+        (so downstream validation sees a plain scalar) and
+        ``field_definitions`` (so ``create_model`` compiles), replacing the
+        annotation with ``Any`` while preserving the field's default/FieldInfo.
+
+        Returns ``{field_name: raw_annotation}`` for the caller to stamp on the
+        class; ``resolve_remote_field_refs`` reads that stamp at federate time.
+        Empty dict when no extra field references a remote DTO.
+        """
+        refs: dict[str, Any] = {}
+        for fname, (anno, default) in list(extra_fields.items()):
+            resolved_anno = anno
+            if isinstance(resolved_anno, str):
+                try:
+                    resolved_anno = eval(resolved_anno, global_ns, local_ns)  # noqa: S307
+                except (NameError, TypeError):
+                    continue
+            if _annotation_remote_ref(resolved_anno) is None:
+                continue
+            refs[fname] = resolved_anno
+            extra_fields[fname] = (Any, default)
+            _existing_anno, existing_fi = field_definitions[fname]
+            field_definitions[fname] = (Any, existing_fi)
+        return refs
+
+    @staticmethod
+    def _collect_paged_fields(
+        extra_fields: dict[str, tuple[Any, Any]],
+        global_ns: dict[str, Any],
+        local_ns: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Detect extra fields annotated ``Annotated[..., Paged]`` (page params
+        default on an ER-relationship field). Returns ``{field_name: Paged}``
+        stamped as ``__paged_fields__``; the Resolver merges it with caller
+        context overrides. The annotation is NOT neutralized — Annotated's
+        inner type (e.g. ``list[Comment]``) is a valid pydantic type and
+        Paged is metadata pydantic ignores.
+        """
+        paged: dict[str, Any] = {}
+        for fname, (anno, _default) in list(extra_fields.items()):
+            resolved_anno = anno
+            if isinstance(resolved_anno, str):
+                try:
+                    resolved_anno = eval(resolved_anno, global_ns, local_ns)  # noqa: S307
+                except (NameError, TypeError):
+                    continue
+            marker = _annotation_paged(resolved_anno)
+            if marker is None:
+                continue
+            paged[fname] = marker
+        return paged
 
     @staticmethod
     def _resolve_subset_info(
@@ -861,6 +1059,13 @@ class SubsetMeta(type):
         _subset_registry[subset_class] = entity_kls
         subset_class.__subset_fields__ = list(subset_fields)
         subset_class.__subset_auto_excluded__ = auto_excluded or set()
+
+        # Preserve a DTO-level __pagination_orders__ (BatchPageConfig) so
+        # serialize_dto_introspection can expose it for γ remote top-N.
+        # create_model drops custom class attrs, so re-attach from namespace.
+        pagination_orders = namespace.get("__pagination_orders__")
+        if pagination_orders is not None:
+            subset_class.__pagination_orders__ = pagination_orders
 
         return subset_class
 

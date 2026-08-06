@@ -146,3 +146,36 @@ async def test_us3_nulls_follow_direction(handler):
     asc_texts = _texts(asc)
     assert desc_texts[-1] == "C3"  # NULL likes 在 desc 末(nulls_last)
     assert asc_texts[0] == "C3"  # NULL likes 在 asc 首(nulls_last→nulls_first)
+
+
+@pytest.mark.asyncio
+async def test_items_only_paged_query_no_internal_leak(handler):
+    """specs/021 hardening: 分页字段只选 items(不选 pagination) 必须正确递归
+    序列化 — 不得原样透传 RowMapping(内部列 _sg_rn/_sg_tc + 未选择字段泄漏)。
+    此前 paged 包检测要求 items+pagination 同时存在, items-only 查询落入
+    普通嵌套分支 → 原样透传。
+    """
+    r = await handler.execute(
+        "{ LOReview { by_id(id: 1) { comments(limit: 5, order: NEWEST) "
+        "{ items { text } } } } }"
+    )
+    assert not r.get("errors"), r
+    items = r["data"]["LOReview"]["by_id"]["comments"]["items"]
+    # 只输出选中的 text; 无内部列、无未选择字段
+    assert items == [{"text": "C2"}, {"text": "C3"}, {"text": "C1"}]
+
+
+@pytest.mark.asyncio
+async def test_variable_paged_args_resolved(handler):
+    """specs/021 hardening: gql 变量分页参数(limit/order)必须解析为真值 —
+    此前 FieldSelection.arguments 里是 graphql Undefined, PageArgs 比较炸,
+    整个查询 errors。
+    """
+    r = await handler.execute(
+        "query Q($lim: Int, $ord: OrderTerm) { LOReview { by_id(id: 1) "
+        "{ comments(limit: $lim, order: $ord) { items { text } } } } }",
+        variables={"lim": 2, "ord": "NEWEST"},
+    )
+    assert not r.get("errors"), r
+    items = r["data"]["LOReview"]["by_id"]["comments"]["items"]
+    assert [i["text"] for i in items] == ["C2", "C3"]  # limit=2 生效

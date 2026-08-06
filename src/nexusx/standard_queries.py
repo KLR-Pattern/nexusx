@@ -18,6 +18,7 @@ from pydantic import Field, create_model
 from sqlmodel import SQLModel, select
 
 from nexusx.decorator import query
+from nexusx.utils.type_utils import get_fk_fields
 
 _ORDER_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
@@ -184,10 +185,11 @@ def _get_primary_key_fields(entity: type[SQLModel]) -> list[tuple[str, Any]]:
         if table is not None and getattr(table, "primary_key", None) is not None
         else set()
     )
+    fk_fields = get_fk_fields(entity)
 
     for field_name, field_info in entity.model_fields.items():
         has_primary_key = field_name in table_primary_keys
-        has_foreign_key = False
+        has_foreign_key = field_name in fk_fields
 
         if hasattr(field_info, "primary_key"):
             if field_info.primary_key is True:
@@ -197,15 +199,6 @@ def _get_primary_key_fields(entity: type[SQLModel]) -> list[tuple[str, Any]]:
             for meta in field_info.metadata:
                 if hasattr(meta, "primary_key") and meta.primary_key is True:
                     has_primary_key = True
-                    break
-
-        if hasattr(field_info, "foreign_key") and isinstance(field_info.foreign_key, str):
-            has_foreign_key = True
-
-        if not has_foreign_key and hasattr(field_info, "metadata"):
-            for meta in field_info.metadata:
-                if hasattr(meta, "foreign_key") and isinstance(meta.foreign_key, str):
-                    has_foreign_key = True
                     break
 
         if has_primary_key and not has_foreign_key:
@@ -507,7 +500,13 @@ def _create_page_by_keys_in_query(
                     cls(**{k: r[k] for k in entity_fields if k in r})
                     for r in page_rows
                 ]
-                has_more = len(grouped.get(v, [])) > effective_limit
+                # specs/021 GAP E: limit=0 must not claim a next page — the
+                # window peek-by-1 still fetches rn=offset+1, which would make
+                # ``len > effective_limit`` true with empty items.
+                has_more = (
+                    effective_limit > 0
+                    and len(grouped.get(v, [])) > effective_limit
+                )
                 pagination = Pagination(has_more=has_more)
                 if want_total_count:
                     pagination.total_count = total_counts.get(v, 0)
@@ -804,3 +803,230 @@ def add_standard_queries(
                         page_config,
                     ),
                 )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# specs/016 — DTO batch roots (γ-path member public DTO 取数入口)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _create_dto_by_keys_in_query(
+    dto_cls: type,
+    base_entity: type[SQLModel],
+    join_key: str,
+    er_manager: Any,
+    session_factory: Any,
+    page_orders_resolved: dict | None = None,
+    default_order: str | None = None,
+) -> Any:
+    """Create a ``by_<join_key>_in(values) -> list[dict]`` DTO batch root.
+
+    Unlike ``_create_by_keys_in_query`` (entity batch root via raw SQL), this
+    returns a RESOLVED DTO tree: SQL-fetch entities by join_key → build DTO
+    instances from the subset fields → ``er.create_resolver().resolve()`` runs
+    every ``resolve_*``/``post_*`` (incl. cross-service out-edges, since the
+    member is itself a federation mounter) → ``model_dump(mode="json")``.
+
+    The member Resolver is what makes the DTO self-contained: business logic
+    (discounts, aggregates, transitive ``author → users``) executes here, on the
+    data owner. The mounter receives finished DTO trees, never raw rows.
+
+    Registered as a plain async function (NOT a ``@query``) on
+    ``er_manager._dto_batch_roots`` — served by the dedicated DTO batch HTTP
+    endpoint, not the β GraphQL surface (FR-008: β 不动).
+    """
+    subset_fields = list(getattr(dto_cls, "__subset_fields__", []) or [])
+
+    async def by_key_in(
+        values: list[Any],
+        order: str | None = None,
+        direction: Any = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[dict]:
+        if not values:
+            return []
+        if limit == 0:
+            return []
+        from sqlalchemy import func
+
+        # specs/021 F2: fail-fast validation, aligned with β's PageArgs — a
+        # negative limit/offset used to silently produce an empty window.
+        from nexusx.loader.pagination import PageArgs
+
+        page_args = PageArgs(limit=limit, offset=offset)
+        if direction is not None and direction not in ("asc", "desc"):
+            raise ValueError(
+                f"Invalid direction {direction!r} for "
+                f"{dto_cls.__name__}.{join_key}"
+            )
+
+        # Resolve the effective order profile: caller order → default → None.
+        # specs/021 F3: an unknown profile fails fast (β's page_by_field_in
+        # raises at the same spot) instead of silently degrading to a full,
+        # unordered fetch.
+        order_terms = None
+        if page_orders_resolved is not None:
+            order_name = order or default_order
+            if order_name is not None:
+                if order_name not in page_orders_resolved:
+                    raise ValueError(
+                        f"Unknown order profile {order_name!r} for "
+                        f"DTO {dto_cls.__name__}.{join_key}"
+                    )
+                order_terms = _apply_direction(
+                    page_orders_resolved[order_name].terms, direction,
+                )
+
+        session_context = await _create_session_context(session_factory)
+        async with session_context as session:
+            fk_col = getattr(base_entity, join_key)
+            # Per-parent top-N (specs/016 Phase 2): ROW_NUMBER OVER (PARTITION
+            # BY join_key ORDER BY <order>) keeps the slice in SQL — before DTO
+            # build + Resolver — so the member never fetches/resolves the full
+            # collection (no wasted cross-service hops). Mirrors PO2M
+            # (factories.py:397-436). specs/021 F1: an order profile alone is
+            # enough to slice — a missing limit uses the default page size
+            # (aligned with β, where the member's PageArgs default applies);
+            # previously `Paged(order=...)` without limit silently degraded to
+            # a full, UNORDERED fetch. Falls back to full fetch only when
+            # there's no order profile at all (un-paged batch roots).
+            if order_terms is not None:
+                effective_limit = page_args.effective_limit
+                rn_label = "_nx_rn"
+                inner_order = _build_order_expressions(base_entity, order_terms)
+                row_num_col = func.row_number().over(
+                    partition_by=fk_col, order_by=inner_order,
+                ).label(rn_label)
+                inner = select(base_entity, row_num_col).where(fk_col.in_(values))
+                subq = inner.subquery()
+                rn_col = subq.c[rn_label]
+                fk_col_sub = subq.c[join_key]
+                # rn BETWEEN offset+1 AND offset+effective_limit (offset=0 →
+                # top-N).
+                start = offset + 1
+                end = offset + effective_limit
+                outer = (
+                    select(subq)
+                    .where(rn_col.between(start, end))
+                    .order_by(fk_col_sub, *_build_order_expressions(subq.c, order_terms))
+                )
+                # session.execute (not .exec): SQLModel's .exec yields the
+                # first column's scalars for select(subq); .execute returns
+                # Rows with ._mapping. Suppress the "use exec" hint.
+                import warnings as _warnings
+
+                with _warnings.catch_warnings():
+                    _warnings.simplefilter("ignore", DeprecationWarning)
+                    rows = (await session.execute(outer)).all()
+                entity_fields = set(base_entity.model_fields.keys())
+                entities = [
+                    base_entity(**{
+                        k: r._mapping[k] for k in entity_fields if k in r._mapping
+                    })
+                    for r in rows
+                ]
+            else:
+                stmt = select(base_entity).where(fk_col.in_(values))
+                entities = list((await session.exec(stmt)).all())
+        if not entities:
+            return []
+        # Build DTO instances from entity-sourced subset fields; Resolver-computed
+        # fields stay at their default and are filled by resolve().
+        dtos = [
+            dto_cls(**{f: getattr(e, f, None) for f in subset_fields})
+            for e in entities
+        ]
+        ResolverCls = er_manager.create_resolver()
+        resolved = await ResolverCls().resolve(dtos)
+        rows: list[dict] = []
+        for dto in resolved:
+            row = dto.model_dump(mode="json")
+            # The federation join key is transport metadata. It must remain on
+            # the wire even when the DTO hides an auto-included FK from normal
+            # business serialization.
+            row[join_key] = getattr(dto, join_key)
+            rows.append(row)
+        return rows
+
+    by_key_in.__name__ = f"by_{join_key}_in"
+    return by_key_in
+
+
+def add_dto_batch_roots(er_manager: Any) -> None:
+    """Register a DTO batch root for each federation-public DTO on the member.
+
+    For every ``er_manager.get_public_dtos()`` entry (SubsetConfig
+    ``federation_public=True``), read its join_key + base entity, fail-fast
+    validate the join_key is a column on the base entity, and store
+    ``(by_<join_key>_in, join_key)`` under ``er_manager._dto_batch_roots[dto_name]``.
+
+    Called from ``GraphQLHandler.__init__`` (symmetric to ``add_standard_queries``)
+    so the batch roots exist at app startup. They're served at query time by the
+    ``POST /nexusx/dto-batch`` endpoint, one HTTP call per mounted DTO per γ
+    traversal (N+1-proof via DataLoader batching on the mounter side).
+
+    Idempotent / additive: no-op when the member declares no public DTOs (β
+    services are unaffected).
+    """
+    from nexusx.federation.introspect import _type_expr
+    from nexusx.federation.manager import _SUPPORTED_JOIN_TYPES, _normalize_join_type
+    from nexusx.subset import get_subset_source
+
+    session_factory = er_manager._session_factory
+    batch_roots: dict[str, tuple[Any, str]] = {}
+    for dto_cls in er_manager.get_public_dtos():
+        join_key = getattr(dto_cls, "__federation_join_key__", None)
+        if not join_key:
+            # get_public_dtos() filters by __federation_public__; a public DTO
+            # without a join_key was already rejected at SubsetMeta validation.
+            continue
+        base_entity = get_subset_source(dto_cls)
+        if base_entity is None:
+            raise ValueError(
+                f"{dto_cls.__name__} is federation-public but has no subset "
+                f"source entity; cannot generate a DTO batch root."
+            )
+        if join_key not in base_entity.model_fields:
+            raise ValueError(
+                f"{dto_cls.__name__} join_key {join_key!r} is not a column on "
+                f"base entity {base_entity.__name__}; cannot batch-fetch by it."
+            )
+        # Join-key type gate (specs/016, symmetric to β's _check_join_contract):
+        # DTO federation ships keys over JSON and aligns them back via
+        # _normalize_join_key (UUID→str). A key type outside _SUPPORTED_JOIN_TYPES
+        # would either fail json.dumps (UUID without normalization) or silently
+        # miss its bucket (Decimal serializes to str on the response side but
+        # isn't normalized on the lookup side). Reject at startup on the member
+        # — it owns the base-entity column type, so this is the earliest fail-fast.
+        join_type_name = _normalize_join_type(
+            _type_expr(base_entity.model_fields[join_key].annotation)
+        )
+        if join_type_name is None or join_type_name not in _SUPPORTED_JOIN_TYPES:
+            supported = ", ".join(sorted(_SUPPORTED_JOIN_TYPES))
+            raise ValueError(
+                f"{dto_cls.__name__} federation_join_key {join_key!r} has "
+                f"unsupported type {join_type_name!r} on {base_entity.__name__}; "
+                f"DTO federation serializes keys over JSON — supported join-key "
+                f"types: {supported}."
+            )
+        # specs/016 Phase 2: resolve a DTO-level __pagination_orders__
+        # (BatchPageConfig) into physical OrderTerms, validated against the
+        # base entity's columns (fail-fast at startup — same gate as entity
+        # __pagination_orders__). Fed to the batch root for per-parent top-N
+        # when the mounter sends order+limit.
+        cfg = getattr(dto_cls, "__pagination_orders__", None)
+        page_orders_resolved = None
+        default_order = None
+        if cfg is not None:
+            page_orders_resolved = _resolve_page_orders(base_entity, cfg)
+            default_order = cfg.default_order
+        batch_roots[dto_cls.__name__] = (
+            _create_dto_by_keys_in_query(
+                dto_cls, base_entity, join_key, er_manager, session_factory,
+                page_orders_resolved=page_orders_resolved,
+                default_order=default_order,
+            ),
+            join_key,
+        )
+    er_manager._dto_batch_roots = batch_roots

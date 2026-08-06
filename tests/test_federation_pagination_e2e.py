@@ -391,3 +391,102 @@ async def test_pk_tie_breaker_for_equal_rating(federation):
     assert [it["title"] for it in pkg["items"]] == ["T102", "T101", "T100"]
     assert pkg["pagination"]["has_more"] is False
     assert pkg["pagination"]["total_count"] == 3
+
+
+@pytest.fixture
+async def federation_paginated():
+    """Same topology, but the catalog enables local pagination
+    (``enable_pagination=True``). The β REMOTE_PAGED path must still route
+    through ``fetch_remote_subtree`` with the merged Paged side-channelled —
+    specs/021 GAP A regression: this combination used to send
+    ``PageLoadCommand`` objects to the remote loader (illegal gql) and never
+    set the remote selection, crashing the whole query.
+    """
+    await _ensure_seed()
+    reviews_handler = GraphQLHandler(
+        base=EPReviewsBase, session_factory=_rev_sf,
+        auto_query_config=AutoQueryConfig(
+            batch_keys={"EPReview": ["product_id"]},
+            batch_pages={
+                "EPReview": {
+                    "product_id": BatchPageConfig(
+                        default_order="HIGHEST_RATING",
+                        orders={
+                            "LOWEST_RATING": PageOrder(
+                                [OrderTerm("rating", "asc")]
+                            ),
+                            "HIGHEST_RATING": PageOrder(
+                                [OrderTerm("rating", "desc")]
+                            ),
+                        },
+                    )
+                }
+            },
+        ),
+        service_name="reviews",
+    )
+    reviews_app = build_federable_app(reviews_handler)
+    catalog_handler = GraphQLHandler(
+        base=EPCatalogBase, session_factory=_cat_sf,
+        auto_query_config=AutoQueryConfig(), service_name="catalog",
+        enable_pagination=True,
+    )
+    composite = Starlette(routes=[Mount("/reviews", app=reviews_app)])
+    client = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=composite), base_url="http://test",
+    )
+    transport = CountingTransport(client=client)
+    await catalog_handler.er.initialize(transport=transport)
+    yield catalog_handler, transport
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_beta_remote_paged_under_enable_pagination(federation_paginated):
+    """GAP A: enable_pagination=True + β 远程分页字段 → 正常分页(修复前必崩)。"""
+    catalog_handler, _ = federation_paginated
+    res = await catalog_handler.execute(
+        "{ EPProduct { by_id(id: 1) { reviews(limit: 2, order: HIGHEST_RATING) "
+        "{ items { title rating } pagination { has_more total_count } } } } }"
+    )
+    assert not res.get("errors"), res
+    pkg = res["data"]["EPProduct"]["by_id"]["reviews"]
+    assert [it["title"] for it in pkg["items"]] == ["R7", "R6"]  # top-2
+    assert pkg["pagination"]["has_more"] is True
+    assert pkg["pagination"]["total_count"] == 7
+
+
+@pytest.mark.asyncio
+async def test_beta_variable_paged_args_never_leak_undefined(federation):
+    """GAP B: β 远程分页的 selection.arguments 变量参数必须清洗 —
+    未提供变量的 $lim → Undefined 不得上 wire(修复前渲染 limit: Undefined
+    非法字面量 → member 报错); 提供变量时真值生效。"""
+    catalog_handler, _ = federation
+    q = ("query Q($lim: Int) { EPProduct { by_id(id: 1) "
+         "{ reviews(limit: $lim) { items { title } pagination { has_more } } } } }")
+    # 未提供变量 → 干净降级为 member 默认页(7 条全量)
+    r = await catalog_handler.execute(q, variables={})
+    assert not r.get("errors"), r
+    pkg = r["data"]["EPProduct"]["by_id"]["reviews"]
+    assert len(pkg["items"]) == 7
+    # 提供变量 → limit 生效
+    r2 = await catalog_handler.execute(q, variables={"lim": 3})
+    assert not r2.get("errors"), r2
+    pkg2 = r2["data"]["EPProduct"]["by_id"]["reviews"]
+    assert len(pkg2["items"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_limit_zero_returns_empty_with_no_has_more(federation):
+    """GAP E: limit=0 → 空 items + has_more=False(修复前窗口 peek 到 1 行,
+    has_more 误报 True + items=[] 矛盾)。"""
+    catalog_handler, _ = federation
+    res = await catalog_handler.execute(
+        "{ EPProduct { by_id(id: 1) { reviews(limit: 0) { "
+        "items { title } pagination { has_more total_count } } } } }"
+    )
+    assert not res.get("errors"), res
+    pkg = res["data"]["EPProduct"]["by_id"]["reviews"]
+    assert pkg["items"] == []
+    assert pkg["pagination"]["has_more"] is False
+    assert pkg["pagination"]["total_count"] == 7

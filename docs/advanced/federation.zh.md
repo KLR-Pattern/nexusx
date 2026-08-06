@@ -152,3 +152,57 @@ RemoteRelationship(
 
 相关:[自定义关系](../guide/custom_relationship.zh.md)、
 [ER 图可视化](voyager.zh.md)。
+
+## DTO 联邦(γ)——在 DTO 层组合
+
+β 通过 gql 组合**实体**图;**γ 在 DTO 层组合**:member 把部分 `DefineSubset` DTO
+声明为 **public**,mounter 自己的 DTO 字段直接引用它们——Resolver 自动跨服务加载
+这棵树,无 gql 字符串、无手写组装。
+
+### Member 侧:发布 public DTO
+
+```python
+class ReviewDTO(DefineSubset):
+    __subset__ = SubsetConfig(
+        kls=Review, fields=("title", "rating", "product_id"),
+        federation_public=True,              # 通过 dto-introspection / dto-batch 暴露
+        federation_join_key="product_id",    # subset 恰好含一个 FK 时可省略(自动派生)
+    )
+    __pagination_orders__ = BatchPageConfig(
+        default_order="HIGHEST_RATING",
+        orders={"HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")])},
+    )
+
+handler = GraphQLHandler(base=Base, ..., dto_classes=[ReviewDTO])
+```
+
+Member 额外暴露两个端点:`GET /nexusx/dto-introspection`(public DTO 片段)和
+`POST /nexusx/dto-batch`(按 join key 批量取数,跑 member 自己的 Resolver——`resolve_*`
+方法和嵌套出边都生效)。
+
+### Mounter 侧:引用 member DTO
+
+```python
+class ProductDTO(DefineSubset):
+    __subset__ = (Product, ("id", "name"))
+    reviews: Annotated[list[rev_svc.ReviewDTO], Paged(limit=2)] = Field(
+        default_factory=list
+    )
+```
+
+`Paged(...)` 默认值驱动 member 侧 SQL 层 top-N(经其 `__pagination_orders__`
+profile);调用方可通过 `Resolver(context={...})` 逐字段覆盖。member 值是只读的——
+mounter 用自己 DTO 上的 `resolve_*` / `post_*` 加字段,不修改 member 值。
+
+### β vs γ 一览
+
+| | β (gql) | γ (UseCase/Resolver) |
+|---|---|---|
+| 组合单元 | 实体关系(`RemoteRelationship`) | public DTO 引用(`DefineSubset` 字段) |
+| 遍历方式 | 每层每挂载服务一次嵌套 gql | Resolver `_batch_auto_load` 走 `dto-batch` |
+| 分页 | 关系字段上的 gql 参数 | `Paged(...)` 字段默认 + caller context |
+| 入口 | `GraphQLHandler` schema | `UseCaseService` + `create_resolver()` |
+| member 值 | 实例 | DTO(只读;mounter 自己计算) |
+
+可运行示例见 `demo/federation/`(reviews 发布 `ReviewDTO`;catalog 的
+`ProductDTO` 引用它)。

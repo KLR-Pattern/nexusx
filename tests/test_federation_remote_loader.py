@@ -60,6 +60,7 @@ async def test_remote_loader_builds_gql_and_aligns_to_many():
         target_cls=target_cls,
         transport=transport,
         is_list=True,
+        arg_name="product_id_list",
     )
     loader = loader_cls()
     set_remote_selection(loader, _selection("title", "rating"))
@@ -93,6 +94,7 @@ async def test_remote_loader_to_one_missing_key_maps_none():
         target_cls=target_cls,
         transport=transport,
         is_list=False,
+        arg_name="id_list",
     )
     loader = loader_cls()
     set_remote_selection(
@@ -118,6 +120,7 @@ async def test_remote_loader_batches_multiple_loads_into_one_query():
     loader_cls = create_remote_loader(
         typename="Review", join_remote="product_id", endpoint="http://reviews",
         target_cls=target_cls, transport=transport, is_list=False,
+        arg_name="product_id_list",
     )
     loader = loader_cls()
     set_remote_selection(
@@ -150,6 +153,7 @@ async def test_remote_loader_aligns_uuid_join_key():
     loader_cls = create_remote_loader(
         typename="Thing", join_remote="owner_id", endpoint="http://things",
         target_cls=target_cls, transport=transport, is_list=False,
+        arg_name="owner_id_list",
     )
     loader = loader_cls()
     set_remote_selection(

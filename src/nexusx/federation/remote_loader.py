@@ -23,6 +23,7 @@ from aiodataloader import DataLoader
 from pydantic import BaseModel
 
 from nexusx.federation.transport import FederationTransport
+from nexusx.utils.type_utils import coerce_to_dict
 
 
 class RemoteQueryError(RuntimeError):
@@ -46,6 +47,18 @@ def set_remote_selection(loader: Any, selection: Any) -> None:
     loader._remote_selection = selection
 
 
+def set_remote_page_params(loader: Any, params: Any) -> None:
+    """Set per-call page params on a β entity RemoteLoader (side-channel).
+
+    Mirrors ``set_dto_page_params`` (γ): the Resolver sets this from the
+    executor's merged ``Paged`` before ``load_many``, and the paginated
+    loader's ``batch_load_fn`` reads it (``_remote_page_params``) to override
+    the raw selection.arguments. Pair with the per-selection loader split
+    (``force_split``) so distinct params get distinct instances/batches.
+    """
+    loader._remote_page_params = params
+
+
 async def fetch_remote_subtree(
     *,
     registry: Any,
@@ -53,15 +66,22 @@ async def fetch_remote_subtree(
     parents: list[Any],
     selection: Any,
     paged: bool = False,
+    page_params: Any = None,
 ) -> list[Any]:
-    """Fetch a federated sub-tree: ONE nested gql to ``rel_info``'s owning
-    service, returning target instances — with the whole sub-tree populated by
-    the member — aligned to ``parents``.
+    """Fetch a β entity-federation sub-tree (entity-first gql + Resolver entity dispatch).
 
-    This is the shared "fetch a federated sub-tree" primitive, consumed by BOTH
-    the gql executor (β path, selection from the parsed query) and the Resolver
-    (γ path, selection built from the DTO/materialized graph). One mechanism
-    instead of two.
+    ONE nested gql to ``rel_info``'s owning service, returning target instances —
+    with the whole sub-tree populated by the member — aligned to ``parents``.
+
+    β-only (entity federation): consumed exclusively by the Resolver's
+    entity-field dispatch (specs/018 US3) — both the entity-first gql BFS
+    (``Resolver._bfs_dispatch_entity_fields``) and the UseCase auto-load path
+    (``Resolver._batch_auto_load``) for ``REMOTE_PLAIN`` / ``REMOTE_PAGED``
+    entity relationships. The gql executor used to call this directly; US3
+    collapsed that into the Resolver so β federation fetch lives alongside γ.
+
+    NOT used by γ DTO federation — that path has its own primitive,
+    ``prepare_dto_loader`` (one JSON POST to the member's ``/nexusx/dto-batch``).
 
     Args:
         registry: the ErManager (provides ``get_loader`` + ``get_relationships``).
@@ -90,8 +110,54 @@ async def fetch_remote_subtree(
         loader_cls, type_key=type_key, force_split=True,
     )
     set_remote_selection(loader, selection)
+    if page_params is not None:
+        # Merged Paged from the executor's paged_provider (enable_pagination
+        # path) — batch_load_fn reads this instead of raw selection.arguments.
+        # specs/021 GAP A: the paginated path must carry the merged params,
+        # not PageLoadCommand objects the remote loader can't unwrap.
+        set_remote_page_params(loader, page_params)
     fk_values = [getattr(p, rel_info.fk_field) for p in parents]
     return cast("list[Any]", await loader.load_many(fk_values))
+
+
+def prepare_dto_loader(
+    *,
+    registry: Any,
+    dto_loader_cls: Any,
+    params_key: tuple | None = None,
+    page_params: Any = None,
+) -> Any:
+    """Prepare the γ DTO-federation loader (Core API / UseCase mode).
+
+    γ counterpart to ``fetch_remote_subtree`` (β) — but NOT symmetric: β
+    dispatch batch-loads synchronously (``fetch_remote_subtree`` calls
+    ``load_many`` and returns the children, because entity BFS needs them for
+    the next level), while this primitive prepares the loader and returns it
+    WITHOUT loading — the actual load is driven later by the Resolver
+    traversal (a ``resolve_`` method's per-node load, or ``_batch_auto_load``'s
+    batch). The name ``prepare_dto_loader`` (not ``fetch_dto_subtree``) reflects
+    that asymmetry. Encapsulates the γ-specific "per-params loader + page-params
+    side-channel" prep so ``set_dto_page_params`` has a single caller
+    (specs/018 US4 / T022-T024).
+
+    Args:
+        registry: the ErManager (provides ``get_loader``).
+        dto_loader_cls: the γ DTO RemoteLoader class (from
+            ``create_dto_remote_loader``), resolved upstream via
+            ``ErManager.get_dto_loader``.
+        params_key: per-params split key (different page params → different
+            instance → different batch), mirrors ``registry.get_loader``.
+        page_params: a ``Paged`` (or None). When set, side-channeled onto the
+            loader via ``set_dto_page_params`` to override the create-time
+            closure; None ⇒ member full-fetches (back-compat).
+
+    Returns:
+        A prepared DataLoader instance; the caller loads from it.
+    """
+    loader = registry.get_loader(dto_loader_cls, params_key=params_key)
+    if page_params is not None:
+        set_dto_page_params(loader, page_params)
+    return loader
 
 
 def _render_value(v: Any) -> str:
@@ -197,7 +263,6 @@ def build_gql_query(
     arg_name: str,
     keys: list[Any],
     selection: Any,
-    target_cls: type,
     join_remote: str,
 ) -> str:
     """Construct the nested GraphQL query document."""
@@ -234,12 +299,107 @@ def build_gql_query(
     )
 
 
-def _to_dict(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return obj
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump(mode="json")
-    return obj
+
+
+def _align_by_join_key(
+    rows: list[Any],
+    keys: list[Any],
+    join_remote: str,
+    is_list: bool,
+    target_cls: type[BaseModel],
+) -> list[Any]:
+    """Bucket resolved rows by join key and align to the input key order.
+
+    Shared by the β entity RemoteLoader (member returns ER rows) and the γ DTO
+    RemoteLoader (member returns resolved DTO trees). Both validate each row
+    into ``target_cls``; the only difference is upstream (gql vs JSON), not here.
+    Missing keys yield ``[]`` (to-many) or ``None`` (to-one).
+    """
+    buckets: dict[Any, list[Any]] = {}
+    for row in rows:
+        row_d = coerce_to_dict(row, mode="json")
+        if not isinstance(row_d, dict):
+            raise RemoteQueryError(
+                join_remote,
+                [{
+                    "message": (
+                        f"Expected rows in the batch response to be objects, "
+                        f"got {type(row).__name__}"
+                    )
+                }],
+            )
+        if join_remote not in row_d:
+            raise RemoteQueryError(
+                join_remote,
+                [{
+                    "message": (
+                        f"Batch response row is missing required join key "
+                        f"{join_remote!r}"
+                    )
+                }],
+            )
+        k = _normalize_join_key(row_d[join_remote])
+        buckets.setdefault(k, []).append(row_d)
+
+    aligned: list[Any] = []
+    for key in keys:
+        matches = buckets.get(_normalize_join_key(key), [])
+        if is_list:
+            aligned.append([target_cls.model_validate(r) for r in matches])
+        else:
+            aligned.append(target_cls.model_validate(matches[0]) if matches else None)
+    return aligned
+
+
+def _unwrap_gql_response(
+    resp: Any,
+    typename: str,
+    entry: str,
+) -> list[Any]:
+    """Validate the ``{data: {Typename: {entry: [...]}}}`` envelope; return list.
+
+    Shared by the entity RemoteLoader (rows) and the paginated RemoteLoader
+    (packages). Both expect the gql batch root to return a list under
+    ``data.<typename>.<entry>``; this returns that list, raising
+    ``RemoteQueryError`` on any shape divergence (non-object resp, gql errors,
+    missing data/typename/entry, non-list entry).
+    """
+    if not isinstance(resp, dict):
+        raise RemoteQueryError(
+            typename,
+            [{"message": f"Expected object response, got {type(resp).__name__}"}],
+        )
+    if resp.get("errors"):
+        raise RemoteQueryError(typename, resp["errors"])
+    data = resp.get("data")
+    if not isinstance(data, dict):
+        raise RemoteQueryError(
+            typename,
+            [{"message": "Response is missing an object-valued 'data' field"}],
+        )
+    type_group = data.get(typename)
+    if not isinstance(type_group, dict):
+        raise RemoteQueryError(
+            typename,
+            [{"message": f"Response is missing data.{typename}"}],
+        )
+    if entry not in type_group:
+        raise RemoteQueryError(
+            typename,
+            [{"message": f"Response is missing data.{typename}.{entry}"}],
+        )
+    items = type_group[entry]
+    if not isinstance(items, list):
+        raise RemoteQueryError(
+            typename,
+            [{
+                "message": (
+                    f"Expected data.{typename}.{entry} to be a list, "
+                    f"got {type(items).__name__}"
+                )
+            }],
+        )
+    return items
 
 
 def create_remote_loader(
@@ -250,7 +410,7 @@ def create_remote_loader(
     target_cls: type[BaseModel],
     transport: FederationTransport,
     is_list: bool,
-    arg_name: str | None = None,
+    arg_name: str,
 ) -> type[DataLoader]:  # type: ignore[type-arg]
     """Build a DataLoader subclass that fetches from a mounted service.
 
@@ -259,13 +419,12 @@ def create_remote_loader(
 
     Args:
         arg_name: The GraphQL argument name the member's ``by_<join_remote>_in``
-            root expects, taken from the introspection contract (BatchRoot).
-            Defaults to the ``<join_remote>_list`` convention when unknown —
-            callers should pass the contract's value so a member that renamed
-            the argument is caught at ``federate()``, not at query time.
+            root expects. Required: ``federate()`` validates this against the
+            member's introspection contract (``BatchRoot.arg_name``) at mount
+            time and rejects empty values, so the loader never falls back to a
+            naming convention.
     """
     entry = f"by_{join_remote}_in"
-    resolved_arg_name = arg_name or f"{join_remote}_list"
     gql_url = endpoint.rstrip("/") + "/graphql"
 
     class _RemoteLoader(DataLoader):  # type: ignore[type-arg]
@@ -288,13 +447,109 @@ def create_remote_loader(
             query = build_gql_query(
                 typename=typename,
                 entry=entry,
-                arg_name=resolved_arg_name,
+                arg_name=arg_name,
                 keys=list(keys),
                 selection=selection,
-                target_cls=target_cls,
                 join_remote=join_remote,
             )
             resp = await transport.post_json(gql_url, {"query": query})
+            group = _unwrap_gql_response(resp, typename, entry)
+            return _align_by_join_key(
+                rows=list(group),
+                keys=list(keys),
+                join_remote=join_remote,
+                is_list=is_list,
+                target_cls=target_cls,
+            )
+
+    _RemoteLoader.__name__ = f"RemoteLoader_{typename}_{join_remote}"
+    _RemoteLoader.__qualname__ = _RemoteLoader.__name__
+    return _RemoteLoader
+
+
+def set_dto_page_params(loader: Any, params: Any) -> None:
+    """Set per-call page params on a DTO RemoteLoader instance (side-channel).
+
+    Mirrors ``set_remote_selection``: the Resolver sets this from context
+    before ``load_many``, and ``batch_load_fn`` reads it (``_dto_page_params``)
+    to override the create-time closure. Pair with per-params split
+    (registry.get_loader ``params_key``) so different params get different
+    instances/batches.
+    """
+    loader._dto_page_params = params
+
+
+def create_dto_remote_loader(
+    *,
+    typename: str,
+    join_key: str,
+    endpoint: str,
+    target_cls: type[BaseModel],
+    transport: FederationTransport,
+    is_list: bool,
+    order: str | None = None,
+    direction: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> type[DataLoader]:  # type: ignore[type-arg]
+    """Build a DataLoader that fetches resolved DTO trees from a member (specs/016).
+
+    γ-path counterpart to ``create_remote_loader``: instead of a gql nested query
+    over ER rows, it POSTs a small JSON body to the member's dedicated
+    ``/nexusx/dto-batch`` endpoint. The member runs its Resolver there and
+    returns an already-resolved DTO tree (a flat list of dicts); the mounter
+    only validates each dict into ``target_cls`` — no ``_orm_to_dto`` projection,
+    because the member owns the business logic and the data is finished.
+
+    One HTTP call per mounted DTO per γ traversal; batching across parents is the
+    DataLoader's job (N+1-proof), same as the entity loader. Selection is the
+    member's concern (self-contained DTO), so — unlike the entity loader — there
+    is no ``_remote_selection`` side-channel: the mounter asks for the DTO and
+    gets the whole resolved tree back.
+    """
+    url = endpoint.rstrip("/") + "/nexusx/dto-batch"
+
+    class _DtoRemoteLoader(DataLoader):  # type: ignore[type-arg]
+        async def batch_load_fn(self, keys: list[Any]) -> list[Any]:
+            # Normalize keys into their JSON wire form BEFORE posting.
+            # ``post_json`` serializes via standard ``json.dumps``, which rejects
+            # non-native types (UUID/Decimal/datetime) — a UUID-PK parent would
+            # otherwise raise ``TypeError: Object of type UUID is not JSON
+            # serializable`` mid-traversal. β's gql path renders keys via
+            # ``_render_value``; γ's JSON path normalizes here, symmetric with
+            # ``_normalize_join_key`` applied on the response-alignment side.
+            wire_keys = [_normalize_join_key(k) for k in keys]
+            body: dict[str, Any] = {
+                "dto": typename, "join_key": join_key, "keys": wire_keys,
+            }
+            # Page params: side-channel (per-call, set by Resolver from context
+            # via set_dto_page_params) wins over closure (create-time fallback).
+            # Omitted ⇒ member full-fetches (back-compat).
+            p = getattr(self, "_dto_page_params", None)
+            eff_order = p.order if p is not None and p.order is not None else order
+            eff_direction = (
+                p.direction
+                if p is not None and p.direction is not None
+                else direction
+            )
+            eff_limit = p.limit if p is not None and p.limit is not None else limit
+            eff_offset = p.offset if p is not None and p.offset is not None else offset
+            has_page_params = (
+                p is not None
+                or order is not None
+                or direction is not None
+                or limit is not None
+                or offset != 0
+            )
+            if eff_order is not None:
+                body["order"] = eff_order
+            if eff_direction is not None:
+                body["direction"] = eff_direction
+            if eff_limit is not None:
+                body["limit"] = eff_limit
+            if has_page_params:
+                body["offset"] = eff_offset
+            resp = await transport.post_json(url, body)
             if not isinstance(resp, dict):
                 raise RemoteQueryError(
                     typename,
@@ -303,63 +558,27 @@ def create_remote_loader(
             if resp.get("errors"):
                 raise RemoteQueryError(typename, resp["errors"])
             data = resp.get("data")
-            if not isinstance(data, dict):
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": "Response is missing an object-valued 'data' field"}],
-                )
-            type_group = data.get(typename)
-            if not isinstance(type_group, dict):
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": f"Response is missing data.{typename}"}],
-                )
-            if entry not in type_group:
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": f"Response is missing data.{typename}.{entry}"}],
-                )
-            group = type_group[entry]
-            if not isinstance(group, list):
+            if not isinstance(data, list):
                 raise RemoteQueryError(
                     typename,
                     [{
                         "message": (
-                            f"Expected data.{typename}.{entry} to be a list, "
-                            f"got {type(group).__name__}"
+                            f"DTO batch response for {typename!r} is missing a "
+                            f"list-valued 'data' field (got {type(data).__name__})"
                         )
                     }],
                 )
-            rows = [_to_dict(r) for r in group]
+            return _align_by_join_key(
+                rows=data,
+                keys=list(keys),
+                join_remote=join_key,
+                is_list=is_list,
+                target_cls=target_cls,
+            )
 
-            # Group rows by join key, align to input order.
-            buckets: dict[Any, list[Any]] = {}
-            for row in rows:
-                if not isinstance(row, dict):
-                    raise RemoteQueryError(
-                        typename,
-                        [{
-                            "message": (
-                                f"Expected rows in data.{typename}.{entry} to be "
-                                f"objects, got {type(row).__name__}"
-                            )
-                        }],
-                    )
-                k = row.get(join_remote)
-                buckets.setdefault(k, []).append(row)
-
-            aligned: list[Any] = []
-            for key in keys:
-                matches = buckets.get(_normalize_join_key(key), [])
-                if is_list:
-                    aligned.append([target_cls.model_validate(r) for r in matches])
-                else:
-                    aligned.append(target_cls.model_validate(matches[0]) if matches else None)
-            return aligned
-
-    _RemoteLoader.__name__ = f"RemoteLoader_{typename}_{join_remote}"
-    _RemoteLoader.__qualname__ = _RemoteLoader.__name__
-    return _RemoteLoader
+    _DtoRemoteLoader.__name__ = f"DtoRemoteLoader_{typename}_{join_key}"
+    _DtoRemoteLoader.__qualname__ = _DtoRemoteLoader.__name__
+    return _DtoRemoteLoader
 
 
 def build_paginated_gql_query(
@@ -462,14 +681,33 @@ def create_paginated_remote_loader(
                         if _is_scalar_annotation(fi.annotation)
                     },
                 )
-            limit = sel_args.get("limit")
-            offset = sel_args.get("offset", 0)
-            # order/direction come from the query's selection.arguments (the
-            # parsed GraphQL enum literals arrive as plain strings). order is
-            # always sent — fall back to the member default when the caller
-            # omits it; direction is forwarded only when supplied. specs/014.
-            order = sel_args.get("order") or default_order
-            direction = sel_args.get("direction")
+            # Caller params: a merged Paged side-channelled by the Resolver
+            # (enable_pagination path, specs/021 GAP A) wins; otherwise read
+            # the raw selection.arguments through _PagedOverride.from_dict so
+            # graphql Undefined / non-wire values can never reach the wire
+            # (specs/021 GAP B — mirrors the γ dto loader's hardening).
+            from nexusx.loader.pagination import _PagedOverride
+
+            p = getattr(self, "_remote_page_params", None)
+            if p is not None:
+                limit = p.limit
+                offset = p.offset
+                order = p.order
+                direction = p.direction
+            else:
+                ov = _PagedOverride.from_dict(sel_args)
+                limit = ov.limit if ov is not None else None
+                offset = (
+                    ov.offset
+                    if ov is not None and ov.offset is not None
+                    else 0
+                )
+                order = ov.order if ov is not None else None
+                direction = ov.direction if ov is not None else None
+            # order is always sent — fall back to the member default when the
+            # caller omits it; direction is forwarded only when supplied.
+            # specs/014.
+            order = order or default_order
             query = build_paginated_gql_query(
                 typename=typename, entry=entry, arg_name=arg_name,
                 join_remote=join_remote, keys=list(keys), items_sel=items_sel,
@@ -477,45 +715,11 @@ def create_paginated_remote_loader(
                 limit=limit, offset=offset, want_total_count=want_tc,
             )
             resp = await transport.post_json(gql_url, {"query": query})
-            if not isinstance(resp, dict):
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": f"Expected object response, got {type(resp).__name__}"}],
-                )
-            if resp.get("errors"):
-                raise RemoteQueryError(typename, resp["errors"])
-            data = resp.get("data")
-            if not isinstance(data, dict):
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": "Response is missing an object-valued 'data' field"}],
-                )
-            type_group = data.get(typename)
-            if not isinstance(type_group, dict):
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": f"Response is missing data.{typename}"}],
-                )
-            if entry not in type_group:
-                raise RemoteQueryError(
-                    typename,
-                    [{"message": f"Response is missing data.{typename}.{entry}"}],
-                )
-            packages = type_group[entry]
-            if not isinstance(packages, list):
-                raise RemoteQueryError(
-                    typename,
-                    [{
-                        "message": (
-                            f"Expected data.{typename}.{entry} to be a list, "
-                            f"got {type(packages).__name__}"
-                        )
-                    }],
-                )
+            packages = _unwrap_gql_response(resp, typename, entry)
             buckets: dict[Any, Any] = {}
             expected_keys = {_normalize_join_key(key) for key in keys}
             for pkg in packages:
-                pkg_d = _to_dict(pkg)
+                pkg_d = coerce_to_dict(pkg, mode="json")
                 if not isinstance(pkg_d, dict):
                     raise RemoteQueryError(
                         typename,
@@ -584,7 +788,7 @@ def create_paginated_remote_loader(
                     )
                 else:
                     items = [
-                        target_cls.model_validate(_to_dict(r))
+                        target_cls.model_validate(coerce_to_dict(r, mode="json"))
                         for r in pkg_d["items"]
                     ]
                     aligned.append({

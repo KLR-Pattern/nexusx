@@ -11,8 +11,11 @@ Level 5: Custom __relationships__ + implicit auto-load (TaskWithTags, SprintWith
 """
 
 
+from typing import Annotated
+
 from demo.core_api.models import Sprint, Tag, Task, User
 from nexusx import Collector, DefineSubset, SubsetConfig
+from nexusx.loader.pagination import Paged
 
 # ──────────────────────────────────────────────────────────
 # Level 1: Basic DefineSubset — field selection + FK hiding
@@ -174,3 +177,21 @@ class SprintWithTags(DefineSubset):
 
     def post_task_count(self):
         return len(self.tasks)
+
+
+# ──────────────────────────────────────────────────────────
+# Level 6: Paged — declarative top-N on an ER-relationship field
+# ──────────────────────────────────────────────────────────
+
+class SprintTopTasks(DefineSubset):
+    """Sprint DTO with a Paged tasks field (top-N, caller can override).
+
+    ``tasks`` carries ``Paged(limit=2)`` as a default (order omitted → uses
+    Sprint.__pagination_orders__ default "NEWEST"); the Resolver slices
+    per-parent via the page_loader (ROW_NUMBER). A caller passing
+    ``Resolver(context={"limit": N, "order": "OLDEST"})`` overrides the default
+    per-query — Paged is the home for params, context the override.
+    """
+    __subset__ = SubsetConfig(kls=Sprint, fields=['id', 'name'])
+
+    tasks: Annotated[list[TaskSummary], Paged(limit=2)] = []

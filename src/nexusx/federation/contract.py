@@ -98,8 +98,42 @@ class EntityFragment(BaseModel):
         return coerced
 
 
+class DTOFragment(BaseModel):
+    """One public DTO type as exposed by a member's DTO introspection.
+
+    Symmetric to ``EntityFragment`` but for UseCase-layer DTOs (a subset of
+    an entity plus Resolver-computed fields). The mounter materializes this
+    into a local DTO class (``create_model``) and fetches DTO trees through
+    ``batch_root`` — the same federation composition mechanism as entities,
+    with the composition source switched from ER rows to Resolver-produced
+    DTO trees (γ path).
+    """
+
+    name: str  # DTO class name (__name__)
+    base_entity: str  # source entity name (_subset_registry[DTO].__name__)
+    # All DTO fields + types (skeleton + PK + Resolver-computed), mirroring
+    # EntityFragment.scalar_fields. DTOs have no ORM column/relationship split,
+    # so every model_fields entry is a scalar from the federation standpoint.
+    scalar_fields: list[FieldDescriptor] = Field(default_factory=list)
+    join_key: str  # federation join key (SubsetConfig.federation_join_key)
+    batch_root: BatchRoot  # generated DTO batch root (by_<join_key>_in DTO variant)
+    # Cross-service out-edges on the DTO (__relationships__).
+    remote_refs: list[RelDescriptor] = Field(default_factory=list)
+
+
 class ERIntrospectionResponse(BaseModel):
     """Full ER introspection payload for one member service."""
 
     service_name: str
     entities: list[EntityFragment] = Field(default_factory=list)
+
+
+class DTOIntrospectionResponse(BaseModel):
+    """Full DTO introspection payload for one member service.
+
+    Served by the independent DTO introspection endpoint (β ER introspection
+    is untouched). Each entry is a federation-public DTO the member exposes.
+    """
+
+    service_name: str
+    dtos: list[DTOFragment] = Field(default_factory=list)

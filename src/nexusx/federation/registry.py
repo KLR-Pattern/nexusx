@@ -19,7 +19,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, create_model
 
-from nexusx.federation.contract import EntityFragment
+from nexusx.federation.contract import DTOFragment, EntityFragment
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +168,118 @@ class FederatedTypeRegistry:
 
     def has(self, qualified: str) -> bool:
         return qualified in self._qualified_to_class
+
+    def materialize_dtos(self, fragments: dict[str, DTOFragment]) -> None:
+        """Create pydantic models from DTO fragments — γ-path composition targets.
+
+        Symmetric to ``materialize`` but for UseCase-layer DTOs (specs/016).
+        Each DTOFragment becomes a plain pydantic class the mounter uses to
+        ``model_validate`` the resolved DTO trees returned by the member's batch
+        root. Runs AFTER ``materialize`` so the namespace already holds every
+        materialized entity a DTO's nested field (``remote_refs``) may reference;
+        pass 2 then rebuilds the DTO models against the full entity+DTO namespace.
+
+        DTOs with no remote_refs (the MVP shape — scalar subset + Resolver-computed
+        fields) produce a flat model; nested-DTO out-edges render as ForwardRefs
+        resolved in pass 2, exactly like entity relationships.
+        """
+        self._check_unique_bare_names(fragments)
+        # Treat every DTO name in this response as a valid forward reference.
+        # The concrete classes do not exist until pass 1 completes.
+        declaration_ns = {
+            **self._namespace,
+            **{frag.name: Any for frag in fragments.values()},
+        }
+
+        # Pass 1: create DTO models with scalar + remote_ref fields as ForwardRef.
+        for qualified, frag in fragments.items():
+            if qualified in self._qualified_to_class:
+                continue
+            cls = self._create_dto_model(frag, declaration_ns)
+            self._qualified_to_class[qualified] = cls
+            self._class_to_qualified[cls] = qualified
+
+        # Pass 2: rebuild DTO models with namespace extended by ALL materialized
+        # types (entities + DTOs), so nested-DTO ForwardRefs resolve.
+        extended_ns = {**self._namespace}
+        for cls in self._class_to_qualified:
+            extended_ns[cls.__name__] = cls
+        # Fail-fast on remote_ref targets the mounter did not materialize: a DTO
+        # field referencing a missing type would otherwise degrade to Any and
+        # silently drop type info on every model_validate. Check the target
+        # explicitly rather than relying on model_rebuild's return value — that
+        # returns False for benign scalar-annotation quirks too (see the e2e
+        # ReviewDTO), so it can't distinguish a genuine missing type from a
+        # harmless fallback.
+        known = set(extended_ns.keys())
+        for frag in fragments.values():
+            for rel in frag.remote_refs:
+                if rel.target_typename not in known:
+                    raise RuntimeError(
+                        f"DTO {frag.name} remote_ref {rel.name!r} targets "
+                        f"{rel.target_typename!r}, which the mounter did not "
+                        f"materialize. A federation-public DTO's remote_refs "
+                        f"must all resolve; check the member exposes every "
+                        f"referenced type."
+                    )
+        for qualified, _frag in fragments.items():
+            cls = self._qualified_to_class[qualified]
+            ok = cls.model_rebuild(_types_namespace=extended_ns)
+            if not ok:
+                # Companion to the remote_ref target check above: that one catches
+                # a missing target even when pydantic degrades it to Any (the
+                # annotation is then not a str, so this loop wouldn't see it);
+                # this one catches any ForwardRef left as a raw string annotation
+                # after rebuild.
+                unresolved = [
+                    fname for fname, fi in cls.model_fields.items()
+                    if isinstance(fi.annotation, str)
+                ]
+                if unresolved:
+                    raise RuntimeError(
+                        f"DTO materialization failed for {cls.__name__}. "
+                        f"Unresolved fields: {unresolved}. Ensure every nested "
+                        f"DTO type is included in DTO introspection or registered "
+                        f"via federate(extra_types=...)."
+                    )
+
+    @staticmethod
+    def _create_dto_model(frag: DTOFragment, namespace: dict[str, type]) -> type[BaseModel]:
+        typename = frag.name
+        field_defs: dict[str, Any] = {}
+        for fd in frag.scalar_fields:
+            ann = _safe_annotation(fd.type_name, namespace)
+            field_defs[fd.name] = (ann, None)
+        for rel in frag.remote_refs:
+            target = rel.target_typename
+            ann = f"list[{target}]" if rel.is_list else target
+            field_defs[rel.name] = (f"{ann} | None", None)
+        model = cast(
+            "type[BaseModel]",
+            create_model(typename, __config__=ConfigDict(extra="allow"), **field_defs),
+        )
+        model.__name__ = typename
+        model.__qualname__ = typename
+        return model
+
+    def _check_unique_bare_names(
+        self,
+        fragments: dict[str, DTOFragment],
+    ) -> None:
+        """Reject DTO/entity bare-name collisions before ForwardRef rebuilding."""
+        owners: dict[str, str] = {
+            cls.__name__: qualified
+            for cls, qualified in self._class_to_qualified.items()
+        }
+        for qualified, frag in fragments.items():
+            previous = owners.get(frag.name)
+            if previous is not None and previous != qualified:
+                raise ValueError(
+                    f"Federation type name {frag.name!r} is exposed by both "
+                    f"{previous!r} and {qualified!r}; bare GraphQL type names "
+                    f"must be unique."
+                )
+            owners[frag.name] = qualified
 
     def qualified_of(self, cls: type) -> str | None:
         return self._class_to_qualified.get(cls)

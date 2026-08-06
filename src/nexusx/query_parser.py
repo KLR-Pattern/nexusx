@@ -37,22 +37,33 @@ class QueryParser:
         """
         self.entity_field_names = entity_field_names or set()
 
-    def parse(self, query: str) -> dict[str, FieldSelection]:
+    def parse(
+        self, query: str, variables: dict[str, Any] | None = None
+    ) -> dict[str, FieldSelection]:
         """Parse a GraphQL query and return FieldSelection for each operation.
 
         Args:
             query: GraphQL query string.
+            variables: Optional variables dict — when provided, query
+                variables in arguments are resolved to their values (otherwise
+                they surface as graphql's ``Undefined`` and must not reach
+                argument consumers).
 
         Returns:
             Dictionary mapping operation name to FieldSelection.
         """
-        return self.parse_document(parse(query))
+        return self.parse_document(parse(query), variables)
 
-    def parse_document(self, document: DocumentNode) -> dict[str, FieldSelection]:
+    def parse_document(
+        self, document: DocumentNode, variables: dict[str, Any] | None = None
+    ) -> dict[str, FieldSelection]:
         """Extract FieldSelection tree from an already-parsed DocumentNode.
 
         Use this when the caller has already parsed the query string (e.g. to
         share the AST with the executor) to avoid a second ``parse()`` pass.
+        ``variables`` resolves query variables in arguments (specs/021
+        hardening: without it, a variable argument becomes ``Undefined`` and
+        pagination params crash downstream).
         """
         result: dict[str, FieldSelection] = {}
 
@@ -62,7 +73,9 @@ class QueryParser:
                     if isinstance(selection, FieldNode):
                         operation_name = selection.name.value
                         if selection.selection_set:
-                            meta = self._parse_selection_set(selection.selection_set)
+                            meta = self._parse_selection_set(
+                                selection.selection_set, variables
+                            )
                             result[operation_name] = meta
 
         return result
@@ -86,7 +99,9 @@ class QueryParser:
             if nested_selection_set is not None:
                 self._validate_selection_set_no_aliases(nested_selection_set)
 
-    def _parse_selection_set(self, selection_set: Any) -> FieldSelection:
+    def _parse_selection_set(
+        self, selection_set: Any, variables: dict[str, Any] | None = None
+    ) -> FieldSelection:
         """Internal method to parse selection set into FieldSelection."""
         sub_fields: dict[str, FieldSelection] = {}
 
@@ -94,10 +109,12 @@ class QueryParser:
             if isinstance(selection, FieldNode):
                 field_name = selection.name.value
                 alias = selection.alias.value if selection.alias else None
-                arguments = self._extract_arguments(selection)
+                arguments = self._extract_arguments(selection, variables)
 
                 if selection.selection_set:
-                    nested = self._parse_selection_set(selection.selection_set)
+                    nested = self._parse_selection_set(
+                        selection.selection_set, variables
+                    )
                     nested.name = field_name
                     nested.alias = alias
                     nested.arguments = arguments
@@ -111,25 +128,30 @@ class QueryParser:
 
         return FieldSelection(sub_fields=sub_fields)
 
-    def _extract_arguments(self, field_node: FieldNode) -> dict[str, Any]:
+    def _extract_arguments(
+        self, field_node: FieldNode, variables: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Extract arguments from a FieldNode into a dict."""
         args: dict[str, Any] = {}
         if not field_node.arguments:
             return args
 
         for arg in field_node.arguments:
-            args[arg.name.value] = self._value_node_to_python(arg.value)
+            args[arg.name.value] = self._value_node_to_python(arg.value, variables)
 
         return args
 
-    def _value_node_to_python(self, value_node: Any) -> Any:
+    def _value_node_to_python(
+        self, value_node: Any, variables: dict[str, Any] | None = None
+    ) -> Any:
         """Convert a GraphQL ValueNode to a Python value.
 
         Delegates to graphql-core's ``value_from_ast_untyped`` so we share one
-        implementation with the rest of the codebase. Variables are unresolved
-        here (no variables dict is passed); the executor resolves them later
-        via ``ArgumentBuilder``.
+        implementation with the rest of the codebase. When ``variables`` is
+        provided, query variables resolve to their values; without it a
+        VariableNode becomes graphql's ``Undefined`` (the executor's
+        ``ArgumentBuilder`` resolves variables independently for method calls).
         """
         from graphql.utilities import value_from_ast_untyped
 
-        return value_from_ast_untyped(value_node, None)
+        return value_from_ast_untyped(value_node, variables)

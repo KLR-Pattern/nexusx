@@ -10,20 +10,19 @@ from __future__ import annotations
 
 import inspect
 import typing
+from functools import partial
 from types import UnionType as _UnionType
 from typing import Any, get_args, get_origin
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, create_model
+from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_core import PydanticUndefined
 
+from nexusx.core_builder import FieldResolution, SelectionError, build_model
 from nexusx.query_parser import FieldSelection, QueryParser
+from nexusx.utils.type_utils import map_annotation
 
 _UNION_ORIGINS = (typing.Union, _UnionType)
 _RESULT_FIELD = "__result"
-
-
-class SelectionError(ValueError):
-    """Raised when a UseCase MCP selection is invalid."""
 
 
 def apply_selection(result: Any, return_annotation: Any, selection: str) -> Any:
@@ -69,51 +68,64 @@ def parse_selection(selection: str) -> FieldSelection:
     return root
 
 
+class DTOFieldResolver:
+    """FieldResolver for UseCase compose (specs/021 path-merge).
+
+    Wraps the annotation-unwrapping logic that ``build_subset_model`` used
+    inline (``_get_pydantic_core_type`` to detect nested BaseModel) into the
+    ``FieldResolver`` protocol so ``core_builder.build_model`` can consume it.
+
+    Nullability / default preservation are pinned explicitly here (vs the
+    entity-first resolver's lenient defaults): ``is_optional`` honors the DTO
+    annotation (``Optional[X]`` / ``X | None``), ``default`` carries the
+    original field's default / default_factory / description.
+    """
+
+    def resolve_field(self, dto_type: type, field_name: str) -> FieldResolution | None:
+        if field_name not in dto_type.model_fields:
+            return None
+        field_info = dto_type.model_fields[field_name]
+        field_type = field_info.annotation
+        nested_type = _get_pydantic_core_type(field_type)
+        return FieldResolution(
+            annotation=field_type,
+            nested_type=nested_type,
+            default=_field_default(field_info),
+            # Exact wrapper reconstruction (list[DTO | None] etc.) — subsumes
+            # the old is_list/is_optional pair (specs/021).
+            nested_shape=(
+                partial(_replace_model_type, field_type)
+                if nested_type is not None
+                else None
+            ),
+        )
+
+
 def build_subset_model(
     model_type: type[BaseModel],
     field_selection: FieldSelection,
     path: str = "",
 ) -> type[BaseModel]:
-    """Recursively build a dynamic Pydantic model for selected DTO fields."""
+    """Recursively build a dynamic Pydantic model for selected DTO fields.
+
+    specs/021: thin shell over ``core_builder.build_model`` with the UseCase
+    semantics — strict validation (unknown fields / malformed sub-selections
+    raise ``SelectionError``) and DTO default preservation (via
+    ``DTOFieldResolver``). ``allow_paginated=False`` because DTO land never
+    produces ``{items, pagination}`` packages.
+    """
     if not field_selection.sub_fields:
         raise SelectionError(f"Selection for '{model_type.__name__}' cannot be empty")
 
-    field_definitions: dict[str, tuple[Any, Any]] = {}
-    for field_name, selection in field_selection.sub_fields.items():
-        field_path = f"{path}.{field_name}" if path else field_name
-        if field_name not in model_type.model_fields:
-            raise SelectionError(
-                f"Unknown field '{field_path}' on return type '{model_type.__name__}'"
-            )
-
-        field_info = model_type.model_fields[field_name]
-        field_type = field_info.annotation
-        nested_model_type = _get_pydantic_core_type(field_type)
-
-        if nested_model_type is not None:
-            if not selection.sub_fields:
-                raise SelectionError(
-                    f"Field '{field_path}' is a Pydantic object and requires sub-selection"
-                )
-            nested_subset = build_subset_model(nested_model_type, selection, field_path)
-            selected_type = _replace_model_type(field_type, nested_subset)
-        else:
-            if selection.sub_fields:
-                raise SelectionError(
-                    f"Field '{field_path}' is not a Pydantic object and cannot have sub-selection"
-                )
-            selected_type = field_type
-
-        field_definitions[field_name] = (selected_type, _field_default(field_info))
-
-    model_name = (
-        f"{model_type.__name__}Selection_"
-        + "_".join(sorted(field_selection.sub_fields.keys()))
-    )
-    return create_model(
-        model_name,
-        __config__=ConfigDict(from_attributes=True, arbitrary_types_allowed=True),
-        **field_definitions,
+    name_suffix = "Selection_" + "_".join(sorted(field_selection.sub_fields.keys()))
+    return build_model(
+        model_type,
+        field_selection,
+        resolver=DTOFieldResolver(),
+        model_name=name_suffix,
+        strict=True,
+        allow_paginated=False,
+        path=path,
     )
 
 
@@ -234,29 +246,18 @@ def _replace_model_type(annotation: Any, nested_model: type[BaseModel]) -> Any:
     if annotation is None or annotation is inspect.Parameter.empty:
         return nested_model
 
-    if _is_list_annotation(annotation):
-        args = get_args(annotation)
-        inner = args[0] if args else Any
-        return list[_replace_model_type(inner, nested_model)]
+    def leaf(a: Any) -> Any:
+        # Bare BaseModel (possibly the core of a wrapper) → nested model.
+        # list / union nodes are rebuilt by map_annotation, not replaced.
+        if (
+            _get_pydantic_core_type(a) is not None
+            and not _is_list_annotation(a)
+            and get_origin(a) not in _UNION_ORIGINS
+        ):
+            return nested_model
+        return a
 
-    if get_origin(annotation) in _UNION_ORIGINS:
-        replaced_args = [_replace_model_type(arg, nested_model) for arg in get_args(annotation)]
-        return _build_union_type(replaced_args)
-
-    if _get_pydantic_core_type(annotation) is not None:
-        return nested_model
-
-    return annotation
-
-
-def _build_union_type(args: list[Any]) -> Any:
-    if not args:
-        return Any
-
-    union_type = args[0]
-    for arg in args[1:]:
-        union_type = union_type | arg
-    return union_type
+    return map_annotation(annotation, leaf)
 
 
 def _field_default(field_info: Any) -> Any:

@@ -422,6 +422,7 @@ class ErManager:
         split_loader_by_type: bool = False,
         service_name: str | None = None,
         expose_mounted_endpoints: bool = False,
+        dto_classes: list[type[BaseModel]] | None = None,
     ):
         if base is not None and entities is not None:
             raise ValueError("base and entities are mutually exclusive")
@@ -443,6 +444,20 @@ class ErManager:
         # network topology); the mounter resolves such services from its own
         # services= map instead.
         self._expose_mounted_endpoints: bool = expose_mounted_endpoints
+        # Federation-public DTOs owned by this member (γ-path composition source,
+        # specs/016). Explicit list (symmetric to entities=) — avoids scanning the
+        # global _subset_registry, which would leak other members' DTOs in a
+        # multi-app process (demo catalog+reviews+users, or co-located tests).
+        self._dto_classes: list[type[BaseModel]] = list(dto_classes) if dto_classes else []
+        # specs/016 γ-path: member-side DTO batch roots (by_<join_key>_in async
+        # fn, join_key) keyed by public DTO name. Populated by
+        # add_dto_batch_roots at handler init; served by the /nexusx/dto-batch
+        # endpoint. Empty for β-only members.
+        self._dto_batch_roots: dict[str, tuple[Any, str]] = {}
+        # specs/016 γ-path: mounter-side DTO RemoteLoaders keyed by owner DTO +
+        # field name. The owner is required because unrelated DTOs may legally
+        # use the same field name for different remote services.
+        self._dto_loaders: dict[tuple[type, str], type[DataLoader]] = {}
         self._mounted_services: dict[str, str] = {}
         self._pending_remote_rels: list[tuple[type, Any]] = []
         self._fed_registry: Any = None
@@ -625,6 +640,62 @@ class ErManager:
         """Get the complete relationship registry."""
         return dict(self._registry)
 
+    def get_dto_classes(self) -> list[type[BaseModel]]:
+        """All DefineSubset DTO classes this member declared (public + private)."""
+        return list(self._dto_classes)
+
+    def get_public_dtos(self) -> list[type[BaseModel]]:
+        """Federation-public DTOs owned by this member (γ-path composition source).
+
+        Filtered from ``dto_classes`` by the ``__federation_public__`` stamp the
+        DefineSubset metaclass sets from SubsetConfig. These are the DTOs the
+        independent DTO introspection endpoint serializes into DTOFragment
+        (specs/016). Returns ``[]`` when no public DTOs are declared.
+        """
+        return [
+            d for d in self._dto_classes
+            if getattr(d, "__federation_public__", False)
+        ]
+
+    def register_dto_loader(
+        self,
+        owner_dto: type,
+        field_name: str,
+        loader_cls: type[DataLoader],
+    ) -> None:
+        """Register a γ-path DTO RemoteLoader for one DTO field.
+
+        Called by federate() for each member-public-DTO reference it discovers on
+        the mounter's own DefineSubset DTOs. Owner-scoped keys prevent two DTOs
+        with the same field name from overwriting each other's remote loader.
+        """
+        self._dto_loaders[(owner_dto, field_name)] = loader_cls
+
+    def get_dto_loader(
+        self,
+        owner_dto: type | str,
+        field_name: str | None = None,
+    ) -> type[DataLoader] | None:
+        """Look up a γ DTO RemoteLoader.
+
+        The two-argument form is the precise runtime API. The one-argument
+        field-name form remains for compatibility and succeeds only when the
+        name is unambiguous across all owner DTOs.
+        """
+        if field_name is not None:
+            return self._dto_loaders.get((owner_dto, field_name))
+        matches = [
+            loader_cls
+            for (_owner, name), loader_cls in self._dto_loaders.items()
+            if name == owner_dto
+        ]
+        if len(matches) > 1:
+            raise ValueError(
+                f"Ambiguous DTO loader lookup for field {owner_dto!r}; "
+                f"provide the owner DTO class."
+            )
+        return matches[0] if matches else None
+
     def get_relationship(
         self, entity: type[SQLModel], name: str
     ) -> RelationshipInfo | None:
@@ -637,6 +708,7 @@ class ErManager:
         loader_cls: type[DataLoader],
         type_key: frozenset[str] | None = None,
         force_split: bool = False,
+        params_key: tuple | None = None,
     ) -> DataLoader:
         """Get or create a DataLoader instance (cached per request).
 
@@ -647,22 +719,29 @@ class ErManager:
             force_split: If True, always creates per-type_key instances
                 regardless of ``_split_mode``. Used by federation RemoteLoaders
                 to isolate ``_remote_selection`` per distinct selection.
+            params_key: Optional hashable key for per-params split — different
+                page params (limit/order/direction) MUST get separate instances
+                so aiodataloader batches don't mix slice specs (one batch holds
+                one set of params). When set, forces split.
         """
         use_split = (self._split_mode or force_split) and type_key is not None
+        if params_key is not None:
+            use_split = True
 
         if not use_split:
-            # Default mode / no type_key: shared instance per loader_cls
+            # Default mode / no type_key / no params: shared instance per loader_cls
             if loader_cls not in self._loader_instances:
                 self._loader_instances[loader_cls] = loader_cls()
             return self._loader_instances[loader_cls]
 
-        # Split mode: per-type_key instances
+        # Split mode: per-(type_key, params_key) instances
+        cache_key: tuple = (type_key, params_key)
         if loader_cls not in self._loader_instances:
             self._loader_instances[loader_cls] = {}
-        inner: dict[frozenset[str], DataLoader] = self._loader_instances[loader_cls]
-        if type_key not in inner:
-            inner[type_key] = loader_cls()
-        return inner[type_key]
+        inner: dict[tuple, DataLoader] = self._loader_instances[loader_cls]
+        if cache_key not in inner:
+            inner[cache_key] = loader_cls()
+        return inner[cache_key]
 
     def clear_cache(self) -> None:
         """Clear cached loader instances (call at start of each request)."""
@@ -729,10 +808,10 @@ class ErManager:
         """Bring up the ER diagram: run federation for declared remote relationships.
 
         The services to mount (and their endpoints) are **derived from the
-        declarations** — each ``RemoteRelationship`` carries its service url via
-        ``RemoteService(url=…)``. No ``services`` argument. Services referenced
-        only transitively, or whose ``RemoteService`` has no url, are skipped
-        here (transitive ones are discovered during the fetch).
+        declarations** — each ``RemoteRelationship`` or DTO ``RemoteRef`` carries
+        its service url via ``RemoteService(url=…)``. No ``services`` argument.
+        Services without a direct URL may still be discovered transitively;
+        otherwise initialization fails before serving.
 
         Call once at startup (app lifespan), before serving. Bumps ``_version``
         so any GraphQL view built off this ErManager (SDL / ``__schema``)
@@ -744,10 +823,9 @@ class ErManager:
                 scalar fields (shared enums / custom scalars). Unregistered names
                 fall back to ``Any``.
         """
-        # Endpoints come only from declarations whose RemoteService has a url.
-        # Targets whose service has no url are still fetched (queued inside
-        # federate from _pending_remote_rels) and resolved transitively — or
-        # fail fast with "no endpoint" if neither applies.
+        # Endpoints and targets come from both β RemoteRelationships and γ DTO
+        # RemoteRef fields. A DTO-only mounter must initialize federation without
+        # declaring a synthetic ER relationship.
         services_map: dict[str, str] = {}
         for _src, rrel in self._pending_remote_rels:
             target_url = getattr(rrel, "target_url", None)
@@ -755,7 +833,21 @@ class ErManager:
                 srv = parse_qualified_name(rrel.qualified_name)[0]
                 services_map.setdefault(srv, target_url)
 
-        if self._pending_remote_rels:
+        from nexusx.federation.remote_ref import _remote_ref_cardinality
+
+        dto_targets: set[str] = set()
+        for dto_cls in self._dto_classes:
+            refs = getattr(dto_cls, "__nexusx_remote_field_refs__", None) or {}
+            for raw_annotation in refs.values():
+                ref, _is_list = _remote_ref_cardinality(raw_annotation)
+                if ref is None:
+                    continue
+                dto_targets.add(ref.qualified_name)
+                if ref.url:
+                    srv = parse_qualified_name(ref.qualified_name)[0]
+                    services_map.setdefault(srv, ref.url)
+
+        if self._pending_remote_rels or dto_targets:
             from nexusx.federation.manager import federate as _federate
 
             await _federate(
@@ -763,6 +855,7 @@ class ErManager:
                 services_map,
                 transport=transport,
                 extra_types=extra_types,
+                dto_targets=dto_targets,
             )
         self._version += 1
 

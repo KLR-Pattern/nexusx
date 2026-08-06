@@ -23,6 +23,8 @@ from typing import Any, Union
 
 from nexusx.federation.contract import (
     BatchRoot,
+    DTOFragment,
+    DTOIntrospectionResponse,
     EntityFragment,
     ERIntrospectionResponse,
     FieldDescriptor,
@@ -237,16 +239,137 @@ async def fetch_er_introspection(
     return ERIntrospectionResponse.model_validate(raw)
 
 
+# ──────────────────────────────────────────────────────────────────────
+# specs/016 — DTO introspection (γ-path, independent from β ER introspection)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _dto_remote_refs(dto: type) -> list[RelDescriptor]:
+    """Cross-service out-edges declared on a public DTO (``__relationships__``).
+
+    The member Resolver fully resolves these before the DTO tree leaves the
+    service, so the mounter never fetches them itself — they're informational
+    (SDL/Voyager/contract completeness), not a load instruction. Empty for DTOs
+    whose cross-service data is baked into scalar ``resolve_*`` fields.
+    """
+    from nexusx.federation.relationship import RemoteRelationship
+    from nexusx.relationship import get_custom_relationships
+
+    refs: list[RelDescriptor] = []
+    for rel in get_custom_relationships(dto):
+        if isinstance(rel, RemoteRelationship):
+            refs.append(
+                RelDescriptor(
+                    name=rel.name,
+                    direction="ONETOMANY" if rel.is_list else "MANYTOONE",
+                    fk_field=rel.fk,
+                    target_typename=rel.qualified_name.split(".", 1)[1],
+                    is_list=rel.is_list,
+                    target_service=rel.qualified_name.split(".", 1)[0],
+                )
+            )
+    return refs
+
+
+def serialize_dto_introspection(er_manager: Any) -> DTOIntrospectionResponse:
+    """Serialize a member's federation-public DTOs into the γ-path wire payload.
+
+    Symmetric to ``serialize_er_introspection`` but for UseCase-layer DTOs. Each
+    ``get_public_dtos()`` entry becomes a ``DTOFragment``: every ``model_fields``
+    entry (subset skeleton + PK + Resolver-computed) is a scalar from the
+    federation standpoint, the join_key drives the member batch root, and
+    ``batch_root`` carries its (diagnostic) name + arg contract. The mounter
+    materializes these into local DTO classes (``materialize_dtos``) and fetches
+    resolved DTO trees through ``/nexusx/dto-batch``.
+
+    β ER introspection is untouched — DTOs never appear in ``/nexusx/er-introspection``.
+    """
+    from nexusx.subset import get_subset_source
+
+    service_name = getattr(er_manager, "service_name", None)
+    if not service_name:
+        msg = (
+            "ErManager.service_name is not set; a federable member must declare "
+            "its service name (prefix). Pass service_name= to GraphQLHandler/"
+            "ErManager."
+        )
+        raise ValueError(msg)
+
+    dtos: list[DTOFragment] = []
+    for dto in er_manager.get_public_dtos():
+        join_key = getattr(dto, "__federation_join_key__", None) or ""
+        source = get_subset_source(dto)
+        base_entity = source.__name__ if source is not None else ""
+        scalar_fields = [
+            FieldDescriptor(name=fname, type_name=_type_expr(fi.annotation))
+            for fname, fi in dto.model_fields.items()
+        ]
+        batch_root = BatchRoot(
+            name=f"by_{join_key}_in",
+            arg_name=f"{join_key}_list",
+            arg_type="",
+        )
+        # γ remote top-N (specs/016 Phase 2): a DTO-level __pagination_orders__
+        # (BatchPageConfig) exposes the order profiles the member can sort by.
+        # Validated against the base entity's physical columns via
+        # _resolve_page_orders — same gate as entity __pagination_orders__,
+        # so a DTO order field that isn't a base-entity column fails fast.
+        cfg = getattr(dto, "__pagination_orders__", None)
+        if cfg is not None and source is not None:
+            from nexusx.federation.contract import (
+                BatchPageCapability,
+                PageOrderDescriptor,
+            )
+            from nexusx.standard_queries import _resolve_page_orders
+
+            resolved = _resolve_page_orders(source, cfg)
+            batch_root = BatchRoot(
+                name=f"by_{join_key}_in",
+                arg_name=f"{join_key}_list",
+                arg_type="",
+                page=BatchPageCapability(
+                    default_order=cfg.default_order,
+                    orders=[
+                        PageOrderDescriptor(name=n, description=o.description)
+                        for n, o in resolved.items()
+                    ],
+                ),
+            )
+        dtos.append(
+            DTOFragment(
+                name=dto.__name__,
+                base_entity=base_entity,
+                scalar_fields=scalar_fields,
+                join_key=join_key,
+                batch_root=batch_root,
+                remote_refs=_dto_remote_refs(dto),
+            )
+        )
+
+    return DTOIntrospectionResponse(service_name=service_name, dtos=dtos)
+
+
+async def fetch_dto_introspection(
+    transport: FederationTransport, base_url: str
+) -> DTOIntrospectionResponse:
+    """Mounter-side: GET ``<base_url>/nexusx/dto-introspection`` and parse."""
+    url = base_url.rstrip("/") + "/nexusx/dto-introspection"
+    raw = await transport.get_json(url)
+    return DTOIntrospectionResponse.model_validate(raw)
+
+
 def build_federable_app(
     handler: Any,
     *,
     dependencies: Sequence[Any] | None = None,
 ) -> Any:
-    """Build a FastAPI app exposing the two routes a federable member needs.
+    """Build a FastAPI app exposing the routes a federable member needs.
 
     Routes:
       - ``POST /graphql`` → ``{data, errors}`` (wraps ``handler.execute``)
       - ``GET  /nexusx/er-introspection`` → ER introspection payload
+      - ``GET  /nexusx/dto-introspection`` → public DTO introspection payload
+      - ``POST /nexusx/dto-batch`` → resolved DTO rows
 
     Args:
         dependencies: Optional FastAPI dependencies (e.g.
@@ -293,5 +416,69 @@ def build_federable_app(
     @app.get("/nexusx/er-introspection", dependencies=dependencies)
     async def er_introspection_endpoint() -> dict[str, Any]:
         return serialize_er_introspection(handler._er_manager).model_dump()
+
+    @app.get("/nexusx/dto-introspection", dependencies=dependencies)
+    async def dto_introspection_endpoint() -> dict[str, Any]:
+        # γ-path (specs/016): serializes the member's federation-public DTOs.
+        # Independent from the β ER endpoint above — DTOs never appear in
+        # er-introspection. Same auth guard expectations apply (topology leak).
+        return serialize_dto_introspection(handler._er_manager).model_dump()
+
+    @app.post("/nexusx/dto-batch", dependencies=dependencies)
+    async def dto_batch_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+        # γ-path (specs/016): mounter DTO RemoteLoader posts {dto, join_key,
+        # keys}; this dispatches to the member's pre-registered batch root
+        # (add_dto_batch_roots), which runs the member Resolver and returns an
+        # already-resolved DTO tree. Independent from /graphql (β) — the β
+        # surface is untouched.
+        dto_name = payload.get("dto")
+        roots = getattr(handler._er_manager, "_dto_batch_roots", {}) or {}
+        entry = roots.get(dto_name)
+        if entry is None:
+            return {
+                "errors": [{
+                    "message": (
+                        f"Member has no federation-public DTO {dto_name!r}; "
+                        f"known: {sorted(roots)}"
+                    )
+                }]
+            }
+        batch_fn, registered_join_key = entry
+        requested_join_key = payload.get("join_key")
+        if requested_join_key != registered_join_key:
+            return {
+                "errors": [{
+                    "message": (
+                        f"DTO {dto_name!r} uses join_key "
+                        f"{registered_join_key!r}, got {requested_join_key!r}"
+                    )
+                }]
+            }
+        keys = payload.get("keys") or []
+        # specs/016 Phase 2: order/direction/limit drive per-parent top-N in
+        # the member batch root (ROW_NUMBER). Omitted (None) ⇒ full fetch
+        # (back-compat for un-paged DTOs).
+        order = payload.get("order")
+        direction = payload.get("direction")
+        limit = payload.get("limit")
+        offset = payload.get("offset", 0)
+        try:
+            rows = await batch_fn(
+                keys, order=order, direction=direction, limit=limit, offset=offset,
+            )
+        except Exception as exc:  # noqa: BLE001 — member Resolver failure surfaces
+            # spec Edge Case: member Resolver/computation failing during the
+            # batch root must NOT crash this endpoint with a 500 — return an
+            # errors envelope so the mounter DTO RemoteLoader wraps it into a
+            # RemoteQueryError (same {data, errors} convention as /graphql).
+            return {
+                "errors": [{
+                    "message": (
+                        f"Member DTO batch root for {dto_name!r} failed: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                }]
+            }
+        return {"data": rows}
 
     return app

@@ -1,11 +1,12 @@
 """Tests for response_builder — dynamic Pydantic model building and serialization."""
 
-from typing import Optional
+from typing import Any, Optional, get_origin
 
 from pydantic import BaseModel
 from sqlmodel import Field, Relationship, SQLModel
 
 from nexusx.response_builder import (
+    ERFieldResolver,
     _build_scalar_model,
     _extract_entity_from_annotation,
     _is_list_relationship,
@@ -40,6 +41,14 @@ class RBPost(SQLModel, table=True):
     author_id: int = Field(foreign_key="rb_user.id")
 
     author: Optional["RBUser"] = Relationship(back_populates="posts")
+
+
+class RBUnresolvedOwner(BaseModel):
+    pass
+
+
+RBUnresolvedOwner.__annotations__["children"] = "list[RBUnresolvedChild]"
+RBUnresolvedOwner.__sqlmodel_relationships__ = {"children": object()}
 
 
 # ──────────────────────────────────────────────────────────
@@ -77,6 +86,18 @@ class TestBuildResponseModel:
         }
         model = build_response_model(RBPost, field_tree)
         assert issubclass(model, BaseModel)
+
+    def test_unresolved_relationship_falls_back_to_any(self):
+        model = build_response_model(
+            RBUnresolvedOwner,
+            {"children": {"id": None}},
+            model_name="UnresolvedFallback",
+        )
+
+        assert model.model_fields["children"].annotation is Any
+        assert model.model_validate(
+            {"children": [{"id": 1}]},
+        ).model_dump() == {"children": [{"id": 1}]}
 
 
 class TestSerializeWithModel:
@@ -171,19 +192,19 @@ class TestValidateAndDump:
     def test_none_value_returns_none(self):
         """_validate_and_dump should return None for None input."""
         model = build_response_model(RBUser, {"id": None, "name": None})
-        assert _validate_and_dump(model, None, None) is None
+        assert _validate_and_dump(model, None, None, entity=RBUser) is None
 
     def test_dict_input(self):
         """_validate_and_dump should handle dict input."""
         model = build_response_model(RBUser, {"id": None, "name": None})
-        result = _validate_and_dump(model, {"id": 1, "name": "Alice"}, None)
+        result = _validate_and_dump(model, {"id": 1, "name": "Alice"}, None, entity=RBUser)
         assert result["id"] == 1
 
     def test_validation_fallback_returns_filtered_data(self):
         """When model_validate fails, should return filtered dict."""
         model = build_response_model(RBUser, {"id": None, "name": None})
         # Pass a value that won't validate — integer triggers except path
-        result = _validate_and_dump(model, 42, None)
+        result = _validate_and_dump(model, 42, None, entity=RBUser)
         # Falls through to return the raw value
         assert result == 42
 
@@ -293,3 +314,59 @@ class TestBuildScalarModelExtras:
         assert "name" in field_names
         assert "email" in field_names
         assert "posts" not in field_names
+
+
+class TestERFieldResolver:
+    """specs/021 — FieldResolver 语义: scalar 字段不得当嵌套关系(strTitle bug 回归)。"""
+
+    def test_scalar_field_not_treated_as_nested(self):
+        """scalar 字段 resolve 必须 nested_type=None。
+
+        ``get_relation_entity`` 对 scalar 字段也返回类型(str/int); 不过滤的话
+        build_model 会递归进 ``str`` 造出 strTitle 空模型(上 session 卡住的 bug)。
+        """
+        resolver = ERFieldResolver(None, None)
+        res = resolver.resolve_field(RBUser, "name")
+        assert res is not None
+        assert res.nested_type is None
+        assert res.annotation is str
+
+    def test_scalar_field_with_sub_selection_keeps_scalar_type(self):
+        """scalar 字段带子选择(garbage-in)→ 仍按 scalar 处理, 不递归。"""
+        model = build_response_model(RBPost, {"title": {"x": None}})
+        assert model.model_fields["title"].annotation is str
+
+    def test_relationship_field_still_nested(self):
+        """真关系字段 nested_type 正常返回(过滤只挡非 BaseModel)。"""
+        resolver = ERFieldResolver(None, None)
+        res = resolver.resolve_field(RBPost, "author")
+        assert res is not None
+        assert res.nested_type is not None
+        # 单数关系: nested_shape None → builder 默认 nullable 单数
+        assert res.nested_shape is None
+
+    def test_list_relationship_sets_list_shape(self):
+        """to-many 关系: nested_shape 产出 list[nested]。"""
+        resolver = ERFieldResolver(None, None)
+        res = resolver.resolve_field(RBUser, "posts")
+        assert res is not None
+        assert res.nested_shape is not None
+
+
+class TestMappedListRelationshipShape:
+    """specs/021 — SQLModel 把 to-many 关系注解转 Mapped[list[X]]。
+
+    此前 ``_is_list_relationship`` 只查 ``get_origin is list``, Mapped 包裹漏判 →
+    模型形状错误地生成 ``X | None``(单数), 序列化白走一次失败的 validate +
+    fallback。修复后必须生成 ``list[X]``。
+    """
+
+    def test_is_list_relationship_unwraps_mapped(self):
+        assert _is_list_relationship(RBUser, "posts") is True
+        # 单数关系(Optional 包裹)不误伤
+        assert _is_list_relationship(RBPost, "author") is False
+
+    def test_mapped_list_relationship_model_shape(self):
+        model = build_response_model(RBUser, {"posts": {"id": None}})
+        ann = model.model_fields["posts"].annotation
+        assert get_origin(ann) is list
