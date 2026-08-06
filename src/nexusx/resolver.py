@@ -134,6 +134,25 @@ def _make_page_load_commands(
     ]
 
 
+async def _dispatch_beta_remote(
+    registry: Any, rel_info: Any, parents: list, selection: Any,
+    *, paged: bool = False,
+) -> list:
+    """Fetch a β entity federation sub-tree (specs/021 path-merge helper).
+
+    Shared between entity-first ``_load_entity_field_batch`` (REMOTE_PAGED /
+    REMOTE_PLAIN) and UseCase ``_batch_auto_load``. The fetch call was
+    duplicated 3× (two entity-first branches + one UseCase branch), each with
+    its own ``from ... import fetch_remote_subtree``. ``paged=True`` routes to
+    the member's ``page_by_<key>_in`` root; ``paged=False`` to ``by_<key>_in``.
+    """
+    from nexusx.federation.remote_loader import fetch_remote_subtree
+    return await fetch_remote_subtree(
+        registry=registry, rel_info=rel_info, parents=parents,
+        selection=selection, paged=paged,
+    )
+
+
 # ──────────────────────────────────────────────────────────
 # Loader / Depends — declares DataLoader dependency in resolve_*
 # ──────────────────────────────────────────────────────────
@@ -1621,16 +1640,12 @@ class Resolver:
                 continue
 
             if is_remote_entry:
-                from nexusx.federation.remote_loader import fetch_remote_subtree
-
                 selection = self._build_nested_selection(
                     target_cls=first_rel.target_entity, dto_cls=first_dto,
                 )
-                results = await fetch_remote_subtree(
-                    registry=self._registry,
-                    rel_info=first_rel,
-                    parents=[ve[1] for ve in valid_entries],
-                    selection=selection,
+                results = await _dispatch_beta_remote(
+                    self._registry, first_rel,
+                    [ve[1] for ve in valid_entries], selection,
                 )
             else:
                 type_key = generate_type_key_from_dto(first_dto) if first_dto else None
@@ -1894,28 +1909,14 @@ class Resolver:
         )
         is_paged_remote = rel_info.kind == RelationshipKind.REMOTE_PAGED
         if is_paged_remote:
-            # β paginated path: route to the member's page_by_<key>_in root.
-            # {items, pagination} per parent.
-            from nexusx.federation.remote_loader import fetch_remote_subtree
-
-            results = await fetch_remote_subtree(
-                registry=self._registry,
-                rel_info=rel_info,
-                parents=job.parents,
-                selection=child_sel,
-                paged=True,
+            # β paginated path: member's page_by_<key>_in root.
+            results = await _dispatch_beta_remote(
+                self._registry, rel_info, job.parents, child_sel, paged=True,
             )
         elif is_remote:
-            # β path: fetch the whole nested sub-tree via the shared primitive
-            # (one gql to the owning service; the member resolves everything
-            # under it). Same mechanism the Resolver uses — fetch_remote_subtree.
-            from nexusx.federation.remote_loader import fetch_remote_subtree
-
-            results = await fetch_remote_subtree(
-                registry=self._registry,
-                rel_info=rel_info,
-                parents=job.parents,
-                selection=child_sel,
+            # β path: fetch the whole nested sub-tree (member resolves all).
+            results = await _dispatch_beta_remote(
+                self._registry, rel_info, job.parents, child_sel,
             )
         else:
             # Build FK lookup from target entity's registered relationships
