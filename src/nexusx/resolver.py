@@ -110,6 +110,30 @@ class _EntityFieldJob:
     paged: Any = None  # Paged | None — effective pagination params (specs/019 paged_provider)
 
 
+def _make_page_load_commands(
+    rel_info: Any, keys: list[Any], paged: Any | None,
+) -> list[PageLoadCommand]:
+    """Build PageLoadCommand list for a paginated field (specs/021 path-merge).
+
+    Shared between entity-first ``_load_entity_field_paginated`` and UseCase
+    ``_batch_auto_load`` — the PageArgs + PageLoadCommand construction was
+    near-identical (duplicated verbatim). ``rel_info`` provides page-size
+    bounds; ``paged`` carries limit/offset/order/direction (None → defaults).
+    """
+    page_args = PageArgs(
+        limit=paged.limit if paged is not None else None,
+        offset=paged.offset if paged is not None else 0,
+        default_page_size=rel_info.default_page_size,
+        max_page_size=rel_info.max_page_size,
+    )
+    order = paged.order if paged is not None else None
+    direction = paged.direction if paged is not None else None
+    return [
+        PageLoadCommand(fk_value=k, page_args=page_args, order=order, direction=direction)
+        for k in keys
+    ]
+
+
 # ──────────────────────────────────────────────────────────
 # Loader / Depends — declares DataLoader dependency in resolve_*
 # ──────────────────────────────────────────────────────────
@@ -1634,23 +1658,7 @@ class Resolver:
                 if first_dto is not None and type_key is not None:
                     set_query_meta(loader, generate_query_meta_from_dto(first_dto))
                 if use_page_loader:
-                    from nexusx.loader.pagination import PageArgs, PageLoadCommand
-
-                    page_args = PageArgs(
-                        limit=merged.limit,
-                        offset=merged.offset,
-                        default_page_size=first_rel.default_page_size,
-                        max_page_size=first_rel.max_page_size,
-                    )
-                    commands = [
-                        PageLoadCommand(
-                            fk_value=k,
-                            page_args=page_args,
-                            order=merged.order,
-                            direction=merged.direction,
-                        )
-                        for k in keys
-                    ]
+                    commands = _make_page_load_commands(first_rel, keys, merged)
                     results = await loader.load_many(commands)
                 else:
                     results = await loader.load_many(keys)
@@ -1968,13 +1976,6 @@ class Resolver:
 
         # page-size bounds stay on rel_info (applied as PageArgs boundary);
         # limit/offset/order/direction come from the merged Paged on the job.
-        page_args = PageArgs(
-            limit=paged.limit if paged is not None else None,
-            offset=paged.offset if paged is not None else 0,
-            default_page_size=rel_info.default_page_size,
-            max_page_size=rel_info.max_page_size,
-        )
-
         target_rels = self._registry.get_relationships(rel_info.target_entity)
         fk_lookup = {name: info.fk_field for name, info in target_rels.items()}
 
@@ -1991,15 +1992,8 @@ class Resolver:
         else:
             merge_query_meta(loader, meta)
 
-        order = paged.order if paged is not None else None
-        direction = paged.direction if paged is not None else None
         fk_values = [getattr(p, rel_info.fk_field) for p in job.parents]
-        commands = [
-            PageLoadCommand(
-                fk_value=fk, page_args=page_args, order=order, direction=direction
-            )
-            for fk in fk_values
-        ]
+        commands = _make_page_load_commands(rel_info, fk_values, paged)
         results = await loader.load_many(commands)
 
         all_children: list = []
