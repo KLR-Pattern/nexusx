@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.1.0."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.2.0."
 ---
 
 # Changelog
@@ -9,6 +9,70 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 - **Patch (x.y.Z)**: Bug fixes and minor improvements
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
+
+## 5.2
+
+### 5.2.0 (2026-8-7)
+
+- feat:
+  - **DTO federation γ path (specs/016)**: Compose cross-service graphs at the
+    DTO layer. A member marks a `DefineSubset` DTO as federation-public
+    (`SubsetConfig(federation_public=True)`), exposing it via
+    `/nexusx/dto-introspection` + `/nexusx/dto-batch`; a mounter DTO field then
+    references the member public DTO directly (`reviews: list[rev_svc.ReviewDTO]`),
+    and the Resolver auto-loads the cross-service tree — no gql string, no manual
+    per-row assembly. `Paged(...)` field defaults drive the member's SQL-level
+    top-N; the caller overrides per-field via `Resolver(context=...)`. Member
+    values are read-only; the mounter adds derived fields via its own
+    `resolve_*`/`post_*`. See the β-vs-γ table in `docs/advanced/federation.md`.
+
+  - **DTO-first gql execution (specs/018)**: The entity-first gql path now shares
+    the UseCase mental model — a DTO schema is built dynamically from the gql
+    selection, then resolved by the Resolver. Activates the previously-dormant
+    `response_builder.build_response_model`, extends it to paginated packages +
+    federation materialized types, and moves β federation dispatch into the
+    Resolver (`fetch_remote_subtree`). The temporary `use_response_builder` flag
+    is removed (new path is the only path); flag-on/off equivalence tested.
+
+  - **Unified `core_builder` (specs/021)**: `build_response_model` (entity-first)
+    and `build_subset_model` (UseCase compose) are now thin shells over one
+    recursive builder, `core_builder.build_model`, parameterized by a
+    `FieldResolver` Protocol that abstracts the only real difference — where a
+    nested field's type comes from (SQLModel relationships vs pydantic DTO
+    annotations). `FieldResolution.nested_shape` collapses the former
+    `is_list`/`is_optional`/`nested_annotation_factory` triple into one callable.
+    `SelectionError` moved down to `core_builder` (no reverse-import of use_case;
+    re-exported for back-compat).
+
+  - **Declarative `Paged` field pagination**: `Annotated[list[X], Paged(limit=N)]`
+    as a DTO field default declaratively drives per-parent top-N slicing at the
+    member batch root (ROW_NUMBER window); the Resolver merges field defaults +
+    caller context per field. Order omitted → member's `default_order`.
+
+  - **Auto-derive `federation_join_key`**: When a federation-public DTO's subset
+    has exactly one foreign-key field, `federation_join_key` is auto-derived;
+    zero/multiple FKs still require it explicitly. Fail-fast at class creation.
+
+  - **Paged provider (specs/019) / drop `PAGED_MARKER` (specs/020)**: The Resolver
+    is decoupled from raw gql paged arguments via an injected provider; the model
+    goes back to pure shape (no marker attribute).
+
+- fix:
+  - **Pagination chain integrity (GAP A/B/E + γ member checks F1–F3)**: The
+    paginated federation path now carries the merged `Paged` params (not
+    `PageLoadCommand` objects the remote loader can't unwrap); graphql
+    `Undefined`/non-wire values can never reach the wire; an items-only paged
+    selection no longer leaks internal RowMapping columns.
+  - **`Mapped[list[X]]` relationship `is_list` misclassification** + regression tests.
+  - Preserve nullable and paged remote-relationship shapes through the builder.
+
+- refactor:
+  - `fetch_dto_subtree` → **`prepare_dto_loader`**: the γ primitive returns a
+    prepared loader (it does not fetch); rename makes the β/γ asymmetry honest.
+    Added `set_remote_page_params` so all three remote side-channels now have
+    explicit setters.
+  - `Direction` demoted out of the top-level `__all__` (no production touchpoint;
+    still importable from `nexusx.standard_queries`). Non-breaking.
 
 ## 5.1
 
