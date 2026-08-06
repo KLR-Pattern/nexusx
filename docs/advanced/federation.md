@@ -164,3 +164,60 @@ exposes only profile names and descriptions, never physical sort fields.
 
 See also: [Custom Relationships](../guide/custom_relationship.md),
 [ER Diagram Visualization](voyager.md).
+
+## DTO federation (γ) — composing at the DTO layer
+
+β composes the *entity* graph over gql. **γ composes at the DTO layer**: a
+member publishes some of its `DefineSubset` DTOs as **public**, and a mounter's
+own DTO fields reference them directly — the Resolver auto-loads the tree over
+federation, no gql string, no manual assembly.
+
+### Member side: publish a public DTO
+
+```python
+class ReviewDTO(DefineSubset):
+    __subset__ = SubsetConfig(
+        kls=Review, fields=("title", "rating", "product_id"),
+        federation_public=True,          # expose via dto-introspection / dto-batch
+        federation_join_key="product_id",  # auto-derivable when the subset has exactly one FK
+    )
+    __pagination_orders__ = BatchPageConfig(
+        default_order="HIGHEST_RATING",
+        orders={"HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")])},
+    )
+
+handler = GraphQLHandler(base=Base, ..., dto_classes=[ReviewDTO])
+```
+
+The member exposes two extra endpoints: `GET /nexusx/dto-introspection` (the
+public DTO fragments) and `POST /nexusx/dto-batch` (batch-fetch by join key,
+running the member's Resolver so `resolve_*` methods and nested edges work).
+
+### Mounter side: reference the member DTO
+
+```python
+class ProductDTO(DefineSubset):
+    __subset__ = (Product, ("id", "name"))
+    reviews: Annotated[list[rev_svc.ReviewDTO], Paged(limit=2)] = Field(
+        default_factory=list
+    )
+```
+
+The `Paged(...)` default drives a SQL-level top-N on the member (via its
+`__pagination_orders__` profile); a caller can override per-field through
+`Resolver(context={...})`. Member values are read-only — a mounter adds fields
+with its own `resolve_*` methods / `post_*` hooks, never by mutating member
+values.
+
+### β vs γ at a glance
+
+| | β (gql) | γ (UseCase/Resolver) |
+|---|---|---|
+| Composition unit | entity relationships (`RemoteRelationship`) | public DTO references (`DefineSubset` fields) |
+| Traversal | one nested gql per mounted service per level | Resolver `_batch_auto_load` via `dto-batch` |
+| Pagination | gql args on the relationship field | `Paged(...)` field default + caller context |
+| Entry | `GraphQLHandler` schema | `UseCaseService` + `create_resolver()` |
+| Member values | instances | DTOs (read-only; mounter computes its own) |
+
+See `demo/federation/` (reviews publishes `ReviewDTO`; catalog's `ProductDTO`
+references it) for a runnable example.

@@ -121,16 +121,28 @@ curl -X POST http://localhost:8022/api/catalog_service/composed_tree \
   is the cross-service projection. (Hence the DTOs below stop at `Review`.)
 
 ```python
+# reviews service: member PUBLIC DTO (016 γ) — exposed via dto_classes=[ReviewDTO]
 class ReviewDTO(DefineSubset):
-    __subset__ = (reviews.Review, ("title", "rating"))
+    __subset__ = SubsetConfig(
+        kls=reviews.Review, fields=("title", "rating", "product_id"),
+        federation_public=True, federation_join_key="product_id",
+    )
+    __pagination_orders__ = BatchPageConfig(
+        default_order="HIGHEST_RATING",
+        orders={"HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")])},
+    )
 
+# catalog service: DTO references the member public DTO + Paged default (top-N)
 class ProductDTO(DefineSubset):
     __subset__ = (Product, ("id", "name"))
-    reviews: list[ReviewDTO] = Field(default_factory=list)
+    reviews: Annotated[list[rev_svc.ReviewDTO], Paged(limit=2)] = Field(
+        default_factory=list
+    )
 ```
 
-The Resolver auto-loads `Product → Review` over federation; `model_dump`
-serializes the tree.
+The Resolver auto-loads `Product → Review` over federation, slicing per-parent
+via the member batch root's SQL-level top-N (order omitted → member's
+`default_order`); `model_dump` serializes the tree.
 
 ## Files
 

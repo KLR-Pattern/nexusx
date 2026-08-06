@@ -27,7 +27,7 @@ GraphQLHandler(base=...)   # response_builder 是唯一路径,无 flag
 > flag 是 specs/018 引入的 opt-in 开关,**从未进入正式 release**(从 master 看是新
 > 增代码),所以移除不影响任何已发布版本的用户。018 早期 flag 默认 `False`(legacy),
 > 移除后默认 response_builder,等价于之前的 `use_response_builder=True`——行为已经
-> 过 1451 个测试零回归验证(含 24 个 federation e2e)。
+> 过全量测试零回归验证(当前 1471 passed / 6 skipped,含 24 个 federation e2e)。
 
 ## 性能
 
@@ -35,7 +35,9 @@ GraphQLHandler(base=...)   # response_builder 是唯一路径,无 flag
 selection 复用——消除 per-entity `pydantic.create_model` 开销(缓存前占 flag-on
 serialize 73% cumtime,导致 flag-on 比 legacy 慢 10–30×)。
 
-**缓存 key**:`(entity, model_name, repr(field_tree), federation_namespace type ids)`。
+**缓存 key**:`(entity, model_name, selection 结构 repr, federation_namespace type ids)`。
+(021 起用 `_selection_structure_repr`——只含 sub_fields 树,**排除** name/alias/
+arguments,所以 dict 与 FieldSelection 两种输入同 key,动态分页参数永不碎片化缓存。)
 
 - paged 字段是 plain `result_type`(020 删了 019 的 `PAGED_MARKER`——功能性无人读),
   cache key **不含 paged 维**(`field_tree` repr 已区分 paged 形状)——动态
@@ -63,7 +65,7 @@ serialize 73% cumtime,导致 flag-on 比 legacy 慢 10–30×)。
 ## 复现 / 验证
 
 ```bash
-uv run pytest -q                                         # 全量 1457 测试
+uv run pytest -q                                         # 全量测试(1471 passed / 6 skipped)
 uv run python benchmarks/gql_benchmark.py                # response_builder 延迟
 uv run python benchmarks/gql_benchmark.py --profile      # + cProfile
 ```
