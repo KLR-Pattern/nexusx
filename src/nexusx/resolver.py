@@ -592,12 +592,12 @@ class Resolver:
                 paged_default = getattr(type(node), "__paged_fields__", {}).get(loader_name)
                 paged_caller = self._extract_page_params(loader_name)
                 merged = self._merge_paged(paged_default, paged_caller)
-                # γ DTO fetch primitive (specs/018 US4 / T023): consolidate the
-                # per-params loader + page-params side-channel into one place so
-                # ``set_dto_page_params`` has a single caller (fetch_dto_subtree).
-                from nexusx.federation.remote_loader import fetch_dto_subtree
+                # γ DTO loader-prep primitive (specs/018 US4 / T023): consolidate
+                # the per-params loader + page-params side-channel into one place
+                # so ``set_dto_page_params`` has a single caller (prepare_dto_loader).
+                from nexusx.federation.remote_loader import prepare_dto_loader
 
-                return fetch_dto_subtree(
+                return prepare_dto_loader(
                     registry=self._registry,
                     dto_loader_cls=dto_loader_cls,
                     params_key=merged.params_key() if merged else None,

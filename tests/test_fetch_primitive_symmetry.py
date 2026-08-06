@@ -1,15 +1,15 @@
-"""T020 — fetch primitive symmetry (specs/018 US4).
+"""T020 — Resolver-internal primitive convergence (specs/018 US4).
 
-β and γ federation each have ONE Resolver-internal fetch primitive, with honest
-docstrings:
+β and γ federation each have ONE Resolver-internal primitive, with honest
+docstrings — but they are NOT symmetric (β fetches, γ prepares):
 
   (a) ``fetch_remote_subtree`` — β entity federation (entity-first gql /
-      Resolver entity dispatch). Docstring must say so.
-  (b) ``fetch_dto_subtree`` — γ DTO federation (Core API / UseCase). Docstring
-      must say so.
+      Resolver entity dispatch). Fetches synchronously; docstring must say so.
+  (b) ``prepare_dto_loader`` — γ DTO federation (Core API / UseCase). Returns
+      a prepared loader WITHOUT loading; docstring must say so.
   (c) Call-site convergence: ``fetch_remote_subtree`` is called only inside the
       Resolver (US3); ``set_dto_page_params`` is called only inside
-      ``fetch_dto_subtree`` (US4).
+      ``prepare_dto_loader`` (US4).
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import inspect
 from pathlib import Path
 
 from nexusx.federation.remote_loader import (
-    fetch_dto_subtree,
+    prepare_dto_loader,
     fetch_remote_subtree,
 )
 
@@ -63,9 +63,9 @@ def test_fetch_remote_subtree_docstring_is_beta_only():
     assert "shared" not in doc.lower()
 
 
-def test_fetch_dto_subtree_docstring_is_gamma_only():
-    """(b) fetch_dto_subtree advertises γ DTO federation."""
-    doc = fetch_dto_subtree.__doc__ or ""
+def test_prepare_dto_loader_docstring_is_gamma_only():
+    """(b) prepare_dto_loader advertises γ DTO federation."""
+    doc = prepare_dto_loader.__doc__ or ""
     assert "γ" in doc, "docstring must name γ"
     assert "DTO-federation" in doc or "DTO federation" in doc
 
@@ -82,8 +82,8 @@ def test_fetch_remote_subtree_called_only_in_resolver():
     )
 
 
-def test_set_dto_page_params_called_only_in_fetch_dto_subtree():
-    """(c) set_dto_page_params's only caller is fetch_dto_subtree (specs/018 US4).
+def test_set_dto_page_params_called_only_in_prepare_dto_loader():
+    """(c) set_dto_page_params's only caller is prepare_dto_loader (specs/018 US4).
 
     γ page-params side-channel collapsed into one primitive; the Resolver no
     longer imports/calls set_dto_page_params directly.
@@ -91,5 +91,5 @@ def test_set_dto_page_params_called_only_in_fetch_dto_subtree():
     callers = _callers("set_dto_page_params")
     assert callers == {"remote_loader.py"}, (
         f"set_dto_page_params must be called only from remote_loader.py "
-        f"(fetch_dto_subtree), got {callers}"
+        f"(prepare_dto_loader), got {callers}"
     )

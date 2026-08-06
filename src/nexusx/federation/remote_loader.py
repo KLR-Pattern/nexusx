@@ -47,6 +47,18 @@ def set_remote_selection(loader: Any, selection: Any) -> None:
     loader._remote_selection = selection
 
 
+def set_remote_page_params(loader: Any, params: Any) -> None:
+    """Set per-call page params on a β entity RemoteLoader (side-channel).
+
+    Mirrors ``set_dto_page_params`` (γ): the Resolver sets this from the
+    executor's merged ``Paged`` before ``load_many``, and the paginated
+    loader's ``batch_load_fn`` reads it (``_remote_page_params``) to override
+    the raw selection.arguments. Pair with the per-selection loader split
+    (``force_split``) so distinct params get distinct instances/batches.
+    """
+    loader._remote_page_params = params
+
+
 async def fetch_remote_subtree(
     *,
     registry: Any,
@@ -68,8 +80,8 @@ async def fetch_remote_subtree(
     entity relationships. The gql executor used to call this directly; US3
     collapsed that into the Resolver so β federation fetch lives alongside γ.
 
-    NOT used by γ DTO federation — that path has its own symmetric primitive,
-    ``fetch_dto_subtree`` (one JSON POST to the member's ``/nexusx/dto-batch``).
+    NOT used by γ DTO federation — that path has its own primitive,
+    ``prepare_dto_loader`` (one JSON POST to the member's ``/nexusx/dto-batch``).
 
     Args:
         registry: the ErManager (provides ``get_loader`` + ``get_relationships``).
@@ -103,28 +115,29 @@ async def fetch_remote_subtree(
         # path) — batch_load_fn reads this instead of raw selection.arguments.
         # specs/021 GAP A: the paginated path must carry the merged params,
         # not PageLoadCommand objects the remote loader can't unwrap.
-        loader._remote_page_params = page_params
+        set_remote_page_params(loader, page_params)
     fk_values = [getattr(p, rel_info.fk_field) for p in parents]
     return cast("list[Any]", await loader.load_many(fk_values))
 
 
-def fetch_dto_subtree(
+def prepare_dto_loader(
     *,
     registry: Any,
     dto_loader_cls: Any,
     params_key: tuple | None = None,
     page_params: Any = None,
 ) -> Any:
-    """Fetch a γ DTO-federation sub-tree's loader (Core API / UseCase mode).
+    """Prepare the γ DTO-federation loader (Core API / UseCase mode).
 
-    γ counterpart to ``fetch_remote_subtree`` (β). Both are Resolver-internal
-    fetch primitives; the asymmetry is intentional — β dispatch batch-loads
-    synchronously (``fetch_remote_subtree`` calls ``load_many`` and returns the
-    children, because entity BFS needs them for the next level), while γ prepares
-    the loader and returns it: the actual load is driven later by the Resolver
+    γ counterpart to ``fetch_remote_subtree`` (β) — but NOT symmetric: β
+    dispatch batch-loads synchronously (``fetch_remote_subtree`` calls
+    ``load_many`` and returns the children, because entity BFS needs them for
+    the next level), while this primitive prepares the loader and returns it
+    WITHOUT loading — the actual load is driven later by the Resolver
     traversal (a ``resolve_`` method's per-node load, or ``_batch_auto_load``'s
-    batch). This primitive encapsulates the γ-specific "per-params loader +
-    page-params side-channel" prep so ``set_dto_page_params`` has a single caller
+    batch). The name ``prepare_dto_loader`` (not ``fetch_dto_subtree``) reflects
+    that asymmetry. Encapsulates the γ-specific "per-params loader + page-params
+    side-channel" prep so ``set_dto_page_params`` has a single caller
     (specs/018 US4 / T022-T024).
 
     Args:
