@@ -136,20 +136,21 @@ def _make_page_load_commands(
 
 async def _dispatch_beta_remote(
     registry: Any, rel_info: Any, parents: list, selection: Any,
-    *, paged: bool = False,
+    *, paged: bool = False, page_params: Any = None,
 ) -> list:
     """Fetch a β entity federation sub-tree (specs/021 path-merge helper).
 
     Shared between entity-first ``_load_entity_field_batch`` (REMOTE_PAGED /
-    REMOTE_PLAIN) and UseCase ``_batch_auto_load``. The fetch call was
-    duplicated 3× (two entity-first branches + one UseCase branch), each with
-    its own ``from ... import fetch_remote_subtree``. ``paged=True`` routes to
-    the member's ``page_by_<key>_in`` root; ``paged=False`` to ``by_<key>_in``.
+    REMOTE_PLAIN), ``_load_entity_field_paginated`` (REMOTE_PAGED under
+    enable_pagination) and UseCase ``_batch_auto_load``. ``paged=True`` routes
+    to the member's ``page_by_<key>_in`` root; ``paged=False`` to
+    ``by_<key>_in``. ``page_params`` (merged Paged) is side-channelled onto the
+    loader when the caller already merged gql args (specs/021 GAP A).
     """
     from nexusx.federation.remote_loader import fetch_remote_subtree
     return await fetch_remote_subtree(
         registry=registry, rel_info=rel_info, parents=parents,
-        selection=selection, paged=paged,
+        selection=selection, paged=paged, page_params=page_params,
     )
 
 
@@ -1826,7 +1827,16 @@ class Resolver:
                     if child_sel.sub_fields
                     else None
                 )
-                if items_sel and items_sel.sub_fields:
+                # LOCAL page_loader only: the items sub-selection drives SQL
+                # column pruning. A REMOTE_PAGED loader needs the FULL
+                # selection (items + pagination + arguments) to build the
+                # member query — replacing it here dropped the pagination
+                # sub-selection and lost want_total_count (specs/021 GAP A).
+                if (
+                    items_sel
+                    and items_sel.sub_fields
+                    and rel_info.kind != RelationshipKind.REMOTE_PAGED
+                ):
                     effective_sel = items_sel
 
             if not effective_sel.sub_fields:
@@ -1965,6 +1975,22 @@ class Resolver:
         rel_info = job.rel_info
         child_sel = job.child_sel
         paged = job.paged  # specs/019: effective Paged (default + gql merge via paged_provider)
+
+        if rel_info.kind == RelationshipKind.REMOTE_PAGED:
+            # β paginated path: the member's page_by_<key>_in root. The merged
+            # Paged travels as page_params — NOT as PageLoadCommand objects,
+            # which the remote loader can't unwrap (specs/021 GAP A: this
+            # branch used to send commands and crash under enable_pagination).
+            results = await _dispatch_beta_remote(
+                self._registry, rel_info, job.parents, child_sel,
+                paged=True, page_params=paged,
+            )
+            all_children: list = []
+            for parent, page_result in zip(job.parents, results, strict=True):
+                store(parent, rel_info.name, page_result)
+                if page_result and page_result.get("items"):
+                    all_children.extend(page_result["items"])
+            return all_children
 
         # page-size bounds stay on rel_info (applied as PageArgs boundary);
         # limit/offset/order/direction come from the merged Paged on the job.

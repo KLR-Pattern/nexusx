@@ -500,7 +500,13 @@ def _create_page_by_keys_in_query(
                     cls(**{k: r[k] for k in entity_fields if k in r})
                     for r in page_rows
                 ]
-                has_more = len(grouped.get(v, [])) > effective_limit
+                # specs/021 GAP E: limit=0 must not claim a next page — the
+                # window peek-by-1 still fetches rn=offset+1, which would make
+                # ``len > effective_limit`` true with empty items.
+                has_more = (
+                    effective_limit > 0
+                    and len(grouped.get(v, [])) > effective_limit
+                )
                 pagination = Pagination(has_more=has_more)
                 if want_total_count:
                     pagination.total_count = total_counts.get(v, 0)
@@ -844,11 +850,30 @@ def _create_dto_by_keys_in_query(
             return []
         from sqlalchemy import func
 
+        # specs/021 F2: fail-fast validation, aligned with β's PageArgs — a
+        # negative limit/offset used to silently produce an empty window.
+        from nexusx.loader.pagination import PageArgs
+
+        page_args = PageArgs(limit=limit, offset=offset)
+        if direction is not None and direction not in ("asc", "desc"):
+            raise ValueError(
+                f"Invalid direction {direction!r} for "
+                f"{dto_cls.__name__}.{join_key}"
+            )
+
         # Resolve the effective order profile: caller order → default → None.
+        # specs/021 F3: an unknown profile fails fast (β's page_by_field_in
+        # raises at the same spot) instead of silently degrading to a full,
+        # unordered fetch.
         order_terms = None
         if page_orders_resolved is not None:
             order_name = order or default_order
-            if order_name and order_name in page_orders_resolved:
+            if order_name is not None:
+                if order_name not in page_orders_resolved:
+                    raise ValueError(
+                        f"Unknown order profile {order_name!r} for "
+                        f"DTO {dto_cls.__name__}.{join_key}"
+                    )
                 order_terms = _apply_direction(
                     page_orders_resolved[order_name].terms, direction,
                 )
@@ -860,9 +885,14 @@ def _create_dto_by_keys_in_query(
             # BY join_key ORDER BY <order>) keeps the slice in SQL — before DTO
             # build + Resolver — so the member never fetches/resolves the full
             # collection (no wasted cross-service hops). Mirrors PO2M
-            # (factories.py:397-436). Falls back to full fetch when there's no
-            # order profile or no limit (back-compat for un-paged batch roots).
-            if order_terms is not None and limit is not None:
+            # (factories.py:397-436). specs/021 F1: an order profile alone is
+            # enough to slice — a missing limit uses the default page size
+            # (aligned with β, where the member's PageArgs default applies);
+            # previously `Paged(order=...)` without limit silently degraded to
+            # a full, UNORDERED fetch. Falls back to full fetch only when
+            # there's no order profile at all (un-paged batch roots).
+            if order_terms is not None:
+                effective_limit = page_args.effective_limit
                 rn_label = "_nx_rn"
                 inner_order = _build_order_expressions(base_entity, order_terms)
                 row_num_col = func.row_number().over(
@@ -872,9 +902,10 @@ def _create_dto_by_keys_in_query(
                 subq = inner.subquery()
                 rn_col = subq.c[rn_label]
                 fk_col_sub = subq.c[join_key]
-                # rn BETWEEN offset+1 AND offset+limit (offset=0 → top-N).
+                # rn BETWEEN offset+1 AND offset+effective_limit (offset=0 →
+                # top-N).
                 start = offset + 1
-                end = offset + limit
+                end = offset + effective_limit
                 outer = (
                     select(subq)
                     .where(rn_col.between(start, end))

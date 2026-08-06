@@ -215,7 +215,10 @@ class TestEntityFieldBatchRouting:
 
         captured: dict = {}
 
-        async def spy_fetch(*, registry, rel_info, parents, selection, paged=False):
+        async def spy_fetch(
+                *, registry, rel_info, parents, selection,
+                paged=False, page_params=None,
+            ):
             captured["kind"] = rel_info.kind
             captured["paged"] = paged
             return [[SimpleNamespace(id=1)]]
@@ -250,8 +253,12 @@ class TestEntityFieldBatchRouting:
 
         captured: dict = {}
 
-        async def spy_fetch(*, registry, rel_info, parents, selection, paged=False):
+        async def spy_fetch(
+                *, registry, rel_info, parents, selection,
+                paged=False, page_params=None,
+            ):
             captured["paged"] = paged
+            captured["page_params"] = page_params
             return [{"items": [SimpleNamespace(id=1)], "pagination": {}}]
 
         monkeypatch.setattr(rl, "fetch_remote_subtree", spy_fetch)

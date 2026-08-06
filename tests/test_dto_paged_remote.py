@@ -213,3 +213,44 @@ async def test_remote_paged_caller_overrides(federation):
 
     assert len(resolved[0].reviews) == 1
     assert resolved[0].reviews[0].rating == 5  # top-1
+
+
+@pytest.mark.asyncio
+async def test_order_without_limit_slices_ordered(federation):
+    """F1: Paged(order=...) 无 limit → 仍走 top-N 切片(默认页大小), 不再静默
+    无序 full fetch。seed 3 条 → 默认页 20 → 全量但有序(HIGHEST_RATING desc)。"""
+    catalog_h = federation["catalog"]
+    async with catalog_h.session_factory() as s:
+        products = (await s.exec(select(Product))).all()
+    dtos = [ProductDTO(id=p.id, name=p.name) for p in products]
+
+    # 覆盖字段默认: 只给 order(无 limit)
+    from nexusx.loader.pagination import Paged
+    ProductDTO.__paged_fields__ = {"reviews": Paged(order="TOP")}
+    try:
+        ResolverCls = catalog_h._er_manager.create_resolver()
+        resolved = await ResolverCls().resolve(dtos)
+        ratings = [r.rating for r in resolved[0].reviews]
+        assert ratings == [5, 3, 1]  # TOP desc 有序(修复前无序 full fetch)
+    finally:
+        ProductDTO.__paged_fields__ = {}
+
+
+@pytest.mark.asyncio
+async def test_unknown_order_fails_fast(federation):
+    """F3: 未知 order profile → member 端 ValueError(修复前静默 full fetch)。"""
+    catalog_h = federation["catalog"]
+    async with catalog_h.session_factory() as s:
+        products = (await s.exec(select(Product))).all()
+    dtos = [ProductDTO(id=p.id, name=p.name) for p in products]
+
+    from nexusx.federation.remote_loader import RemoteQueryError
+    from nexusx.loader.pagination import Paged
+    ProductDTO.__paged_fields__ = {"reviews": Paged(order="BOGUS")}
+    try:
+        ResolverCls = catalog_h._er_manager.create_resolver()
+        # member 端 ValueError → 端点 errors 包 → mounter RemoteQueryError(fail-fast)
+        with pytest.raises(RemoteQueryError, match="Unknown order profile"):
+            await ResolverCls().resolve(dtos)
+    finally:
+        ProductDTO.__paged_fields__ = {}

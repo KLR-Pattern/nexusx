@@ -54,6 +54,7 @@ async def fetch_remote_subtree(
     parents: list[Any],
     selection: Any,
     paged: bool = False,
+    page_params: Any = None,
 ) -> list[Any]:
     """Fetch a β entity-federation sub-tree (entity-first gql + Resolver entity dispatch).
 
@@ -97,6 +98,12 @@ async def fetch_remote_subtree(
         loader_cls, type_key=type_key, force_split=True,
     )
     set_remote_selection(loader, selection)
+    if page_params is not None:
+        # Merged Paged from the executor's paged_provider (enable_pagination
+        # path) — batch_load_fn reads this instead of raw selection.arguments.
+        # specs/021 GAP A: the paginated path must carry the merged params,
+        # not PageLoadCommand objects the remote loader can't unwrap.
+        loader._remote_page_params = page_params
     fk_values = [getattr(p, rel_info.fk_field) for p in parents]
     return cast("list[Any]", await loader.load_many(fk_values))
 
@@ -661,14 +668,33 @@ def create_paginated_remote_loader(
                         if _is_scalar_annotation(fi.annotation)
                     },
                 )
-            limit = sel_args.get("limit")
-            offset = sel_args.get("offset", 0)
-            # order/direction come from the query's selection.arguments (the
-            # parsed GraphQL enum literals arrive as plain strings). order is
-            # always sent — fall back to the member default when the caller
-            # omits it; direction is forwarded only when supplied. specs/014.
-            order = sel_args.get("order") or default_order
-            direction = sel_args.get("direction")
+            # Caller params: a merged Paged side-channelled by the Resolver
+            # (enable_pagination path, specs/021 GAP A) wins; otherwise read
+            # the raw selection.arguments through _PagedOverride.from_dict so
+            # graphql Undefined / non-wire values can never reach the wire
+            # (specs/021 GAP B — mirrors the γ dto loader's hardening).
+            from nexusx.loader.pagination import _PagedOverride
+
+            p = getattr(self, "_remote_page_params", None)
+            if p is not None:
+                limit = p.limit
+                offset = p.offset
+                order = p.order
+                direction = p.direction
+            else:
+                ov = _PagedOverride.from_dict(sel_args)
+                limit = ov.limit if ov is not None else None
+                offset = (
+                    ov.offset
+                    if ov is not None and ov.offset is not None
+                    else 0
+                )
+                order = ov.order if ov is not None else None
+                direction = ov.direction if ov is not None else None
+            # order is always sent — fall back to the member default when the
+            # caller omits it; direction is forwarded only when supplied.
+            # specs/014.
+            order = order or default_order
             query = build_paginated_gql_query(
                 typename=typename, entry=entry, arg_name=arg_name,
                 join_remote=join_remote, keys=list(keys), items_sel=items_sel,
