@@ -480,20 +480,28 @@ def _replace_classes_in_annotation(annotation: Any, replacements: dict[type, typ
 
 def _replace_remote_ref(annotation: Any, fed_registry: Any) -> Any:
     """Recursively replace RemoteRef in a generic annotation with real types."""
-    ref = _contains_remote_ref(annotation)
-    if ref is not None and not isinstance(annotation, (RemoteRef, _RemoteRefOptional)):
-        origin = typing.get_origin(annotation)
-        args = typing.get_args(annotation)
-        new_args = tuple(
-            fed_registry.get(_contains_remote_ref(a).qualified_name)
-            if _contains_remote_ref(a) is not None
-            else _replace_remote_ref(a, fed_registry)
-            for a in args
-        )
-        if origin is list and len(new_args) == 1:
-            return list[new_args[0]]
-        try:
-            return origin[new_args] if len(new_args) > 1 else origin[new_args[0]]
-        except Exception:
-            return annotation
-    return annotation
+    if isinstance(annotation, RemoteRef):
+        return fed_registry.get(annotation.qualified_name)
+    if isinstance(annotation, _RemoteRefOptional):
+        return fed_registry.get(annotation.inner.qualified_name) | None
+
+    origin = typing.get_origin(annotation)
+    args = typing.get_args(annotation)
+    if origin is None or not args:
+        return annotation
+
+    new_args = tuple(_replace_remote_ref(arg, fed_registry) for arg in args)
+    if new_args == args:
+        return annotation
+
+    if origin is list and len(new_args) == 1:
+        return list[new_args[0]]
+    if origin is types.UnionType:
+        result = new_args[0]
+        for arg in new_args[1:]:
+            result = result | arg
+        return result
+    try:
+        return origin[new_args] if len(new_args) > 1 else origin[new_args[0]]
+    except Exception:
+        return annotation

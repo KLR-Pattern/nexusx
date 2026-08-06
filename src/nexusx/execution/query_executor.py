@@ -11,6 +11,7 @@ from pydantic import TypeAdapter
 from sqlmodel import SQLModel
 
 from nexusx.execution.argument_builder import ArgumentBuilder
+from nexusx.loader.registry import RelationshipKind
 from nexusx.query_parser import FieldSelection
 from nexusx.response_builder import serialize_with_model
 
@@ -18,6 +19,8 @@ if TYPE_CHECKING:
     from nexusx.loader.registry import ErManager
 
 logger = logging.getLogger(__name__)
+
+_CACHE_MISS = object()
 
 
 class QueryExecutor:
@@ -54,7 +57,7 @@ class QueryExecutor:
 
     def _retrieve(self, entity: Any, field_name: str) -> Any:
         """Retrieve resolved relationship value."""
-        return self._results.get((id(entity), field_name))
+        return self._results.get((id(entity), field_name), _CACHE_MISS)
 
     async def execute_query(
         self,
@@ -431,8 +434,17 @@ class QueryExecutor:
 
         def accessor(value: Any, field_name: str) -> Any:
             cached = self._retrieve(value, field_name)
-            if cached is not None:
+            if cached is not _CACHE_MISS:
                 return cached
+
+            rel_info = self._registry.get_relationship(type(value), field_name)
+            if (
+                rel_info is not None
+                and rel_info.kind != RelationshipKind.REMOTE_COALESCED
+                and not rel_info.is_list
+                and getattr(value, rel_info.fk_field, _CACHE_MISS) is None
+            ):
+                return None
             return getattr(value, field_name, None)
 
         def resolver(ent: Any, fname: str) -> Any:

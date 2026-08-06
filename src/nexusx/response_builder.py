@@ -342,6 +342,7 @@ def _validate_and_dump(
 
             nested_value = value_accessor(value, field_name)
             if nested_value is None:
+                data[field_name] = None
                 continue
 
             # Paginated package: nested_value is {items: [...], pagination: {...}}

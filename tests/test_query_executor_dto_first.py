@@ -52,6 +52,24 @@ class US1User(US1Base, table=True):
     )
 
 
+class US1NullableParent(US1Base, table=True):
+    __tablename__ = "us1_nullable_parent"
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    children: list["US1NullableChild"] = Relationship(back_populates="parent")
+
+
+class US1NullableChild(US1Base, table=True):
+    __tablename__ = "us1_nullable_child"
+
+    id: int | None = Field(default=None, primary_key=True)
+    parent_id: int | None = Field(
+        default=None, foreign_key="us1_nullable_parent.id",
+    )
+    parent: US1NullableParent | None = Relationship(back_populates="children")
+
+
 # ──────────────────────────────────────────────────────────
 # Shared session + seed
 # ──────────────────────────────────────────────────────────
@@ -73,6 +91,7 @@ async def _seed() -> None:
         s.add(US1Post(id=1, author_id=1, title="A1"))
         s.add(US1Post(id=2, author_id=1, title="A2"))
         s.add(US1Post(id=3, author_id=2, title="B1"))
+        s.add(US1NullableChild(id=1, parent_id=None))
         await s.commit()
     _seeded = True
 
@@ -127,6 +146,20 @@ async def test_nested_to_one(seeded):
     posts = {p["id"]: p for p in r["data"]["US1Post"]["by_filter"]}
     assert posts[1]["author"]["name"] == "Alice"
     assert posts[3]["author"]["name"] == "Bob"
+
+
+@pytest.mark.asyncio
+async def test_nullable_to_one_serializes_none_without_lazy_loading(seeded):
+    """A null FK must not access a detached SQLAlchemy relationship attribute."""
+    h = _make_handler()
+    q = "{ US1NullableChild { by_filter { id parent { id name } } } }"
+
+    r = await h.execute(q)
+
+    assert "errors" not in r
+    assert r["data"]["US1NullableChild"]["by_filter"] == [
+        {"id": 1, "parent": None},
+    ]
 
 
 # ──────────────────────────────────────────────────────────

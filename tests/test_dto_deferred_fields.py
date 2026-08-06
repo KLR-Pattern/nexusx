@@ -9,6 +9,8 @@ raw 注解登记为 deferred；federate 物化 member DTO 后，resolve_remote_f
 注意：字段名不能与服务命名空间变量同名（Python 类体名字遮蔽），故测试用别名服务。
 """
 
+from typing import Annotated, get_args, get_origin
+
 from pydantic import Field
 from sqlmodel import Field as SQLField
 from sqlmodel import SQLModel
@@ -18,6 +20,7 @@ from nexusx.federation import RemoteService
 from nexusx.federation.contract import EntityFragment, FieldDescriptor
 from nexusx.federation.registry import FederatedTypeRegistry
 from nexusx.federation.remote_ref import resolve_remote_field_refs
+from nexusx.loader.pagination import Paged
 
 # 别名服务：字段名 `reviews` ≠ 命名空间变量 `rev_svc`，避免类体遮蔽。
 rev_svc = RemoteService("reviews", url="http://test/reviews")
@@ -80,6 +83,41 @@ def test_resolve_remote_field_refs_swaps_placeholder_for_materialized():
     inst = ProductDTO(id=1, name="x")
     inst.reviews = [materialized(title="t", rating=5)]
     assert inst.reviews[0].title == "t"
+
+
+def test_resolve_paged_remote_ref_preserves_list_cardinality():
+    """Annotated[list[RemoteRef], Paged] must remain a list after materialization."""
+
+    class ProductDTO(DefineSubset):
+        __subset__ = (_DeferProduct, ("id", "name"))
+        reviews: Annotated[
+            list[rev_svc.ReviewDTO], Paged(limit=2)
+        ] = Field(default_factory=list)
+
+    reg = FederatedTypeRegistry()
+    reg.materialize({
+        "reviews.ReviewDTO": EntityFragment(
+            typename="ReviewDTO",
+            scalar_fields=[
+                FieldDescriptor(name="title", type_name="str"),
+                FieldDescriptor(name="rating", type_name="int"),
+            ],
+        )
+    })
+    materialized = reg.get("reviews.ReviewDTO")
+
+    resolve_remote_field_refs(reg, [ProductDTO])
+
+    anno = ProductDTO.model_fields["reviews"].annotation
+    inner = get_args(anno)[0] if get_origin(anno) is Annotated else anno
+    assert get_origin(inner) is list
+    assert get_args(inner) == (materialized,)
+    dto = ProductDTO.model_validate({
+        "id": 1,
+        "name": "x",
+        "reviews": [{"title": "t", "rating": 5}],
+    })
+    assert dto.reviews[0].title == "t"
 
 
 def test_resolve_skips_unmounted_refs():
