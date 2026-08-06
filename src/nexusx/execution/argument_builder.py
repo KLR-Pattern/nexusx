@@ -51,6 +51,16 @@ class ArgumentBuilder:
         self, value: Any, target_type: type, entity_names: set[str]
     ) -> Any:
         """Convert a dict value to an Input model instance if needed."""
+        if self._converter.is_optional(target_type):
+            target_type = self._converter.unwrap_optional(target_type)
+
+        if self._converter.is_list_type(target_type) and isinstance(value, list):
+            inner_type = self._converter.get_list_inner_type(target_type)
+            return [
+                self._convert_to_input_model(item, inner_type, entity_names)
+                for item in value
+            ]
+
         if not isinstance(value, dict):
             return value
         if not self._is_input_type(target_type, entity_names):
@@ -63,6 +73,7 @@ class ArgumentBuilder:
             if key in model_fields:
                 field_info = model_fields[key]
                 field_type = field_info.annotation
+                val = self._convert_scalar_value(val, field_type)
                 converted[key] = self._convert_to_input_model(val, field_type, entity_names)
             else:
                 converted[key] = val
@@ -81,6 +92,12 @@ class ArgumentBuilder:
         if origin is list and isinstance(value, list):
             (elem_type,) = get_args(target_type) or (None,)
             return [self._convert_scalar_value(v, elem_type) for v in value]
+
+        if self._converter.is_enum_type(target_type) and isinstance(value, str):
+            try:
+                return target_type[value]
+            except KeyError:
+                return target_type(value)
 
         if target_type is datetime and isinstance(value, str):
             return self._parse_datetime(value)

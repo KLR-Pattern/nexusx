@@ -7,7 +7,9 @@ to eliminate code duplication.
 from __future__ import annotations
 
 import types
-from typing import Any, Union, get_args, get_origin
+from collections.abc import Iterable
+from enum import Enum
+from typing import Any, Union, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel
 from sqlmodel import SQLModel
@@ -86,3 +88,70 @@ def is_input_type(python_type: type) -> bool:
     return False
 
 
+def collect_enum_types(
+    entities: list[type[SQLModel]],
+    type_converter: Any,  # TypeConverter type hint would cause circular import
+) -> dict[str, type[Enum]]:
+    """Collect all enum types used in entities.
+
+    Args:
+        entities: List of SQLModel entity classes.
+        type_converter: TypeConverter instance for type inspection.
+
+    Returns:
+        Dictionary mapping enum name to enum class.
+
+    Examples:
+        >>> from enum import Enum
+        >>> class Status(Enum):
+        ...     ACTIVE = "active"
+        >>> class User(SQLModel):
+        ...     status: Status
+        >>> enums = collect_enum_types([User], converter)
+        >>> "Status" in enums
+        True
+    """
+    root_types: list[Any] = []
+
+    for entity in entities:
+        try:
+            hints = get_type_hints(entity)
+        except Exception:
+            continue
+        root_types.extend(hints.values())
+
+    return collect_reachable_enum_types(root_types, type_converter)
+
+
+def collect_reachable_enum_types(
+    root_types: Iterable[Any],
+    type_converter: Any,  # TypeConverter type hint would cause circular import
+) -> dict[str, type[Enum]]:
+    """Collect enums reachable through nested input model fields."""
+    enums: dict[str, type[Enum]] = {}
+    visited_models: set[type] = set()
+
+    def collect_from_type(python_type: Any) -> None:
+        if type_converter.is_mapped_wrapper(python_type):
+            python_type = type_converter.unwrap_mapped(python_type)
+
+        for core_type in get_core_types(python_type):
+            if type_converter.is_enum_type(core_type):
+                enums[core_type.__name__] = core_type
+                continue
+
+            if not is_input_type(core_type) or core_type in visited_models:
+                continue
+
+            visited_models.add(core_type)
+            try:
+                hints = get_type_hints(core_type)
+            except Exception:
+                continue
+            for field_type in hints.values():
+                collect_from_type(field_type)
+
+    for root_type in root_types:
+        collect_from_type(root_type)
+
+    return enums
