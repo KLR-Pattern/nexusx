@@ -87,6 +87,16 @@ class Paged:
         return (self.limit, self.offset, self.order, self.direction)
 
 
+@dataclass(frozen=True)
+class _PagedOverride:
+    """Caller pagination values where ``None`` means the arg was omitted."""
+
+    limit: int | None = None
+    offset: int | None = None
+    order: str | None = None
+    direction: str | None = None
+
+
 def _build_pagination_model(pagination_selection: set[str]) -> type[BaseModel]:
     """Create a Pagination model containing only the selected fields."""
     fields = {}

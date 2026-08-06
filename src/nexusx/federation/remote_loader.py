@@ -511,17 +511,28 @@ def create_dto_remote_loader(
             # via set_dto_page_params) wins over closure (create-time fallback).
             # Omitted ⇒ member full-fetches (back-compat).
             p = getattr(self, "_dto_page_params", None)
-            eff_order = (p.order if p else None) or order
-            eff_direction = (p.direction if p else None) or direction
-            eff_limit = (p.limit if p else None) or limit
-            eff_offset = (p.offset if p else 0) or offset
+            eff_order = p.order if p is not None and p.order is not None else order
+            eff_direction = (
+                p.direction
+                if p is not None and p.direction is not None
+                else direction
+            )
+            eff_limit = p.limit if p is not None and p.limit is not None else limit
+            eff_offset = p.offset if p is not None and p.offset is not None else offset
+            has_page_params = (
+                p is not None
+                or order is not None
+                or direction is not None
+                or limit is not None
+                or offset != 0
+            )
             if eff_order is not None:
                 body["order"] = eff_order
             if eff_direction is not None:
                 body["direction"] = eff_direction
             if eff_limit is not None:
                 body["limit"] = eff_limit
-            if eff_offset:
+            if has_page_params:
                 body["offset"] = eff_offset
             resp = await transport.post_json(url, body)
             if not isinstance(resp, dict):

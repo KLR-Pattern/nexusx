@@ -653,10 +653,10 @@ def _gql_args_to_paged(
     gql's ``field_sel.arguments`` is read for pagination — lives outside the
     Resolver so the Resolver stays gql-agnostic. Reads ``limit`` / ``offset`` /
     ``order`` / ``direction`` and unwraps enum values (``.value``) so the result
-    is wire-ready for ``PageLoadCommand``. Empty ``Paged()`` when the field has
-    no page args (defaults fill in via ``_merge_paged``).
+    is wire-ready for ``PageLoadCommand``. Omitted args remain ``None`` so
+    ``_merge_paged`` can distinguish them from explicit zero values.
     """
-    from nexusx.loader.pagination import Paged
+    from nexusx.loader.pagination import _PagedOverride
 
     child = (
         field_sel.sub_fields.get(field_name)
@@ -666,9 +666,9 @@ def _gql_args_to_paged(
     args = (child.arguments if child else None) or {}
     order = args.get("order")
     direction = args.get("direction")
-    return Paged(
+    return _PagedOverride(
         limit=args.get("limit"),
-        offset=args.get("offset") if args.get("offset") is not None else 0,
+        offset=args.get("offset") if "offset" in args else None,
         order=order.value if hasattr(order, "value") else order,
         direction=direction.value if hasattr(direction, "value") else direction,
     )

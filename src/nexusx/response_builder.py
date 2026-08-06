@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Callable
-from typing import Any, get_args, get_origin
+from typing import Any, ForwardRef, get_args, get_origin
 
 from pydantic import BaseModel, create_model
 
@@ -65,8 +65,15 @@ class ERFieldResolver:
         )
         if not (isinstance(rel_entity, type) and issubclass(rel_entity, BaseModel)):
             rel_entity = None
+        annotation = get_field_type(entity, field_name)
+        if (
+            rel_entity is None
+            and _is_declared_relationship(entity, field_name)
+            and _contains_unresolved_forward_ref(annotation)
+        ):
+            annotation = Any
         return FieldResolution(
-            annotation=get_field_type(entity, field_name),
+            annotation=annotation,
             nested_type=rel_entity,
             is_list=_is_list_relationship(entity, field_name),
         )
@@ -626,6 +633,24 @@ def _is_list_relationship(
         if annotation:
             return _annotation_is_list(annotation)
     return False
+
+
+def _is_declared_relationship(entity: type, field_name: str) -> bool:
+    if field_name in get_relationship_names(entity):
+        return True
+    return any(
+        getattr(rel, "name", None) == field_name
+        for rel in getattr(entity, "__relationships__", ())
+    )
+
+
+def _contains_unresolved_forward_ref(annotation: Any) -> bool:
+    if isinstance(annotation, (str, ForwardRef)):
+        return True
+    return any(
+        _contains_unresolved_forward_ref(arg)
+        for arg in get_args(annotation)
+    )
 
 
 def _annotation_is_list(annotation: Any) -> bool:

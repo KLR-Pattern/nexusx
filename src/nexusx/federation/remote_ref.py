@@ -228,6 +228,16 @@ def clear_pending_subsets() -> None:
     _pending_subsets.clear()
 
 
+def replace_resolved_placeholders(classes: list[type]) -> list[type]:
+    """Replace deferred DTO placeholders with their latest resolved classes."""
+    replaced: list[type] = []
+    for cls in classes:
+        while cls in _resolved_placeholders:
+            cls = _resolved_placeholders[cls]
+        replaced.append(cls)
+    return replaced
+
+
 def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
     """Resolve pending DefineSubset classes whose RemoteRef targets types in
     THIS fed_registry.
@@ -302,18 +312,32 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
 
         # Build resolved annotations.
         resolved_annotations: dict[str, Any] = {}
+        remote_field_refs: dict[str, Any] = {}
         try:
             for fname, anno in namespace.get("__annotations__", {}).items():
-                ref = _contains_remote_ref(anno)
+                raw_anno = anno
+                if isinstance(raw_anno, str):
+                    try:
+                        raw_anno = eval(  # noqa: S307
+                            raw_anno,
+                            vars(module) if module is not None else {},
+                            namespace,
+                        )
+                    except (NameError, TypeError):
+                        pass
+                ref = _contains_remote_ref(raw_anno)
                 if ref is not None:
                     target = _resolve_ref(ref, f"{name}.{fname}")
                     _record_service_color(fed_registry, ref)
-                    if isinstance(anno, _RemoteRefOptional):
+                    remote_field_refs[fname] = raw_anno
+                    if isinstance(raw_anno, _RemoteRefOptional):
                         resolved_annotations[fname] = target | None
-                    elif isinstance(anno, RemoteRef):
+                    elif isinstance(raw_anno, RemoteRef):
                         resolved_annotations[fname] = target
                     else:
-                        resolved_annotations[fname] = _replace_remote_ref(anno, fed_registry)
+                        resolved_annotations[fname] = _replace_remote_ref(
+                            raw_anno, fed_registry,
+                        )
                 else:
                     resolved_annotations[fname] = anno
         except _NotResolvable:
@@ -346,6 +370,8 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
                 new_namespace[key] = value
 
         new_cls = type(name, (DefineSubset,), new_namespace)
+        if remote_field_refs:
+            new_cls.__nexusx_remote_field_refs__ = remote_field_refs
 
         if module is not None:
             setattr(module, name, new_cls)

@@ -196,8 +196,14 @@ async def federate(
     # 3b. Resolve deferred DefineSubset classes (those with RemoteRef sources).
     #     After materialization, the source classes exist — replace placeholders
     #     with real DefineSubset classes.
-    from nexusx.federation.remote_ref import resolve_deferred_subsets
+    from nexusx.federation.remote_ref import (
+        replace_resolved_placeholders,
+        resolve_deferred_subsets,
+    )
     resolve_deferred_subsets(fed_registry)
+    er_manager._dto_classes = replace_resolved_placeholders(
+        er_manager._dto_classes,
+    )
 
     # 3c. γ-path (specs/016): resolve deferred RemoteRef FIELD references on
     #     mounter DefineSubset DTOs whose source is local (e.g. ProductDTO.reviews:

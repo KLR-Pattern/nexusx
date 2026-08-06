@@ -11,8 +11,16 @@ from sqlmodel import Field, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from nexusx import DefineSubset, ErManager, Loader, SubsetConfig
-from nexusx.federation import RemoteService
-from nexusx.federation.contract import BatchRoot, DTOFragment, FieldDescriptor
+from nexusx.federation import RemoteRelationship, RemoteService
+from nexusx.federation.contract import (
+    BatchRoot,
+    DTOFragment,
+    DTOIntrospectionResponse,
+    EntityFragment,
+    ERIntrospectionResponse,
+    FieldDescriptor,
+    RelDescriptor,
+)
 from nexusx.federation.manager import FederationError
 from nexusx.federation.registry import FederatedTypeRegistry
 from nexusx.federation.remote_loader import RemoteQueryError, create_dto_remote_loader
@@ -21,6 +29,10 @@ from nexusx.standard_queries import add_dto_batch_roots
 reviews_service = RemoteService("reviews", url="http://reviews")
 alpha_service = RemoteService("alpha", url="http://alpha")
 beta_service = RemoteService("beta", url="http://beta")
+deferred_source_service = RemoteService(
+    "deferred-source", url="http://deferred-source",
+)
+deferred_leaf_service = RemoteService("deferred-leaf")
 
 
 class _PureProduct(SQLModel, table=True):
@@ -86,6 +98,31 @@ class _HiddenJoinDTO(DefineSubset):
         federation_public=True,
         federation_join_key="product_id",
     )
+
+
+class _DeferredOwner(SQLModel, table=True):
+    __tablename__ = "dto_review_deferred_owner"
+
+    id: int | None = Field(default=None, primary_key=True)
+    __relationships__ = [
+        RemoteRelationship(
+            fk="id",
+            target=list[deferred_source_service.Review],
+            name="source_reviews",
+            join_remote="product_id",
+        ),
+    ]
+
+
+class DeferredReviewDTO(DefineSubset):
+    __subset__ = (
+        deferred_source_service.Review,
+        ("id", "product_id", "title"),
+    )
+    comments: list[deferred_leaf_service.CommentDTO] = Field(default_factory=list)
+
+    def resolve_comments(self, loader=Loader("comments")):
+        return loader.load(self.id)
 
 
 def _dto_fragment(
@@ -166,6 +203,110 @@ class _DTOTransport:
         return None
 
 
+class _DeferredDTOTransport:
+    def __init__(self) -> None:
+        self.posts: list[tuple[str, dict[str, Any]]] = []
+
+    async def get_json(self, url: str) -> dict[str, Any]:
+        if url == "http://deferred-source/nexusx/er-introspection":
+            return ERIntrospectionResponse(
+                service_name="deferred-source",
+                entities=[
+                    EntityFragment(
+                        typename="Review",
+                        pk_field="id",
+                        scalar_fields=[
+                            FieldDescriptor(name="id", type_name="int"),
+                            FieldDescriptor(name="product_id", type_name="int"),
+                            FieldDescriptor(name="title", type_name="str"),
+                        ],
+                        relationships=[
+                            RelDescriptor(
+                                name="leaf_rows",
+                                direction="ONETOMANY",
+                                fk_field="id",
+                                target_typename="LeafEntity",
+                                is_list=True,
+                                target_service="deferred-leaf",
+                                target_endpoint="http://deferred-leaf",
+                            )
+                        ],
+                        batch_roots=[
+                            BatchRoot(
+                                name="by_product_id_in",
+                                arg_name="product_id_list",
+                                arg_type="list[int]",
+                            )
+                        ],
+                    )
+                ],
+            ).model_dump()
+        if url == "http://deferred-leaf/nexusx/er-introspection":
+            return ERIntrospectionResponse(
+                service_name="deferred-leaf",
+                entities=[
+                    EntityFragment(
+                        typename="LeafEntity",
+                        pk_field="id",
+                        scalar_fields=[
+                            FieldDescriptor(name="id", type_name="int"),
+                        ],
+                        batch_roots=[
+                            BatchRoot(
+                                name="by_id_in",
+                                arg_name="id_list",
+                                arg_type="list[int]",
+                            )
+                        ],
+                    )
+                ],
+            ).model_dump()
+        if url == "http://deferred-source/nexusx/dto-introspection":
+            return DTOIntrospectionResponse(
+                service_name="deferred-source",
+            ).model_dump()
+        if url == "http://deferred-leaf/nexusx/dto-introspection":
+            return DTOIntrospectionResponse(
+                service_name="deferred-leaf",
+                dtos=[
+                    DTOFragment(
+                        name="CommentDTO",
+                        base_entity="Comment",
+                        scalar_fields=[
+                            FieldDescriptor(name="id", type_name="int"),
+                            FieldDescriptor(name="review_id", type_name="int"),
+                            FieldDescriptor(name="text", type_name="str"),
+                        ],
+                        join_key="review_id",
+                        batch_root=BatchRoot(
+                            name="by_review_id_in",
+                            arg_name="review_id_list",
+                            arg_type="list[int]",
+                        ),
+                    )
+                ],
+            ).model_dump()
+        raise AssertionError(f"unexpected GET {url}")
+
+    async def post_json(
+        self,
+        url: str,
+        body: dict[str, Any],
+    ) -> dict[str, Any]:
+        self.posts.append((url, body))
+        assert url == "http://deferred-leaf/nexusx/dto-batch"
+        review_id = body["keys"][0]
+        return {
+            "data": [
+                {
+                    "id": 101,
+                    "review_id": review_id,
+                    "text": "nested",
+                }
+            ]
+        }
+
+
 def test_future_annotations_remote_ref_is_deferred() -> None:
     future_service = RemoteService("future-reviews", url="http://future-reviews")
 
@@ -180,6 +321,43 @@ def test_future_annotations_remote_ref_is_deferred() -> None:
     assert refs is not None
     assert "reviews" in refs
     assert FutureDTO.model_fields["reviews"].annotation is Any
+
+
+@pytest.mark.asyncio
+async def test_deferred_source_dto_wires_nested_remote_field() -> None:
+    transport = _DeferredDTOTransport()
+    placeholder = DeferredReviewDTO
+    er = ErManager(
+        entities=[_DeferredOwner],
+        session_factory=lambda: None,
+        service_name="catalog",
+        dto_classes=[placeholder],
+    )
+
+    await er.initialize(transport=transport)
+
+    [resolved_cls] = er.get_dto_classes()
+    assert resolved_cls is DeferredReviewDTO
+    assert resolved_cls is not placeholder
+    refs = getattr(resolved_cls, "__nexusx_remote_field_refs__", None)
+    assert refs is not None and "comments" in refs
+    assert er.get_dto_loader(resolved_cls, "comments") is not None
+
+    Resolver = er.create_resolver()
+    [resolved] = await Resolver().resolve([
+        resolved_cls(id=1, product_id=7, title="remote"),
+    ])
+    assert [comment.text for comment in resolved.comments] == ["nested"]
+    assert transport.posts == [
+        (
+            "http://deferred-leaf/nexusx/dto-batch",
+            {
+                "dto": "CommentDTO",
+                "join_key": "review_id",
+                "keys": [1],
+            },
+        )
+    ]
 
 
 @pytest.mark.asyncio

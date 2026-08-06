@@ -41,6 +41,16 @@ class TaskSummary(BaseModel):
     owner: UserSummary | None = None
 
 
+class NullableMemberSummary(BaseModel):
+    id: int
+    secret: str
+
+
+class NullableCollectionSummary(BaseModel):
+    title: str
+    members: list[NullableMemberSummary | None]
+
+
 class _Counter:
     """Records call ordering to verify the no-double-Resolver invariant."""
 
@@ -92,11 +102,28 @@ class ContextService(UseCaseService):
         return f"hi {actor}"
 
 
+class NullableCollectionService(UseCaseService):
+    @query
+    async def get_collection(cls) -> NullableCollectionSummary:
+        return NullableCollectionSummary(
+            title="hidden",
+            members=[
+                NullableMemberSummary(id=1, secret="hidden"),
+                None,
+            ],
+        )
+
+
 @pytest.fixture
 def app() -> UseCaseAppConfig:
     return UseCaseAppConfig(
         name="project",
-        services=[UserService, TaskService, ContextService],
+        services=[
+            UserService,
+            TaskService,
+            ContextService,
+            NullableCollectionService,
+        ],
     )
 
 
@@ -158,6 +185,18 @@ class TestHappyPath:
         assert tasks[0].owner.name == "Alice"
         # Only `name` requested → only `name` should be on the projected owner
         assert set(tasks[0].owner.model_dump().keys()) == {"name"}
+
+    async def test_nullable_list_items_preserve_projection(self, app, schema) -> None:
+        result = await execute_compose_query(
+            app,
+            schema,
+            "{ NullableCollectionService { get_collection { members { id } } } }",
+        )
+
+        collection = result["data"]["NullableCollectionService"]["get_collection"]
+        assert set(collection.model_dump().keys()) == {"members"}
+        assert collection.members[1] is None
+        assert set(collection.members[0].model_dump().keys()) == {"id"}
 
     async def test_optional_return_none(self, app, schema) -> None:
         result = await execute_compose_query(

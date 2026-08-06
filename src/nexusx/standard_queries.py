@@ -847,6 +847,8 @@ def _create_dto_by_keys_in_query(
     ) -> list[dict]:
         if not values:
             return []
+        if limit == 0:
+            return []
         from sqlalchemy import func
 
         # Resolve the effective order profile: caller order → default → None.
@@ -867,7 +869,7 @@ def _create_dto_by_keys_in_query(
             # collection (no wasted cross-service hops). Mirrors PO2M
             # (factories.py:397-436). Falls back to full fetch when there's no
             # order profile or no limit (back-compat for un-paged batch roots).
-            if order_terms is not None and limit:
+            if order_terms is not None and limit is not None:
                 rn_label = "_nx_rn"
                 inner_order = _build_order_expressions(base_entity, order_terms)
                 row_num_col = func.row_number().over(

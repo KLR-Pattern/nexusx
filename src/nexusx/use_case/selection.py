@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import inspect
 import typing
+from functools import partial
 from types import UnionType as _UnionType
 from typing import Any, get_args, get_origin
 
@@ -91,6 +92,7 @@ class DTOFieldResolver:
             is_list=_is_list_wrapped(field_type),
             is_optional=_is_optional_wrapped(field_type),
             default=_field_default(field_info),
+            nested_annotation_factory=partial(_replace_model_type, field_type),
         )
 
 

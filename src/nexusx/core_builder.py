@@ -21,6 +21,7 @@ live in the shells or in the resolver implementations.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -54,6 +55,10 @@ class FieldResolution:
     - ``is_optional``: ``None`` → keep the builder's lenient default (nested
       relations nullable, entity-first semantics); ``True`` / ``False`` pin
       the nullability explicitly (UseCase honors the DTO annotation).
+    - ``nested_annotation_factory``: optional exact annotation reconstruction
+      hook. UseCase uses it to preserve wrappers such as
+      ``list[DTO | None]`` that cannot be represented by ``is_list`` plus
+      outer ``is_optional`` alone.
     """
 
     annotation: Any
@@ -61,6 +66,7 @@ class FieldResolution:
     is_list: bool
     default: Any = ...
     is_optional: bool | None = None
+    nested_annotation_factory: Callable[[type[BaseModel]], Any] | None = None
 
 
 class FieldResolver(Protocol):
@@ -198,7 +204,12 @@ def build_model(
                 allow_paginated=allow_paginated,
                 path=field_path,
             )
-            if resolution.is_list:
+            if resolution.nested_annotation_factory is not None:
+                fields[field_name] = (
+                    resolution.nested_annotation_factory(nested_model),
+                    resolution.default,
+                )
+            elif resolution.is_list:
                 base: Any = list[nested_model]  # type: ignore[valid-type]
                 if resolution.is_optional is True:
                     base = base | None

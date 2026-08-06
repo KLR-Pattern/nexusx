@@ -1,6 +1,6 @@
 """Tests for response_builder — dynamic Pydantic model building and serialization."""
 
-from typing import Optional, get_origin
+from typing import Any, Optional, get_origin
 
 from pydantic import BaseModel
 from sqlmodel import Field, Relationship, SQLModel
@@ -43,6 +43,14 @@ class RBPost(SQLModel, table=True):
     author: Optional["RBUser"] = Relationship(back_populates="posts")
 
 
+class RBUnresolvedOwner(BaseModel):
+    pass
+
+
+RBUnresolvedOwner.__annotations__["children"] = "list[RBUnresolvedChild]"
+RBUnresolvedOwner.__sqlmodel_relationships__ = {"children": object()}
+
+
 # ──────────────────────────────────────────────────────────
 # Tests
 # ──────────────────────────────────────────────────────────
@@ -78,6 +86,18 @@ class TestBuildResponseModel:
         }
         model = build_response_model(RBPost, field_tree)
         assert issubclass(model, BaseModel)
+
+    def test_unresolved_relationship_falls_back_to_any(self):
+        model = build_response_model(
+            RBUnresolvedOwner,
+            {"children": {"id": None}},
+            model_name="UnresolvedFallback",
+        )
+
+        assert model.model_fields["children"].annotation is Any
+        assert model.model_validate(
+            {"children": [{"id": 1}]},
+        ).model_dump() == {"children": [{"id": 1}]}
 
 
 class TestSerializeWithModel:

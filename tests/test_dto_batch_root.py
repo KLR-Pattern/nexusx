@@ -95,6 +95,30 @@ async def test_dto_batch_root_empty_keys_returns_empty():
     await engine.dispose()
 
 
+@pytest.mark.asyncio
+async def test_dto_batch_root_limit_zero_returns_no_rows():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    sf = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with sf() as session:
+        session.add(_Review(id=1, product_id=10, title="Great", rating=5))
+        session.add(_Review(id=2, product_id=10, title="Okay", rating=3))
+        await session.commit()
+
+    er = ErManager(
+        entities=[_Review],
+        session_factory=sf,
+        service_name="reviews",
+        dto_classes=[_ReviewDTO],
+    )
+    add_dto_batch_roots(er)
+    by_fn, _join_key = er._dto_batch_roots[_ReviewDTO.__name__]
+
+    assert await by_fn([10], limit=0) == []
+    await engine.dispose()
+
+
 def test_add_dto_batch_roots_skips_non_public():
     """非 public DTO（无 federation_public）不生成 batch root。"""
 

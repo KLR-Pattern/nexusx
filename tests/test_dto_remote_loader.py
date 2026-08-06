@@ -98,6 +98,36 @@ async def test_dto_remote_loader_missing_key_returns_empty_list():
 
 
 @pytest.mark.asyncio
+async def test_dto_remote_loader_preserves_zero_page_overrides():
+    from nexusx.federation.remote_loader import (
+        create_dto_remote_loader,
+        set_dto_page_params,
+    )
+    from nexusx.loader.pagination import Paged
+
+    target_cls = create_model("R", title=(str, None), product_id=(int, None))
+    transport = FakeTransport([])
+    loader_cls = create_dto_remote_loader(
+        typename="R",
+        join_key="product_id",
+        endpoint="http://test/r",
+        target_cls=target_cls,
+        transport=transport,
+        is_list=True,
+        limit=7,
+        offset=3,
+    )
+    loader = loader_cls()
+    set_dto_page_params(loader, Paged(limit=0, offset=0))
+
+    await loader.load_many([10])
+
+    _url, body = transport.posts[0]
+    assert body["limit"] == 0
+    assert body["offset"] == 0
+
+
+@pytest.mark.asyncio
 async def test_dto_remote_loader_rejects_bad_response_shape():
     from nexusx.federation.remote_loader import RemoteQueryError, create_dto_remote_loader
 

@@ -659,10 +659,10 @@ class Resolver:
     def _extract_page_params(self, field_name: str) -> Any:
         """Read caller page params from Resolver ``context`` (set by the use
         case method入口 from query args). Per-field dict first
-        (``context[field]``), then global (``context``). Returns a Paged
-        carrying the caller's override values, else None (→ no override).
+        (``context[field]``), then global (``context``). Returns an override
+        carrying only caller-provided values, else None (→ no override).
         """
-        from nexusx.loader.pagination import Paged
+        from nexusx.loader.pagination import _PagedOverride
 
         if not self._context:
             return None
@@ -672,10 +672,10 @@ class Resolver:
         limit = raw.get("limit")
         order = raw.get("order")
         direction = raw.get("direction")
-        offset = raw.get("offset", 0)
-        if limit is None and order is None and direction is None and not offset:
+        offset = raw.get("offset") if "offset" in raw else None
+        if limit is None and order is None and direction is None and offset is None:
             return None
-        return Paged(
+        return _PagedOverride(
             limit=limit, offset=offset, order=order, direction=direction,
         )
 
@@ -684,8 +684,8 @@ class Resolver:
         """Merge a field's Paged default with caller-context override.
 
         Caller field non-None wins; else the default's value. Both None → None
-        (→ full fetch, back-compat). offset 0 is falsy: caller offset=0 falls
-        back to the default (first page is the common case).
+        (→ full fetch, back-compat). The caller override keeps omitted offset
+        distinct from an explicit ``offset=0``.
         """
         from nexusx.loader.pagination import Paged
 
@@ -695,7 +695,7 @@ class Resolver:
         c = caller or Paged()
         return Paged(
             limit=c.limit if c.limit is not None else d.limit,
-            offset=c.offset if c.offset else d.offset,
+            offset=c.offset if c.offset is not None else d.offset,
             order=c.order if c.order is not None else d.order,
             direction=c.direction if c.direction is not None else d.direction,
         )
