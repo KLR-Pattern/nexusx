@@ -47,26 +47,26 @@ class FieldResolution:
     - ``annotation``: the field's type for scalar fields (e.g. ``int``, ``str``).
     - ``nested_type``: the target model type if this is a nested relationship;
       ``None`` for scalar fields.
-    - ``is_list``: whether the field is a to-many (``list[X]``) relationship.
     - ``default``: the pydantic field-definition second element — ``...``
       (required), a plain value, or a ``Field(...)`` object. entity-first
       leaves every field required; UseCase preserves the DTO's
       default / default_factory / description.
-    - ``is_optional``: ``None`` → keep the builder's lenient default (nested
-      relations nullable, entity-first semantics); ``True`` / ``False`` pin
-      the nullability explicitly (UseCase honors the DTO annotation).
-    - ``nested_annotation_factory``: optional exact annotation reconstruction
-      hook. UseCase uses it to preserve wrappers such as
-      ``list[DTO | None]`` that cannot be represented by ``is_list`` plus
-      outer ``is_optional`` alone.
+    - ``nested_shape``: how to wrap the nested model back into its field
+      annotation — ``nested_model -> annotation``. UseCase uses
+      ``partial(_replace_model_type, field_type)`` which preserves the exact
+      wrapper (e.g. ``list[DTO | None]``); entity-first builds ``list[m]`` for
+      to-many relationships. ``None`` → the builder's lenient default:
+      nullable single model (``nested | None``), entity-first semantics.
+
+    ``nested_shape`` subsumes the former ``is_list`` / ``is_optional`` /
+    ``nested_annotation_factory`` triple — a single source of truth for "the
+    field's annotation shape around the nested model".
     """
 
     annotation: Any
     nested_type: type[BaseModel] | None
-    is_list: bool
     default: Any = ...
-    is_optional: bool | None = None
-    nested_annotation_factory: Callable[[type[BaseModel]], Any] | None = None
+    nested_shape: Callable[[type[BaseModel]], Any] | None = None
 
 
 class FieldResolver(Protocol):
@@ -123,8 +123,9 @@ def build_model(
     - **scalar**: resolver returns ``nested_type=None`` → keep ``annotation``
       (or ``Any`` if unresolved, mirroring entity-first's fallback).
     - **nested**: resolver returns ``nested_type`` → recurse ``build_model``.
-      ``is_list`` determines ``list[nested]``; nullability follows
-      ``is_optional`` (``None`` → nullable, entity-first semantics).
+      ``nested_shape`` wraps the result (``list[nested]`` for to-many,
+      UseCase's exact-wrapper reconstruction); ``None`` → nullable single
+      (entity-first semantics).
     - **paginated package**: selection has ``{items, pagination}`` sub-fields →
       ``create_result_type({items: list[nested], pagination})``. entity-first
       only; UseCase passes ``allow_paginated=False`` (its DTOs never produce
@@ -204,20 +205,13 @@ def build_model(
                 allow_paginated=allow_paginated,
                 path=field_path,
             )
-            if resolution.nested_annotation_factory is not None:
+            if resolution.nested_shape is not None:
                 fields[field_name] = (
-                    resolution.nested_annotation_factory(nested_model),
+                    resolution.nested_shape(nested_model),
                     resolution.default,
                 )
-            elif resolution.is_list:
-                base: Any = list[nested_model]  # type: ignore[valid-type]
-                if resolution.is_optional is True:
-                    base = base | None
-                fields[field_name] = (base, resolution.default)
-            elif resolution.is_optional is False:
-                fields[field_name] = (nested_model, resolution.default)
             else:
-                # is_optional None (lenient) or True: nullable.
+                # Lenient default (entity-first semantics): nullable single.
                 fields[field_name] = (nested_model | None, resolution.default)
 
     return create_model(

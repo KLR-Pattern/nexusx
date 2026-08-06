@@ -342,7 +342,15 @@ class TestERFieldResolver:
         res = resolver.resolve_field(RBPost, "author")
         assert res is not None
         assert res.nested_type is not None
-        assert res.is_list is False
+        # 单数关系: nested_shape None → builder 默认 nullable 单数
+        assert res.nested_shape is None
+
+    def test_list_relationship_sets_list_shape(self):
+        """to-many 关系: nested_shape 产出 list[nested]。"""
+        resolver = ERFieldResolver(None, None)
+        res = resolver.resolve_field(RBUser, "posts")
+        assert res is not None
+        assert res.nested_shape is not None
 
 
 class TestMappedListRelationshipShape:

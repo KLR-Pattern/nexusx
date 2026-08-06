@@ -2,12 +2,40 @@
 
 from __future__ import annotations
 
+import typing
 from collections.abc import Callable
-from typing import Any, ParamSpec, get_origin, get_type_hints
+from typing import Any, ParamSpec, get_args, get_origin, get_type_hints
 
 from nexusx.type_converter import TypeConverter
 
 P = ParamSpec("P")
+
+
+def is_list_annotation(annotation: Any) -> bool:
+    """True if ``annotation`` is a list type, unwrapping common wrappers.
+
+    Handles ``Annotated[...]``, SQLModel's ``Mapped[...]`` (table=True models
+    rewrite relationship annotations to ``Mapped[list['X']]``), ``Optional`` /
+    unions, and ``list`` generics. Shared by entity-first (response_builder)
+    and UseCase (selection) paths — specs/021 convergence.
+    """
+    if isinstance(annotation, str):
+        return False
+    origin = get_origin(annotation)
+    if origin is None:
+        return False
+    args = get_args(annotation)
+    if origin is typing.Annotated or getattr(origin, "__name__", "") == "Mapped":
+        return is_list_annotation(args[0]) if args else False
+    if origin is list or str(origin).startswith("list"):
+        return True
+    if args:
+        return any(
+            is_list_annotation(arg)
+            for arg in args
+            if arg is not type(None)
+        )
+    return False
 
 
 def get_field_type(entity: type, field_name: str) -> type:

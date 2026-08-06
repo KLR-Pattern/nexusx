@@ -89,10 +89,14 @@ class DTOFieldResolver:
         return FieldResolution(
             annotation=field_type,
             nested_type=nested_type,
-            is_list=_is_list_wrapped(field_type),
-            is_optional=_is_optional_wrapped(field_type),
             default=_field_default(field_info),
-            nested_annotation_factory=partial(_replace_model_type, field_type),
+            # Exact wrapper reconstruction (list[DTO | None] etc.) — subsumes
+            # the old is_list/is_optional pair (specs/021).
+            nested_shape=(
+                partial(_replace_model_type, field_type)
+                if nested_type is not None
+                else None
+            ),
         )
 
 
@@ -122,32 +126,6 @@ def build_subset_model(
         allow_paginated=False,
         path=path,
     )
-
-
-def _is_list_wrapped(annotation: Any) -> bool:
-    """True if annotation is a list type, unwrapping Annotated / Optional.
-
-    specs/021: stronger than the naive ``get_origin is list`` check — DTO
-    fields may be ``Optional[list[X]]`` or ``Annotated[list[X], ...]``.
-    """
-    core = _strip_annotated(annotation)
-    if _is_list_annotation(core):
-        return True
-    if get_origin(core) in _UNION_ORIGINS:
-        return any(
-            _is_list_wrapped(arg)
-            for arg in get_args(core)
-            if arg is not type(None)
-        )
-    return False
-
-
-def _is_optional_wrapped(annotation: Any) -> bool:
-    """True if annotation is nullable (``Optional[X]`` / ``X | None``)."""
-    core = _strip_annotated(annotation)
-    if get_origin(core) in _UNION_ORIGINS:
-        return any(arg is type(None) for arg in get_args(core))
-    return False
 
 
 def _reject_arguments(selection: FieldSelection, path: str = "") -> None:

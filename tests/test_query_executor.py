@@ -10,6 +10,7 @@ from nexusx.decorator import mutation, query
 from nexusx.execution.query_executor import QueryExecutor
 from nexusx.loader.registry import ErManager
 from nexusx.query_parser import FieldSelection, QueryParser
+from nexusx.response_builder import get_relationship_names
 from tests.conftest import (
     FixtureSprint,
     FixtureTask,
@@ -806,8 +807,8 @@ class TestQueryExecutorSerializationExtras:
         assert "owner_id" in fk_fields
 
     def test_get_relationship_names(self):
-        """_get_relationship_names should return relationship field names."""
-        executor = _make_executor()
-        rel_names = executor._get_relationship_names(FixtureTask)
+        """get_relationship_names (response_builder, shared) should return
+        relationship field names."""
+        rel_names = get_relationship_names(FixtureTask)
         assert "sprint" in rel_names
         assert "owner" in rel_names

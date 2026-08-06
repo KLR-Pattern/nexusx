@@ -13,7 +13,7 @@ from sqlmodel import SQLModel
 from nexusx.execution.argument_builder import ArgumentBuilder
 from nexusx.loader.registry import RelationshipKind
 from nexusx.query_parser import FieldSelection
-from nexusx.response_builder import serialize_with_model
+from nexusx.response_builder import get_relationship_names, serialize_with_model
 
 if TYPE_CHECKING:
     from nexusx.loader.registry import ErManager
@@ -429,7 +429,6 @@ class QueryExecutor:
         ``DetachedInstanceError`` (the session was closed post-query; the
         resolved values live in ``_results``, not in the DB).
         """
-        field_tree = _field_sel_to_tree(field_sel)
         federation_namespace = self._get_federation_namespace()
 
         def accessor(value: Any, field_name: str) -> Any:
@@ -459,10 +458,11 @@ class QueryExecutor:
             return rel_info
 
         return serialize_with_model(
-            item, entity, field_tree,
+            item, entity, None,
             federation_namespace=federation_namespace,
             value_accessor=accessor,
             relation_entity_resolver=resolver,
+            _selection=field_sel,
         )
 
     def _get_federation_namespace(self) -> dict[str, type] | None:
@@ -584,7 +584,7 @@ class QueryExecutor:
     ) -> dict[str, Any]:
         """Remove FK fields and relationship fields from output dict."""
         fk_fields = self._get_fk_fields(entity)
-        relationship_names = self._get_relationship_names(entity)
+        relationship_names = get_relationship_names(entity)
         excluded = fk_fields | relationship_names | {"metadata"}
         return {k: v for k, v in data.items() if k not in excluded}
 
@@ -603,48 +603,6 @@ class QueryExecutor:
                     ):
                         fk_fields.add(field_name)
         return fk_fields
-
-    def _get_relationship_names(self, entity: type[SQLModel]) -> set[str]:
-        """Get relationship field names for an entity."""
-        names: set[str] = set()
-        if hasattr(entity, "__sqlmodel_relationships__"):
-            names.update(entity.__sqlmodel_relationships__.keys())
-        try:
-            from sqlalchemy import inspect as sa_inspect
-
-            mapper = sa_inspect(entity)
-            if mapper and hasattr(mapper, "relationships"):
-                names.update(mapper.relationships.keys())
-        except Exception:
-            pass
-        return names
-
-
-def _field_sel_to_tree(field_sel: FieldSelection | None) -> dict[str, Any] | None:
-    """Convert a ``FieldSelection`` to ``response_builder``'s ``field_tree`` dict.
-
-    Mapping:
-      - ``field_sel = None`` → ``None`` (all scalar fields)
-      - sub_field has no children → ``{name: None}`` (scalar)
-      - sub_field has children → ``{name: <recurse>}`` (nested relationship);
-        if children are exactly ``{items, pagination}`` the recursion naturally
-        yields a paginated-package tree, which response_builder handles.
-
-    Used by ``_serialize_via_response_builder`` (specs/018 US1) to bridge the
-    parsed gql AST shape and ``build_response_model``'s input format.
-    """
-    if field_sel is None:
-        return None
-    if not field_sel.sub_fields:
-        return None
-    tree: dict[str, Any] = {}
-    for name, child in field_sel.sub_fields.items():
-        if not child.sub_fields:
-            tree[name] = None
-        else:
-            tree[name] = _field_sel_to_tree(child)
-    return tree
-
 
 def _gql_args_to_paged(
     field_sel: FieldSelection | None, field_name: str

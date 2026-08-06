@@ -15,7 +15,7 @@ from pydantic import BaseModel, create_model
 
 from nexusx.core_builder import FieldResolution, build_model
 from nexusx.query_parser import FieldSelection
-from nexusx.utils.type_utils import get_field_type
+from nexusx.utils.type_utils import get_field_type, is_list_annotation
 
 # Resolver callable injected by QueryExecutor so build_response_model can find
 # federation-materialized relationships (which live in ErManager._registry, not
@@ -53,7 +53,9 @@ class ERFieldResolver:
             return FieldResolution(
                 annotation=get_field_type(entity, field_name),
                 nested_type=getattr(fed_rel, "target_entity", None),
-                is_list=bool(getattr(fed_rel, "is_list", False)),
+                nested_shape=_list_shape(
+                    bool(getattr(fed_rel, "is_list", False))
+                ),
             )
         # SQLAlchemy / SQLModel / annotations fallback. ``get_relation_entity``
         # also returns scalar field types (str/int, extracted from annotations),
@@ -75,8 +77,21 @@ class ERFieldResolver:
         return FieldResolution(
             annotation=annotation,
             nested_type=rel_entity,
-            is_list=_is_list_relationship(entity, field_name),
+            nested_shape=_list_shape(
+                _is_list_relationship(entity, field_name)
+            ),
         )
+
+
+def _list_shape(is_list: bool) -> Callable[[type[BaseModel]], Any] | None:
+    """``nested_shape`` for an entity-first relationship.
+
+    ``True`` → ``list[nested]`` (to-many); ``False`` → None, which keeps the
+    builder's lenient default: nullable single (``nested | None``).
+    """
+    if is_list:
+        return lambda nested_model: list[nested_model]  # type: ignore[valid-type]
+    return None
 
 
 # Process-level LRU cache of built response models (specs/018 T026 mitigation).
@@ -92,7 +107,7 @@ _MODEL_CACHE: OrderedDict[tuple, type[BaseModel]] = OrderedDict()
 
 def _cache_key(
     entity: type,
-    field_tree: dict[str, Any] | None,
+    selection: FieldSelection | None,
     model_name: str,
     federation_namespace: dict[str, type] | None,
 ) -> tuple:
@@ -104,13 +119,30 @@ def _cache_key(
 
     paged values are NOT in the key (specs/020): the model is a pure shape
     container (paged fields are plain ``result_type``, no marker); paged params
-    flow through a ``paged_provider`` closure at resolve time. ``field_tree``'s
-    repr already distinguishes paged fields (they carry ``items``/``pagination``
-    sub-keys), so no separate paged dimension is needed.
+    flow through a ``paged_provider`` closure at resolve time. The structure
+    repr distinguishes paged fields (they carry ``items``/``pagination``
+    sub-keys), so no separate paged dimension is needed — and it excludes
+    ``FieldSelection.name/alias/arguments`` so caller page args (limit/...)
+    never fragment the cache (specs/021 P0-2).
     """
     ns = federation_namespace or {}
     ns_key = tuple(sorted((k, id(v)) for k, v in ns.items()))
-    return (entity, model_name, repr(field_tree), ns_key)
+    return (entity, model_name, _selection_structure_repr(selection), ns_key)
+
+
+def _selection_structure_repr(selection: FieldSelection | None) -> str:
+    """Structure-only repr of a FieldSelection tree (sub_fields only).
+
+    Excludes ``name`` / ``alias`` / ``arguments``. Dict and FieldSelection
+    inputs for the same query produce the same key (both normalize to a
+    FieldSelection before keying).
+    """
+    if selection is None:
+        return "None"
+    return "{" + ",".join(
+        f"{name}:{_selection_structure_repr(child)}"
+        for name, child in (selection.sub_fields or {}).items()
+    ) + "}"
 
 
 def build_response_model(
@@ -119,6 +151,7 @@ def build_response_model(
     model_name: str = "Response",
     federation_namespace: dict[str, type] | None = None,
     relation_entity_resolver: RelationshipEntityResolver | None = None,
+    _selection: FieldSelection | None = None,
 ) -> type[BaseModel]:
     """Build a Pydantic model dynamically based on field selection tree.
 
@@ -143,19 +176,30 @@ def build_response_model(
         relation_entity_resolver: Optional callable injected by QueryExecutor
             to look up federation-materialized relationships in
             ``ErManager._registry``. specs/018 T002b.
+        _selection: Internal — a parsed ``FieldSelection`` tree, passed by
+            QueryExecutor to skip the dict round-trip (specs/021 P0-2). Mutually
+            exclusive with ``field_tree``. An empty ``sub_fields`` keeps the
+            dict-API semantics of ``field_tree=None`` (all scalar fields).
 
     Returns:
         Dynamically created Pydantic model class.
     """
+    if _selection is not None:
+        selection = _selection if _selection.sub_fields else None
+    elif field_tree is None:
+        selection = None
+    else:
+        selection = _field_tree_to_selection(field_tree)
+
     key = _cache_key(
-        entity, field_tree, model_name, federation_namespace,
+        entity, selection, model_name, federation_namespace,
     )
     cached = _MODEL_CACHE.get(key)
     if cached is not None:
         _MODEL_CACHE.move_to_end(key)  # LRU: mark most-recently-used
         return cached
     model = _build_model_uncached(
-        entity, field_tree, model_name, federation_namespace,
+        entity, selection, model_name, federation_namespace,
         relation_entity_resolver,
     )
     _MODEL_CACHE[key] = model
@@ -166,7 +210,7 @@ def build_response_model(
 
 def _build_model_uncached(
     entity: type,
-    field_tree: dict[str, Any] | None,
+    selection: FieldSelection | None,
     model_name: str,
     federation_namespace: dict[str, type] | None,
     relation_entity_resolver: RelationshipEntityResolver | None,
@@ -175,13 +219,12 @@ def _build_model_uncached(
 
     specs/021: delegates to ``core_builder.build_model`` with an
     ``ERFieldResolver`` — the relationship/annotation resolution this function
-    did inline now lives in the resolver. ``field_tree is None`` keeps its
-    "all scalar fields" meaning (UseCase never hits this shape).
+    did inline now lives in the resolver. ``selection=None`` keeps its
+    "all scalar fields" meaning.
     """
-    if field_tree is None:
+    if selection is None:
         return _build_scalar_model(entity, model_name)
 
-    selection = _field_tree_to_selection(field_tree)
     return build_model(
         entity, selection,
         resolver=ERFieldResolver(relation_entity_resolver, federation_namespace),
@@ -264,6 +307,7 @@ def serialize_with_model(
     federation_namespace: dict[str, type] | None = None,
     value_accessor: Any = None,
     relation_entity_resolver: RelationshipEntityResolver | None = None,
+    _selection: FieldSelection | None = None,
 ) -> Any:
     """Serialize data using dynamically built Pydantic model.
 
@@ -281,6 +325,10 @@ def serialize_with_model(
         relation_entity_resolver: Optional callable to look up
             federation-materialized relationships in ErManager._registry
             (specs/018 T002b).
+        _selection: Internal — parsed ``FieldSelection`` passed by
+            QueryExecutor to skip the dict round-trip (specs/021 P0-2).
+            ``_validate_and_dump``'s recursive serialization still consumes a
+            dict tree, so it is materialized once here.
 
     Returns:
         Serialized dictionary or list of dictionaries.
@@ -288,10 +336,16 @@ def serialize_with_model(
     if value is None:
         return None
 
+    # The recursive serializer consumes a dict tree; materialize it once from
+    # the internal FieldSelection (specs/021 P0-2).
+    if _selection is not None:
+        field_tree = _selection_to_tree(_selection)
+
     model = build_response_model(
         entity, field_tree,
         federation_namespace=federation_namespace,
         relation_entity_resolver=relation_entity_resolver,
+        _selection=_selection,
     )
 
     if isinstance(value, list):
@@ -313,6 +367,26 @@ def serialize_with_model(
         value_accessor=value_accessor,
         relation_entity_resolver=relation_entity_resolver,
     )
+
+
+def _selection_to_tree(field_sel: FieldSelection | None) -> dict[str, Any] | None:
+    """Convert a ``FieldSelection`` to the dict ``field_tree`` shape.
+
+    Mapping (mirrors query_executor's old ``_field_sel_to_tree``, moved here
+    as the inverse of ``_field_tree_to_selection`` for the serializer):
+      - ``field_sel = None`` → ``None`` (all scalar fields)
+      - sub_field with no children → ``{name: None}`` (scalar)
+      - sub_field with children → ``{name: <recurse>}`` (nested relationship)
+    """
+    if field_sel is None or not field_sel.sub_fields:
+        return None
+    tree: dict[str, Any] = {}
+    for name, child in field_sel.sub_fields.items():
+        if not child.sub_fields:
+            tree[name] = None
+        else:
+            tree[name] = _selection_to_tree(child)
+    return tree
 
 
 def _validate_and_dump(
@@ -631,7 +705,7 @@ def _is_list_relationship(
     if hasattr(entity, "__annotations__"):
         annotation = entity.__annotations__.get(field_name)
         if annotation:
-            return _annotation_is_list(annotation)
+            return is_list_annotation(annotation)
     return False
 
 
@@ -651,43 +725,6 @@ def _contains_unresolved_forward_ref(annotation: Any) -> bool:
         _contains_unresolved_forward_ref(arg)
         for arg in get_args(annotation)
     )
-
-
-def _annotation_is_list(annotation: Any) -> bool:
-    """True if ``annotation`` is a list type, unwrapping SQLModel's
-    ``Mapped[...]`` wrapper and Optional unions.
-
-    specs/021: SQLModel rewrites relationship annotations to
-    ``Mapped[list['X']]`` (or ``Mapped[Optional[list['X']]]``) at class
-    creation; checking ``get_origin is list`` alone misses every to-many
-    relationship on a ``table=True`` model, which silently produced
-    ``X | None`` shapes (list values then fell back to the raw-filtered
-    serialize path instead of validating against the model).
-    """
-    if isinstance(annotation, str):
-        return False
-    origin = get_origin(annotation)
-    if origin is None:
-        return False
-    # SQLModel Mapped[...] wrapper — unwrap before checking.
-    if getattr(origin, "__name__", "") == "Mapped":
-        args = get_args(annotation)
-        if not args:
-            return False
-        return _annotation_is_list(args[0])
-    if origin is list:
-        return True
-    if str(origin).startswith("list"):
-        return True
-    # Optional[list[X]] / list[X] | None — recurse past None.
-    args = get_args(annotation)
-    if args:
-        return any(
-            _annotation_is_list(arg)
-            for arg in args
-            if arg is not type(None)
-        )
-    return False
 
 
 def _build_scalar_model(entity: type, model_name: str) -> type[BaseModel]:
