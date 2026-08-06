@@ -13,18 +13,14 @@ import typing
 from types import UnionType as _UnionType
 from typing import Any, get_args, get_origin
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, create_model
+from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_core import PydanticUndefined
 
-from nexusx.core_builder import FieldResolution
+from nexusx.core_builder import FieldResolution, SelectionError, build_model
 from nexusx.query_parser import FieldSelection, QueryParser
 
 _UNION_ORIGINS = (typing.Union, _UnionType)
 _RESULT_FIELD = "__result"
-
-
-class SelectionError(ValueError):
-    """Raised when a UseCase MCP selection is invalid."""
 
 
 def apply_selection(result: Any, return_annotation: Any, selection: str) -> Any:
@@ -76,6 +72,11 @@ class DTOFieldResolver:
     Wraps the annotation-unwrapping logic that ``build_subset_model`` used
     inline (``_get_pydantic_core_type`` to detect nested BaseModel) into the
     ``FieldResolver`` protocol so ``core_builder.build_model`` can consume it.
+
+    Nullability / default preservation are pinned explicitly here (vs the
+    entity-first resolver's lenient defaults): ``is_optional`` honors the DTO
+    annotation (``Optional[X]`` / ``X | None``), ``default`` carries the
+    original field's default / default_factory / description.
     """
 
     def resolve_field(self, dto_type: type, field_name: str) -> FieldResolution | None:
@@ -84,11 +85,12 @@ class DTOFieldResolver:
         field_info = dto_type.model_fields[field_name]
         field_type = field_info.annotation
         nested_type = _get_pydantic_core_type(field_type)
-        is_list = get_origin(field_type) is list
         return FieldResolution(
             annotation=field_type,
             nested_type=nested_type,
-            is_list=is_list,
+            is_list=_is_list_wrapped(field_type),
+            is_optional=_is_optional_wrapped(field_type),
+            default=_field_default(field_info),
         )
 
 
@@ -97,47 +99,53 @@ def build_subset_model(
     field_selection: FieldSelection,
     path: str = "",
 ) -> type[BaseModel]:
-    """Recursively build a dynamic Pydantic model for selected DTO fields."""
+    """Recursively build a dynamic Pydantic model for selected DTO fields.
+
+    specs/021: thin shell over ``core_builder.build_model`` with the UseCase
+    semantics — strict validation (unknown fields / malformed sub-selections
+    raise ``SelectionError``) and DTO default preservation (via
+    ``DTOFieldResolver``). ``allow_paginated=False`` because DTO land never
+    produces ``{items, pagination}`` packages.
+    """
     if not field_selection.sub_fields:
         raise SelectionError(f"Selection for '{model_type.__name__}' cannot be empty")
 
-    field_definitions: dict[str, tuple[Any, Any]] = {}
-    for field_name, selection in field_selection.sub_fields.items():
-        field_path = f"{path}.{field_name}" if path else field_name
-        if field_name not in model_type.model_fields:
-            raise SelectionError(
-                f"Unknown field '{field_path}' on return type '{model_type.__name__}'"
-            )
-
-        field_info = model_type.model_fields[field_name]
-        field_type = field_info.annotation
-        nested_model_type = _get_pydantic_core_type(field_type)
-
-        if nested_model_type is not None:
-            if not selection.sub_fields:
-                raise SelectionError(
-                    f"Field '{field_path}' is a Pydantic object and requires sub-selection"
-                )
-            nested_subset = build_subset_model(nested_model_type, selection, field_path)
-            selected_type = _replace_model_type(field_type, nested_subset)
-        else:
-            if selection.sub_fields:
-                raise SelectionError(
-                    f"Field '{field_path}' is not a Pydantic object and cannot have sub-selection"
-                )
-            selected_type = field_type
-
-        field_definitions[field_name] = (selected_type, _field_default(field_info))
-
-    model_name = (
-        f"{model_type.__name__}Selection_"
-        + "_".join(sorted(field_selection.sub_fields.keys()))
+    name_suffix = "Selection_" + "_".join(sorted(field_selection.sub_fields.keys()))
+    return build_model(
+        model_type,
+        field_selection,
+        resolver=DTOFieldResolver(),
+        model_name=name_suffix,
+        strict=True,
+        allow_paginated=False,
+        path=path,
     )
-    return create_model(
-        model_name,
-        __config__=ConfigDict(from_attributes=True, arbitrary_types_allowed=True),
-        **field_definitions,
-    )
+
+
+def _is_list_wrapped(annotation: Any) -> bool:
+    """True if annotation is a list type, unwrapping Annotated / Optional.
+
+    specs/021: stronger than the naive ``get_origin is list`` check — DTO
+    fields may be ``Optional[list[X]]`` or ``Annotated[list[X], ...]``.
+    """
+    core = _strip_annotated(annotation)
+    if _is_list_annotation(core):
+        return True
+    if get_origin(core) in _UNION_ORIGINS:
+        return any(
+            _is_list_wrapped(arg)
+            for arg in get_args(core)
+            if arg is not type(None)
+        )
+    return False
+
+
+def _is_optional_wrapped(annotation: Any) -> bool:
+    """True if annotation is nullable (``Optional[X]`` / ``X | None``)."""
+    core = _strip_annotated(annotation)
+    if get_origin(core) in _UNION_ORIGINS:
+        return any(arg is type(None) for arg in get_args(core))
+    return False
 
 
 def _reject_arguments(selection: FieldSelection, path: str = "") -> None:
