@@ -16,6 +16,7 @@ template: home.html
 | 跨层传递数据 | `ExposeAs`、`SendTo`、`Collector` | 向下传上下文，向上聚合结果 |
 | 非 ORM 关系 | `Relationship(...)` | 同一 DataLoader 基础设施，支持自动加载 |
 | 一个 AI 就绪的 API | `create_simple_mcp_server(base=...)` | 渐进式 MCP 工具暴露 |
+| 拆成微服务 | `RemoteRelationship` / `federation_public` DTO | 同构联邦：读模型跨服务组合，entity 主体不动 |
 
 ## 适合谁
 
@@ -61,6 +62,7 @@ erDiagram
 
 | 页面 | 你将学到什么 |
 |---|---|
+| [跨服务联邦](./advanced/federation.zh.md) | 同构联邦：单体渐进演化成微服务，读模型跨服务组合（β 实体图 / γ DTO） |
 | [MCP 服务](./advanced/mcp_service.zh.md) | 将 SQLModel API 暴露给 AI 代理 |
 | [UseCase 服务](./advanced/use_case_service.zh.md) | 定义业务服务，同时服务于 MCP 和 REST |
 | [UseCase + FastAPI](./advanced/use_case_fastapi.zh.md) | 同一服务类嵌入 FastAPI 路由 |

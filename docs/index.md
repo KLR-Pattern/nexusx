@@ -16,6 +16,7 @@ template: home.html
 | Cross-layer data flow | `ExposeAs`, `SendTo`, `Collector` | Pass context downward, aggregate results upward |
 | Non-ORM relationships | `Relationship(...)` | Same DataLoader infrastructure, supports auto-loading |
 | An AI-ready API | `create_simple_mcp_server(base=...)` | Progressive MCP tool exposure |
+| Split into microservices | `RemoteRelationship` / `federation_public` DTO | Homogeneous federation: read-model composition across services, entity body unchanged |
 
 ## Who Is This For
 
@@ -61,6 +62,7 @@ erDiagram
 
 | Page | What You'll Learn |
 |------|-------|
+| [Cross-Service Federation](./advanced/federation.md) | Homogeneous federation: evolve a monolith into microservices incrementally, read-model composition across services (β entity graph / γ DTO) |
 | [MCP Service](./advanced/mcp_service.md) | Expose SQLModel APIs to AI agents |
 | [UseCase Service](./advanced/use_case_service.md) | Define business services serving both MCP and REST |
 | [UseCase + FastAPI](./advanced/use_case_fastapi.md) | Embed the same service class into FastAPI routes |
