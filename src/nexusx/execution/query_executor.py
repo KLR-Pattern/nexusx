@@ -2,37 +2,22 @@
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import logging
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
-from uuid import UUID
 
 from graphql import DocumentNode, FieldNode, OperationDefinitionNode
 from pydantic import TypeAdapter
 from sqlmodel import SQLModel
 
 from nexusx.execution.argument_builder import ArgumentBuilder
-from nexusx.loader.pagination import PageArgs, PageLoadCommand
-from nexusx.loader.registry import RelationshipKind
 from nexusx.query_parser import FieldSelection
+from nexusx.response_builder import serialize_with_model
 
 if TYPE_CHECKING:
-    from nexusx.loader.registry import ErManager, RelationshipInfo
+    from nexusx.loader.registry import ErManager
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class _FieldJob:
-    """A single field's load task within one BFS level."""
-
-    parents: list
-    parent_entity: type[SQLModel]
-    rel_info: RelationshipInfo
-    child_sel: FieldSelection
-    original_sel: FieldSelection | None = None
 
 
 class QueryExecutor:
@@ -60,6 +45,8 @@ class QueryExecutor:
         self._argument_builder = ArgumentBuilder()
         # (id(entity), field_name) -> resolved value
         self._results: dict[tuple[int, str], Any] = {}
+        # Lazily-built Resolver used for entity-field BFS dispatch (US3).
+        self._entity_resolver: Any = None
 
     def _store(self, entity: Any, field_name: str, value: Any) -> None:
         """Store resolved relationship value."""
@@ -287,7 +274,12 @@ class QueryExecutor:
         }
 
     # ──────────────────────────────────────────────────────────
-    # BFS resolution
+    # Relationship resolution (delegated to Resolver — specs/018 US3)
+    #
+    # The level-by-level BFS + β ``fetch_remote_subtree`` dispatch moved into
+    # ``Resolver._bfs_dispatch_entity_fields`` (US3 / T016-T018). The executor
+    # now only delegates and stores results into ``self._results`` for
+    # ``_serialize`` to read back — no federation import remains here.
     # ──────────────────────────────────────────────────────────
 
     async def _resolve_result(
@@ -299,6 +291,12 @@ class QueryExecutor:
         is_pagination_root: bool = False,
     ) -> None:
         """Resolve relationships for a query result (single or list).
+
+        Delegates the level-by-level BFS to
+        ``Resolver._bfs_dispatch_entity_fields`` (specs/018 US3). Resolved
+        relationship values are written into ``self._results`` via the
+        ``store`` callback and read back by ``_serialize`` — unchanged from
+        the executor's former in-house BFS.
 
         When ``is_pagination_root`` is set (the caller derived it from
         ``func._pagination_root`` before the method ran), the result is a list
@@ -325,287 +323,147 @@ class QueryExecutor:
                     for pkg in result:
                         all_items.extend(pkg.get("items") or [])
                     if all_items:
-                        await self._bfs_resolve(all_items, entity, items_sel)
+                        await self._dispatch_entity_fields(all_items, entity, items_sel)
             return
 
         if isinstance(result, list):
-            await self._bfs_resolve(result, entity, field_sel)
+            await self._dispatch_entity_fields(result, entity, field_sel)
         else:
-            await self._bfs_resolve([result], entity, field_sel)
+            await self._dispatch_entity_fields([result], entity, field_sel)
 
-    async def _bfs_resolve(
+    async def _dispatch_entity_fields(
         self,
         parents: list,
-        parent_entity: type[SQLModel],
+        entity: type[SQLModel],
         field_sel: FieldSelection,
     ) -> None:
-        """Level-by-level BFS relationship resolution using DataLoaders.
+        """Delegate BFS relationship resolution to the Resolver (specs/018 US3).
 
-        At each level, all relationship fields are loaded concurrently via
-        asyncio.gather. The loaded children become the parents for the next
-        level.
+        β ``fetch_remote_subtree`` dispatch now lives inside the Resolver
+        (``Resolver._bfs_dispatch_entity_fields``), so the executor no longer
+        imports or calls ``fetch_remote_subtree`` — federation fetch has
+        collapsed into the Resolver alongside the γ DTO dispatch. Resolved
+        relationship values are written back into ``self._results`` via the
+        ``store`` callback; ``_serialize`` reads them exactly as before.
         """
-        queue: list[_FieldJob] = self._build_field_jobs(
-            parents, parent_entity, field_sel
+        resolver = self._get_entity_resolver()
+        # specs/019: inject a paged_provider closure (encapsulates gql args →
+        # Paged merge) so the Resolver stays gql-agnostic. None when pagination
+        # is off (plain relationship loads need no provider).
+        paged_provider = self._make_paged_provider() if self._enable_pagination else None
+        await resolver._bfs_dispatch_entity_fields(
+            parents,
+            entity,
+            field_sel,
+            store=self._store,
+            enable_pagination=self._enable_pagination,
+            paged_provider=paged_provider,
         )
 
-        while queue:
-            # Concurrent load all fields in this level
-            load_results = await asyncio.gather(
-                *(self._load_field(job) for job in queue)
-            )
+    def _make_paged_provider(self) -> Any:
+        """Build the ``paged_provider`` closure (specs/019).
 
-            # Build next level's jobs from loaded children
-            next_jobs: list[_FieldJob] = []
-            for job, children in zip(queue, load_results, strict=True):
-                next_jobs.extend(
-                    self._build_field_jobs(
-                        children, job.rel_info.target_entity, job.child_sel
-                    )
-                )
-            queue = next_jobs
-
-    def _build_field_jobs(
-        self,
-        parents: list,
-        parent_entity: type[SQLModel],
-        field_sel: FieldSelection,
-    ) -> list[_FieldJob]:
-        """Extract relationship fields that need loading and build FieldJobs."""
-        if not parents or not field_sel.sub_fields:
-            return []
-
-        jobs: list[_FieldJob] = []
-        for field_name, child_sel in field_sel.sub_fields.items():
-            rel_info = self._registry.get_relationship(parent_entity, field_name)
-            if rel_info is None:
-                continue
-
-            # Coalesced (β): data already resolved by the owning service within
-            # the parent fetch and preserved on the instance — no BFS job.
-            if rel_info.kind == RelationshipKind.REMOTE_COALESCED:
-                continue
-
-            if not child_sel.sub_fields:
-                continue
-
-            # Paginated: use items sub-selection for deeper resolution
-            effective_sel = child_sel
-            if (
-                self._enable_pagination
-                and rel_info.is_list
-                and rel_info.page_loader is not None
-            ):
-                items_sel = (
-                    child_sel.sub_fields.get("items")
-                    if child_sel.sub_fields
-                    else None
-                )
-                if items_sel and items_sel.sub_fields:
-                    effective_sel = items_sel
-
-            if not effective_sel.sub_fields:
-                continue
-
-            # Collect valid FK values
-            fk_values = [getattr(p, rel_info.fk_field, None) for p in parents]
-            valid_indices = [i for i, fk in enumerate(fk_values) if fk is not None]
-            if not valid_indices:
-                continue
-
-            valid_parents = [parents[i] for i in valid_indices]
-            jobs.append(
-                _FieldJob(
-                    parents=valid_parents,
-                    parent_entity=parent_entity,
-                    rel_info=rel_info,
-                    child_sel=effective_sel,
-                    original_sel=child_sel if effective_sel is not child_sel else None,
-                )
-            )
-        return jobs
-
-    async def _load_field(self, job: _FieldJob) -> list:
-        """Load a single field's relationship data and store results.
-
-        Returns a flat list of all loaded child entities for the next BFS level.
+        Encapsulates the gql → Paged merge (default from RelationshipInfo + gql
+        args override via ``Resolver._merge_paged``). This is the ONLY place
+        ``field_sel.arguments`` is read for pagination; the closure is injected
+        per-call into ``Resolver._bfs_dispatch_entity_fields``, keeping the
+        Resolver free of gql knowledge. Stateless (closes over nothing), so it
+        could be cached at executor level — left per-call for simplicity.
         """
-        if (
-            self._enable_pagination
-            and job.rel_info.is_list
-            and job.rel_info.page_loader is not None
-        ):
-            return await self._load_field_paginated(job)
-        else:
-            return await self._load_field_batch(job)
+        from nexusx.resolver import Resolver
 
-    async def _load_field_batch(self, job: _FieldJob) -> list:
-        """Batch load a non-paginated relationship field."""
-        rel_info = job.rel_info
-        child_sel = job.child_sel
-
-        is_remote = rel_info.kind in (
-            RelationshipKind.REMOTE_PAGED, RelationshipKind.REMOTE_PLAIN
-        )
-        is_paged_remote = rel_info.kind == RelationshipKind.REMOTE_PAGED
-        if is_paged_remote:
-            # β paginated path: route to the member's page_by_<key>_in root.
-            # {items, pagination} per parent.
-            from nexusx.federation.remote_loader import fetch_remote_subtree
-
-            results = await fetch_remote_subtree(
-                registry=self._registry,
-                rel_info=rel_info,
-                parents=job.parents,
-                selection=child_sel,
-                paged=True,
-            )
-        elif is_remote:
-            # β path: fetch the whole nested sub-tree via the shared primitive
-            # (one gql to the owning service; the member resolves everything
-            # under it). Same mechanism the Resolver uses — fetch_remote_subtree.
-            from nexusx.federation.remote_loader import fetch_remote_subtree
-
-            results = await fetch_remote_subtree(
-                registry=self._registry,
-                rel_info=rel_info,
-                parents=job.parents,
-                selection=child_sel,
-            )
-        else:
-            from nexusx.loader.query_meta import (
-                generate_query_meta_from_selection,
-                generate_type_key_from_selection,
-                merge_query_meta,
-                set_query_meta,
+        def provider(rel_info: Any, field_sel: Any, field_name: str) -> Any:
+            return Resolver._merge_paged(
+                _rel_default_paged(rel_info),
+                _gql_args_to_paged(field_sel, field_name),
             )
 
-            # Build FK lookup from target entity's registered relationships
-            target_rels = self._registry.get_relationships(rel_info.target_entity)
-            fk_lookup = {name: info.fk_field for name, info in target_rels.items()}
+        return provider
 
-            # Generate type_key for split mode (None in default mode)
-            type_key = generate_type_key_from_selection(
-                child_sel, rel_info.target_entity, fk_lookup=fk_lookup,
-            )
-            loader = self._registry.get_loader(rel_info.loader, type_key=type_key)
+    def _get_entity_resolver(self) -> Any:
+        """Lazily build the Resolver instance used for entity-field dispatch.
 
-            # Inject _query_meta for SQL column pruning
-            meta = generate_query_meta_from_selection(
-                child_sel, rel_info.target_entity, fk_lookup=fk_lookup,
-            )
-            if type_key is not None and self._registry._split_mode:
-                set_query_meta(loader, meta)
-            else:
-                merge_query_meta(loader, meta)
-
-            fk_values = [getattr(p, rel_info.fk_field) for p in job.parents]
-            results = await loader.load_many(fk_values)
-
-        all_children: list = []
-        for parent, result in zip(job.parents, results, strict=True):
-            if isinstance(result, dict) and "items" in result and "pagination" in result:
-                # Paginated result: {items, pagination} — store whole, items to BFS.
-                items = result.get("items") or []
-                self._store(parent, rel_info.name, result)
-                all_children.extend(items)
-            elif rel_info.is_list:
-                items = result or []
-                self._store(parent, rel_info.name, items)
-                all_children.extend(items)
-            else:
-                self._store(parent, rel_info.name, result)
-                if result is not None:
-                    all_children.append(result)
-        return all_children
-
-    async def _load_field_paginated(self, job: _FieldJob) -> list:
-        """Load a paginated relationship field."""
-        from nexusx.loader.query_meta import (
-            generate_query_meta_from_selection,
-            generate_type_key_from_selection,
-            merge_query_meta,
-            set_query_meta,
-        )
-
-        rel_info = job.rel_info
-        child_sel = job.child_sel
-
-        # Extract page args from original field selection (before items adjustment).
-        # job.original_sel holds the original child_sel when it was replaced by
-        # items_sel; otherwise fall back to child_sel (no pagination adjustment).
-        page_args = self._extract_page_args(
-            job.original_sel if job.original_sel is not None else child_sel,
-            rel_info,
-        )
-
-        target_rels = self._registry.get_relationships(rel_info.target_entity)
-        fk_lookup = {name: info.fk_field for name, info in target_rels.items()}
-
-        type_key = generate_type_key_from_selection(
-            child_sel, rel_info.target_entity, fk_lookup=fk_lookup,
-        )
-        loader = self._registry.get_loader(rel_info.page_loader, type_key=type_key)
-
-        meta = generate_query_meta_from_selection(
-            child_sel, rel_info.target_entity, fk_lookup=fk_lookup,
-        )
-        if type_key is not None and self._registry._split_mode:
-            set_query_meta(loader, meta)
-        else:
-            merge_query_meta(loader, meta)
-
-        order, direction = self._extract_order_direction(
-            job.original_sel if job.original_sel is not None else child_sel,
-            rel_info,
-        )
-        fk_values = [getattr(p, rel_info.fk_field) for p in job.parents]
-        commands = [
-            PageLoadCommand(
-                fk_value=fk, page_args=page_args, order=order, direction=direction
-            )
-            for fk in fk_values
-        ]
-        results = await loader.load_many(commands)
-
-        all_children: list = []
-        for parent, page_result in zip(job.parents, results, strict=True):
-            self._store(parent, rel_info.name, page_result)
-            if page_result and page_result.get("items"):
-                all_children.extend(page_result["items"])
-        return all_children
-
-    def _extract_page_args(
-        self, field_sel: FieldSelection, rel_info: RelationshipInfo
-    ) -> PageArgs:
-        """Extract PageArgs from GraphQL field arguments."""
-        args = field_sel.arguments or {}
-        return PageArgs(
-            limit=args.get("limit"),
-            offset=args.get("offset", 0),
-            default_page_size=rel_info.default_page_size,
-            max_page_size=rel_info.max_page_size,
-        )
-
-    def _extract_order_direction(
-        self, field_sel: FieldSelection, rel_info: RelationshipInfo
-    ) -> tuple[str | None, Any]:
-        """Extract order/direction for a local paginated relationship that
-        carries a ``page_capability`` (specs/015). Returns (None, None) when the
-        relationship has no profile — the page_loader then falls back to its
-        fixed ``sort_field`` (backward compat)."""
-        if rel_info.page_capability is None:
-            return None, None
-        args = field_sel.arguments or {}
-        order = args.get("order")
-        direction = args.get("direction")
-        order_name = order.value if hasattr(order, "value") else order
-        dir_value = direction.value if hasattr(direction, "value") else direction
-        return order_name, dir_value
+        Created on first use (the ErManager must be fully wired before
+        ``create_resolver()`` freezes it). Cached afterwards —
+        ``_bfs_dispatch_entity_fields`` carries no per-call Resolver state (it
+        dispatches straight through the request-scoped ErManager loaders), so a
+        single instance serves every query on this executor.
+        """
+        if self._entity_resolver is None:
+            self._entity_resolver = self._registry.create_resolver()()
+        return self._entity_resolver
 
     # ──────────────────────────────────────────────────────────
     # Serialization (unchanged)
     # ──────────────────────────────────────────────────────────
+
+    def _serialize_via_response_builder(
+        self,
+        item: Any,
+        entity: type[SQLModel],
+        field_sel: FieldSelection | None,
+    ) -> Any:
+        """Serialize a single entity-shaped result via response_builder (specs/018 US1).
+
+        Routes through ``serialize_with_model`` (model-based field filtering)
+        instead of the legacy dict-based loop in ``_serialize_item``. The
+        output MUST be dict-equal to legacy for any entity-with-field_sel
+        input — equivalence is verified by tests/test_query_executor_dto_first.py.
+
+        ``federation_namespace`` is sourced from ``ErManager._fed_registry``
+        (set by ``federate()``); when None (no federation), response_builder
+        falls back to local SQLModel subclasses only.
+
+        ``relation_entity_resolver`` lets response_builder find
+        federation-materialized relationships (fields declared via
+        ``__relationships__ = [RemoteRelationship(...)]``); these live in
+        ``ErManager._registry`` and are invisible to SQLAlchemy /
+        ``__annotations__`` lookups. specs/018 T002b.
+
+        ``value_accessor`` checks ``self._results`` (BFS-resolved relationship
+        cache) BEFORE ``getattr`` — without this, accessing a relationship
+        attribute on a detached SQLModel instance triggers SQLAlchemy
+        ``DetachedInstanceError`` (the session was closed post-query; the
+        resolved values live in ``_results``, not in the DB).
+        """
+        field_tree = _field_sel_to_tree(field_sel)
+        federation_namespace = self._get_federation_namespace()
+
+        def accessor(value: Any, field_name: str) -> Any:
+            cached = self._retrieve(value, field_name)
+            if cached is not None:
+                return cached
+            return getattr(value, field_name, None)
+
+        def resolver(ent: Any, fname: str) -> Any:
+            """Return RelationshipInfo for federation-materialized fields.
+
+            Returns the RelationshipInfo object directly (response_builder
+            unwraps ``.target_entity`` and reads ``.is_list``); None for
+            local SQLModel relationships — those resolve via the SQLAlchemy /
+            annotations fallback in get_relation_entity.
+            """
+            rel_info = self._registry.get_relationship(ent, fname)
+            return rel_info
+
+        return serialize_with_model(
+            item, entity, field_tree,
+            federation_namespace=federation_namespace,
+            value_accessor=accessor,
+            relation_entity_resolver=resolver,
+        )
+
+    def _get_federation_namespace(self) -> dict[str, type] | None:
+        """Return the federation materialized-type namespace, if any.
+
+        ``ErManager._fed_registry`` is set by ``federate()``; its ``_namespace``
+        maps ``__name__`` to the materialized pydantic type. None when the
+        handler is not federated.
+        """
+        fed_registry = getattr(self._registry, "_fed_registry", None)
+        if fed_registry is None:
+            return None
+        return getattr(fed_registry, "_namespace", None)
 
     def _serialize(
         self,
@@ -613,7 +471,14 @@ class QueryExecutor:
         entity: type[SQLModel],
         field_sel: FieldSelection | None,
     ) -> Any:
-        """Serialize result to JSON-compatible dict."""
+        """Serialize result to JSON-compatible dict.
+
+        Entity-shaped results route through ``response_builder`` (specs/018 US1
+        + Phase 7 T028 — the legacy dict-based loop is removed); scalar / dict
+        / paginated-package returns use the dedicated branches below. Failures
+        on the response_builder path propagate — no fallback (spec clarify Q3:
+        fail-fast prevents hidden issues).
+        """
         if result is None:
             return None
 
@@ -642,29 +507,9 @@ class QueryExecutor:
                 return self._filter_output(item.model_dump(mode="json"), entity)
             return self._serialize_scalar_value(item)
 
-        entity_rels = self._registry.get_relationships(entity)
-        result = {}
-        for field_name, child_sel in field_sel.sub_fields.items():
-            rel_info = entity_rels.get(field_name)
-
-            if rel_info is not None:
-                if rel_info.kind == RelationshipKind.REMOTE_COALESCED:
-                    # β: nested data already resolved by the owning service and
-                    # preserved on the instance (extra="allow").
-                    value = getattr(item, field_name, None)
-                else:
-                    value = self._retrieve(item, field_name)
-                result[field_name] = self._serialize_relationship_value(
-                    value, rel_info, child_sel
-                )
-            else:
-                # Scalar field
-                value = getattr(item, field_name, None)
-                if isinstance(value, UUID):
-                    value = str(value)
-                result[field_name] = value
-
-        return result
+        # Entity instance with field_sel: response_builder is the only path
+        # (specs/018 US1 + Phase 7 T028 — legacy dict-based loop removed).
+        return self._serialize_via_response_builder(item, entity, field_sel)
 
     def _serialize_paginated_package(
         self,
@@ -722,66 +567,6 @@ class QueryExecutor:
         """
         return TypeAdapter(type(value)).dump_python(value, mode="json")
 
-    def _serialize_relationship_value(
-        self,
-        value: Any,
-        rel_info: RelationshipInfo,
-        child_sel: FieldSelection,
-    ) -> Any:
-        """Serialize a relationship value (list, single, or paginated result)."""
-        if value is None:
-            return None
-
-        target = rel_info.target_entity
-
-        if (
-            rel_info.is_list
-            and isinstance(value, dict)
-            and "items" in value
-        ):
-            # Paginated result: { items: [...], pagination: {...} }
-            items = value.get("items", [])
-            pagination = value.get("pagination")
-            page_result: dict[str, Any] = {}
-            wants_items = child_sel.sub_fields is not None and "items" in child_sel.sub_fields
-            if wants_items:
-                items_sel = child_sel.sub_fields.get("items") if child_sel.sub_fields else None
-                page_result["items"] = [
-                    self._serialize_item(v, target, items_sel)
-                    for v in items if v is not None
-                ]
-            # Only include pagination if the user selected it in the query
-            wants_pagination = (
-                child_sel.sub_fields is not None and "pagination" in child_sel.sub_fields
-            )
-            if wants_pagination and pagination:
-                # Filter pagination fields by user selection
-                pag_sel = child_sel.sub_fields.get("pagination")
-                pag_fields = (
-                    set(pag_sel.sub_fields.keys())
-                    if pag_sel and pag_sel.sub_fields
-                    else None
-                )
-                if isinstance(pagination, dict):
-                    raw = pagination
-                else:
-                    raw = pagination.model_dump(mode="json")
-                if pag_fields:
-                    page_result["pagination"] = {k: v for k, v in raw.items() if k in pag_fields}
-                else:
-                    page_result["pagination"] = raw
-            return page_result
-
-        if isinstance(value, list):
-            return [
-                self._serialize_item(v, target, child_sel)
-                for v in value if v is not None
-            ]
-
-        if isinstance(value, dict):
-            return value
-        return self._serialize_item(value, target, child_sel)
-
     def _filter_output(
         self, data: dict[str, Any], entity: type[SQLModel]
     ) -> dict[str, Any]:
@@ -821,3 +606,76 @@ class QueryExecutor:
         except Exception:
             pass
         return names
+
+
+def _field_sel_to_tree(field_sel: FieldSelection | None) -> dict[str, Any] | None:
+    """Convert a ``FieldSelection`` to ``response_builder``'s ``field_tree`` dict.
+
+    Mapping:
+      - ``field_sel = None`` → ``None`` (all scalar fields)
+      - sub_field has no children → ``{name: None}`` (scalar)
+      - sub_field has children → ``{name: <recurse>}`` (nested relationship);
+        if children are exactly ``{items, pagination}`` the recursion naturally
+        yields a paginated-package tree, which response_builder handles.
+
+    Used by ``_serialize_via_response_builder`` (specs/018 US1) to bridge the
+    parsed gql AST shape and ``build_response_model``'s input format.
+    """
+    if field_sel is None:
+        return None
+    if not field_sel.sub_fields:
+        return None
+    tree: dict[str, Any] = {}
+    for name, child in field_sel.sub_fields.items():
+        if not child.sub_fields:
+            tree[name] = None
+        else:
+            tree[name] = _field_sel_to_tree(child)
+    return tree
+
+
+def _gql_args_to_paged(
+    field_sel: FieldSelection | None, field_name: str
+) -> Any:
+    """gql field args → ``Paged`` (specs/019). The single place entity-first
+    gql's ``field_sel.arguments`` is read for pagination — lives outside the
+    Resolver so the Resolver stays gql-agnostic. Reads ``limit`` / ``offset`` /
+    ``order`` / ``direction`` and unwraps enum values (``.value``) so the result
+    is wire-ready for ``PageLoadCommand``. Empty ``Paged()`` when the field has
+    no page args (defaults fill in via ``_merge_paged``).
+    """
+    from nexusx.loader.pagination import Paged
+
+    child = (
+        field_sel.sub_fields.get(field_name)
+        if field_sel and field_sel.sub_fields
+        else None
+    )
+    args = (child.arguments if child else None) or {}
+    order = args.get("order")
+    direction = args.get("direction")
+    return Paged(
+        limit=args.get("limit"),
+        offset=args.get("offset") if args.get("offset") is not None else 0,
+        order=order.value if hasattr(order, "value") else order,
+        direction=direction.value if hasattr(direction, "value") else direction,
+    )
+
+
+def _rel_default_paged(rel_info: Any) -> Any:
+    """``RelationshipInfo`` → default ``Paged`` (specs/019).
+
+    β (entity-first gql) has no field-level Paged default (unlike γ's
+    ``__paged_fields__``), so only ``order`` is derivable — from
+    ``page_capability.default_order``. ``limit`` / ``offset`` / ``direction``
+    have no rel-level default (None / 0 / None); the page_loader's
+    ``default_page_size`` applies separately as a ``PageArgs`` boundary in the
+    Resolver.
+    """
+    from nexusx.loader.pagination import Paged
+
+    order = None
+    cap = getattr(rel_info, "page_capability", None)
+    if cap is not None:
+        order = getattr(cap, "default_order", None)
+    return Paged(order=order)

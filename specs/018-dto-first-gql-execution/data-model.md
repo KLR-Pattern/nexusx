@@ -48,55 +48,48 @@ class ReviewsPaginatedResponse:
 
 `_resolve_forward_reference`（response_builder.py:136）当前只搜 `all_subclasses`（SQLModel 实体集）。扩展接收 `optional federation_namespace: dict[str, type]`，先搜 federation 物化的 remote type，再搜本地 subclasses。
 
-## Step 2：Paged[X] 字段 metadata（新结构）
+## Step 2：Paged 字段（020 后：model 纯形状，无 marker）
 
-### PagedAnnotation（DTO field metadata）
+### paged 字段 = plain result_type（020）
 
-`Annotated[list[X], Paged(...)]` 表达 gql selection 的 pagination 参数：
+gql selection 的 `reviews(limit: 5, order: HIGHEST_RATING)` 在 build_response_model
+输出 DTO 上是 **plain `result_type`**（{items, pagination} shape），**不标任何 paged
+marker**——paged 信息完全不进 model：
 
 ```python
 # gql selection
 reviews(limit: 5, order: HIGHEST_RATING) { items {} pagination {} }
 
-# build_response_model 输出
+# build_response_model 输出（020：plain，无 marker）
 class ProductResponse:
-    reviews: Annotated[
-        list[ReviewsItemResponse],
-        Paged(limit=5, order="HIGHEST_RATING", direction=None),
-    ]
+    reviews: ResultType    # {items, pagination} shape
 ```
 
-### Paged（已有，复用）
+020 删了 019 的 `PAGED_MARKER`（经审查功能性无人读：dispatch 用 `rel_info.page_loader`
+判 paged，cache key 用 `field_tree` repr 已区分 paged 形状，serialize 不 dump metadata）。
+cache key 不含 paged 维。
 
-`Paged`（pagination.py:65）已存在 dataclass：
+### Paged（已有,复用）
+
+`Paged`（pagination.py:65）frozen dataclass：limit/offset/order/direction +
+`params_key()`。020 后只作 provider 算出的 effective 值（default + gql merge 的结果）。
+
+### paged_provider 闭包（019，值在 resolve 时算）
+
+build_response_model 不 bake paged 值；effective Paged 由 executor 注入的
+`paged_provider` 闭包在 resolve 时算：
 
 ```python
-@dataclass(frozen=True)
-class Paged:
-    limit: int | None = None
-    offset: int = 0
-    order: str | None = None
-    direction: str | None = None
-
-    def params_key(self) -> tuple:
-        return (self.limit, self.offset, self.order, self.direction)
+provider(rel_info, field_sel, field_name) -> Paged
+  = Resolver._merge_paged(
+      _rel_default_paged(rel_info),               # RelationshipInfo.page_capability.default_order
+      _gql_args_to_paged(field_sel, field_name),  # gql args（含 enum 解包）
+    )
 ```
 
-Step 2 在 build_response_model 时把 gql arguments（`limit`/`offset`/`order`/`direction`）注入到 `Annotated[..., Paged(...)]`。
-
-### PagedFieldSpec（Step 2 内部结构）
-
-build_response_model 内部识别一个 field 是 paged 的判据：
-
-```python
-@dataclass
-class PagedFieldSpec:
-    item_type: type[BaseModel]      # items 的 subset model
-    pagination_selection: set[str]  # {has_more, total_count}
-    paged: Paged                    # gql args 派生
-```
-
-Resolver 处理 Paged field 时读 `Paged` metadata，触发 page_loader（跟 specs/015 + γ Paged default + caller override 链路对齐）。
+`_EntityFieldJob.paged` 携带 effective Paged；`_load_entity_field_paginated` 读它
+构造 `PageArgs` + `PageLoadCommand`。Resolver 不读 `field_sel.arguments`
+（gql 知识停在 executor）。跟 specs/015 + γ `_merge_paged` 链路对齐（同一 helper）。
 
 ## Step 3：Resolver dispatch（resolver.py 扩展）
 

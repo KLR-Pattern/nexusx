@@ -44,36 +44,44 @@ serialized = serialize_with_model(
 
 行为：`build_response_model` + `model_validate(value)` + `model_dump(mode="json")`。paginated package 走专门分支（拼 items + pagination）。
 
-## 2. Paged field metadata 协议（Step 2）
+## 2. Paged field（020：model 纯形状，无 marker）
 
-### Annotated 表达
+### Annotated 表达（020 后：plain result_type，无 marker）
 
-gql selection 的 `reviews(limit: 5, order: HIGHEST_RATING)` 在 build_response_model 输出 DTO 上表达为：
+gql selection 的 `reviews(limit: 5, order: HIGHEST_RATING)` 在 build_response_model
+输出 DTO 上是 **plain `result_type`**（{items, pagination} shape），**不标任何 paged
+marker**——paged 信息完全不进 model：
 
 ```python
 class ProductResponse:
-    reviews: Annotated[
-        list[ReviewsItemResponse],
-        Paged(limit=5, order="HIGHEST_RATING", direction=None),
-    ]
+    reviews: ResultType    # {items, pagination} shape,plain(无 Annotated marker)
 ```
 
 约定：
-- 字段类型必须是 `list[X]`（or `list[X] | None`），X 是 nested model。
-- metadata 必须是单个 `Paged` 实例（不允许 `Annotated[list[X], Paged(...), Other(...)]`）。
-- 缺省（无 gql args）→ 字段类型是 `list[X]`（不带 Annotated），Resolver 走 plain loader。
+- paged 字段 = plain `result_type`（020 删 `PAGED_MARKER`：它功能性无人读）。
+- 判 paged 在 dispatch 用 `rel_info.page_loader`（`_build_entity_field_jobs`），不读 model。
+- 真实 `limit/offset/order/direction` 由 executor 注入的 `paged_provider` 闭包在 resolve
+  时算（rel default + gql args merge）。
+- cache key 用 `field_tree` repr（已区分 paged 形状——含 items/pagination 子键），无 paged 维。
 
-### Resolver 处理 Paged metadata
+### Resolver 处理（019 provider，不读 model）
 
-Resolver 扫描 DTO 字段，遇到 `Annotated[list[X], Paged(...)]`：
+Resolver 不扫 model 取 paged；effective Paged 在 BFS job 构建时由 `paged_provider` 算好，
+塞进 `_EntityFieldJob.paged`：
 
 ```python
-hint = typing.get_type_hints(dto_cls, include_extras=True)[field_name]
-meta = next(m for m in typing.get_args(hint)[1:] if isinstance(m, Paged))
-# meta.limit / meta.offset / meta.order / meta.direction → PageLoadCommand
+# executor 构造 provider 闭包（gql 知识只在此）
+def provider(rel_info, field_sel, field_name):
+    return Resolver._merge_paged(
+        _rel_default_paged(rel_info),              # RelationshipInfo default
+        _gql_args_to_paged(field_sel, field_name), # gql args（含 enum 解包）
+    )
+
+# _build_entity_field_jobs 用 rel_info.page_loader 判 paged,调 provider 塞 job.paged
+# _load_entity_field_paginated 读 job.paged → PageArgs + PageLoadCommand
 ```
 
-跟 specs/015 + γ Paged default + caller override 链路对齐：gql args 派生的 Paged 跟 field Annotated 的 Paged default 合并（caller override wins）。
+跟 specs/015 + γ `_merge_paged` 链路对齐（同一 helper）。
 
 ## 3. Resolver entity dispatch 契约（Step 3）
 
@@ -86,11 +94,14 @@ class Resolver:
         parents: list[SQLModel],
         parent_entity: type[SQLModel],
         field_sel: FieldSelection,
-        response_model: type[BaseModel],   # build_response_model 输出
+        response_model: type[BaseModel] | None,   # 占位，当前不读（019 metadata-driven 未启用）
+        *,
+        store: Callable[[Any, str, Any], None],
+        enable_pagination: bool = False,
+        paged_provider: Callable | None = None,    # 019：executor 注入的闭包（per-call）
     ) -> None:
-        """BFS 遍历 entity relationship，按 response_model 的 Paged metadata 触发 loader。
-        逻辑搬迁自 query_executor._bfs_resolve，零行为变化。
-        """
+        """BFS 遍历 entity relationship。paged 参数从 paged_provider 拿（019），不读
+        field_sel.arguments。逻辑搬迁自 query_executor._bfs_resolve。"""
 ```
 
 ### QueryExecutor 调用方（Step 3 后）
@@ -156,16 +167,20 @@ def fetch_dto_subtree(
     """
 ```
 
-## 5. feature flag 契约（Step 1 切换）
+## 5. feature flag 契约（Step 1 切换 → Phase 7 T028 删除）
 
-### GraphQLHandler.__init__ 新增参数
+> **当前状态（Phase 7 T028 后）**：`use_response_builder` flag 已删除。response_builder
+> 现在是 entity-first gql serialize 的唯一路径。下面是 018 Step 1 的切换历史（保留作
+> 设计记录）。
+
+### GraphQLHandler.__init__ 新增参数（018 Step 1；Phase 7 T028 已删）
 
 ```python
 class GraphQLHandler:
     def __init__(
         self,
         ...,
-        use_response_builder: bool = False,   # ★ 新增，默认 False（旧路径）
+        use_response_builder: bool = False,   # 018 新增；Phase 7 T028 删除
     ):
 ```
 

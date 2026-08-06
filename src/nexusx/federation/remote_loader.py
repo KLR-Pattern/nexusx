@@ -54,14 +54,20 @@ async def fetch_remote_subtree(
     selection: Any,
     paged: bool = False,
 ) -> list[Any]:
-    """Fetch a federated sub-tree: ONE nested gql to ``rel_info``'s owning
-    service, returning target instances — with the whole sub-tree populated by
-    the member — aligned to ``parents``.
+    """Fetch a β entity-federation sub-tree (entity-first gql + Resolver entity dispatch).
 
-    This is the shared "fetch a federated sub-tree" primitive, consumed by BOTH
-    the gql executor (β path, selection from the parsed query) and the Resolver
-    (γ path, selection built from the DTO/materialized graph). One mechanism
-    instead of two.
+    ONE nested gql to ``rel_info``'s owning service, returning target instances —
+    with the whole sub-tree populated by the member — aligned to ``parents``.
+
+    β-only (entity federation): consumed exclusively by the Resolver's
+    entity-field dispatch (specs/018 US3) — both the entity-first gql BFS
+    (``Resolver._bfs_dispatch_entity_fields``) and the UseCase auto-load path
+    (``Resolver._batch_auto_load``) for ``REMOTE_PLAIN`` / ``REMOTE_PAGED``
+    entity relationships. The gql executor used to call this directly; US3
+    collapsed that into the Resolver so β federation fetch lives alongside γ.
+
+    NOT used by γ DTO federation — that path has its own symmetric primitive,
+    ``fetch_dto_subtree`` (one JSON POST to the member's ``/nexusx/dto-batch``).
 
     Args:
         registry: the ErManager (provides ``get_loader`` + ``get_relationships``).
@@ -92,6 +98,45 @@ async def fetch_remote_subtree(
     set_remote_selection(loader, selection)
     fk_values = [getattr(p, rel_info.fk_field) for p in parents]
     return cast("list[Any]", await loader.load_many(fk_values))
+
+
+def fetch_dto_subtree(
+    *,
+    registry: Any,
+    dto_loader_cls: Any,
+    params_key: tuple | None = None,
+    page_params: Any = None,
+) -> Any:
+    """Fetch a γ DTO-federation sub-tree's loader (Core API / UseCase mode).
+
+    γ counterpart to ``fetch_remote_subtree`` (β). Both are Resolver-internal
+    fetch primitives; the asymmetry is intentional — β dispatch batch-loads
+    synchronously (``fetch_remote_subtree`` calls ``load_many`` and returns the
+    children, because entity BFS needs them for the next level), while γ prepares
+    the loader and returns it: the actual load is driven later by the Resolver
+    traversal (a ``resolve_`` method's per-node load, or ``_batch_auto_load``'s
+    batch). This primitive encapsulates the γ-specific "per-params loader +
+    page-params side-channel" prep so ``set_dto_page_params`` has a single caller
+    (specs/018 US4 / T022-T024).
+
+    Args:
+        registry: the ErManager (provides ``get_loader``).
+        dto_loader_cls: the γ DTO RemoteLoader class (from
+            ``create_dto_remote_loader``), resolved upstream via
+            ``ErManager.get_dto_loader``.
+        params_key: per-params split key (different page params → different
+            instance → different batch), mirrors ``registry.get_loader``.
+        page_params: a ``Paged`` (or None). When set, side-channeled onto the
+            loader via ``set_dto_page_params`` to override the create-time
+            closure; None ⇒ member full-fetches (back-compat).
+
+    Returns:
+        A prepared DataLoader instance; the caller loads from it.
+    """
+    loader = registry.get_loader(dto_loader_cls, params_key=params_key)
+    if page_params is not None:
+        set_dto_page_params(loader, page_params)
+    return loader
 
 
 def _render_value(v: Any) -> str:

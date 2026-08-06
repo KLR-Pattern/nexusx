@@ -171,19 +171,19 @@ class TestValidateAndDump:
     def test_none_value_returns_none(self):
         """_validate_and_dump should return None for None input."""
         model = build_response_model(RBUser, {"id": None, "name": None})
-        assert _validate_and_dump(model, None, None) is None
+        assert _validate_and_dump(model, None, None, entity=RBUser) is None
 
     def test_dict_input(self):
         """_validate_and_dump should handle dict input."""
         model = build_response_model(RBUser, {"id": None, "name": None})
-        result = _validate_and_dump(model, {"id": 1, "name": "Alice"}, None)
+        result = _validate_and_dump(model, {"id": 1, "name": "Alice"}, None, entity=RBUser)
         assert result["id"] == 1
 
     def test_validation_fallback_returns_filtered_data(self):
         """When model_validate fails, should return filtered dict."""
         model = build_response_model(RBUser, {"id": None, "name": None})
         # Pass a value that won't validate — integer triggers except path
-        result = _validate_and_dump(model, 42, None)
+        result = _validate_and_dump(model, 42, None, entity=RBUser)
         # Falls through to return the raw value
         assert result == 42
 

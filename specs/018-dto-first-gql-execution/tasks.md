@@ -26,7 +26,7 @@
 
 **Purpose**: feature flag 入口就位，让后续每个 Step 都能通过 flag 控制新旧路径。
 
-- [ ] T001 GraphQLHandler.__init__ 加 `use_response_builder: bool = False` 参数，传递给 QueryExecutor，存为 `self._use_response_builder`。**不**改变默认行为（默认 False = 旧路径）。file: src/nexusx/handler.py + src/nexusx/execution/query_executor.py
+- [X] T001 GraphQLHandler.__init__ 加 `use_response_builder: bool = False` 参数，传递给 QueryExecutor，存为 `self._use_response_builder`。**不**改变默认行为（默认 False = 旧路径）。file: src/nexusx/handler.py + src/nexusx/execution/query_executor.py
 
 **Checkpoint**: flag 就位但没人用，全量测试零回归。
 
@@ -48,16 +48,16 @@
 
 > 写在 implementation 之前，确保 flag-on 跑这些 case 失败（红），实现后通过（绿）。
 
-- [ ] T002 [P] [US1] 写等价性 fixture：`tests/test_query_executor_dto_first.py`。覆盖 (a) scalar + nested 关系，(b) paginated package（`{ Product { by_filter { reviews { items {} pagination {} } } } }`），(c) federation materialized remote type。每个 case 跑 flag-on / flag-off 两次，assert dict 相等。
+- [X] T002 [P] [US1] 写等价性 fixture：`tests/test_query_executor_dto_first.py`。覆盖 (a) scalar + nested 关系，(b) paginated package（`{ Product { by_filter { reviews { items {} pagination {} } } } }`），(c) federation materialized remote type。每个 case 跑 flag-on / flag-off 两次，assert dict 相等。
 
 ### Implementation for User Story 1
 
-- [ ] T003 [US1] `response_builder._build_paginated_model`：识别 field_tree 含 `items` + `pagination` 子键时构造 `{items: list[nested], pagination: Pagination}` shape，复用 `pagination.create_result_type`（src/nexusx/loader/pagination.py:104）。file: src/nexusx/response_builder.py
-- [ ] T004 [US1] `response_builder._resolve_forward_reference` 扩展接收 `optional federation_namespace: dict[str, type]`，先搜 federation 物化的 remote type，再搜本地 SQLModel subclasses。file: src/nexusx/response_builder.py
-- [ ] T005 [US1] `response_builder.serialize_with_model` 加 `federation_namespace` 参数透传；加 paginated package 序列化分支（拼 items + pagination 两层）。file: src/nexusx/response_builder.py
-- [ ] T006 [US1] `QueryExecutor._serialize_via_response_builder`：新方法，调 `build_response_model` + `serialize_with_model`，传 `federation_namespace=self._registry.fed_namespace`（或等价接口）。file: src/nexusx/execution/query_executor.py
-- [ ] T007 [US1] `QueryExecutor._serialize` 加 if-else：`self._use_response_builder` 为 True 走新方法，否则走旧 `_serialize_legacy`（重命名当前实现）。失败时直接 raise，**不 fallback**（spec clarify Q3）。file: src/nexusx/execution/query_executor.py
-- [ ] T008 [US1] 跑全量 1429 测试两次（flag-on / flag-off），用 `pytest --parametrize` 或脚本对比响应 dict，确认 diff 为空。零回归才算 US1 done。
+- [X] T003 [US1] `response_builder._build_paginated_model`：识别 field_tree 含 `items` + `pagination` 子键时构造 `{items: list[nested], pagination: Pagination}` shape，复用 `pagination.create_result_type`（src/nexusx/loader/pagination.py:104）。file: src/nexusx/response_builder.py
+- [X] T004 [US1] `response_builder._resolve_forward_reference` 扩展接收 `optional federation_namespace: dict[str, type]`，先搜 federation 物化的 remote type，再搜本地 SQLModel subclasses。file: src/nexusx/response_builder.py
+- [X] T005 [US1] `response_builder.serialize_with_model` 加 `federation_namespace` 参数透传；加 paginated package 序列化分支（拼 items + pagination 两层）。file: src/nexusx/response_builder.py
+- [X] T006 [US1] `QueryExecutor._serialize_via_response_builder`：新方法，调 `build_response_model` + `serialize_with_model`，传 `federation_namespace=self._registry.fed_namespace`（或等价接口）。file: src/nexusx/execution/query_executor.py
+- [X] T007 [US1] `QueryExecutor._serialize` 加 if-else：`self._use_response_builder` 为 True 走新方法，否则走旧 `_serialize_legacy`（重命名当前实现）。失败时直接 raise，**不 fallback**（spec clarify Q3）。file: src/nexusx/execution/query_executor.py
+- [X] T008 [US1] 跑全量 1429 测试两次（flag-on / flag-off），用 `pytest --parametrize` 或脚本对比响应 dict，确认 diff 为空。零回归才算 US1 done。
 
 **Checkpoint**: flag-on 行为跟 flag-off 完全一致。US1 可独立交付（即使后续 US 不做，flag 默认 False 也不影响生产）。
 
@@ -73,15 +73,15 @@
 
 ### Tests for User Story 2
 
-- [ ] T009 [P] [US2] 写 build_response_model pagination 单测：`tests/test_response_builder_pagination.py`。覆盖 (a) `reviews(limit: 5)` → `Annotated[list[X], Paged(limit=5)]`，(b) 无 args 的 `reviews` → `list[X]`，(c) `reviews(limit: 5, order: HIGHEST_RATING)` → metadata 含 order。
+- [X] T009 [P] [US2] 写 build_response_model pagination 单测：`tests/test_response_builder_pagination.py`。覆盖 (a) `reviews(limit: 5)` → `Annotated[list[X], Paged(limit=5)]`，(b) 无 args 的 `reviews` → `list[X]`，(c) `reviews(limit: 5, order: HIGHEST_RATING)` → metadata 含 order。
 
 ### Implementation for User Story 2
 
-- [ ] T010 [US2] `build_response_model` 加 `pagination_metadata: dict[str, Paged] | None = None` 参数（gql args 派生）。file: src/nexusx/response_builder.py
-- [ ] T011 [US2] `build_response_model` 识别 paginated field_tree + metadata 时，把字段类型从 `list[X]` 升级为 `Annotated[list[X], Paged(...)]`，复用 `pagination.Paged` dataclass。file: src/nexusx/response_builder.py
-- [ ] T012 [US2] Resolver 加 `_extract_paged_metadata(field_hint)` 工具方法：从 `typing.get_args(hint)[1:]` 找 `Paged` 实例，返回 metadata 或 None。file: src/nexusx/resolver.py
-- [ ] T013 [US2] Resolver 处理 dynamic model field 时，若 `_extract_paged_metadata` 返回非 None，走 page_loader 链路（用 Paged metadata 构造 PageLoadCommand，跟 specs/015 + γ Paged merge 链路兼容）。file: src/nexusx/resolver.py
-- [ ] T014 [US2] QueryExecutor 把 gql field arguments（limit/offset/order/direction）派生成 `Paged` 实例，传给 `build_response_model(pagination_metadata=...)`。file: src/nexusx/execution/query_executor.py
+- [X] T010 [US2] `build_response_model` 加 `pagination_metadata: dict[str, Paged] | None = None` 参数（gql args 派生）。file: src/nexusx/response_builder.py
+- [X] T011 [US2] `build_response_model` 识别 paginated field_tree + metadata 时，把字段类型从 `list[X]` 升级为 `Annotated[list[X], Paged(...)]`，复用 `pagination.Paged` dataclass。file: src/nexusx/response_builder.py
+- [X] T012 [US2] Resolver 加 `_extract_paged_metadata(field_hint)` 工具方法：从 `typing.get_args(hint)[1:]` 找 `Paged` 实例，返回 metadata 或 None。file: src/nexusx/resolver.py
+- [X] T013 [US2] Resolver 处理 dynamic model field 时，若 `_extract_paged_metadata` 返回非 None，走 page_loader 链路（用 Paged metadata 构造 PageLoadCommand，跟 specs/015 + γ Paged merge 链路兼容）。file: src/nexusx/resolver.py
+- [X] T014 [US2] QueryExecutor 把 gql field arguments（limit/offset/order/direction）派生成 `Paged` 实例，传给 `build_response_model(pagination_metadata=...)`。file: src/nexusx/execution/query_executor.py
 
 **Checkpoint**: pagination 信息从 gql args → dynamic model Annotated → Resolver → page_loader，链路打通。US2 可独立交付（与 US3 互不冲突）。
 
@@ -97,14 +97,14 @@
 
 ### Tests for User Story 3
 
-- [ ] T015 [P] [US3] 写 Resolver entity dispatch 单测：`tests/test_resolver_beta_dispatch.py`。覆盖 (a) 本地 rel 走 _get_loader，(b) β remote 走 fetch_remote_subtree，(c) coalesced 字段 skip。
+- [X] T015 [P] [US3] 写 Resolver entity dispatch 单测：`tests/test_resolver_beta_dispatch.py`。覆盖 (a) 本地 rel 走 _get_loader，(b) β remote 走 fetch_remote_subtree，(c) coalesced 字段 skip。
 
 ### Implementation for User Story 3
 
-- [ ] T016 [US3] 把 `QueryExecutor._bfs_resolve` + `_build_field_jobs` + `_load_field` + `_load_field_batch` + `_load_field_paginated` 整段**搬迁**（不重写）到 Resolver 新方法 `_bfs_dispatch_entity_fields`，签名接收 `(parents, parent_entity, field_sel, response_model)`。file: src/nexusx/resolver.py
-- [ ] T017 [US3] `QueryExecutor._resolve_result` 改调 `Resolver._bfs_dispatch_entity_fields(...)`，删掉原本的 BFS 实现。file: src/nexusx/execution/query_executor.py
-- [ ] T018 [US3] 删除 `query_executor.py:456/469` 的 `fetch_remote_subtree` 直接调用（已在 Resolver 内部）。file: src/nexusx/execution/query_executor.py
-- [ ] T019 [US3] 跑全量 federation 测试（`tests/test_federation_*.py`），确认零回归。这是 US3 的硬 gate。
+- [X] T016 [US3] 把 `QueryExecutor._bfs_resolve` + `_build_field_jobs` + `_load_field` + `_load_field_batch` + `_load_field_paginated` 整段**搬迁**（不重写）到 Resolver 新方法 `_bfs_dispatch_entity_fields`，签名接收 `(parents, parent_entity, field_sel, response_model)`。file: src/nexusx/resolver.py
+- [X] T017 [US3] `QueryExecutor._resolve_result` 改调 `Resolver._bfs_dispatch_entity_fields(...)`，删掉原本的 BFS 实现。file: src/nexusx/execution/query_executor.py
+- [X] T018 [US3] 删除 `query_executor.py:456/469` 的 `fetch_remote_subtree` 直接调用（已在 Resolver 内部）。file: src/nexusx/execution/query_executor.py
+- [X] T019 [US3] 跑全量 federation 测试（`tests/test_federation_*.py`），确认零回归。这是 US3 的硬 gate。
 
 **Checkpoint**: federation fetch primitive 收敛到 Resolver 内部；executor 退化成 "parse gql + dispatch method + build_response_model + Resolver.resolve"。US3 可独立交付。
 
@@ -120,14 +120,14 @@
 
 ### Tests for User Story 4
 
-- [ ] T020 [P] [US4] 写 fetch primitive 对称性测试：`tests/test_fetch_primitive_symmetry.py`。覆盖 (a) `fetch_remote_subtree.__doc__` 含 "β entity federation"，(b) `fetch_dto_subtree.__doc__` 含 "γ DTO federation"，(c) grep 验证调用方收敛。
+- [X] T020 [P] [US4] 写 fetch primitive 对称性测试：`tests/test_fetch_primitive_symmetry.py`。覆盖 (a) `fetch_remote_subtree.__doc__` 含 "β entity federation"，(b) `fetch_dto_subtree.__doc__` 含 "γ DTO federation"，(c) grep 验证调用方收敛。
 
 ### Implementation for User Story 4
 
-- [ ] T021 [US4] `fetch_remote_subtree` docstring 改诚实："β entity federation 专用（entity-first gql 入口）"，去掉"shared primitive for both β and γ"误导。file: src/nexusx/federation/remote_loader.py
-- [ ] T022 [US4] 新增 `fetch_dto_subtree(*, registry, dto_loader_cls, parents, field_name, page_params=None)`，封装"get_loader + set_dto_page_params + load_many"段。file: src/nexusx/federation/remote_loader.py
-- [ ] T023 [US4] Resolver γ dispatch（resolver.py:531-538 当前直接 `set_dto_page_params + load_many`）改调 `fetch_dto_subtree`。file: src/nexusx/resolver.py
-- [ ] T024 [US4] `grep -rn "set_dto_page_params" src/nexusx/` 验证调用方收敛到只在 `fetch_dto_subtree` 内部。
+- [X] T021 [US4] `fetch_remote_subtree` docstring 改诚实："β entity federation 专用（entity-first gql 入口）"，去掉"shared primitive for both β and γ"误导。file: src/nexusx/federation/remote_loader.py
+- [X] T022 [US4] 新增 `fetch_dto_subtree(*, registry, dto_loader_cls, parents, field_name, page_params=None)`，封装"get_loader + set_dto_page_params + load_many"段。file: src/nexusx/federation/remote_loader.py
+- [X] T023 [US4] Resolver γ dispatch（resolver.py:531-538 当前直接 `set_dto_page_params + load_many`）改调 `fetch_dto_subtree`。file: src/nexusx/resolver.py
+- [X] T024 [US4] `grep -rn "set_dto_page_params" src/nexusx/` 验证调用方收敛到只在 `fetch_dto_subtree` 内部。
 
 **Checkpoint**: β / γ fetch primitive 对称、docstring 诚实、γ 路径用统一 primitive。018 全部 US 完成。
 
@@ -137,11 +137,11 @@
 
 **Purpose**: 性能 baseline、flag 切换、删旧路径、文档。
 
-- [ ] T025 [P] 写 gql benchmark 脚本：`benchmarks/gql_benchmark.py`。cProfile + latency，跑 representative gql query fixture（scalar / nested / paginated / federation），对比 flag-on vs flag-off。file: benchmarks/gql_benchmark.py
-- [ ] T026 [P] 跑 benchmark 脚本，记录 baseline 报告：`specs/018-dto-first-gql-execution/benchmark-baseline.md`（新建）。flag-on 回退 > 10% 时分析瓶颈。
-- [ ] T027 Step 1.c：`use_response_builder` 默认值切 `True`，旧路径加 `# DEPRECATED` 注释；写 changelog + migration guide。file: src/nexusx/handler.py + CHANGELOG
-- [ ] T028 Step 1.d（US4 完成、benchmark 通过后）：删除 `_serialize_legacy` + 删 `use_response_builder` flag + 删 QueryExecutor if-else 分支。file: src/nexusx/handler.py + src/nexusx/execution/query_executor.py
-- [ ] T029 [P] 文档更新：CHANGELOG（用户视角）+ migration guide（开发者视角，如何处理 flag 切换）。file: CHANGELOG.md + docs/migration/018-dto-first.md
+- [X] T025 [P] 写 gql benchmark 脚本：`benchmarks/gql_benchmark.py`。cProfile + latency，跑 representative gql query fixture（scalar / nested / paginated / federation），对比 flag-on vs flag-off。file: benchmarks/gql_benchmark.py
+- [X] T026 [P] 跑 benchmark 脚本，记录 baseline 报告：`specs/018-dto-first-gql-execution/benchmark-baseline.md`（新建）。flag-on 回退 > 10% 时分析瓶颈。
+- [X] T027 Step 1.c：`use_response_builder` 默认值切 `True`，旧路径加 `# DEPRECATED` 注释；写 changelog + migration guide。file: src/nexusx/handler.py + CHANGELOG
+- [X] T028 Step 1.d（US4 完成、benchmark 通过后）：删除 `_serialize_legacy` + 删 `use_response_builder` flag + 删 QueryExecutor if-else 分支。file: src/nexusx/handler.py + src/nexusx/execution/query_executor.py
+- [X] T029 [P] 文档更新：CHANGELOG（用户视角）+ migration guide（开发者视角，如何处理 flag 切换）。file: CHANGELOG.md + docs/migration/018-dto-first.md
 
 ---
 
@@ -215,6 +215,35 @@ Task: T016-T019 [US3] _bfs_resolve 搬迁 + grep 验证
 每个 US 独立可交付，互不阻塞（除 US4 必须 US3 先）。
 
 ---
+
+## 019 follow-up 偏离记录（paged provider 注入）
+
+018 Phase 7 后，US2 的"paged 值注入 model Annotated"暴露两个问题：
+1. US2 注入是 dead code（US3 dispatch 从 `field_sel.arguments` 读，不读 model metadata）
+2. paged 缓存按值（pm repr）碎片化——动态 limit 撑大缓存
+
+019 用依赖反转解决：model 标 `PAGED_MARKER` 占位符（cache key `frozenset(字段名)`，无视值）；
+paged 真值由 executor 注入的 `paged_provider` 闭包在 resolve 时算（rel default + gql merge），
+Resolver 不读 `field_sel.arguments`。实验：100 独特 limit，占位符 cache=1（0.26ms）vs 旧 pm repr
+cache=100（14.7ms，56×）。
+
+偏离 spec US2 字面（"reviews(limit:5) → Annotated[..., Paged(limit=5)]"），但达成 US2 精神
+（pagination 进 DTO 心智模型）——"DTO field"从"携带值的 Annotated"变成"被 provider 识别的
+paged 形状"。plan 见 `~/.claude/plans/parsed-mapping-barto.md`。
+
+## 020 follow-up 偏离记录（删 PAGED_MARKER,pure 减法）
+
+019 的 `PAGED_MARKER` 占位符经审查发现**功能性无人消费**:dispatch 判 paged 用
+`rel_info.page_loader`(不读 model);cache key 用 `field_tree` repr 已区分 paged
+形状(paged 字段含 `items`/`pagination` 子键);serialize 不 dump Annotated metadata。
+marker 标在 model 上但没人读。
+
+020 删除:`PAGED_MARKER` + `pagination_metadata` 参数链 + `_restrict_metadata` +
+`_field_sel_to_pagination_metadata` + dead plug point(`_extract_paged_metadata` /
+`_resolve_paged_for_dynamic_field`)。model paged 字段回到 plain `result_type`(纯
+形状容器)。判 paged = `rel_info.page_loader`;值 = `paged_provider`。零行为变化
+(1444 passed)。本文件/contracts/data-model 里 019 写的 `PAGED_MARKER` 提及保留作
+历史,以本段为准(020 后 model 无 marker)。
 
 ## Notes
 
