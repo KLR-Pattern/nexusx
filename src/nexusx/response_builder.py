@@ -7,6 +7,7 @@ unwanted fields (like foreign keys) during serialization.
 
 from __future__ import annotations
 
+import logging
 from collections import OrderedDict
 from collections.abc import Callable
 from typing import Any, ForwardRef, get_args, get_origin
@@ -16,6 +17,8 @@ from pydantic import BaseModel, create_model
 from nexusx.core_builder import FieldResolution, build_model, is_paginated_package
 from nexusx.query_parser import FieldSelection
 from nexusx.utils.type_utils import coerce_to_dict, get_field_type, is_list_annotation
+
+logger = logging.getLogger(__name__)
 
 # Resolver callable injected by QueryExecutor so build_response_model can find
 # federation-materialized relationships (which live in ErManager._registry, not
@@ -175,7 +178,11 @@ def build_response_model(
             subclasses when resolving forward refs. specs/018 T004.
         relation_entity_resolver: Optional callable injected by QueryExecutor
             to look up federation-materialized relationships in
-            ``ErManager._registry``. specs/018 T002b.
+            ``ErManager._registry``. specs/018 T002b. NOTE: intentionally NOT
+            part of the model cache key — its result is determined by the
+            ErManager's stable relationship registry, so callers must pass the
+            same resolver for the same (entity, selection, namespace) or the
+            cached model may be shared across resolvers (specs/021).
         _selection: Internal — a parsed ``FieldSelection`` tree, passed by
             QueryExecutor to skip the dict round-trip (specs/021 P0-2). Mutually
             exclusive with ``field_tree``. An empty ``sub_fields`` keeps the
@@ -452,7 +459,15 @@ def _validate_and_dump(
         validated = model.model_validate(data)
         return validated.model_dump(mode="json")
     except Exception:
-        # Fallback: return filtered data directly
+        # Fallback: return filtered data directly. This hides model/value shape
+        # mismatches (e.g. a list value against a single-model field) — log it
+        # so silent shape regressions stay visible (specs/021 hardening).
+        logger.warning(
+            "response_builder: model_validate failed for %s (model %s, "
+            "field_tree %s) — falling back to raw filtered data",
+            entity.__name__, getattr(model, "__name__", model), field_tree,
+            exc_info=True,
+        )
         if isinstance(data, dict) and field_tree:
             return {k: v for k, v in data.items() if k in field_tree}
         return data

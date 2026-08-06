@@ -457,3 +457,47 @@ class TestPageManyToManyLoader:
 
         assert results[0]["items"] == []
         assert results[0]["pagination"].total_count == 0
+
+
+class TestPagedOverrideFromDict:
+    """specs/021 hardening — from_dict must never let stray values through."""
+
+    def test_plain_values(self):
+        from nexusx.loader.pagination import _PagedOverride
+
+        ov = _PagedOverride.from_dict({"limit": 5, "offset": 0, "order": "N"})
+        assert ov is not None
+        assert ov.limit == 5
+        assert ov.offset == 0
+        assert ov.order == "N"
+
+    def test_empty_dict_returns_none(self):
+        from nexusx.loader.pagination import _PagedOverride
+
+        assert _PagedOverride.from_dict({}) is None
+
+    def test_undefined_variable_treated_as_omitted(self):
+        """graphql Undefined (unresolved variable) must not reach PageArgs."""
+        from graphql import Undefined
+
+        from nexusx.loader.pagination import _PagedOverride
+
+        ov = _PagedOverride.from_dict(
+            {"limit": Undefined, "offset": Undefined,
+             "order": Undefined, "direction": Undefined}
+        )
+        # everything omitted → no override at all
+        assert ov is None
+
+    def test_undefined_mixed_with_real_value(self):
+        """Undefined limit + real order → only order carried."""
+        from graphql import Undefined
+
+        from nexusx.loader.pagination import _PagedOverride
+
+        ov = _PagedOverride.from_dict(
+            {"limit": Undefined, "order": "NEWEST"}
+        )
+        assert ov is not None
+        assert ov.limit is None
+        assert ov.order == "NEWEST"

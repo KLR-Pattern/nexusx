@@ -104,14 +104,26 @@ class _PagedOverride:
         ``field_sel.arguments`` and γ Resolver ``context``). Omitted keys stay
         ``None`` so callers can distinguish "not provided" from explicit zero
         values (e.g. ``offset=0``); enum values are unwrapped (``.value``).
+        Non-wire values (anything that isn't int/str/None — e.g. graphql's
+        ``Undefined`` for unresolved query variables) are treated as omitted,
+        so a stray value can never reach ``PageArgs`` and crash the query.
         Returns None when nothing is set (→ no override).
         """
+
+        def _clean(v: Any) -> Any:
+            if v is None or isinstance(v, (int, str)):
+                return v
+            return None
+
         order = raw.get("order")
         direction = raw.get("direction")
         limit = raw.get("limit")
         offset = raw.get("offset") if "offset" in raw else None
         order = order.value if hasattr(order, "value") else order
         direction = direction.value if hasattr(direction, "value") else direction
+        limit, offset, order, direction = (
+            _clean(limit), _clean(offset), _clean(order), _clean(direction),
+        )
         if limit is None and offset is None and order is None and direction is None:
             return None
         return cls(limit=limit, offset=offset, order=order, direction=direction)

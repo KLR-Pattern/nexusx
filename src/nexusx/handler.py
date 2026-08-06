@@ -274,7 +274,9 @@ class GraphQLHandler:
 
             # Parse once; share the AST between parser and executor
             document = parse(query)
-            parsed_selections = self._query_parser.parse_document(document)
+            parsed_selections = self._query_parser.parse_document(
+                document, variables=variables
+            )
 
             # Execute via DataLoader-based executor
             return await self._executor.execute_query(
