@@ -11,32 +11,57 @@ import asyncio
 import inspect
 from typing import Any, get_type_hints
 
+from nexusx.utils.type_utils import map_annotation
+
 USE_CASE_METHODS_ATTR = "__use_case_methods__"
 
 
-def get_return_type(method: Any) -> Any:
+def get_return_type(method: Any, *, include_extras: bool = False) -> Any:
     """Get the return type annotation of a method.
 
     Unwraps ``classmethod`` if needed, resolves string annotations
     via ``get_type_hints``, and falls back to ``inspect.signature``.
 
     Returns ``None`` if no return annotation is found.
+
+    Federated DefineSubset: a return annotation is evaluated at ``def`` time,
+    so a RemoteRef-sourced DefineSubset freezes its *placeholder* class into
+    the annotation. ``federate`` later replaces the module attribute with the
+    resolved class, but the frozen annotation misses it (issue #131). Re-resolve
+    every class in the annotation by name against the method's module globals
+    so consumers (voyager, REST router, JSONRPC) see the resolved class.
     """
     func = method.__func__ if isinstance(method, classmethod) else method
     try:
-        hints = get_type_hints(func)
+        hints = get_type_hints(func, include_extras=include_extras)
     except Exception:
         hints = {}
     return_anno = hints.get("return")
-    if return_anno is not None:
-        return return_anno
-    try:
-        sig = inspect.signature(func)
-    except (ValueError, TypeError):
-        return None
-    if sig.return_annotation is inspect.Signature.empty:
-        return None
-    return sig.return_annotation
+    if return_anno is None:
+        try:
+            sig = inspect.signature(func)
+        except (ValueError, TypeError):
+            return None
+        if sig.return_annotation is inspect.Signature.empty:
+            return None
+        return_anno = sig.return_annotation
+    return _refresh_class_refs(return_anno, func.__globals__)
+
+
+def _refresh_class_refs(annotation: Any, module_globals: dict[str, Any]) -> Any:
+    """Re-resolve classes in an annotation against module globals by name.
+
+    Mirrors federate's ``setattr(module, name, resolved_class)`` so an
+    annotation that froze a placeholder DefineSubset picks up the resolved
+    class. No-op when the class was never replaced (``globals[name] is cls``).
+    """
+    def leaf(node: Any) -> Any:
+        if isinstance(node, type):
+            fresh = module_globals.get(node.__name__)
+            if fresh is not None and fresh is not node:
+                return fresh
+        return node
+    return map_annotation(annotation, leaf)
 
 
 def _get_method_kind(func: Any) -> str | None:

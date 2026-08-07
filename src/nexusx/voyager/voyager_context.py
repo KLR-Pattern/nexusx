@@ -56,6 +56,16 @@ class VoyagerContext:
             "module_color": self.module_color,
             "theme_color": self.theme_color,
         }
+        # Pass the federation registry (if any) so materialized remote types
+        # cluster by owning service on the UseCase page — the same registry the
+        # ER diagram path reads via er_manager._fed_registry.
+        fed_registry = (
+            getattr(self.er_manager, "_fed_registry", None)
+            if self.er_manager is not None
+            else None
+        )
+        if fed_registry is not None:
+            config["fed_registry"] = fed_registry
         config.update(kwargs)
         return UseCaseVoyager(self.services, **config)
 
@@ -154,6 +164,7 @@ class VoyagerContext:
             schema=core_data.schema,
             theme_color=self.theme_color,
             show_pydantic_resolve_meta=core_data.show_pydantic_resolve_meta,
+            federated_modules=core_data.federated_modules,
         )
         return renderer.render_dot(
             core_data.tags, core_data.routes, core_data.nodes, core_data.links

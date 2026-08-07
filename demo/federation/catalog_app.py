@@ -112,19 +112,6 @@ async def on_startup() -> None:
 
 app = make_app(handler, on_startup=on_startup, title="Fed demo — catalog (mounts reviews)")
 
-# Voyager ER visualization of the COMPOSED federated graph. catalog is the
-# composition entry, so its er_manager — after the lifespan federates reviews
-# (and transitively users) — holds the full graph with materialized remote
-# types tagged by owning service (FR-016). VoyagerContext keeps er_manager by
-# reference and builds DOT per request, so /voyager reflects the post-federation
-# graph. Open http://localhost:8022/voyager (ER diagram tab).
-voyager_app = create_use_case_voyager(
-    services=[],
-    er_manager=handler._er_manager,
-    name="Fed demo — composed graph",
-)
-app.mount("/voyager", voyager_app)
-
 
 @app.get("/")
 async def root() -> dict:
@@ -193,29 +180,34 @@ class ProductDTO(DefineSubset):
     )
 
 
-_resolver_cls = None
-
-
 class CatalogService(UseCaseService):
     """Business-logic surface over the federated graph."""
 
     @query
-    async def composed_tree(cls) -> list[dict]:
-        """DefineSubset + Resolver over federated schema.
+    async def composed_tree(cls) -> list[ReviewDTO]:
+        """Composed federated graph as a nested DTO tree (RESTful-style).
 
-        DTOs declared at module load with RemoteRef — federate resolves them.
-        Resolver auto-loads the cross-service tree via RemoteLoaders.
-        model_dump serializes everything (relationships are model_fields).
-        No gql string, no for-loop, no dynamic type().
+        The return type is itself the composition — ReviewDTO → comments →
+        CommentDTO → author → UserDTO → config → UserConfigDTO — so the REST
+        response and the UseCase voyager page show the full cross-service
+        structure as one nested resource. Review/Comment/User rows live on the
+        remote services (reviews/users); this method exposes the type graph.
         """
-        global _resolver_cls
-        if _resolver_cls is None:
-            _resolver_cls = handler._er_manager.create_resolver()
-        async with async_session() as s:
-            products = (await s.exec(select(Product))).all()
-        dtos = [ProductDTO(id=p.id, name=p.name) for p in products]
-        resolved = await _resolver_cls().resolve(dtos)
-        return [p.model_dump(mode="json") for p in resolved]
+        return []
+
+
+# ── Voyager visualization ───────────────────────────────────────────────
+# catalog is the composition entry; its er_manager (after lifespan federates
+# reviews → users) holds the full materialized graph. services=[CatalogService]
+# feeds the use case methods above — UseCaseVoyager now clusters their remote
+# DTO types by owning service (dashed + declared color) on the UseCase page,
+# matching the ER diagram (FR-016). Open http://localhost:8022/voyager.
+voyager_app = create_use_case_voyager(
+    services=[CatalogService],
+    er_manager=handler._er_manager,
+    name="Fed demo — composed graph",
+)
+app.mount("/voyager", voyager_app)
 
 
 # Expose the UseCase service as REST alongside the GraphQL surface.

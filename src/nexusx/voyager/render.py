@@ -63,13 +63,14 @@ class Renderer:
         config: RenderConfig | None = None,
         theme_color: str | None = None,
         show_methods: bool = True,
+        federated_modules: set[str] | None = None,
     ) -> None:
         self.show_fields = show_fields if show_fields in ('single', 'object', 'all') else 'single'
         self.module_color = module_color or {}
         # Module-name prefixes whose clusters render dashed (federated remote
-        # services). Empty by default; set by DiagramRenderer from the ER
-        # builder's federation knowledge.
-        self.federated_modules: set[str] = set()
+        # services). Empty by default; DiagramRenderer overrides from the ER
+        # builder's federation knowledge, UseCaseVoyager from its fed_registry.
+        self.federated_modules: set[str] = federated_modules or set()
         self.schema = schema
         self.show_module = show_module
         self.show_pydantic_resolve_meta = show_pydantic_resolve_meta

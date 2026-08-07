@@ -6,8 +6,11 @@ used by the DOT renderer, following the mapping:
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel
 
+from nexusx.federation.relationship import parse_qualified_name
 from nexusx.subset import SUBSET_REFERENCE  # noqa: F401
 from nexusx.use_case.business import USE_CASE_METHODS_ATTR, UseCaseService  # noqa: F401
 from nexusx.use_case.introspector import ServiceIntrospector
@@ -33,6 +36,9 @@ from nexusx.voyager.type_helper import (
     update_forward_refs,
 )
 
+if TYPE_CHECKING:
+    from nexusx.federation.registry import FederatedTypeRegistry
+
 
 class UseCaseVoyager:
     """Analyze UseCase services and build graph data structures for DOT rendering.
@@ -54,9 +60,14 @@ class UseCaseVoyager:
         hide_primitive_route: bool = False,
         show_module: bool = True,
         theme_color: str | None = None,
+        fed_registry: FederatedTypeRegistry | None = None,
     ):
         self.services = services
         self.introspector = ServiceIntrospector(services)
+        # FederatedTypeRegistry — identifies materialized remote types so they
+        # cluster by owning service (mirrors ErDiagramDotBuilder). None when the
+        # app has no federation; remote types then render as ordinary DTO nodes.
+        self._fed_registry = fed_registry
 
         self.routes: list[Route] = []
         self.nodes: list[SchemaNode] = []
@@ -153,11 +164,23 @@ class UseCaseVoyager:
         )
 
         if full_name not in self.node_set:
+            # Federation ownership: a materialized remote type carries a
+            # qualified name ("srv.TypeName") in the fed_registry; its cluster
+            # groups by owning SERVICE (mirrors ErDiagramDotBuilder, FR-016).
+            # Local DTOs keep their Python __module__.
+            fed_qn = (
+                self._fed_registry.qualified_of(schema)
+                if self._fed_registry is not None
+                else None
+            )
+            module = parse_qualified_name(fed_qn)[0] if fed_qn else schema.__module__
+
             self.node_set[full_name] = SchemaNode(
                 id=full_name,
-                module=schema.__module__,
+                module=module,
                 name=schema.__name__,
                 fields=get_pydantic_fields(schema, bases_fields),
+                is_federated=bool(fed_qn),
             )
         return full_name
 
@@ -246,15 +269,17 @@ class UseCaseVoyager:
             links=self.links,
             node_set=self.node_set,
         )
+        module_color, federated_modules = self._federation_styling()
         return CoreData(
             tags=_tags,
             routes=_routes,
             nodes=_nodes,
             links=_links,
             show_fields=self.show_fields,
-            module_color=self.module_color,
+            module_color=module_color,
             schema=self.schema,
             show_pydantic_resolve_meta=show_pydantic_resolve_meta,
+            federated_modules=federated_modules,
         )
 
     def calculate_filtered_tag_and_route(self) -> list[Tag]:
@@ -271,6 +296,30 @@ class UseCaseVoyager:
         for t in _tags:
             t.routes = [r for r in t.routes if r.id in route_ids]
         return _tags
+
+    def _federation_styling(self) -> tuple[dict[str, str], set[str]]:
+        """Derive ``(module_color, federated_modules)`` for remote-service clusters.
+
+        Symmetric to ``ErDiagramDotBuilder._federation_styling``. Colors come
+        ONLY from declared ``RemoteService(color=...)`` (fed_registry) merged
+        with any user-supplied ``module_color`` — user override wins. A service
+        without a declared color still clusters dashed (boundary). No
+        fed_registry (no federation) yields empty styling, so non-federated
+        apps render byte-identically to before.
+        """
+        services: set[str] = set()
+        if self._fed_registry is not None:
+            for cls in self._fed_registry.all_classes():
+                qn = self._fed_registry.qualified_of(cls)
+                if qn:
+                    services.add(parse_qualified_name(qn)[0])
+        fed_colors = (
+            self._fed_registry.service_colors()
+            if self._fed_registry is not None
+            else {}
+        )
+        module_color = {**fed_colors, **self.module_color}
+        return module_color, services
 
     def render_dot(self, show_pydantic_resolve_meta: bool = False) -> str:
         _tags, _routes, _nodes, _links = filter_graph(
@@ -289,13 +338,15 @@ class UseCaseVoyager:
         # Remove tag_route links since tags are no longer rendered as nodes
         _links = [lk for lk in _links if lk.type != 'tag_route']
 
+        module_color, federated_modules = self._federation_styling()
         renderer = Renderer(
             show_fields=self.show_fields,
-            module_color=self.module_color,
+            module_color=module_color,
             schema=self.schema,
             show_module=self.show_module,
             theme_color=self.theme_color,
             show_pydantic_resolve_meta=show_pydantic_resolve_meta,
+            federated_modules=federated_modules,
         )
         return renderer.render_dot(_tags, _routes, _nodes, _links)
 

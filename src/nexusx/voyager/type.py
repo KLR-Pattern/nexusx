@@ -109,3 +109,7 @@ class CoreData:
     module_color: dict[str, str] | None = None
     schema: str | None = None
     show_pydantic_resolve_meta: bool = False
+    # Remote-service module names whose clusters render dashed — mirrors the
+    # ER diagram path so the UseCase page and core-data re-render path stay
+    # visually consistent. None when federation is absent (back-compat).
+    federated_modules: set[str] | None = None
