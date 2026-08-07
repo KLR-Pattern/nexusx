@@ -17,7 +17,7 @@ from fastapi import APIRouter, Request
 from pydantic import TypeAdapter
 from starlette.responses import JSONResponse
 
-from nexusx.use_case.business import USE_CASE_METHODS_ATTR
+from nexusx.use_case.business import USE_CASE_METHODS_ATTR, get_return_type
 from nexusx.use_case.introspector import ServiceIntrospector
 from nexusx.use_case.manager import UseCaseManager
 from nexusx.use_case.router import _get_from_context_params
@@ -166,7 +166,7 @@ def _build_full_schema(config: UseCaseAppConfig) -> dict[str, Any]:
                 defs.update(ps.get("$defs", {}))
 
             # Result
-            return_anno = hints.get("return")
+            return_anno = get_return_type(func, include_extras=True)
             result_schema: dict[str, Any] = {}
             if return_anno:
                 try:

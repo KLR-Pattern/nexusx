@@ -16,6 +16,7 @@ from nexusx.subset import get_subset_source
 from nexusx.use_case.business import (
     USE_CASE_METHODS_ATTR,  # noqa: F401
     UseCaseService,
+    get_return_type,
 )
 
 # ──────────────────────────────────────────────────
@@ -650,7 +651,7 @@ class ServiceIntrospector:
 
         description = inspect.getdoc(func)
         parameters = self._extract_parameters(func, hints)
-        return_anno = hints.get("return") or self._get_return_anno_from_sig(func)
+        return_anno = get_return_type(func)
 
         # Build SDL signature: method_name(param: Type, ...): ReturnType
         sdl_param_parts = []
