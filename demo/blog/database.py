@@ -1,10 +1,12 @@
 """Database configuration for the demo application."""
 
+from pathlib import Path
+
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 # Create async engine with SQLite
-engine = create_async_engine("sqlite+aiosqlite:///demo.db", echo=False)
+engine = create_async_engine(f"sqlite+aiosqlite:///{Path(__file__).parent / 'demo.db'}", echo=False)
 
 # Create async session factory
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

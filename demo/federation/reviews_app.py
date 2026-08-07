@@ -8,6 +8,8 @@ comments, and each comment's author — reviews internally calls users, which in
 turn resolves UserConfig locally.
 """
 
+from pathlib import Path
+
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, Relationship, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -96,7 +98,7 @@ class ReviewDTO(DefineSubset):
     )
 
 
-engine = create_async_engine("sqlite+aiosqlite:///fed_reviews.db")
+engine = create_async_engine(f"sqlite+aiosqlite:///{Path(__file__).parent / 'fed_reviews.db'}")
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
