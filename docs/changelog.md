@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.2.0."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.3.0."
 ---
 
 # Changelog
@@ -9,6 +9,33 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 - **Patch (x.y.Z)**: Bug fixes and minor improvements
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
+
+## 5.3
+
+### 5.3.0 (2026-8-7)
+
+- feat:
+  - **Use Case voyager federation clusters (#130)**: The Use Case page now
+    renders federated remote types like the ER diagram — each owning service
+    clusters as a dashed box colored by its declared `RemoteService(color=...)`.
+    Previously remote DTO types rendered flat (`module = pydantic.main`) with no
+    service boundary. `UseCaseVoyager` takes the `fed_registry` (fed from
+    `er_manager._fed_registry` via `VoyagerContext`), tags materialized remote
+    types by service, and reuses the existing `Renderer` coloring path; the ER
+    diagram path is unchanged and the front-end needs no change (coloring lives
+    in the DOT template).
+
+- fix:
+  - **`get_return_type` re-resolves placeholder DefineSubset (#131)**: A method
+    return annotation is evaluated at `def` time, so a RemoteRef-sourced
+    `DefineSubset` froze its placeholder class into the annotation; `federate`
+    later replaced the module attribute with the resolved class but the frozen
+    annotation missed it, leaving voyager / REST swagger / JSONRPC with the
+    placeholder (`SUBSET_REFERENCE = None`) and a broken cross-service subset
+    chain. `get_return_type` now re-resolves each class by name against the
+    method's module globals (mirroring federate's `setattr`); router, JSONRPC
+    and the introspector all route through it, so every consumer sees the
+    resolved class with no federation internals leaking into the use_case layer.
 
 ## 5.2
 
