@@ -193,8 +193,11 @@ class ComposedErManager:
                 self._route[cls] = m
             for _entity, rels in m.get_all_relationships().items():
                 for rel_info in rels.values():
-                    if rel_info.loader is not None:
-                        self._loader_owner[rel_info.loader] = m
+                    # loader 与 page_loader 都登记：分页路径经 page_loader 取实例
+                    # （page_loader 是独立类，只登记 loader 会让分页查询 KeyError）
+                    for _lk in (rel_info.loader, rel_info.page_loader):
+                        if _lk is not None:
+                            self._loader_owner[_lk] = m
 
         # 跨边界关系 → RelationshipInfo（复用 _build_custom_relationship_info）
         for source_entity, rel in cross_relationships or []:
@@ -299,7 +302,7 @@ class ComposedErManager:
             for m in self._members:
                 for _entity, rels in m.get_all_relationships().items():
                     for rel_info in rels.values():
-                        if rel_info.loader is loader_cls:
+                        if loader_cls in (rel_info.loader, rel_info.page_loader):
                             owner = m
                             break
                     if owner is not None:

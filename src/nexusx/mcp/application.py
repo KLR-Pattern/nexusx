@@ -214,8 +214,9 @@ class Application:
     def __repr__(self) -> str:
         url_part = f", url={self._url_for_repr!r}" if self._url_for_repr else ""
         owns = ", owned=True" if self._owns_engine else ""
+        base_name = self._base.__name__ if self._base is not None else "<injected>"
         return (
-            f"Application(name={self._name!r}, base={self._base.__name__}"
+            f"Application(name={self._name!r}, base={base_name}"
             f"{url_part}{owns})"
         )
 

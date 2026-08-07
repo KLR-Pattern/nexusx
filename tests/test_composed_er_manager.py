@@ -333,3 +333,25 @@ async def test_clear_cache_aggregates_members(composed_world):
 
     composed.clear_cache()
     assert not composed._cross_loader_cache
+
+
+async def test_paginated_loader_reachable_through_compose(composed_world):
+    """member 分页关系（page_loader）经组合体 get_loader 可取（回归 #1）。
+
+    page_loader 是与 loader 不同的独立类；组合体的路由表/动态查找须同时覆盖
+    loader 与 page_loader，否则分页查询路径 composed.get_loader(page_loader)
+    会 KeyError。CeUser.posts 带 order_by="CePost.id" → 构造期已生成 page_loader。
+    """
+    composed = composed_world["composed"]
+    blog_er = composed_world["blog_er"]
+
+    rel_info = composed.get_relationship(CeUser, "posts")
+    assert rel_info.page_loader is not None  # order_by 触发独立分页 loader 类
+
+    # 组合体层面取 page_loader 实例（修复前这里 KeyError）
+    page_loader = composed.get_loader(rel_info.page_loader)
+    assert page_loader is not None
+
+    # 委托正确：与直接走 member 取到同一缓存实例（同一 owner.get_loader）
+    member_page = blog_er.get_loader(rel_info.page_loader)
+    assert page_loader is member_page

@@ -176,3 +176,30 @@ async def test_application_base_path_regression(session_factory):
     assert app.name == "base-app"
     assert app.owns_engine is True  # url= 自造 engine 拥有
     await app.dispose()
+
+
+# ── 注入路径边界修复（#2 / #3）──
+
+async def test_handler_aclose_on_injection_path(session_factory):
+    """注入路径下 handler.aclose() 不崩（#2）。
+
+    组合体本身无 aclose_federation（FR-013），handler 须逐个委托子 member；
+    子 member 无 federation 时 aclose_federation 为幂等 no-op。
+    """
+    blog_er = ErManager(session_factory=session_factory, entities=[ChUser])
+    shop_er = ErManager(session_factory=session_factory, entities=[ChOrder])
+    composed = ComposedErManager(members=[blog_er, shop_er])
+    handler = GraphQLHandler(er_manager=composed, entities=[ChUser, ChOrder])
+
+    await handler.aclose()  # 修复前 AttributeError: aclose_federation
+
+
+async def test_application_repr_on_injection_path(session_factory):
+    """注入路径下 repr(app) 不崩（#3）：base=None 兜底为 <injected>。"""
+    blog_er = ErManager(session_factory=session_factory, entities=[ChUser])
+    composed = ComposedErManager(members=[blog_er])
+    app = Application(name="composed-repr", er_manager=composed, entities=[ChUser])
+
+    text = repr(app)  # 修复前 AttributeError: NoneType.__name__
+    assert "composed-repr" in text
+    assert "<injected>" in text
