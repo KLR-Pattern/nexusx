@@ -278,7 +278,7 @@ async def test_construct_duplicate_entity(composed_world):
     other_er = ErManager(
         session_factory=composed_world["blog_sf"], entities=[CeUser]
     )
-    with pytest.raises(ValueError, match="被多个 member 注册"):
+    with pytest.raises(ValueError, match="multiple members"):
         ComposedErManager(members=[blog_er, other_er])
 
 
@@ -327,7 +327,7 @@ async def test_construct_cross_name_collides_local(composed_world):
     async def _noop(keys):
         return [[] for _ in keys]
 
-    with pytest.raises(ValueError, match="本地关系同名"):
+    with pytest.raises(ValueError, match="shadows a member-local"):
         ComposedErManager(
             members=[blog_er],
             cross_relationships=[
