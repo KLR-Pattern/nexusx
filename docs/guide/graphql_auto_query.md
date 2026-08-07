@@ -12,19 +12,24 @@ from nexusx import GraphQLHandler, AutoQueryConfig
 handler = GraphQLHandler(
     base=SQLModel,
     session_factory=async_session,
-    auto_query_config=AutoQueryConfig(session_factory=async_session),
+    auto_query_config=AutoQueryConfig(),
 )
 ```
 
-!!! warning
-    `AutoQueryConfig` needs its **own** `session_factory` parameter — it doesn't inherit from `GraphQLHandler`.
+`AutoQueryConfig` contains query policy only. The database connection is owned
+by `GraphQLHandler`.
 
 You can also add auto queries to an existing handler:
 
 ```python
-from nexusx import add_standard_queries
+from nexusx import AutoQueryConfig, GraphQLHandler, add_standard_queries
 
-add_standard_queries(handler, AutoQueryConfig(session_factory=async_session))
+add_standard_queries(
+    entities=[User, Post],
+    config=AutoQueryConfig(),
+    session_factory=async_session,
+)
+handler = GraphQLHandler(base=SQLModel, session_factory=async_session)
 ```
 
 ## Step 2: Use `by_id` for Single Records
@@ -32,8 +37,8 @@ add_standard_queries(handler, AutoQueryConfig(session_factory=async_session))
 Auto-generated for each entity with exactly one primary key field:
 
 ```graphql
-{ userById(id: 1) { name email } }
-{ postById(id: 42) { title author { name } } }
+{ User { by_id(id: 1) { name email } } }
+{ Post { by_id(id: 42) { title author { name } } } }
 ```
 
 That's it — no `@query` method needed. The framework reads your primary key field and generates the query.
@@ -43,8 +48,8 @@ That's it — no `@query` method needed. The framework reads your primary key fi
 Each entity also gets a `FilterInput` type and a filter query:
 
 ```graphql
-{ userByFilter(filter: { name: "Alice" }, limit: 5) { id name email } }
-{ postByFilter(filter: { author_id: 1 }, limit: 10) { id title } }
+{ User { by_filter(filter: { name: "Alice" }, limit: 5) { id name email } } }
+{ Post { by_filter(filter: { author_id: 1 }, limit: 10) { id title } } }
 ```
 
 `FilterInput` fields correspond one-to-one with entity fields (excluding relationship fields), supporting exact-match filtering.
@@ -77,14 +82,14 @@ class Post(SQLModel, table=True):
 handler = GraphQLHandler(
     base=SQLModel,
     session_factory=async_session,
-    auto_query_config=AutoQueryConfig(session_factory=async_session),
+    auto_query_config=AutoQueryConfig(),
 )
 ```
 
 The resulting schema contains all three:
 
-- `postById`, `postByFilter` — auto-generated
-- `postGetRecent` — your custom query
+- `Post.by_id`, `Post.by_filter` — auto-generated
+- `Post.get_recent` — your custom query
 
 ## Recap
 

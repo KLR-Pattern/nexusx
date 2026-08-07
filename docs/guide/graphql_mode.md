@@ -4,15 +4,16 @@ The full picture of how nexusx turns your SQLModel entities into a complete Grap
 
 You've seen the basics in [Quick Start](./quick_start.md). This page explains how each piece works.
 
-## Step 1: How Field Names Are Generated
+## Step 1: How Operations Are Grouped
 
-`@query` and `@mutation` methods are auto-converted to GraphQL fields with the naming convention `{EntityName}{MethodName}`:
+`@query` and `@mutation` methods keep their Python names and are grouped under
+their entity:
 
-| Entity | Method | GraphQL Field |
-|--------|--------|---------------|
-| `Post` | `get_all` | `postGetAll` |
-| `Post` | `create` | `postCreate` |
-| `User` | `get_by_id` | `userGetById` |
+| Entity | Method | GraphQL Path |
+|--------|--------|--------------|
+| `Post` | `get_all` | `Query.Post.get_all` |
+| `Post` | `create` | `Mutation.Post.create` |
+| `User` | `get_by_id` | `Query.User.get_by_id` |
 
 ### Method definition rules
 
@@ -80,10 +81,12 @@ This is the core value of GraphQL mode. Try querying a relationship:
 
 ```graphql
 {
-  postGetAll(limit: 5) {
-    id
-    title
-    author { name email }
+  Post {
+    get_all(limit: 5) {
+      id
+      title
+      author { name email }
+    }
   }
 }
 ```
@@ -92,7 +95,7 @@ This is the core value of GraphQL mode. Try querying a relationship:
 
 The framework resolves this in layers:
 
-1. Execute `postGetAll` — fetch 5 Posts
+1. Execute `Post.get_all` — fetch 5 Posts
 2. Collect `author_id` from those 5 Posts
 3. **One** batch query to load all referenced Users
 4. Map each User back to its Post
@@ -151,7 +154,7 @@ Each layer resolves in parallel — all relationships at the same depth are batc
 
 ## Recap
 
-- Field names follow `{Entity}{Method}` convention — `postGetAll`, `userGetById`
+- Operations are grouped by entity — for example `Post.get_all` and `User.get_by_id`
 - Entity discovery is recursive — related entities are included even without `@query`
 - Relationships resolve automatically via DataLoader — one query per relationship, no N+1
 - All three relationship types (many-to-one, one-to-many, many-to-many) are supported

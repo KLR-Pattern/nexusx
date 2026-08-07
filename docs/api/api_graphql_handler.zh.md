@@ -36,7 +36,8 @@ handler = GraphQLHandler(
 
 | 方法 | 签名 | 说明 |
 |------|------|------|
-| `execute` | `async execute(query: str, context: dict = None) -> dict` | 执行 GraphQL 查询 |
+| `execute` | `async execute(query, variables=None, operation_name=None) -> dict` | 执行 GraphQL 操作 |
+| `get_sdl` | `get_sdl(include_mutations: bool = True) -> str` | 渲染当前 SDL |
 | `get_graphiql_html` | `get_graphiql_html(endpoint: str = "/graphql") -> str` | 获取 GraphiQL HTML |
 
 ## @query 装饰器
@@ -81,7 +82,7 @@ class Post(SQLModel, table=True):
 ```python
 from nexusx import AutoQueryConfig
 
-config = AutoQueryConfig(session_factory=async_session)
+config = AutoQueryConfig()
 ```
 
 为所有实体自动生成 `by_id` 和 `by_filter` 查询。要求实体有且仅有一个主键字段。
@@ -99,10 +100,15 @@ GraphQL 查询字符串解析为 `FieldSelection` 树。通常不直接使用。
 
 ## add_standard_queries
 
-手动注册自动查询到已有的 GraphQLHandler：
+在构造 GraphQLHandler 之前，向实体类注册标准查询方法：
 
 ```python
 from nexusx import add_standard_queries
 
-add_standard_queries(handler, AutoQueryConfig(session_factory=async_session))
+add_standard_queries(
+    entities=[User, Post],
+    config=AutoQueryConfig(),
+    session_factory=async_session,
+)
+handler = GraphQLHandler(base=SQLModel, session_factory=async_session)
 ```

@@ -99,10 +99,12 @@ Open http://localhost:8000/graphql and try this query:
 
 ```graphql
 {
-  postGetAll(limit: 5) {
-    id
-    title
-    author { name email }
+  Post {
+    get_all(limit: 5) {
+      id
+      title
+      author { name email }
+    }
   }
 }
 ```

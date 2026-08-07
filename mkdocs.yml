@@ -62,6 +62,7 @@ nav:
     - Auto-Generated Queries: ./guide/graphql_auto_query.md
     - Core API Mode: ./guide/core_api.md
     - Core API Advanced: ./guide/core_api_advanced.md
+    - Virtual Entities: ./guide/virtual_entities.md
     - Custom Relationships: ./guide/custom_relationship.md
     - ER Diagram Visualization: ./guide/er_diagram_visual.md
   - Advanced:
@@ -83,6 +84,8 @@ nav:
   - Reference:
     - Changelog: ./changelog.md
     - Migration Guide: ./reference/migration.md
+    - DTO-first Execution Migration: ./migration/018-dto-first.md
+    - UseCase GraphQL 3.0 Migration: ./migrations/3.0-use-case-graphql.md
 
 markdown_extensions:
   - admonition
@@ -122,6 +125,7 @@ plugins:
             "Auto-Generated Queries": "自动查询"
             "Core API Mode": "Core API 模式"
             "Core API Advanced": "Core API 进阶"
+            "Virtual Entities": "虚拟实体"
             "Custom Relationships": "自定义关系"
             "ER Diagram Visualization": "ER 图可视化"
             "MCP Service": "MCP 服务"
@@ -140,6 +144,8 @@ plugins:
             "UseCase API": "UseCase API"
             Changelog: "变更记录"
             "Migration Guide": "迁移指南"
+            "DTO-first Execution Migration": "DTO-first 执行迁移"
+            "UseCase GraphQL 3.0 Migration": "UseCase GraphQL 3.0 迁移"
 
 extra_css:
   - stylesheets/extra.css

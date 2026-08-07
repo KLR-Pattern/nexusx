@@ -10,9 +10,10 @@ MCP 服务配置的完整 API 参考。
 from nexusx.mcp import create_simple_mcp_server
 
 mcp = create_simple_mcp_server(
-    base=SQLModel,              # SQLModel 基类
-    name="My API",              # 服务名称
-    session_factory=async_session,  # session 工厂
+    base=SQLModel,
+    name="My API",
+    session_factory=async_session,
+    allow_mutation=False,
 )
 ```
 
@@ -24,8 +25,12 @@ mcp = create_simple_mcp_server(
 | 参数 | 类型 | 必选 | 说明 |
 |------|------|------|------|
 | `base` | `type` | 是 | SQLModel 基类 |
-| `name` | `str` | 是 | 服务名称 |
-| `session_factory` | `Callable` | 否 | session 工厂 |
+| `name` | `str` | 否 | 服务名称，默认 `"nexusx API"` |
+| `desc` | `str \| None` | 否 | Query 与 Mutation 的 schema 描述 |
+| `allow_mutation` | `bool` | 否 | 是否注册 mutation，默认 `False` |
+| `session_factory` | `Callable \| None` | 否 | 数据库关系加载使用的异步 session 工厂 |
+| `enable_pagination` | `bool` | 否 | 是否为列表关系生成分页元数据 |
+| `auto_query_config` | `AutoQueryConfig \| None` | 否 | 是否生成标准 `by_id` / `by_filter` 查询 |
 
 ### 生成的工具
 
@@ -33,19 +38,21 @@ mcp = create_simple_mcp_server(
 |------|------|
 | `get_schema()` | 获取 GraphQL schema |
 | `graphql_query(query)` | 执行 GraphQL 查询 |
-| `graphql_mutation(mutation)` | 执行 GraphQL 变更 |
+
+传入 `allow_mutation=True` 后，才会额外注册
+`graphql_mutation(mutation)`。
 
 ## create_mcp_server
 
 使用 `create_mcp_server` 创建多应用 MCP 服务。
 
 ```python
-from nexusx.mcp import create_mcp_server
+from nexusx.mcp import Application, create_mcp_server
 
 mcp = create_mcp_server(
     apps=[
-        {"name": "blog", "base": BlogBase, "description": "Blog API"},
-        {"name": "shop", "base": ShopBase, "description": "Shop API"},
+        Application(name="blog", base=BlogBase, url=BLOG_DATABASE_URL),
+        Application(name="shop", base=ShopBase, url=SHOP_DATABASE_URL),
     ],
     name="Multi-App API",
 )
@@ -58,8 +65,9 @@ mcp = create_mcp_server(
 
 | 参数 | 类型 | 必选 | 说明 |
 |------|------|------|------|
-| `apps` | `list[dict]` | 是 | 应用配置列表 |
-| `name` | `str` | 是 | 服务名称 |
+| `apps` | `list[Application \| dict]` | 是 | 应用列表；dict 形式已弃用 |
+| `name` | `str` | 否 | 服务名称 |
+| `allow_mutation` | `bool` | 否 | 是否注册 mutation 导航与执行工具 |
 
 ### 生成的工具
 
@@ -67,8 +75,11 @@ mcp = create_mcp_server(
 |------|------|
 | `list_apps()` | 列出所有应用 |
 | `list_queries(app_name)` | 列出应用的查询 |
-| `get_query_schema(name, app_name)` | 获取查询 schema |
+| `get_query_schema(entity, method, app_name, response_type="sdl")` | 获取查询 schema |
 | `graphql_query(query, app_name)` | 执行查询 |
+
+传入 `allow_mutation=True` 后，还会注册 `list_mutations`、
+`get_mutation_schema` 和 `graphql_mutation`。
 
 ## Application
 
@@ -136,11 +147,10 @@ async with Application(
 Application(name='blog', url='postgresql+asyncpg://user:***@host/blog', owned=True)
 ```
 
-## AppConfig
+## 旧版 dict 配置
 
-`AppConfig` 是多应用配置类型（`create_mcp_server` 的 apps 参数中的字典结构）。
-
-> **已弃用**：推荐使用 `Application` 实例。dict 形式仅为向后兼容保留，触发 `DeprecationWarning`。
+`create_mcp_server` 的 `apps` 参数仍兼容以下字典结构，但会触发
+`DeprecationWarning`。新代码应使用 `Application` 实例。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -151,4 +161,3 @@ Application(name='blog', url='postgresql+asyncpg://user:***@host/blog', owned=Tr
 | `url` | `str` | 数据库 URL（与 `session_factory` 二选一） |
 | `engine` | `AsyncEngine` | 外部 engine（与 `session_factory` 二选一） |
 | `aliases` | `list[str]` | 可选路由别名 |
-

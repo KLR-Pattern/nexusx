@@ -56,19 +56,19 @@ The RPC module has been fully refactored into the UseCase pattern.
 | Old Name | New Name |
 |----------|----------|
 | `RpcService` | `UseCaseService` |
-| `create_rpc_mcp_server` | `create_use_case_mcp_server` |
+| `create_rpc_mcp_server` | `create_use_case_graphql_mcp_server` |
 | `create_rpc_voyager` | `create_use_case_voyager` |
 | `RpcVoyager` | `UseCaseVoyager` |
 
 ### MCP Tool Changes
 
-Changed from three layers to four layers, adding `list_apps` for multi-app management:
+The current UseCase MCP uses GraphQL and four progressive-disclosure layers:
 
 | Old Tool | New Tool |
 |----------|----------|
-| `list_services()` | `list_apps()` → `list_services(app_name)` |
-| `describe_service(service_name)` | `describe_service(app_name, service_name)` |
-| `call_rpc(service_name, method_name, params)` | `call_use_case(app_name, service_name, method_name, params)` |
+| `list_services()` | `list_apps()` → `describe_compose_schema(app_name)` |
+| `describe_service(service_name)` | `describe_compose_method(app_name, service_name, method_name)` |
+| `call_rpc(service_name, method_name, params)` | `compose_query(app_name, query)` |
 
 ### Code Migration
 
@@ -84,13 +84,17 @@ mcp = create_rpc_mcp_server(
     name="Project API",
 )
 
-# After (use_case)
-from nexusx.use_case import UseCaseService, UseCaseAppConfig, create_use_case_mcp_server
+# After (current UseCase GraphQL MCP)
+from nexusx import (
+    UseCaseAppConfig,
+    UseCaseService,
+    create_use_case_graphql_mcp_server,
+)
 
 class SprintService(UseCaseService):
     ...
 
-mcp = create_use_case_mcp_server(
+mcp = create_use_case_graphql_mcp_server(
     apps=[
         UseCaseAppConfig(
             name="project",
@@ -106,7 +110,10 @@ mcp = create_use_case_mcp_server(
 
 - **Multi-app management**: Organize multiple apps via `UseCaseAppConfig`
 - **FromContext**: Support parameter injection from MCP context
-- **Case-insensitive lookup**: app_name lookup is case-insensitive
+- **GraphQL execution**: Layer 3 accepts standard GraphQL query strings
+
+For the direct 2.x → 3.0 mapping, see
+[UseCase GraphQL MCP migration](../migrations/3.0-use-case-graphql.md).
 
 ## 1.3.x → 1.4.0: RpcServiceConfig Removal (Historical)
 
@@ -131,9 +138,9 @@ mcp = create_rpc_mcp_server(
 )
 ```
 
-## 1.3.2 → 1.3.3: Loader(str) Removal
+## 1.3.2 → 1.3.3: Loader(str) Historical Removal
 
-The `Loader('relationship_name')` string lookup pattern has been removed.
+Version 1.3.3 removed the `Loader('relationship_name')` lookup pattern:
 
 ```python
 # Before (1.3.2)
@@ -146,6 +153,11 @@ def resolve_owner(self, loader=Loader(UserLoader)):
 ```
 
 !!! tip
+    Current NexusX releases support `Loader("relationship_name")` again through
+    `ErManager`'s relationship registry. The typed DataLoader class/callable
+    form remains useful when no registered relationship exists or a global
+    name lookup would be ambiguous.
+
     Implicit auto-loading already covers common scenarios. When the field name matches a relationship and the type is compatible, you don't need to write `resolve_*` methods:
 
     ```python

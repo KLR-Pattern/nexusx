@@ -333,11 +333,11 @@ class SprintService(UseCaseService):
 
 config = UseCaseAppConfig(name="project", services=[SprintService])
 
-# 同一个 config → 四个传输层
+# 同一个 config → 四种交付入口
 mcp = create_use_case_graphql_mcp_server(apps=[config])
 app.include_router(create_use_case_router(config))
-graphql_handler = create_use_case_graphql_handler(config)
-cli = build_cli(config)
+graphql_schema = build_compose_schema(config)
+cli = create_use_case_cli(config)
 ```
 
 底层机制：
@@ -345,9 +345,9 @@ cli = build_cli(config)
 1. **`BusinessMeta` metaclass**（`business.py:60`）在类创建时扫类体，收集所有 `@query` / `@mutation` 装饰的 classmethod，存到类的 `_business_methods` 上。这一步只做发现，不做翻译——metaclass 不知道也不关心协议。
 2. **每个协议一个 builder**：
    - `compose_schema.py`：扫 `_business_methods`，结合方法签名（`inspect.signature`）+ 返回类型注解（`get_type_hints`），翻译成 GraphQL schema（`dict[str, TypeInfo]`，见第 13 条）；
-   - `router.py:create_router`：同样扫方法，翻译成 FastAPI router，每个方法变成一个 POST endpoint；
-   - `compose_mcp_server.py`：翻译成 MCP tool definitions，每个方法变成一个 callable tool；
-   - `cli.py:build_cli`：翻译成 Click / Typer 风格的 CLI 命令。
+   - `router.py:create_use_case_router`：同样扫方法，翻译成 FastAPI router，每个方法变成一个 POST endpoint；
+   - `compose_mcp_server.py:create_use_case_graphql_mcp_server`：通过四个通用 MCP 工具提供应用、schema、方法发现和 GraphQL 执行；
+   - `cli.py:create_use_case_cli`：翻译成 Typer command group 与 command。
 3. **协议间共享的部分**：参数解析（`FromContext`）、响应投影（selection）、错误模型（`errors.py`）、类型映射（`compose_type_mapper.py`）都是协议无关的，被四个 builder 复用。
 
 `compose_executor.py` 的注释明确了一个关键设计：**「The executor does NOT wrap results in Resolver()」**。意思是 GraphQL 执行路径不自动套 DTO 装配——如果方法想用 DefineSubset / Collector 的能力，方法体里自己调 `Resolver().resolve(dtos)`。这是单一职责的体现：执行器只负责调度方法 + 投影 selection，DTO 装配是业务方法的责任。

@@ -24,8 +24,11 @@ er = ErManager(
 | 方法 | 说明 |
 |------|------|
 | `create_resolver()` | 返回绑定了实体图的 Resolver 类 |
-| `get_diagram()` | 返回 ErDiagram 实例 |
 | `add_virtual_entities(entities)` | 将普通 BaseModel 子类注册为虚拟实体（见下文） |
+| `get_all_entities()` | 返回所有已注册的 SQLModel 与虚拟实体类 |
+| `get_all_relationships()` | 返回完整关系注册表 |
+
+需要可视化注册表时，使用 `ErDiagram.from_er_manager(er)`。
 
 ### add_virtual_entities
 
@@ -78,9 +81,13 @@ result = await Resolver().resolve(dtos)
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `context` | `dict` | 全局上下文，可通过 `ancestor_context` 访问 |
-| `loader_params` | `dict` | DataLoader 额外参数 |
-| `debug` | `bool` | 启用调试日志 |
+| `loader_registry` | `ErManager \| None` | 关系注册表；使用 `er.create_resolver()` 时已自动绑定 |
+| `context` | `dict \| None` | 非空的请求上下文，注入到声明了 `context` 参数的方法 |
+| `loader_instances` | `dict[type[DataLoader], DataLoader] \| None` | 传入预创建的 loader，供匹配的 `Loader(MyLoader)` 使用 |
+
+`er.create_resolver()` 返回的类已经绑定 `loader_registry`，实例化时只需传
+`context` 和/或 `loader_instances`。`ancestor_context` 是另一套机制：它只包含
+祖先字段通过 `ExposeAs` 暴露出来的值。
 
 ### Resolver.resolve
 
@@ -134,7 +141,7 @@ class UserDTO(DefineSubset):
 from nexusx import SubsetConfig
 
 class UserDTO(DefineSubset):
-    __subset__ = SubsetConfig(entity=User, fields=("id", "name"))
+    __subset__ = SubsetConfig(kls=User, fields=["id", "name"])
 ```
 
 ## Loader
@@ -155,8 +162,15 @@ def resolve_owner(self, loader=Loader(load_users)):
     return loader.load(self.owner_id)
 ```
 
-!!! warning
-    Loader 依赖名必须匹配关系名。例如 `Loader('author')` 要求 ErManager 中有名为 `author` 的关系。
+也可以按已注册的关系名获取 loader：
+
+```python
+def resolve_author(self, loader=Loader("author")):
+    return loader.load(self.author_id)
+```
+
+名称必须匹配 `ErManager` 中的关系。如果多个无关实体存在同名关系，应使用带
+`DefineSubset` 源类型的 DTO，或直接传 DataLoader 类/批量函数，避免全局查找歧义。
 
 ## build_dto_select
 

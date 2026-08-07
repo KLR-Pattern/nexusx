@@ -58,16 +58,21 @@ Generate Mermaid ER diagrams from your entity relationships.
 ```python
 from nexusx import ErDiagram
 
-diagram = ErDiagram(entities=[Sprint, Task, User])
+diagram = ErDiagram.from_sqlmodel([Sprint, Task, User])
+print(diagram.to_mermaid())
 ```
 
 ### Methods
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `get_diagram()` | `-> str` | Generate a Mermaid ER diagram string |
-| `get_all_entities()` | `-> list` | Get all registered entities |
-| `get_all_relationships()` | `-> list` | Get all registered relationships |
+| `from_sqlmodel(entities)` | `-> ErDiagram` | Build from SQLModel entity classes |
+| `from_er_manager(er_manager)` | `-> ErDiagram` | Build from an ErManager, including virtual entities |
+| `to_mermaid()` | `-> str` | Generate a Mermaid ER diagram string |
+
+Structured entity and relationship metadata is available through
+`diagram.entities`. Registry-level classes and relationships remain available
+from `er.get_all_entities()` and `er.get_all_relationships()`.
 
 ### Mermaid Output Example
 
@@ -83,6 +88,6 @@ Extract the diagram from an existing ErManager:
 
 ```python
 er = ErManager(base=SQLModel, session_factory=async_session)
-diagram = er.get_diagram()
-print(diagram.get_diagram())
+diagram = ErDiagram.from_er_manager(er)
+print(diagram.to_mermaid())
 ```

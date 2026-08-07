@@ -10,9 +10,10 @@ Create a single-app MCP service with GraphQL-based tools.
 from nexusx.mcp import create_simple_mcp_server
 
 mcp = create_simple_mcp_server(
-    base=SQLModel,              # SQLModel base class
-    name="My API",              # Service name
-    session_factory=async_session,  # Session factory
+    base=SQLModel,
+    name="My API",
+    session_factory=async_session,
+    allow_mutation=False,
 )
 ```
 
@@ -21,11 +22,15 @@ mcp = create_simple_mcp_server(
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `base` | `type` | Yes | SQLModel base class |
-| `name` | `str` | Yes | Service name |
-| `session_factory` | `Callable` | No | Session factory |
+| `name` | `str` | No | Service name; defaults to `"nexusx API"` |
+| `desc` | `str \| None` | No | Query and mutation schema description |
+| `allow_mutation` | `bool` | No | Register mutation support; defaults to `False` |
+| `session_factory` | `Callable \| None` | No | Async session factory for database-backed loaders |
+| `enable_pagination` | `bool` | No | Wrap list relationships with pagination metadata |
+| `auto_query_config` | `AutoQueryConfig \| None` | No | Generate standard `by_id` / `by_filter` queries |
 
 !!! tip
-    Use the simple server when you have a single application or are just getting started with MCP integration. It provides a straightforward interface with three core tools: schema inspection, query execution, and mutation execution.
+    Use the simple server for a single application. It is read-only by default; opt in to mutation tools only when the agent needs write access.
 
 ### Generated Tools
 
@@ -33,19 +38,21 @@ mcp = create_simple_mcp_server(
 |------|-------------|
 | `get_schema()` | Get GraphQL schema |
 | `graphql_query(query)` | Execute GraphQL query |
-| `graphql_mutation(mutation)` | Execute GraphQL mutation |
+
+With `allow_mutation=True`, the server additionally registers
+`graphql_mutation(mutation)`.
 
 ## create_mcp_server
 
 Create a multi-app MCP service that manages multiple applications.
 
 ```python
-from nexusx.mcp import create_mcp_server
+from nexusx.mcp import Application, create_mcp_server
 
 mcp = create_mcp_server(
     apps=[
-        {"name": "blog", "base": BlogBase, "description": "Blog API"},
-        {"name": "shop", "base": ShopBase, "description": "Shop API"},
+        Application(name="blog", base=BlogBase, url=BLOG_DATABASE_URL),
+        Application(name="shop", base=ShopBase, url=SHOP_DATABASE_URL),
     ],
     name="Multi-App API",
 )
@@ -55,8 +62,9 @@ mcp = create_mcp_server(
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `apps` | `list[dict]` | Yes | Application configuration list |
-| `name` | `str` | Yes | Service name |
+| `apps` | `list[Application \| dict]` | Yes | Applications; dict entries are deprecated |
+| `name` | `str` | No | Service name |
+| `allow_mutation` | `bool` | No | Register mutation navigation and execution tools |
 
 !!! tip
     Use the multi-app server when you have multiple distinct domains or bounded contexts (like a blog API and a shop API) that you want to expose as separate apps. This keeps tools organized and allows agents to discover and query each domain independently.
@@ -67,8 +75,11 @@ mcp = create_mcp_server(
 |------|-------------|
 | `list_apps()` | List all applications |
 | `list_queries(app_name)` | List queries for an app |
-| `get_query_schema(name, app_name)` | Get query schema |
+| `get_query_schema(entity, method, app_name, response_type="sdl")` | Get query schema |
 | `graphql_query(query, app_name)` | Execute query |
+
+With `allow_mutation=True`, the server also registers `list_mutations`,
+`get_mutation_schema`, and `graphql_mutation`.
 
 ## Application
 
@@ -136,14 +147,14 @@ When constructed with `url=`, the password is automatically redacted in
 Application(name='blog', url='postgresql+asyncpg://user:***@host/blog', owned=True)
 ```
 
-## AppConfig
+## Legacy dict configuration
 
 Multi-app configuration type that defines each application's structure.
 
 > **Deprecated**: prefer `Application` instances. The dict form is accepted for
 > backward compatibility and triggers a `DeprecationWarning`.
 
-The `apps` parameter in `create_mcp_server` accepts a list of dictionaries with these fields:
+The `apps` parameter still accepts dictionaries with these fields:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -154,4 +165,3 @@ The `apps` parameter in `create_mcp_server` accepts a list of dictionaries with 
 | `url` | `str` | Database URL (alternative to `session_factory`) |
 | `engine` | `AsyncEngine` | External engine (alternative to `session_factory`) |
 | `aliases` | `list[str]` | Optional routing aliases |
-

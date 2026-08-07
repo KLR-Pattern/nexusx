@@ -6,13 +6,10 @@ nexusx 内置 Voyager 模块，提供 UseCase 服务结构和 ER 实体关系的
 
 ```python
 from nexusx.voyager import create_use_case_voyager
-from nexusx.use_case import UseCaseAppConfig
 from fastapi import FastAPI
 
 voyager = create_use_case_voyager(
-    apps=[
-        UseCaseAppConfig(name="project", services=[SprintService, TaskService]),
-    ],
+    services=[SprintService, TaskService],
     er_manager=er,  # 可选：集成 ER 图
 )
 
@@ -26,22 +23,25 @@ app.mount("/voyager", voyager)
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `apps` | `list[UseCaseAppConfig]` | — | 应用配置列表 |
+| `services` | `list[type[UseCaseService]]` | — | 要可视化的服务列表 |
 | `er_manager` | `ErManager \| None` | `None` | ErManager 实例，用于 ER 图集成 |
 | `name` | `str` | `"UseCase API"` | 项目名称，显示在 UI 标题 |
-| `module_colors` | `dict[str, str] \| None` | `None` | 服务模块的自定义颜色 |
+| `module_color` | `dict[str, str] \| None` | `None` | 服务模块的自定义颜色 |
 | `initial_page_policy` | `"first" / "full" / "empty"` | `"first"` | 初始页面加载策略 |
 | `online_repo_url` | `str \| None` | `None` | 在线仓库 URL，用于源码链接 |
 | `version` | `str` | `"1.0.0"` | 版本号，显示在 UI |
+| `gzip_minimum_size` | `int \| None` | `500` | GZip 阈值；负数表示禁用 |
 
 ## REST 端点
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/dot` | GET | DOT 格式的完整服务依赖图 |
-| `/dot-search` | GET | 支持搜索过滤的 DOT 图 |
-| `/er-diagram` | GET | Mermaid 格式的 ER 图（需要 `er_manager`） |
-| `/source` | GET | 服务方法的源代码信息 |
+| `/dot-search` | POST | 搜索服务和 DTO 节点 |
+| `/er-diagram` | POST | 渲染 ER 图数据（需要 `er_manager`） |
+| `/er-diagram-subgraph` | POST | 渲染单个实体的邻接子图 |
+| `/source` | POST | 获取 schema 节点源码 |
+| `/docstring` | POST | 获取 About 面板使用的 docstring |
 
 ## 你会看到什么
 
@@ -88,19 +88,16 @@ Voyager 展示的服务结构同时服务于 MCP 模式——AI 代理可以通�
 from nexusx.use_case import UseCaseAppConfig, create_use_case_graphql_mcp_server
 from nexusx.voyager import create_use_case_voyager
 
-# 同一批应用配置
-apps = [
-    UseCaseAppConfig(
-        name="project",
-        services=[SprintService, TaskService],
-    ),
-]
+config = UseCaseAppConfig(
+    name="project",
+    services=[SprintService, TaskService],
+)
 
 # MCP 服务（AI 代理）
-mcp = create_use_case_graphql_mcp_server(apps=apps, name="API")
+mcp = create_use_case_graphql_mcp_server(apps=[config], name="API")
 
 # Voyager 可视化（开发者）
-voyager = create_use_case_voyager(apps=apps, er_manager=er)
+voyager = create_use_case_voyager(services=config.services, er_manager=er)
 
 app = FastAPI()
 app.mount("/mcp", mcp)
@@ -111,7 +108,7 @@ app.mount("/voyager", voyager)
 
 - Voyager 提供 UseCase 服务和 ER 图的交互式 Web 可视化
 - 通过一次 `app.mount()` 调用挂载到 FastAPI
-- 与 MCP 共享同一套 `UseCaseAppConfig`——一份配置，多种呈现
+- 与 MCP 复用同一组 `UseCaseService` 类
 - 在开发阶段用于可视化验证和调试
 
 ## 下一步

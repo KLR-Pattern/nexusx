@@ -58,7 +58,7 @@ Three things determine a framework's Clean Architecture maturity:
 - **UseCaseService methods are the business-logic entry point**: the classmethods decorated with `@query` / `@mutation` are simultaneously the external contract (translated by each protocol builder into GraphQL fields / REST endpoints / MCP tools) and the executable body of business logic. The method body can be the full business logic or a thin wrapper calling external pure functions (a project-structure choice, not enforced by the library).
 - **DefineSubset is a declarative DTO**: auto-generates a Pydantic model from SQLModel entity metadata; the field set is declared explicitly by the developer via `__subset__` (including whether FK columns are included).
 - **Resolver is a model-driven response builder**: walks the object tree via BFS, automatically batch-loading relational data.
-- **The same UseCaseService method serves multiple APIs**: translated to different protocols via builders like `create_use_case_graphql_mcp_server` / `create_use_case_router` / `build_cli`, with zero changes to the business method.
+- **The same UseCaseService method serves multiple APIs**: translated to different protocols via builders like `create_use_case_graphql_mcp_server` / `create_use_case_router` / `create_use_case_cli`, with zero changes to the business method.
 
 ## Detailed Framework Analysis
 
@@ -306,4 +306,4 @@ _mount(Sprint, create_sprint, mutation)
 
 - `_mount()` / `methods.py` are part of the **skill template**, not the `nexusx` library API. `pip install nexusx` does not give you these tools — they live in `skills/nexusx-4phase/template/src/models.py` and are provided by the skill for AI agents or developers to copy.
 - You can completely skip the skill's project structure and write `@query` methods directly inside a `UseCaseService` class body (the library's native usage). The skill only offers an optional convention with stricter separation of "business logic / protocol entry."
-- Install the skill: `npx skills add KLR-Pattern/nexusx -s nexusx-4phase -a claude-code` (see the repo's [`skills/nexusx-4phase/SKILL.md`](https://github.com/KLR-Pattern/nexusx/blob/master/skills/nexusx-4phase/SKILL.md) for details).
+- Install the skill: `npx skills add allmonday/nexusx -s nexusx-4phase -a claude-code` (see the repo's [`skills/nexusx-4phase/SKILL.md`](https://github.com/allmonday/nexusx/blob/master/skills/nexusx-4phase/SKILL.md) for details).

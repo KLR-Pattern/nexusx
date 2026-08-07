@@ -32,11 +32,13 @@ handler = GraphQLHandler(
 
 ```graphql
 {
-  userGetAll {
-    name
-    posts(limit: 3, offset: 0) {
-      items { title }
-      pagination { has_more total_count }
+  User {
+    get_all {
+      name
+      posts(limit: 3, offset: 0) {
+        items { title }
+        pagination { has_more total_count }
+      }
     }
   }
 }
@@ -46,22 +48,24 @@ handler = GraphQLHandler(
 
 ```json
 {
-  "userGetAll": [
-    {
-      "name": "Alice",
-      "posts": {
-        "items": [
-          { "title": "First Post" },
-          { "title": "Second Post" },
-          { "title": "Third Post" }
-        ],
-        "pagination": {
-          "has_more": true,
-          "total_count": 15
+  "User": {
+    "get_all": [
+      {
+        "name": "Alice",
+        "posts": {
+          "items": [
+            { "title": "First Post" },
+            { "title": "Second Post" },
+            { "title": "Third Post" }
+          ],
+          "pagination": {
+            "has_more": true,
+            "total_count": 15
+          }
         }
       }
-    }
-  ]
+    ]
+  }
 }
 ```
 

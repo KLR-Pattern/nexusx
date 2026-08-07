@@ -6,13 +6,10 @@ Interactive web-based visualization of your UseCase service structure and ER ent
 
 ```python
 from nexusx.voyager import create_use_case_voyager
-from nexusx.use_case import UseCaseAppConfig
 from fastapi import FastAPI
 
 voyager = create_use_case_voyager(
-    apps=[
-        UseCaseAppConfig(name="project", services=[SprintService, TaskService]),
-    ],
+    services=[SprintService, TaskService],
     er_manager=er,  # Optional: show ER diagram alongside service graph
 )
 
@@ -46,26 +43,25 @@ class TaskDTO(DefineSubset):
 
 Voyager displays the `TaskDTO` → `Task` subset relationship along with the selected fields.
 
-## Step 2: Share Configuration with MCP
+## Step 2: Reuse the Same Services with MCP
 
-Voyager and MCP use the same `UseCaseAppConfig` — one configuration, two presentations:
+Voyager accepts a service list while MCP wraps that same list in
+`UseCaseAppConfig`:
 
 ```python
 from nexusx.use_case import UseCaseAppConfig, create_use_case_graphql_mcp_server
 from nexusx.voyager import create_use_case_voyager
 
-apps = [
-    UseCaseAppConfig(
-        name="project",
-        services=[SprintService, TaskService],
-    ),
-]
+config = UseCaseAppConfig(
+    name="project",
+    services=[SprintService, TaskService],
+)
 
 # MCP service (AI agents)
-mcp = create_use_case_graphql_mcp_server(apps=apps, name="API")
+mcp = create_use_case_graphql_mcp_server(apps=[config], name="API")
 
 # Voyager visualization (developers)
-voyager = create_use_case_voyager(apps=apps, er_manager=er)
+voyager = create_use_case_voyager(services=config.services, er_manager=er)
 
 app = FastAPI()
 app.mount("/mcp", mcp)
@@ -80,29 +76,32 @@ AI agents discover and call services via MCP. Developers explore the same servic
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `apps` | `list[UseCaseAppConfig]` | — | Application configuration list |
+| `services` | `list[type[UseCaseService]]` | — | Services to visualize |
 | `er_manager` | `ErManager \| None` | `None` | ErManager instance for ER diagram |
 | `name` | `str` | `"UseCase API"` | Project name in UI title |
-| `module_colors` | `dict[str, str] \| None` | `None` | Custom colors for service modules |
+| `module_color` | `dict[str, str] \| None` | `None` | Custom colors for service modules |
 | `initial_page_policy` | `"first" / "full" / "empty"` | `"first"` | Initial page loading policy |
 | `online_repo_url` | `str \| None` | `None` | Repository URL for source code links |
 | `version` | `str` | `"1.0.0"` | Version in UI |
+| `gzip_minimum_size` | `int \| None` | `500` | GZip threshold; negative disables it |
 
 ### REST endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/dot` | GET | Service dependency graph in DOT format |
-| `/dot-search` | GET | Searchable and filterable DOT graph |
-| `/er-diagram` | GET | Mermaid ER diagram (requires `er_manager`) |
-| `/source` | GET | Source code information for service methods |
+| `/dot-search` | POST | Search service and DTO nodes |
+| `/er-diagram` | POST | Render ER diagram data (requires `er_manager`) |
+| `/er-diagram-subgraph` | POST | Render one entity's neighborhood |
+| `/source` | POST | Source code information for a schema node |
+| `/docstring` | POST | Docstring for the About panel |
 
 ## Recap
 
 - Mount Voyager to FastAPI with a single `app.mount()` call
 - Service graph shows UseCaseService methods, DTOs, and dependencies
 - ER diagram shows entity relationships and DefineSubset mappings
-- Shares the same `UseCaseAppConfig` as MCP — one config, two presentations
+- Reuses the same `UseCaseService` classes as MCP
 
 ## Next Steps
 

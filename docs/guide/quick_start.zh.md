@@ -99,10 +99,12 @@ uvicorn app:app
 
 ```graphql
 {
-  postGetAll(limit: 5) {
-    id
-    title
-    author { name email }
+  Post {
+    get_all(limit: 5) {
+      id
+      title
+      author { name email }
+    }
   }
 }
 ```

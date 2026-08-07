@@ -10,16 +10,23 @@ from nexusx import GraphQLHandler, AutoQueryConfig
 handler = GraphQLHandler(
     base=SQLModel,
     session_factory=async_session,
-    auto_query_config=AutoQueryConfig(session_factory=async_session),
+    auto_query_config=AutoQueryConfig(),
 )
 ```
 
-你也可以在已有的 handler 上手动注册：
+`AutoQueryConfig` 只保存查询策略，数据库连接由 `GraphQLHandler` 管理。
+
+你也可以在构造 handler 之前手动注册：
 
 ```python
-from nexusx import add_standard_queries
+from nexusx import AutoQueryConfig, GraphQLHandler, add_standard_queries
 
-add_standard_queries(handler, AutoQueryConfig(session_factory=async_session))
+add_standard_queries(
+    entities=[User, Post],
+    config=AutoQueryConfig(),
+    session_factory=async_session,
+)
+handler = GraphQLHandler(base=SQLModel, session_factory=async_session)
 ```
 
 ## `by_id`：按主键查单个
@@ -27,8 +34,8 @@ add_standard_queries(handler, AutoQueryConfig(session_factory=async_session))
 为每个有且仅有一个主键字段的实体自动生成：
 
 ```graphql
-{ userById(id: 1) { name email } }
-{ postById(id: 42) { title author { name } } }
+{ User { by_id(id: 1) { name email } } }
+{ Post { by_id(id: 42) { title author { name } } } }
 ```
 
 ## `by_filter`：按字段过滤
@@ -36,8 +43,8 @@ add_standard_queries(handler, AutoQueryConfig(session_factory=async_session))
 为每个实体生成 `FilterInput` 类型和过滤查询：
 
 ```graphql
-{ userByFilter(filter: { name: "Alice" }, limit: 5) { id name email } }
-{ postByFilter(filter: { author_id: 1 }, limit: 10) { id title } }
+{ User { by_filter(filter: { name: "Alice" }, limit: 5) { id name email } } }
+{ Post { by_filter(filter: { author_id: 1 }, limit: 10) { id title } } }
 ```
 
 `FilterInput` 类型的字段与实体字段一一对应（关系字段除外），支持精确匹配过滤。
@@ -50,7 +57,7 @@ add_standard_queries(handler, AutoQueryConfig(session_factory=async_session))
 !!! warning
     - `by_id` 只支持**单主键**——复合主键的实体不会生成 `by_id`
     - `by_filter` 是**精确匹配**——不支持 `LIKE`、范围查询或排序
-    - `AutoQueryConfig` 需要**自己的** `session_factory` 参数
+    - `session_factory` 由 `GraphQLHandler` 管理，不属于 `AutoQueryConfig`
 
 ## 与 `@query` 共存
 
@@ -68,14 +75,14 @@ class Post(SQLModel, table=True):
 handler = GraphQLHandler(
     base=SQLModel,
     session_factory=async_session,
-    auto_query_config=AutoQueryConfig(session_factory=async_session),
+    auto_query_config=AutoQueryConfig(),
 )
 ```
 
 此时 GraphQL schema 同时包含：
 
-- `postById`、`postByFilter`——自动生成
-- `postGetRecent`——你的自定义查询
+- `Post.by_id`、`Post.by_filter`——自动生成
+- `Post.get_recent`——你的自定义查询
 
 ## 回顾
 

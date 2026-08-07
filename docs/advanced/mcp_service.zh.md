@@ -18,17 +18,30 @@ from nexusx.mcp import create_simple_mcp_server
 mcp = create_simple_mcp_server(
     base=SQLModel,
     name="My API",
+    session_factory=async_session,  # 查询数据库时提供
 )
 mcp.run()  # stdio 模式
 ```
 
-你的 AI 代理现在可以使用三个工具：
+默认是只读模式，AI 代理可以使用两个工具：
 
 | 工具 | 用途 |
 |------|------|
 | `get_schema()` | 获取 GraphQL schema |
 | `graphql_query(query)` | 执行 GraphQL 查询 |
-| `graphql_mutation(mutation)` | 执行 GraphQL 变更 |
+
+只有在确实需要写入数据时才显式开启 mutation：
+
+```python
+mcp = create_simple_mcp_server(
+    base=SQLModel,
+    session_factory=async_session,
+    allow_mutation=True,
+)
+```
+
+开启后会增加 `graphql_mutation(mutation)`，`get_schema()` 返回的 schema
+中也会包含 mutation。
 
 ## Multi-App MCP Server
 
@@ -67,8 +80,11 @@ mcp.run()
 |------|------|
 | `list_apps()` | 列出所有可用应用 |
 | `list_queries(app_name)` | 列出应用的查询 |
-| `get_query_schema(name, app_name)` | 获取查询 schema |
+| `get_query_schema(entity, method, app_name)` | 获取一个分组查询的 schema |
 | `graphql_query(query, app_name)` | 执行查询 |
+
+传入 `allow_mutation=True` 后才会增加 `list_mutations`、
+`get_mutation_schema` 和 `graphql_mutation`。默认只读模式不会注册这些工具。
 
 !!! tip
     单应用场景用 `create_simple_mcp_server`——更简单，工具调用更少。只有当 AI 代理需要跨多个数据库或领域工作时才用 `create_mcp_server`。
@@ -101,7 +117,7 @@ import、传给 `create_mcp_server`、run。
 
 ## session_factory 配置
 
-MCP 服务需要 `session_factory` 来执行数据库查询：
+当业务方法或关系加载器需要访问数据库时，传入 `session_factory`：
 
 ```python
 mcp = create_simple_mcp_server(
@@ -118,7 +134,7 @@ mcp = create_simple_mcp_server(
 mcp.run()
 
 # HTTP 模式（用于 Web 服务）
-mcp.run(transport="sse", host="0.0.0.0", port=8003)
+mcp.run(transport="streamable-http", host="0.0.0.0", port=8003)
 ```
 
 !!! tip
@@ -126,10 +142,11 @@ mcp.run(transport="sse", host="0.0.0.0", port=8003)
 
 ## 回顾
 
-- `create_simple_mcp_server` 创建单应用 MCP 服务，提供 3 个工具
+- `create_simple_mcp_server` 创建单应用 MCP 服务，默认提供 2 个只读工具
 - `create_mcp_server` 处理多应用场景，提供应用级导航
-- 两者都支持 `stdio`（CLI）和 `sse`（HTTP）传输模式
-- `session_factory` 用于数据库查询
+- mutation 工具必须通过 `allow_mutation=True` 显式开启
+- 两者都支持 `stdio`（CLI）和 `streamable-http`（HTTP）传输模式
+- `session_factory` 用于数据库查询和关系加载
 
 ## 下一步
 

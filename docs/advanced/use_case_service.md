@@ -11,15 +11,16 @@ One service class. Two presentation modes. No duplication.
 
 ## Step 1: Define a UseCaseService
 
-Subclass `UseCaseService` and declare `async classmethod` methods. The metaclass auto-discovers all public methods:
+Subclass `UseCaseService` and decorate async methods with `@query` or
+`@mutation`. Only decorated methods are exposed:
 
 ```python
-from nexusx.use_case import UseCaseService
+from nexusx import UseCaseService, query
 
 class SprintService(UseCaseService):
     """Sprint management service."""
 
-    @classmethod
+    @query
     async def list_sprints(cls) -> list[SprintSummary]:
         """Get all sprints with their task counts."""
         stmt = build_dto_select(SprintSummary)
@@ -28,7 +29,7 @@ class SprintService(UseCaseService):
         dtos = [SprintSummary(**dict(row._mapping)) for row in rows]
         return await Resolver().resolve(dtos)
 
-    @classmethod
+    @query
     async def get_sprint(cls, sprint_id: int) -> SprintSummary | None:
         """Get a sprint by ID."""
         stmt = build_dto_select(SprintSummary, where=Sprint.id == sprint_id)
@@ -41,7 +42,9 @@ class SprintService(UseCaseService):
 ```
 
 !!! tip
-    Method docstrings become MCP tool descriptions — write them clearly so AI agents know when to use each method. Private methods (starting with `_`) are excluded from discovery.
+    Method docstrings become schema and MCP discovery descriptions. Write them
+    clearly so AI agents understand when to use each method. Private methods
+    (starting with `_`) are excluded from discovery.
 
 ## Step 2: Expose to MCP
 
@@ -119,7 +122,7 @@ app = FastAPI()
 app.include_router(create_use_case_router(config))
 ```
 
-Each `@classmethod` in your services becomes a POST endpoint:
+Each `@query` or `@mutation` method in your services becomes a POST endpoint:
 
 ```
 POST /api/sprint_service/list_sprints
@@ -141,15 +144,15 @@ Method parameters are split into two categories:
 
 ```python
 from typing import Annotated
-from nexusx import FromContext
+from nexusx import FromContext, query
 
 class ReportService(UseCaseService):
-    @classmethod
+    @query
     async def my_tasks(cls, user_id: Annotated[int, FromContext()]) -> list[dict]:
         """Get tasks for the current user."""
         ...
 
-    @classmethod
+    @query
     async def create_report(
         cls,
         user_id: Annotated[int, FromContext()],
@@ -178,8 +181,8 @@ OpenAPI documentation is generated automatically — visit `/docs` to see the in
 
 ## Recap
 
-- `UseCaseService` subclasses define business logic as `async classmethod` methods
-- Method docstrings become MCP tool descriptions — write them clearly
+- `UseCaseService` subclasses expose async methods with `@query` and `@mutation`
+- Method docstrings become schema and MCP discovery descriptions
 - `create_use_case_graphql_mcp_server` creates a four-layer progressive-discovery GraphQL MCP service
 - `create_use_case_router` generates FastAPI POST routes from the same service class
 - Body parameters become request body; `FromContext` parameters are injected via `context_extractor`

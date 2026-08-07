@@ -36,7 +36,8 @@ handler = GraphQLHandler(
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `execute` | `async execute(query: str, context: dict = None) -> dict` | Execute a GraphQL query |
+| `execute` | `async execute(query, variables=None, operation_name=None) -> dict` | Execute a GraphQL operation |
+| `get_sdl` | `get_sdl(include_mutations: bool = True) -> str` | Render the current SDL |
 | `get_graphiql_html` | `get_graphiql_html(endpoint: str = "/graphql") -> str` | Get GraphiQL HTML |
 
 ## @query Decorator
@@ -81,7 +82,7 @@ Configure automatic query generation for standard CRUD operations.
 ```python
 from nexusx import AutoQueryConfig
 
-config = AutoQueryConfig(session_factory=async_session)
+config = AutoQueryConfig()
 ```
 
 Auto-generates `by_id` and `by_filter` queries for all entities. Requires entities to have exactly one primary key field.
@@ -99,12 +100,15 @@ Represents a field and its sub-selections in a GraphQL selection set. This is th
 
 ## add_standard_queries
 
-Manually register auto queries to an existing GraphQLHandler.
+Register standard query methods on entity classes before building a handler.
 
 ```python
 from nexusx import add_standard_queries
 
-add_standard_queries(handler, AutoQueryConfig(session_factory=async_session))
+add_standard_queries(
+    entities=[User, Post],
+    config=AutoQueryConfig(),
+    session_factory=async_session,
+)
+handler = GraphQLHandler(base=SQLModel, session_factory=async_session)
 ```
-
-Use this when you want to add standard CRUD queries to a handler that was created without `auto_query_config`.

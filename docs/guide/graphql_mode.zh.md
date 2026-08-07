@@ -41,15 +41,15 @@ class Post(SQLModel, table=True):
             return post
 ```
 
-### 字段命名规则
+### 操作分组规则
 
-`@query` / `@mutation` 方法自动生成 GraphQL 字段名：`{EntityName}{MethodName}`
+`@query` / `@mutation` 方法保留 Python 方法名，并按实体分组：
 
-| 实体 | 方法 | GraphQL 字段 |
+| 实体 | 方法 | GraphQL 路径 |
 |------|------|-------------|
-| `Post` | `get_all` | `postGetAll` |
-| `Post` | `create` | `postCreate` |
-| `User` | `get_by_id` | `userGetById` |
+| `Post` | `get_all` | `Query.Post.get_all` |
+| `Post` | `create` | `Mutation.Post.create` |
+| `User` | `get_by_id` | `Query.User.get_by_id` |
 
 ### 方法定义规则
 
@@ -76,17 +76,19 @@ nexusx 自动发现实体：
 
 ```graphql
 {
-  postGetAll(limit: 5) {
-    id
-    title
-    author { name email }
+  Post {
+    get_all(limit: 5) {
+      id
+      title
+      author { name email }
+    }
   }
 }
 ```
 
 幕后发生了什么：
 
-1. 执行 `postGetAll` 查询，获取 5 条 Post
+1. 执行 `Post.get_all` 查询，获取 5 条 Post
 2. 收集这些 Post 的所有 `author_id`
 3. 通过 DataLoader **一次性批量**查询 User
 4. 将 User 映射回对应的 Post
@@ -125,7 +127,7 @@ GraphQL 查询字符串
 ## 回顾
 
 - `GraphQLHandler` 扫描你的 SQLModel 实体并自动生成 GraphQL schema
-- `@query` 和 `@mutation` 将方法变成 GraphQL 字段，命名规则是 `{Entity}{Method}`
+- 操作按实体分组，例如 `Post.get_all` 和 `User.get_by_id`
 - 关系通过 DataLoader 自动解析——不需要手动 join，没有 N+1
 - 实体发现是递归的——关联的实体即使没有装饰器也会被纳入
 

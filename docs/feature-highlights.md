@@ -333,11 +333,11 @@ class SprintService(UseCaseService):
 
 config = UseCaseAppConfig(name="project", services=[SprintService])
 
-# Same config → four transports
+# Same config → four delivery surfaces
 mcp = create_use_case_graphql_mcp_server(apps=[config])
 app.include_router(create_use_case_router(config))
-graphql_handler = create_use_case_graphql_handler(config)
-cli = build_cli(config)
+graphql_schema = build_compose_schema(config)
+cli = create_use_case_cli(config)
 ```
 
 Underlying mechanism:
@@ -345,9 +345,9 @@ Underlying mechanism:
 1. **`BusinessMeta` metaclass** (`business.py:60`) scans the class body at class creation, collecting all `@query` / `@mutation`-decorated classmethods into `_business_methods`. This step is discovery only — the metaclass is unaware of and indifferent to protocols.
 2. **One builder per protocol**:
    - `compose_schema.py`: scans `_business_methods`, combining method signature (`inspect.signature`) + return-type annotation (`get_type_hints`) into a GraphQL schema (`dict[str, TypeInfo]`, see item 13);
-   - `router.py:create_router`: scans methods the same way, translating to a FastAPI router where each method becomes a POST endpoint;
-   - `compose_mcp_server.py`: translates into MCP tool definitions where each method becomes a callable tool;
-   - `cli.py:build_cli`: translates into Click/Typer-style CLI commands.
+   - `router.py:create_use_case_router`: scans methods the same way, translating to a FastAPI router where each method becomes a POST endpoint;
+   - `compose_mcp_server.py:create_use_case_graphql_mcp_server`: exposes app/schema/method discovery plus GraphQL execution through four generic MCP tools;
+   - `cli.py:create_use_case_cli`: translates into Typer command groups and commands.
 3. **Protocol-shared parts**: argument resolution (`FromContext`), response projection (selection), error model (`errors.py`), type mapping (`compose_type_mapper.py`) are all protocol-agnostic and reused by all four builders.
 
 A comment in `compose_executor.py` makes a key design explicit: **"The executor does NOT wrap results in Resolver()"**. The GraphQL execution path doesn't auto-apply DTO assembly — if a method wants DefineSubset / Collector capabilities, it calls `Resolver().resolve(dtos)` in its own body. This is single responsibility: the executor only schedules methods + projects selection; DTO assembly is the business method's job.

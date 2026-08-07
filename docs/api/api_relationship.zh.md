@@ -56,16 +56,20 @@ Relationship(fk="id", target=list[Tag], name="tags", loader=tags_loader)
 ```python
 from nexusx import ErDiagram
 
-diagram = ErDiagram(entities=[Sprint, Task, User])
+diagram = ErDiagram.from_sqlmodel([Sprint, Task, User])
+print(diagram.to_mermaid())
 ```
 
 ### 方法
 
 | 方法 | 签名 | 说明 |
 |------|------|------|
-| `get_diagram()` | `-> str` | 生成 Mermaid ER 图字符串 |
-| `get_all_entities()` | `-> list` | 获取所有已注册实体 |
-| `get_all_relationships()` | `-> list` | 获取所有已注册关系 |
+| `from_sqlmodel(entities)` | `-> ErDiagram` | 从 SQLModel 实体类构建 |
+| `from_er_manager(er_manager)` | `-> ErDiagram` | 从 ErManager 构建，并包含虚拟实体 |
+| `to_mermaid()` | `-> str` | 生成 Mermaid ER 图字符串 |
+
+实体与关系的结构化信息可通过 `diagram.entities` 读取。注册表层面的实体类和关系
+仍可通过 `er.get_all_entities()` 与 `er.get_all_relationships()` 获取。
 
 ### Mermaid 输出示例
 
@@ -79,6 +83,6 @@ erDiagram
 
 ```python
 er = ErManager(base=SQLModel, session_factory=async_session)
-diagram = er.get_diagram()
-print(diagram.get_diagram())
+diagram = ErDiagram.from_er_manager(er)
+print(diagram.to_mermaid())
 ```

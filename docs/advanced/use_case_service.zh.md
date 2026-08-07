@@ -13,15 +13,15 @@ UseCaseService 子类 ──┬── MCP server（AI 代理，四层渐进式�
 
 ## 定义 UseCaseService
 
-继承 `UseCaseService`，声明 `async classmethod` 方法。元类自动发现公共方法：
+继承 `UseCaseService`，并使用 `@query` 或 `@mutation` 装饰异步方法。只有被装饰的方法会被暴露：
 
 ```python
-from nexusx.use_case import UseCaseService
+from nexusx import UseCaseService, query
 
 class SprintService(UseCaseService):
     """Sprint 管理服务。"""
 
-    @classmethod
+    @query
     async def list_sprints(cls) -> list[SprintSummary]:
         """获取所有 sprint 及其任务数。"""
         stmt = build_dto_select(SprintSummary)
@@ -30,7 +30,7 @@ class SprintService(UseCaseService):
         dtos = [SprintSummary(**dict(row._mapping)) for row in rows]
         return await Resolver().resolve(dtos)
 
-    @classmethod
+    @query
     async def get_sprint(cls, sprint_id: int) -> SprintSummary | None:
         """按 ID 获取 sprint。"""
         stmt = build_dto_select(SprintSummary, where=Sprint.id == sprint_id)
@@ -43,7 +43,7 @@ class SprintService(UseCaseService):
 ```
 
 !!! tip
-    每个方法的 docstring 会成为 MCP 工具的描述——写清楚它们，让 AI 代理知道何时该用哪个方法。
+    每个方法的 docstring 会成为 schema 与 MCP 发现描述——写清楚它们，让 AI 代理知道何时该用哪个方法。
 
 ## 暴露到 MCP
 
@@ -103,10 +103,10 @@ Layer 3（`compose_query`）接收标准 GraphQL 查询字符串，agent 可以�
 
 ## 回顾
 
-- `UseCaseService` 子类将业务逻辑定义为 `async classmethod` 方法
-- 元类自动发现公共方法——以下划线 `_` 开头的私有方法会被排除
+- `UseCaseService` 子类通过 `@query` 和 `@mutation` 暴露异步业务方法
+- 未装饰的方法以及以下划线 `_` 开头的方法不会被暴露
 - `create_use_case_graphql_mcp_server` 创建四层渐进披露的 GraphQL MCP 服务
-- 方法的 docstring 成为 AI 代理看到的 MCP 工具描述
+- 方法的 docstring 成为 AI 代理看到的 schema 与 MCP 发现描述
 
 ## 下一步
 

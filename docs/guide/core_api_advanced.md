@@ -128,12 +128,27 @@ class TaskDTO(DefineSubset):
 
 ```python
 result = await Resolver(
-    context={"user_id": 42},     # Pass global context
-    loader_params={},            # DataLoader extra parameters
+    context={"user_id": 42},
+    loader_instances={PermissionLoader: primed_loader},
 ).resolve(dtos)
 ```
 
-`context` is available in `post_*` methods via the `ancestor_context` parameter. `loader_params` passes extra parameters to DataLoader functions.
+Declare `context` explicitly on a resolver method to receive request-scoped
+values:
+
+```python
+def resolve_permissions(self, context):
+    return load_permissions(context["user_id"], self.id)
+```
+
+`loader_instances` supplies existing DataLoader objects to matching
+`Loader(PermissionLoader)` declarations, which is useful for primed caches or
+loaders with constructor state. It does not affect implicit relationship
+auto-loading.
+
+Do not confuse `context` with `ancestor_context`: request context comes from
+`Resolver(context=...)`, while ancestor context is built only from fields
+marked with `ExposeAs`.
 
 ## Recap
 

@@ -121,14 +121,28 @@ class TaskDTO(DefineSubset):
 
 ```python
 result = await Resolver(
-    context={"user_id": 42},     # 传入全局上下文
-    loader_params={},            # DataLoader 额外参数
+    context={"user_id": 42},
+    loader_instances={PermissionLoader: primed_loader},
 ).resolve(dtos)
 ```
 
+在 resolver 方法中显式声明 `context` 参数，才能接收请求级上下文：
+
+```python
+def resolve_permissions(self, context):
+    return load_permissions(context["user_id"], self.id)
+```
+
+`loader_instances` 用于把已有的 DataLoader 实例交给匹配的
+`Loader(PermissionLoader)`，适合复用预热缓存或带构造状态的 loader。它不会影响
+关系的隐式自动加载。
+
+不要混淆 `context` 和 `ancestor_context`：前者来自 `Resolver(context=...)`，
+后者只来自祖先字段上的 `ExposeAs`。
+
 ## Loader 依赖名规则
 
-`Loader('author')` 要求 ErManager 中有名为 `author` 的关系。当使用隐式自动加载时通常不需要手写 Loader。
+`Loader("author")` 要求 ErManager 中有名为 `author` 的关系。当使用隐式自动加载时通常不需要手写 Loader。
 
 ## 回顾
 

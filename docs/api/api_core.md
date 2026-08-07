@@ -24,8 +24,11 @@ er = ErManager(
 | Method | Description |
 |--------|-------------|
 | `create_resolver()` | Returns a Resolver class bound to the entity graph |
-| `get_diagram()` | Returns an ErDiagram instance |
 | `add_virtual_entities(entities)` | Registers plain BaseModel subclasses as virtual entities (see below) |
+| `get_all_entities()` | Returns all registered SQLModel and virtual entity classes |
+| `get_all_relationships()` | Returns the complete relationship registry |
+
+To visualize the registry, use `ErDiagram.from_er_manager(er)`.
 
 ### add_virtual_entities
 
@@ -78,9 +81,14 @@ result = await Resolver().resolve(dtos)
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `context` | `dict` | Global context, accessible via `ancestor_context` |
-| `loader_params` | `dict` | DataLoader extra parameters |
-| `debug` | `bool` | Enable debug logging |
+| `loader_registry` | `ErManager \| None` | Relationship registry; already bound when using `er.create_resolver()` |
+| `context` | `dict \| None` | Non-empty request context injected into methods that declare a `context` parameter |
+| `loader_instances` | `dict[type[DataLoader], DataLoader] \| None` | Pre-created loaders used by matching `Loader(MyLoader)` declarations |
+
+The class returned by `er.create_resolver()` already has `loader_registry`
+bound, so instantiate it with only `context` and/or `loader_instances`.
+`ancestor_context` is separate: it contains values exposed by ancestor fields
+through `ExposeAs`.
 
 ### resolve Method
 
@@ -139,7 +147,7 @@ Configure DTOs declaratively as an alternative to the `__subset__` tuple syntax.
 from nexusx import SubsetConfig
 
 class UserDTO(DefineSubset):
-    __subset__ = SubsetConfig(entity=User, fields=("id", "name"))
+    __subset__ = SubsetConfig(kls=User, fields=["id", "name"])
 ```
 
 ## Loader
@@ -160,8 +168,16 @@ def resolve_owner(self, loader=Loader(load_users)):
     return loader.load(self.owner_id)
 ```
 
-!!! warning
-    Your Loader dependency names must match relationship names in ErManager. For example, `Loader('author')` requires that ErManager has a relationship named `author` registered.
+You can also resolve a registered relationship by name:
+
+```python
+def resolve_author(self, loader=Loader("author")):
+    return loader.load(self.author_id)
+```
+
+The name must match a relationship registered in `ErManager`. When the same
+name exists on multiple unrelated entities, use a typed `DefineSubset` source
+or pass a DataLoader class/callable to avoid an ambiguous global lookup.
 
 ## build_dto_select
 

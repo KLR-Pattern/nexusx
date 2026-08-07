@@ -11,17 +11,17 @@ nexusx 提供两种可视化方式：**Mermaid 文本输出**（适合嵌入文�
 ```python
 from nexusx import ErDiagram
 
-# 从 ErManager 获取
-diagram = er.get_diagram()
+# 直接从 SQLModel 实体构建
+diagram = ErDiagram.from_sqlmodel([Sprint, Task, User])
 
-# 或者直接构建
-diagram = ErDiagram(entities=[Sprint, Task, User])
+# 或复用 ErManager 注册表，并包含虚拟实体
+diagram = ErDiagram.from_er_manager(er)
 ```
 
 ### 生成输出
 
 ```python
-print(diagram.get_diagram())
+print(diagram.to_mermaid())
 ```
 
 输出示例：
@@ -48,9 +48,10 @@ GitHub、GitLab 和大多数 Markdown 渲染器都支持 Mermaid 语法。
 
 | 方法 | 返回值 | 说明 |
 |------|--------|------|
-| `get_diagram()` | `str` | Mermaid ER 图字符串 |
-| `get_all_entities()` | `list` | 所有已注册实体 |
-| `get_all_relationships()` | `list` | 所有已注册关系 |
+| `ErDiagram.from_sqlmodel(entities)` | `ErDiagram` | 构建纯 SQLModel 图 |
+| `ErDiagram.from_er_manager(er)` | `ErDiagram` | 构建包含 SQLModel 与虚拟实体的图 |
+| `diagram.to_mermaid()` | `str` | Mermaid ER 图字符串 |
+| `diagram.entities` | `list[EntityInfo]` | 实体与关系的结构化信息 |
 
 ## 方式二：Voyager 交互式可视化
 
@@ -60,14 +61,11 @@ nexusx 内置 Voyager 模块，提供基于 Web 的交互式可视化，同时�
 
 ```python
 from nexusx.voyager import create_use_case_voyager
-from nexusx.use_case import UseCaseAppConfig
 from fastapi import FastAPI
 
 # 创建 Voyager 应用
 voyager = create_use_case_voyager(
-    apps=[
-        UseCaseAppConfig(name="project", services=[SprintService, TaskService]),
-    ],
+    services=[SprintService, TaskService],
     er_manager=er,  # 可选：集成 ER 图
 )
 
@@ -90,10 +88,10 @@ app.mount("/voyager", voyager)
 
 | 端点 | 说明 |
 |------|------|
-| `/dot` | DOT 格式服务依赖图 |
-| `/dot-search` | 可搜索的 DOT 图 |
-| `/er-diagram` | Mermaid ER 图 |
-| `/source` | 源代码信息 |
+| `GET /dot` | 初始服务依赖图 |
+| `POST /dot-search` | 搜索服务和 DTO 节点 |
+| `POST /er-diagram` | ER 图数据 |
+| `POST /source` | 源代码信息 |
 
 ## 选择指南
 
@@ -110,7 +108,7 @@ app.mount("/voyager", voyager)
 1. **定义实体**：SQLModel 定义业务实体
 2. **声明关系**：ORM 关系自动发现 + 非 ORM 关系手动声明
 3. **快速验证**：启动 Voyager，浏览器中交互式检查关系是否正确
-4. **文档化**：用 `ErDiagram.get_diagram()` 生成 Mermaid，嵌入文档
+4. **文档化**：用 `diagram.to_mermaid()` 生成 Mermaid，嵌入文档
 
 ## 下一步
 

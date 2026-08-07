@@ -34,19 +34,19 @@ RPC 模块已全面重构为 UseCase 模式。
 | 旧名称 | 新名称 |
 |--------|--------|
 | `RpcService` | `UseCaseService` |
-| `create_rpc_mcp_server` | `create_use_case_mcp_server` |
+| `create_rpc_mcp_server` | `create_use_case_graphql_mcp_server` |
 | `create_rpc_voyager` | `create_use_case_voyager` |
 | `RpcVoyager` | `UseCaseVoyager` |
 
 ### MCP 工具变化
 
-从三层改为四层，增加 `list_apps` 层支持多应用管理：
+当前 UseCase MCP 基于 GraphQL，并采用四层渐进式披露：
 
 | 旧工具 | 新工具 |
 |--------|--------|
-| `list_services()` | `list_apps()` → `list_services(app_name)` |
-| `describe_service(service_name)` | `describe_service(app_name, service_name)` |
-| `call_rpc(service_name, method_name, params)` | `call_use_case(app_name, service_name, method_name, params)` |
+| `list_services()` | `list_apps()` → `describe_compose_schema(app_name)` |
+| `describe_service(service_name)` | `describe_compose_method(app_name, service_name, method_name)` |
+| `call_rpc(service_name, method_name, params)` | `compose_query(app_name, query)` |
 
 ### 代码迁移
 
@@ -62,13 +62,17 @@ mcp = create_rpc_mcp_server(
     name="Project API",
 )
 
-# After (use_case)
-from nexusx.use_case import UseCaseService, UseCaseAppConfig, create_use_case_mcp_server
+# After（当前 UseCase GraphQL MCP）
+from nexusx import (
+    UseCaseAppConfig,
+    UseCaseService,
+    create_use_case_graphql_mcp_server,
+)
 
 class SprintService(UseCaseService):
     ...
 
-mcp = create_use_case_mcp_server(
+mcp = create_use_case_graphql_mcp_server(
     apps=[
         UseCaseAppConfig(
             name="project",
@@ -84,7 +88,10 @@ mcp = create_use_case_mcp_server(
 
 - **多应用管理**：通过 `UseCaseAppConfig` 组织多个应用
 - **FromContext**：支持从 MCP 上下文注入参数
-- **大小写不敏感查找**：app_name 查找不区分大小写
+- **GraphQL 执行**：第三层接受标准 GraphQL 查询字符串
+
+2.x 到 3.0 的完整映射见
+[UseCase GraphQL MCP 迁移](../migrations/3.0-use-case-graphql.md)。
 
 ## 1.3.x → 1.4.0: RpcServiceConfig 移除（历史）
 
@@ -109,9 +116,9 @@ mcp = create_rpc_mcp_server(
 )
 ```
 
-## 1.3.2 → 1.3.3: Loader(str) 移除
+## 1.3.2 → 1.3.3: Loader(str) 历史移除
 
-`Loader('relationship_name')` 字符串查找模式已移除。
+1.3.3 曾移除 `Loader('relationship_name')` 字符串查找模式：
 
 ```python
 # Before (1.3.2)
@@ -124,6 +131,10 @@ def resolve_owner(self, loader=Loader(UserLoader)):
 ```
 
 !!! tip
+    当前 NexusX 已通过 `ErManager` 关系注册表重新支持
+    `Loader("relationship_name")`。当关系未注册或全局名称可能歧义时，仍建议使用
+    DataLoader 类或异步批量函数。
+
     隐式自动加载已覆盖常见场景。当字段名匹配关系且类型兼容时，不需要手写 `resolve_*` 方法：
 
     ```python

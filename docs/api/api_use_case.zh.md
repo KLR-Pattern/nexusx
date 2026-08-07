@@ -31,7 +31,7 @@ class SprintService(UseCaseService):
     - 方法必须使用 `@query` 或 `@mutation` 装饰器
     - 方法必须是 `async`，第一个参数为 `cls`
     - 方法名以 `_` 开头的不会被自动发现
-    - docstring 成为 MCP 工具的描述
+    - docstring 成为 schema 与 MCP 发现描述
 
 ### 类方法
 
@@ -145,7 +145,7 @@ compose_introspect(schema, "{ __schema { types { name } } }")
 # → {"data": {"__schema": {...}}, "errors": None}
 ```
 
-完整 FastAPI `/graphql` 示例见 [`demo/use_case/graphql_server.py`](https://github.com/KLR-Pattern/nexusx/blob/master/demo/use_case/graphql_server.py)。
+完整 FastAPI `/graphql` 示例见 [`demo/use_case/graphql_server.py`](https://github.com/allmonday/nexusx/blob/master/demo/use_case/graphql_server.py)。
 
 ## create_use_case_voyager
 
@@ -155,12 +155,7 @@ compose_introspect(schema, "{ __schema { types { name } } }")
 from nexusx.voyager import create_use_case_voyager
 
 voyager = create_use_case_voyager(
-    apps=[
-        UseCaseAppConfig(
-            name="project",
-            services=[SprintService, TaskService],
-        ),
-    ],
+    services=[SprintService, TaskService],
 )
 ```
 
@@ -169,9 +164,9 @@ voyager = create_use_case_voyager(
 | 端点 | 说明 |
 |------|------|
 | `/dot` | DOT 格式服务依赖图 |
-| `/dot-search` | 可搜索的 DOT 图 |
-| `/er-diagram` | Mermaid ER 图 |
-| `/source` | 源代码信息 |
+| `POST /dot-search` | 搜索服务和 DTO 节点 |
+| `POST /er-diagram` | ER 图数据 |
+| `POST /source` | 源代码信息 |
 
 ## FromContext
 

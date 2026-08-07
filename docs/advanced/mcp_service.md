@@ -18,17 +18,29 @@ from nexusx.mcp import create_simple_mcp_server
 mcp = create_simple_mcp_server(
     base=SQLModel,
     name="My API",
-    session_factory=async_session,  # Required for database queries
+    session_factory=async_session,  # Needed when operations access the database
 )
 ```
 
-That's it — your AI agent now has three tools:
+By default, your AI agent gets a minimal read-only surface:
 
 | Tool | Purpose |
 |------|---------|
 | `get_schema()` | Get the GraphQL schema |
 | `graphql_query(query)` | Execute a GraphQL query |
-| `graphql_mutation(mutation)` | Execute a GraphQL mutation |
+
+Enable mutations explicitly when the agent must write data:
+
+```python
+mcp = create_simple_mcp_server(
+    base=SQLModel,
+    session_factory=async_session,
+    allow_mutation=True,
+)
+```
+
+This adds `graphql_mutation(mutation)` and includes mutations in the schema
+returned by `get_schema()`.
 
 The AI agent can discover your schema, then query it with full relationship traversal — the same DataLoader batch loading that powers GraphQL mode works under the hood.
 
@@ -41,7 +53,7 @@ Two transport modes:
 mcp.run()
 
 # HTTP — for web-based AI agents running as a separate service
-mcp.run(transport="sse", host="0.0.0.0", port=8003)
+mcp.run(transport="streamable-http", host="0.0.0.0", port=8003)
 ```
 
 !!! tip
@@ -84,8 +96,12 @@ Multi-app adds app-level navigation tools:
 |------|---------|
 | `list_apps()` | List all available apps |
 | `list_queries(app_name)` | List queries for an app |
-| `get_query_schema(name, app_name)` | Get query schema |
+| `get_query_schema(entity, method, app_name)` | Get one grouped query's schema |
 | `graphql_query(query, app_name)` | Execute query |
+
+Passing `allow_mutation=True` adds `list_mutations`,
+`get_mutation_schema`, and `graphql_mutation`. Mutation tools are not
+registered in the default read-only mode.
 
 !!! tip
     Use `create_simple_mcp_server` for single-app scenarios — fewer tool calls, simpler interaction. Only reach for `create_mcp_server` when the AI agent genuinely needs to cross domain boundaries.
@@ -120,11 +136,11 @@ under 10 lines — `pip install blog-app shop-app auth-app`, import, pass to
 
 ## Recap
 
-- `create_simple_mcp_server` — single app, 3 tools, get started in seconds
+- `create_simple_mcp_server` — single app, 2 tools by default; opt in to mutations
 - `create_mcp_server` — multiple apps via `Application` instances, app-level navigation for cross-domain queries
 - `Application` — self-contained, independently-exportable unit (URL/engine/session_factory at most one)
-- Both MCP constructors support `stdio` (CLI) and `sse`/`streamable-http` (HTTP) transport
-- `session_factory` is required — the MCP server executes real database queries
+- Both MCP constructors support `stdio` (CLI) and `streamable-http` (HTTP) transport
+- `session_factory` is needed when your operations or relationship loaders access the database
 
 ## Next Steps
 

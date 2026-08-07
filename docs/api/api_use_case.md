@@ -31,14 +31,14 @@ class SprintService(UseCaseService):
     - Methods must be decorated with `@query` or `@mutation`
     - Methods must be `async` with `cls` as the first parameter
     - Methods starting with `_` are not auto-discovered
-    - Docstrings become MCP tool descriptions
+    - Docstrings become schema and MCP discovery descriptions
 
 ### Rules
 
 - Methods must be decorated with `@query` or `@mutation`
 - Methods must be `async` with `cls` as first parameter
 - Methods starting with `_` are not auto-discovered
-- Docstrings become MCP tool descriptions
+- Docstrings become schema and MCP discovery descriptions
 
 ### Methods
 
@@ -152,7 +152,7 @@ compose_introspect(schema, "{ __schema { types { name } } }")
 # → {"data": {"__schema": {...}}, "errors": None}
 ```
 
-See [`demo/use_case/graphql_server.py`](https://github.com/KLR-Pattern/nexusx/blob/master/demo/use_case/graphql_server.py) for a complete FastAPI `/graphql` endpoint example.
+See [`demo/use_case/graphql_server.py`](https://github.com/allmonday/nexusx/blob/master/demo/use_case/graphql_server.py) for a complete FastAPI `/graphql` endpoint example.
 
 ## create_use_case_voyager
 
@@ -162,12 +162,7 @@ Create a Voyager visualization ASGI sub-application for exploring UseCase servic
 from nexusx.voyager import create_use_case_voyager
 
 voyager = create_use_case_voyager(
-    apps=[
-        UseCaseAppConfig(
-            name="project",
-            services=[SprintService, TaskService],
-        ),
-    ],
+    services=[SprintService, TaskService],
 )
 ```
 
@@ -176,9 +171,9 @@ voyager = create_use_case_voyager(
 | Endpoint | Description |
 |----------|-------------|
 | `/dot` | DOT format service dependency graph |
-| `/dot-search` | Searchable DOT graph |
-| `/er-diagram` | Mermaid ER diagram |
-| `/source` | Source code information |
+| `POST /dot-search` | Searchable service/DTO nodes |
+| `POST /er-diagram` | ER diagram data |
+| `POST /source` | Source code information |
 
 ## FromContext
 

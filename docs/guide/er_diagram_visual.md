@@ -9,14 +9,15 @@ nexusx provides two approaches: **Mermaid** for static documentation and **Voyag
 The quickest way to see your entity graph — one function call:
 
 ```python
-# From an existing ErManager
-diagram = er.get_diagram()
-
-# Or build directly from entities
 from nexusx import ErDiagram
-diagram = ErDiagram(entities=[Sprint, Task, User])
 
-print(diagram.get_diagram())
+# Build directly from SQLModel entities
+diagram = ErDiagram.from_sqlmodel([Sprint, Task, User])
+
+# Or reuse an ErManager registry, including virtual entities
+diagram = ErDiagram.from_er_manager(er)
+
+print(diagram.to_mermaid())
 ```
 
 Output:
@@ -43,9 +44,10 @@ erDiagram
 
 | Method | Returns | Use for |
 |--------|---------|---------|
-| `get_diagram()` | `str` | Mermaid ER diagram string |
-| `get_all_entities()` | `list` | Inspecting registered entities |
-| `get_all_relationships()` | `list` | Inspecting registered relationships |
+| `ErDiagram.from_sqlmodel(entities)` | `ErDiagram` | SQLModel-only diagrams |
+| `ErDiagram.from_er_manager(er)` | `ErDiagram` | Registered SQLModel + virtual entities |
+| `diagram.to_mermaid()` | `str` | Mermaid ER diagram string |
+| `diagram.entities` | `list[EntityInfo]` | Structured entity and relationship metadata |
 
 ## Step 2: Explore Interactively with Voyager
 
@@ -53,13 +55,10 @@ Mermaid is static. When you're actively developing or debugging relationships, y
 
 ```python
 from nexusx.voyager import create_use_case_voyager
-from nexusx.use_case import UseCaseAppConfig
 from fastapi import FastAPI
 
 voyager = create_use_case_voyager(
-    apps=[
-        UseCaseAppConfig(name="project", services=[SprintService, TaskService]),
-    ],
+    services=[SprintService, TaskService],
     er_manager=er,  # Optional: show ER diagram alongside service graph
 )
 
@@ -77,10 +76,10 @@ Visit `http://localhost:8000/voyager` to browse:
 
 | Endpoint | Returns |
 |----------|---------|
-| `/er-diagram` | Mermaid ER diagram |
-| `/dot` | DOT format service dependency graph |
-| `/dot-search` | Searchable DOT graph |
-| `/source` | Source code information |
+| `GET /dot` | Initial service dependency graph |
+| `POST /dot-search` | Searchable service/DTO nodes |
+| `POST /er-diagram` | ER diagram data |
+| `POST /source` | Source code information |
 
 ## Which One to Use?
 
@@ -96,7 +95,9 @@ Start with Voyager during development to interactively verify your model. Once s
 
 ## Recap
 
-- `er.get_diagram()` generates Mermaid text — embed in READMEs, PRs, Wikis
+- `ErDiagram.from_sqlmodel(...)` builds a diagram directly from SQLModel entities
+- `ErDiagram.from_er_manager(er)` includes the manager's virtual entities
+- `diagram.to_mermaid()` generates text for READMEs, PRs, and Wikis
 - Voyager provides interactive exploration — search, filter, zoom, debug relationships
 - Use Voyager during development, Mermaid for documentation
 - Both pull from the same relationship data registered in ErManager
