@@ -315,6 +315,27 @@ async def test_construct_cross_source_missing(composed_world):
         )
 
 
+async def test_construct_cross_name_collides_local(composed_world):
+    """cross 关系名撞 member 本地关系 → ValueError（#8）。
+
+    构造期 fail-fast，避免 get_relationships 静默用 cross 顶替本地 ORM 关系。
+    CeUser.posts 是 blog_er 的本地 ORM 关系；声明同名 cross 必须报错。
+    """
+    blog_er = composed_world["blog_er"]
+
+    async def _noop(keys):
+        return [[] for _ in keys]
+
+    with pytest.raises(ValueError, match="本地关系同名"):
+        ComposedErManager(
+            members=[blog_er],
+            cross_relationships=[
+                (CeUser, NxRelationship(
+                    fk="id", target=list[CePost], name="posts", loader=_noop)),
+            ],
+        )
+
+
 async def test_composed_satisfies_loader_registry_protocol(composed_world):
     """ComposedErManager 满足 LoaderRegistry Protocol（runtime checkable）。"""
     from nexusx.loader import LoaderRegistry
