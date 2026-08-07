@@ -295,8 +295,21 @@ class GraphQLHandler:
         return GRAPHIQL_HTML.replace("{graphql_url}", endpoint)
 
     async def aclose(self) -> None:
-        """Close federation resources (httpx.AsyncClient). Call on shutdown."""
-        await self._er_manager.aclose_federation()
+        """Close federation resources (httpx.AsyncClient). Call on shutdown.
+
+        specs/019 注入路径下 ``er_manager`` 是 ComposedErManager（按 FR-013 无
+        ``aclose_federation``），federation 资源在各子 member —— 逐个委托。
+        """
+        members = getattr(self._er_manager, "_members", None)
+        if members is not None:
+            for m in members:
+                closer = getattr(m, "aclose_federation", None)
+                if closer is not None:
+                    await closer()
+        else:
+            closer = getattr(self._er_manager, "aclose_federation", None)
+            if closer is not None:
+                await closer()
 
     async def execute(
         self,
