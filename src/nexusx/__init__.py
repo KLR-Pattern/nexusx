@@ -59,7 +59,7 @@ from nexusx.decorator import mutation, query
 from nexusx.er_diagram import ErDiagram
 from nexusx.federation import RemoteRef, RemoteRelationship, RemoteService
 from nexusx.handler import GraphQLHandler
-from nexusx.loader import ErManager
+from nexusx.loader import ComposedErManager, ErManager
 from nexusx.relationship import Relationship
 from nexusx.resolver import Loader
 from nexusx.standard_queries import (
@@ -96,6 +96,7 @@ __all__ = [
     # Core classes
     "GraphQLHandler",
     "ErManager",
+    "ComposedErManager",
     # Standard queries
     "AutoQueryConfig",
     "BatchPageConfig",
