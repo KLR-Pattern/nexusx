@@ -6,8 +6,8 @@ from nexusx.loader.pagination import (
     Pagination,
     create_result_type,
 )
-from nexusx.loader.composed import ComposedErManager, LoaderRegistry
-from nexusx.loader.registry import ErManager, RelationshipInfo
+from nexusx.loader.composed import ComposedErManager
+from nexusx.loader.registry import ErManager, LoaderRegistry, RelationshipInfo
 
 __all__ = [
     "ErManager",

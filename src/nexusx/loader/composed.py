@@ -20,10 +20,10 @@ ErManager，ComposedErManager 只查询委托 + ``_fed_registry`` 聚合。
 等在子 ErManager 上做，调用组合体的对应方法会明确报错。
 """
 
-# 不用 ``from __future__ import annotations`` —— 保持 Protocol 在运行时可检查
-# （@runtime_checkable），与 spike 一致。
+# 不用 ``from __future__ import annotations`` —— 保持方法签名注解（ErManager | None
+# 等）在运行时可求值，与 registry.py 一致。
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
 from aiodataloader import DataLoader
 
@@ -33,60 +33,6 @@ from nexusx.loader.registry import (
     _build_custom_relationship_info,
 )
 from nexusx.relationship import Relationship
-
-
-@runtime_checkable
-class LoaderRegistry(Protocol):
-    """Resolver / ER 图 依赖的「查询接口」契约。
-
-    ``ErManager`` 天然满足（其查询方法是本 Protocol 的超集）；
-    ``ComposedErManager`` 满足（按 entity 委托）。抽出本 Protocol 是为了：
-
-    - 显式列出 Resolver / ER 图 的依赖面，组合体逐个实现不漏（spike 盘点 9 个访问点）
-    - 让 ``create_resolver`` / ``GraphQLHandler`` 注入有正式类型，不绑死 ErManager 具体类
-    - ``LoaderRegistry`` 原本是 ``= ErManager`` 的 internal 别名，此处升级为 Protocol
-      （无 isinstance/实例化依赖，升级不 breaking）
-    """
-
-    # — 实体/关系查询（按 entity 路由）—
-    def has_entity(self, entity: type) -> bool: ...
-    def get_relationships(self, entity: type) -> dict[str, Any]: ...
-    def get_relationship(self, entity: type, name: str) -> Any | None: ...
-    def get_loader_for_entity(
-        self, entity: type, rel_name: str, type_key: frozenset[str] | None = None
-    ) -> DataLoader | None: ...
-
-    # — 按 name / 按 class 兜底 —
-    def get_loader_by_name(
-        self, name: str, type_key: frozenset[str] | None = None
-    ) -> DataLoader | None: ...
-    def get_loader(
-        self,
-        loader_cls: type[DataLoader],
-        *,
-        type_key: frozenset[str] | None = None,
-        force_split: bool = False,
-        params_key: tuple | None = None,
-    ) -> DataLoader: ...
-
-    # — federation γ（组合体返回中性/聚合）—
-    def get_dto_loader(
-        self, owner_dto: Any, field_name: str | None = None
-    ) -> Any | None: ...
-
-    # — 生命周期 / 缓存 —
-    def clear_cache(self) -> None: ...
-    def create_resolver(self) -> type: ...
-
-    # — Resolver / ER 图 读取的属性 —
-    @property
-    def _split_mode(self) -> bool: ...
-    @property
-    def _fed_registry(self) -> Any: ...
-
-    # — ER 图额外用 —
-    def get_all_entities(self) -> list[type]: ...
-    def get_all_relationships(self) -> dict[type, dict[str, Any]]: ...
 
 
 class _CompositeFedRegistryView:
