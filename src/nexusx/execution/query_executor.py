@@ -10,7 +10,7 @@ from graphql import DocumentNode, FieldNode, OperationDefinitionNode
 from pydantic import TypeAdapter
 from sqlmodel import SQLModel
 
-from nexusx.core_builder import is_paginated_package
+from nexusx.loader.pagination import KeyedPaginatedPackage, PaginatedPackage
 from nexusx.execution.argument_builder import ArgumentBuilder
 from nexusx.loader.registry import RelationshipKind
 from nexusx.query_parser import FieldSelection
@@ -326,7 +326,7 @@ class QueryExecutor:
                 if items_sel is not None:
                     all_items: list = []
                     for pkg in result:
-                        all_items.extend(pkg.get("items") or [])
+                        all_items.extend(pkg.items)
                     if all_items:
                         await self._dispatch_entity_fields(all_items, entity, items_sel)
             return
@@ -508,11 +508,10 @@ class QueryExecutor:
         field_sel: FieldSelection | None,
     ) -> dict[str, Any]:
         """Serialize a single entity or page result to dict."""
+        if isinstance(item, PaginatedPackage):
+            # A page_by_<key>_in root returns per-key packages; serialize specially.
+            return self._serialize_paginated_package(item, entity, field_sel)
         if isinstance(item, dict):
-            # A page_by_<key>_in root returns per-key packages
-            # {fk, items:[entity], pagination}; serialize specially.
-            if is_paginated_package(item):
-                return self._serialize_paginated_package(item, entity, field_sel)
             return item
 
         if not field_sel or not field_sel.sub_fields:
@@ -544,7 +543,7 @@ class QueryExecutor:
         )
         items_sel = sub.get("items")
         if items_sel is not None:
-            items = pkg.get("items") or []
+            items = pkg.items
             result["items"] = [
                 self._serialize_item(it, entity, items_sel)
                 for it in items if it is not None
@@ -552,7 +551,7 @@ class QueryExecutor:
         pag_field = sub.get("pagination")
         if pag_field is not None:
             pag_sub = getattr(pag_field, "sub_fields", None) or {}
-            pagination = pkg.get("pagination")
+            pagination = pkg.pagination
             if pagination is None:
                 pagination = {}
             elif hasattr(pagination, "model_dump"):
@@ -563,12 +562,9 @@ class QueryExecutor:
                 }
             else:
                 result["pagination"] = pagination
-        # Carry through any other selected top-level fields (e.g. the fk field).
-        for k, v in pkg.items():
-            if k in ("items", "pagination"):
-                continue
-            if k in sub:
-                result[k] = v
+        # Carry through the per-key fk field (KeyedPaginatedPackage only).
+        if isinstance(pkg, KeyedPaginatedPackage) and pkg.fk_field in sub:
+            result[pkg.fk_field] = pkg.fk_value
         return result
 
     def _serialize_scalar_value(self, value: Any) -> Any:

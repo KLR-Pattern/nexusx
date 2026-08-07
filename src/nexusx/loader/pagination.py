@@ -5,7 +5,7 @@ Adapted from pydantic-resolve's graphql.pagination.types module.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
@@ -186,3 +186,32 @@ def create_result_type(
         )
 
     return create_model(model_name, **fields)
+
+
+@dataclass
+class PaginatedPackage:
+    """Runtime paginated result (relationship-level).
+
+    Explicitly marks "this value is a paginated result" so consumers branch on
+    ``isinstance(value, PaginatedPackage)`` instead of sniffing the dict shape
+    (the old shape-sniff checked for an ``"items"`` key, misclassifying any
+    ordinary relationship that happens to be named ``items``). Producers return
+    this type; the ``items``/``pagination`` dict convention is gone.
+    """
+
+    items: list = field(default_factory=list)
+    pagination: Any = None
+
+
+@dataclass
+class KeyedPaginatedPackage(PaginatedPackage):
+    """Per-key package of a pagination root (``page_by_<key>_in``).
+
+    Was a bare dict ``{<fk_field>: value, items, pagination}`` where
+    ``<fk_field>`` is a dynamic key name (the batch_key, e.g. ``"user_id"``).
+    Typed form carries ``fk_field``/``fk_value`` explicitly; serialization
+    reconstructs ``{fk_field: fk_value, items, pagination}``.
+    """
+
+    fk_field: str = ""
+    fk_value: Any = None

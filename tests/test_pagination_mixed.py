@@ -242,11 +242,11 @@ class TestExecutionMixedPagination:
             cmd = PageLoadCommand(fk_value=parent.id, page_args=PageArgs(limit=limit))
             results = await page_loader.load_many([cmd])
             assert len(results) == 1
-            assert {"items", "pagination"} <= set(results[0].keys())
-            assert len(results[0]["items"]) == limit
-            assert results[0]["pagination"].total_count == 3
+            assert hasattr(results[0], "items") and hasattr(results[0], "pagination")
+            assert len(results[0].items) == limit
+            assert results[0].pagination.total_count == 3
             assert (
-                results[0]["pagination"].has_more is expected_has_more
+                results[0].pagination.has_more is expected_has_more
             ), f"limit={limit} expected has_more={expected_has_more}"
 
         # Regular loader returns a plain list of RawKid instances.

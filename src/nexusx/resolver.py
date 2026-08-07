@@ -53,8 +53,7 @@ from nexusx.context import (
     scan_expose_fields,
     scan_send_to_fields,
 )
-from nexusx.core_builder import is_paginated_package
-from nexusx.loader.pagination import PageArgs, PageLoadCommand
+from nexusx.loader.pagination import PageArgs, PageLoadCommand, PaginatedPackage
 from nexusx.loader.registry import RelationshipKind
 from nexusx.query_parser import FieldSelection
 
@@ -1679,9 +1678,9 @@ class Resolver:
 
                 if is_list:
                     items_list = result if result is not None else []
-                    if isinstance(result, dict):
-                        # page_loader returns {items, pagination}; take items.
-                        items_list = result.get("items") or []
+                    if isinstance(result, PaginatedPackage):
+                        # page_loader returns a PaginatedPackage; take items.
+                        items_list = result.items
                     if dto_cls and items_list:
                         if is_custom:
                             # CUSTOM rels may already yield the right DTO
@@ -1944,9 +1943,9 @@ class Resolver:
 
         all_children: list = []
         for parent, result in zip(job.parents, results, strict=True):
-            if is_paginated_package(result):
-                # Paginated result: {items, pagination} — store whole, items to BFS.
-                items = result.get("items") or []
+            if isinstance(result, PaginatedPackage):
+                # Paginated package — store whole, items to BFS.
+                items = result.items
                 store(parent, rel_info.name, result)
                 all_children.extend(items)
             elif rel_info.is_list:
@@ -1988,8 +1987,8 @@ class Resolver:
             all_children: list = []
             for parent, page_result in zip(job.parents, results, strict=True):
                 store(parent, rel_info.name, page_result)
-                if page_result and page_result.get("items"):
-                    all_children.extend(page_result["items"])
+                if page_result and page_result.items:
+                    all_children.extend(page_result.items)
             return all_children
 
         # page-size bounds stay on rel_info (applied as PageArgs boundary);
@@ -2017,8 +2016,8 @@ class Resolver:
         all_children: list = []
         for parent, page_result in zip(job.parents, results, strict=True):
             store(parent, rel_info.name, page_result)
-            if page_result and page_result.get("items"):
-                all_children.extend(page_result["items"])
+            if page_result and page_result.items:
+                all_children.extend(page_result.items)
         return all_children
 
     async def resolve(self, node: T) -> T:

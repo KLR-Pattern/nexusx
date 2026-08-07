@@ -686,7 +686,7 @@ def create_paginated_remote_loader(
             # the raw selection.arguments through _PagedOverride.from_dict so
             # graphql Undefined / non-wire values can never reach the wire
             # (specs/021 GAP B — mirrors the γ dto loader's hardening).
-            from nexusx.loader.pagination import _PagedOverride
+            from nexusx.loader.pagination import PaginatedPackage, _PagedOverride
 
             p = getattr(self, "_remote_page_params", None)
             if p is not None:
@@ -784,17 +784,17 @@ def create_paginated_remote_loader(
                     if want_tc:
                         empty_pagination["total_count"] = 0
                     aligned.append(
-                        {"items": [], "pagination": empty_pagination}
+                        PaginatedPackage(items=[], pagination=empty_pagination)
                     )
                 else:
                     items = [
                         target_cls.model_validate(coerce_to_dict(r, mode="json"))
                         for r in pkg_d["items"]
                     ]
-                    aligned.append({
-                        "items": items,
-                        "pagination": pkg_d["pagination"],
-                    })
+                    aligned.append(PaginatedPackage(
+                        items=items,
+                        pagination=pkg_d["pagination"],
+                    ))
             return aligned
 
     _PaginatedRemoteLoader.__name__ = f"PaginatedRemoteLoader_{typename}_{join_remote}"
