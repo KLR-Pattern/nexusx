@@ -205,37 +205,15 @@ class CatalogService(UseCaseService):
         return [p.model_dump(mode="json") for p in resolved]
 
     @query
-    async def list_products(cls) -> list[ProductDTO]:
-        """Federated product tree as DTOs (catalog → reviews).
-
-        Same resolver-built tree as ``composed_tree``, but returned as
-        ``ProductDTO`` objects (not dicts) so the UseCase voyager page can
-        trace the type edge ``ProductDTO → reviews.ReviewDTO`` and render the
-        ``reviews`` service cluster (dashed + color).
-        """
-        global _resolver_cls
-        if _resolver_cls is None:
-            _resolver_cls = handler._er_manager.create_resolver()
-        async with async_session() as s:
-            products = (await s.exec(select(Product))).all()
-        dtos = [ProductDTO(id=p.id, name=p.name) for p in products]
-        return await _resolver_cls().resolve(dtos)
-
-    @query
     async def compose_review_tree(cls) -> list[ReviewDTO]:
-        """Catalog-local ReviewDTO graph — both remote clusters on one page.
+        """Composed federated graph as a nested DTO tree (RESTful-style).
 
-        The return annotation carries the full cross-service edge chain::
-
-            ReviewDTO → reviews.Review + comments
-                      → reviews.Comment + author
-                      → users.User + config
-                      → users.UserConfig
-
-        so voyager renders BOTH the ``reviews`` and ``users`` service clusters
-        on the UseCase page. Review/Comment/User rows live on the remote
-        services; for real resolver-driven cross-service rows use
-        ``list_products`` / ``composed_tree`` (rooted at the local Product).
+        The return type is itself the composition — ReviewDTO → comments →
+        CommentDTO → author → UserDTO → config → UserConfigDTO — so the REST
+        response (``/catalog/.../compose_review_tree``) and the UseCase voyager
+        page show the full cross-service structure as one nested resource.
+        Review/Comment/User rows live on the remote services; for
+        resolver-driven rows rooted at the local Product use ``composed_tree``.
         """
         return []
 
