@@ -66,7 +66,7 @@ class Application:
         self,
         *,
         name: str,
-        base: type[SQLModel],
+        base: type[SQLModel] | None = None,
         url: str | None = None,
         engine: AsyncEngine | None = None,
         session_factory: Callable[..., Any] | None = None,
@@ -77,24 +77,26 @@ class Application:
         engine_kwargs: dict[str, Any] | None = None,
         enable_pagination: bool = False,
         auto_query_config: AutoQueryConfig | None = None,
+        er_manager: Any = None,
+        entities: list[type] | None = None,
     ) -> None:
         # ── 必填字段 ────────────────────────────────────────────────────
         if not name or not isinstance(name, str):
             raise ValueError("'name' must be a non-empty string")
         self._name = name
         self._base = base
+        self._er_manager = er_manager  # specs/019 US3 注入路径
+        self._entities = entities
 
-        # ── 连接信息互斥校验（至多一个） ────────────────────────────────
-        # Backward compat: AutoQueryConfig may carry a deprecated session_factory.
-        if session_factory is None and auto_query_config is not None:
-            session_factory = getattr(
-                auto_query_config, "_deprecated_session_factory", None
-            )
-
-        provided = sum(1 for x in (url, engine, session_factory) if x is not None)
-        if provided > 1:
+        # ── base / er_manager 互斥（specs/019 US3）─────────────────────
+        if er_manager is not None and base is not None:
+            raise ValueError("Provide at most one of: base, er_manager")
+        if er_manager is None and base is None:
+            raise ValueError("Application requires either base= or er_manager=")
+        if er_manager is not None and (url or engine or session_factory):
             raise ValueError(
-                "Provide at most one of: url, engine, session_factory"
+                "er_manager injection is mutually exclusive with "
+                "url/engine/session_factory (the registry carries its own sessions)"
             )
 
         # ── 资源所有权判定 ──────────────────────────────────────────────
@@ -103,29 +105,44 @@ class Application:
         self._session_factory: Callable[..., Any] | None = None
         self._url_for_repr: str | None = None
 
-        if url is not None:
-            kwargs = {"echo": False}
-            if engine_kwargs:
-                kwargs.update(engine_kwargs)
-            self._engine = create_async_engine(url, **kwargs)
-            self._session_factory = async_sessionmaker(
-                self._engine,
-                class_=AsyncSession,
-                expire_on_commit=False,
-            )
-            self._owns_engine = True
-            self._url_for_repr = _redact_url(url)
-        elif engine is not None:
-            self._engine = engine
-            self._session_factory = async_sessionmaker(
-                engine,
-                class_=AsyncSession,
-                expire_on_commit=False,
-            )
-            self._url_for_repr = _redact_url(str(engine.url))
-        elif session_factory is not None:
-            self._session_factory = session_factory
-            self._url_for_repr = None
+        if er_manager is not None:
+            # 注入路径：不构造连接（er_manager 自带 session）；资源所有权由各子 member 自管
+            pass
+        else:
+            # ── 连接信息互斥校验（至多一个） ────────────────────────────────
+            # Backward compat: AutoQueryConfig may carry a deprecated session_factory.
+            if session_factory is None and auto_query_config is not None:
+                session_factory = getattr(
+                    auto_query_config, "_deprecated_session_factory", None
+                )
+            provided = sum(1 for x in (url, engine, session_factory) if x is not None)
+            if provided > 1:
+                raise ValueError(
+                    "Provide at most one of: url, engine, session_factory"
+                )
+            if url is not None:
+                kwargs = {"echo": False}
+                if engine_kwargs:
+                    kwargs.update(engine_kwargs)
+                self._engine = create_async_engine(url, **kwargs)
+                self._session_factory = async_sessionmaker(
+                    self._engine,
+                    class_=AsyncSession,
+                    expire_on_commit=False,
+                )
+                self._owns_engine = True
+                self._url_for_repr = _redact_url(url)
+            elif engine is not None:
+                self._engine = engine
+                self._session_factory = async_sessionmaker(
+                    engine,
+                    class_=AsyncSession,
+                    expire_on_commit=False,
+                )
+                self._url_for_repr = _redact_url(str(engine.url))
+            elif session_factory is not None:
+                self._session_factory = session_factory
+                self._url_for_repr = None
 
         # ── 元数据 ──────────────────────────────────────────────────────
         self._description = description or ""
@@ -228,6 +245,8 @@ class Application:
     def _build_resources(self) -> AppResources:
         handler = GraphQLHandler(
             base=self._base,
+            er_manager=self._er_manager,
+            entities=self._entities,
             session_factory=self._session_factory,
             query_description=self._query_description,
             mutation_description=self._mutation_description,

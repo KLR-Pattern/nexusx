@@ -287,10 +287,25 @@ class ComposedErManager:
     ) -> DataLoader:
         """反向路由 member loader；跨边界 loader 由组合体自持有。
 
-        注意：跨边界 loader 是用户函数包装，不参与 split_mode / params_key
-        分桶（用户 loader 通常无需 per-type_key 隔离）。
+        本地 loader 走构造时收集的 ``_loader_owner``；**federate 后 member 新增的
+        loader（如 RemoteLoader）走动态查找**——它们在组合体构造时还不存在
+       （federation 物化发生在子 member ``initialize()`` 之后），构造期收集不到。
+        动态查找遍历 ``member.get_all_relationships()``（含物化关系）定位拥有者。
+        跨边界 loader 由组合体自持有。
         """
         owner = self._loader_owner.get(loader_cls)
+        if owner is None:
+            # federate 后 member 新增的 loader —— 动态查找拥有它的 member
+            for m in self._members:
+                for _entity, rels in m.get_all_relationships().items():
+                    for rel_info in rels.values():
+                        if rel_info.loader is loader_cls:
+                            owner = m
+                            break
+                    if owner is not None:
+                        break
+                if owner is not None:
+                    break
         if owner is not None:
             return owner.get_loader(
                 loader_cls,
