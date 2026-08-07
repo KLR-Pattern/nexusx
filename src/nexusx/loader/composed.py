@@ -455,4 +455,10 @@ class ComposedErManager:
 
     @property
     def version(self) -> int:
-        return max((getattr(m, "version", 0) for m in self._members), default=0)
+        # 成员 version 单调递增（initialize / add_virtual_entities 各 +1）。
+        # 不能用 max：当某 member 已是高版本主导时，另一低版本 member federate
+        # （version+1）不会改变 max，导致 GraphQLHandler 的 SDL / introspection
+        # 缓存（以 version 为 key）不刷新，schema 缺新物化的 remote type（review #4）。
+        # sum 在「只增」语义下严格单调——任一 member 进入新一代 ⇒ 聚合变化——
+        # 且保持 int，不破坏把 version 当 cache key / 计数的消费面。
+        return sum(getattr(m, "version", 0) for m in self._members)

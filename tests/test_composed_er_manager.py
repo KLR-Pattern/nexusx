@@ -396,3 +396,28 @@ async def test_get_loader_by_name_unique_still_works(composed_world):
     # blog_er 独占 "posts" 关系
     loader = composed.get_loader_by_name("posts")
     assert loader is not None
+
+
+# ── version 聚合对任意成员变化单调（#4）──
+
+async def test_version_reflects_any_member_bump(composed_world):
+    """version 聚合须对任意成员变化单调（#4）。
+
+    GraphQLHandler 以 er_manager.version 作 SDL/introspection 缓存 key。
+    用 max 时高版本 member 主导，低版本 member federate（version+1）不改变
+    max → 缓存不刷新、schema 缺新物化的 remote type。sum 在只增语义下严格单调。
+    """
+    blog_er = composed_world["blog_er"]
+    shop_er = composed_world["shop_er"]
+    composed = composed_world["composed"]
+
+    # 模拟 blog_er 历史多次 federate（高版本主导），shop_er 尚未 federate
+    blog_er._version = 5
+    shop_er._version = 0
+    v0 = composed.version              # sum=5
+
+    shop_er._version = 1               # 低版本 member「federate」
+    v1 = composed.version              # sum=6（max 仍为 5 → 旧逻辑漏检）
+
+    assert v1 != v0, "低版本 member 变化后组合体 version 必须变化"
+    assert v1 == 6
