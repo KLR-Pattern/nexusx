@@ -21,11 +21,15 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from nexusx import AutoQueryConfig, GraphQLHandler
+from nexusx import AutoQueryConfig, GraphQLHandler, query
 from nexusx.federation import RemoteRelationship, RemoteService
+from nexusx.federation.contract import EntityFragment, FieldDescriptor
 from nexusx.federation.http import GraphQLTransport
 from nexusx.federation.introspect import build_federable_app
+from nexusx.federation.registry import FederatedTypeRegistry
+from nexusx.use_case.business import UseCaseService
 from nexusx.voyager.er_diagram_dot import ErDiagramDotBuilder
+from nexusx.voyager.use_case_voyager import UseCaseVoyager
 from tests.test_federation_e2e import _build_catalog_and_transport
 
 
@@ -202,3 +206,83 @@ async def test_declared_remote_service_color_renders():
         await client.aclose()
         for e in eng.values():
             await e.dispose()
+
+
+# ── UseCase page: federation service cluster parity with ER diagram ──────
+# Materialized remote types must cluster by owning SERVICE (dashed boundary +
+# declared color) on the UseCase page too — not render as flat pydantic.main
+# nodes. Symmetric to the ER tests above; reuses the same
+# Renderer._render_module_schema coloring machinery via UseCaseVoyager.
+
+# Module-level registry + materialized remote type + DTO + service so the
+# service method's return annotation resolves via module globals.
+_uc_reviews_reg = FederatedTypeRegistry()
+_uc_reviews_reg.record_service_color("reviews", "#3b82f6")
+_uc_reviews_reg.materialize({
+    "reviews.Review": EntityFragment(
+        typename="Review",
+        pk_field="id",
+        scalar_fields=[
+            FieldDescriptor(name="id", type_name="int"),
+            FieldDescriptor(name="title", type_name="str"),
+        ],
+    ),
+})
+_UcRemoteReview = _uc_reviews_reg.get("reviews.Review")
+
+
+class _UcReviewDTO(BaseModel):
+    """Local DTO with a cross-service edge to the materialized reviews.Review."""
+
+    title: str
+    review: _UcRemoteReview | None = None
+
+
+class _UcReviewService(UseCaseService):
+    @query
+    async def list_reviews(cls) -> list[_UcReviewDTO]:
+        """Return DTOs that reference a federated remote type."""
+
+
+def test_use_case_clusters_federated_remote_type_by_service():
+    """FR-016 parity: on the UseCase page a materialized remote type clusters
+    by owning service (dashed) with its declared color, exactly like the ER
+    diagram path."""
+    voyager = UseCaseVoyager(
+        [_UcReviewService], fed_registry=_uc_reviews_reg, show_module=True,
+    )
+    voyager.analysis()
+
+    by_name = {n.name: n for n in voyager.nodes}
+    remote = by_name["Review"]
+    assert remote.module == "reviews"
+    assert remote.is_federated is True
+
+    # The local DTO is NOT federated.
+    assert by_name["_UcReviewDTO"].is_federated is False
+
+    dot = voyager.render_dot()
+    assert 'style="rounded,dashed"' in dot  # dashed service boundary
+    assert "#3b82f6" in dot                 # declared color reaches the cluster
+    assert "pencolor" in dot
+
+
+def test_use_case_federated_cluster_dashed_without_declared_color():
+    """opt-in guard (parity with ER): a service with no declared color still
+    clusters dashed, but no cluster is colored.
+
+    White-box: re-register the same materialized type in a colorless registry
+    so ``qualified_of`` keeps recognizing it without carrying a color.
+    """
+    plain_reg = FederatedTypeRegistry()
+    plain_reg._qualified_to_class["reviews.Review"] = _UcRemoteReview
+    plain_reg._class_to_qualified[_UcRemoteReview] = "reviews.Review"
+
+    voyager = UseCaseVoyager(
+        [_UcReviewService], fed_registry=plain_reg, show_module=True,
+    )
+    voyager.analysis()
+
+    dot = voyager.render_dot()
+    assert 'style="rounded,dashed"' in dot
+    assert "pencolor" not in dot
