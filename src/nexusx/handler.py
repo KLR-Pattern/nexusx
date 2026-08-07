@@ -19,7 +19,7 @@ from nexusx.standard_queries import AutoQueryConfig, add_standard_queries
 
 if TYPE_CHECKING:
     # specs/019: er_manager 注入路径接受任意 LoaderRegistry（ErManager / ComposedErManager）
-    from nexusx.loader.composed import LoaderRegistry
+    from nexusx.loader.registry import LoaderRegistry
 
 logger = logging.getLogger(__name__)
 
