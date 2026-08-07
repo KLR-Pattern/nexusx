@@ -162,6 +162,14 @@ class ComposedErManager:
                 raise ValueError(
                     f"跨边界关系 {source_entity.__name__}.{rel.name} 重复声明"
                 )
+            # cross 关系名撞 member 本地关系 → 报错（构造期 fail-fast，避免
+            # get_relationships 静默用 cross 顶替本地 ORM 关系）
+            local_owner = self._route[source_entity]
+            if rel.name in local_owner.get_relationships(source_entity):
+                raise ValueError(
+                    f"跨边界关系 {source_entity.__name__}.{rel.name} 与 member "
+                    f"本地关系同名，会顶替本地关系；请改用不同名字"
+                )
             bucket[rel.name] = rel_info
 
     # ── 内部辅助 ────────────────────────────────────────────────
@@ -194,7 +202,7 @@ class ComposedErManager:
         local = dict(member.get_relationships(entity)) if member else {}
         cross = self._cross_rels.get(entity, {})
         if cross:
-            local.update(cross)  # 跨边界关系声明优先（覆盖同名本地）
+            local.update(cross)  # 合并跨边界关系（构造期已保证不与本地同名）
         return local
 
     def get_relationship(
