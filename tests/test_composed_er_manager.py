@@ -355,3 +355,44 @@ async def test_paginated_loader_reachable_through_compose(composed_world):
     # 委托正确：与直接走 member 取到同一缓存实例（同一 owner.get_loader）
     member_page = blog_er.get_loader(rel_info.page_loader)
     assert page_loader is member_page
+
+
+# ── get_loader_by_name 跨 member ambiguity（#5）──
+
+async def test_get_loader_by_name_ambiguous_across_members(composed_world):
+    """跨 member 同名关系 → ambiguity 错，不静默首个获胜（#5）。
+
+    与 ErManager 单 member 内同名抛 ValueError 的安全网对齐：跨 engine 同名
+    （如 owner/tags）若静默首个，会用 A engine 的 session 取本该走 B 的关系。
+    """
+    sf = composed_world["blog_sf"]
+
+    async def _noop(keys):
+        return [None for _ in keys]
+
+    class CeAmbA(SQLModel, table=True):
+        __tablename__ = "ce_amb_a"
+        id: int | None = Field(default=None, primary_key=True)
+        __relationships__ = [NxRelationship(
+            fk="id", target=list[CePost], name="shared", loader=_noop)]
+
+    class CeAmbB(SQLModel, table=True):
+        __tablename__ = "ce_amb_b"
+        id: int | None = Field(default=None, primary_key=True)
+        __relationships__ = [NxRelationship(
+            fk="id", target=list[CePost], name="shared", loader=_noop)]
+
+    er_a = ErManager(session_factory=sf, entities=[CeAmbA])
+    er_b = ErManager(session_factory=sf, entities=[CeAmbB])
+    composed = ComposedErManager(members=[er_a, er_b])
+
+    with pytest.raises(ValueError, match="Ambiguous"):
+        composed.get_loader_by_name("shared")
+
+
+async def test_get_loader_by_name_unique_still_works(composed_world):
+    """单来源唯一命中时 get_loader_by_name 正常返回（#5 回归保护）。"""
+    composed = composed_world["composed"]
+    # blog_er 独占 "posts" 关系
+    loader = composed.get_loader_by_name("posts")
+    assert loader is not None

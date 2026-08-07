@@ -274,10 +274,38 @@ class ComposedErManager:
     def get_loader_by_name(
         self, name: str, type_key: frozenset[str] | None = None
     ) -> DataLoader | None:
+        """按关系名取 loader。
+
+        跨 member 同名关系抛 ambiguity —— 与 ``ErManager.get_loader_by_name``
+        单体内同名抛 ``ValueError`` 的安全网对齐。若静默「首个获胜」，跨 engine
+        同名关系（如 owner/tags）会用 A engine 的 session 取本该走 B engine 的
+        关系，结果「看似对、其实错」。跨边界叠加层的关系名也参与歧义判定。
+        """
+        member_hits: list[ErManager] = []
         for m in self._members:
-            loader = m.get_loader_by_name(name, type_key)
-            if loader is not None:
-                return loader
+            if any(name in rels for rels in m.get_all_relationships().values()):
+                member_hits.append(m)
+        cross_hit = any(name in rels for rels in self._cross_rels.values())
+
+        total = len(member_hits) + (1 if cross_hit else 0)
+        if total == 0:
+            return None
+        if total > 1:
+            raise ValueError(
+                f"Ambiguous loader lookup: relationship '{name}' resolved to "
+                f"{len(member_hits)} member(s)"
+                f"{' plus the cross-boundary layer' if cross_hit else ''} in "
+                f"ComposedErManager. Use get_loader_for_entity() for precision."
+            )
+
+        if member_hits:
+            # 恰一个 member 命中：委托（member 内若多 entity 同名仍由其抛错）
+            return member_hits[0].get_loader_by_name(name, type_key)
+        # 恰跨边界层命中：取其 loader 类，组合体自持实例
+        for rels in self._cross_rels.values():
+            rel_info = rels.get(name)
+            if rel_info is not None and rel_info.loader is not None:
+                return self._get_cross_loader(rel_info.loader)
         return None
 
     def get_loader(
