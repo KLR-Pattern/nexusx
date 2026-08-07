@@ -1,5 +1,7 @@
 """Database configuration and seed data for the Core API demo."""
 
+from pathlib import Path
+
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -15,7 +17,7 @@ from demo.core_api.models import (
     User,
 )
 
-engine = create_async_engine("sqlite+aiosqlite:///core_api_demo.db", echo=False)
+engine = create_async_engine(f"sqlite+aiosqlite:///{Path(__file__).parent / 'core_api_demo.db'}", echo=False)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

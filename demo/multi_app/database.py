@@ -6,6 +6,8 @@ Each application uses its own SQLite database file.
 
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -13,14 +15,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from .models import BlogBaseEntity, Order, OrderItem, Post, Product, ShopBaseEntity, User
 
 # Blog application database
-BLOG_DATABASE_URL = "sqlite+aiosqlite:///./blog.db"
+BLOG_DATABASE_URL = f"sqlite+aiosqlite:///{Path(__file__).parent / 'blog.db'}"
 blog_engine = create_async_engine(BLOG_DATABASE_URL, echo=False)
 blog_async_session = async_sessionmaker(
     blog_engine, class_=AsyncSession, expire_on_commit=False
 )
 
 # Shop application database
-SHOP_DATABASE_URL = "sqlite+aiosqlite:///./shop.db"
+SHOP_DATABASE_URL = f"sqlite+aiosqlite:///{Path(__file__).parent / 'shop.db'}"
 shop_engine = create_async_engine(SHOP_DATABASE_URL, echo=False)
 shop_async_session = async_sessionmaker(
     shop_engine, class_=AsyncSession, expire_on_commit=False

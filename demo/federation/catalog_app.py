@@ -29,6 +29,8 @@ gql query and resolves its own subgraph.
 
 from typing import Annotated
 
+from pathlib import Path
+
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -80,7 +82,7 @@ class Product(CatalogBase, table=True):
     ]
 
 
-engine = create_async_engine("sqlite+aiosqlite:///fed_catalog.db")
+engine = create_async_engine(f"sqlite+aiosqlite:///{Path(__file__).parent / 'fed_catalog.db'}")
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

@@ -7,6 +7,8 @@ asks for `author { config { theme } }`, users resolves UserConfig locally within
 its own gql response — no extra cross-service hop.
 """
 
+from pathlib import Path
+
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, Relationship, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -34,7 +36,7 @@ class User(UsersBase, table=True):
     config: UserConfig | None = Relationship(sa_relationship_kwargs={"uselist": False})
 
 
-engine = create_async_engine("sqlite+aiosqlite:///fed_users.db")
+engine = create_async_engine(f"sqlite+aiosqlite:///{Path(__file__).parent / 'fed_users.db'}")
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

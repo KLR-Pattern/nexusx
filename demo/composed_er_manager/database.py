@@ -7,18 +7,20 @@ single query resolves across both engines, in-process — no HTTP bridge.
 
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from .models import CmBlogBase, CmOrder, CmOrderItem, CmPost, CmShopBase, CmUser
 
-blog_engine = create_async_engine("sqlite+aiosqlite:///./cm_blog.db", echo=False)
+blog_engine = create_async_engine(f"sqlite+aiosqlite:///{Path(__file__).parent / 'cm_blog.db'}", echo=False)
 blog_async_session = async_sessionmaker(
     blog_engine, class_=AsyncSession, expire_on_commit=False
 )
 
-shop_engine = create_async_engine("sqlite+aiosqlite:///./cm_shop.db", echo=False)
+shop_engine = create_async_engine(f"sqlite+aiosqlite:///{Path(__file__).parent / 'cm_shop.db'}", echo=False)
 shop_async_session = async_sessionmaker(
     shop_engine, class_=AsyncSession, expire_on_commit=False
 )
