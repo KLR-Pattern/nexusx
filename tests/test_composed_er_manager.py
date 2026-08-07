@@ -12,6 +12,7 @@
 
 import pytest
 import pytest_asyncio
+from aiodataloader import DataLoader
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Field, Relationship, SQLModel, select
@@ -442,3 +443,38 @@ async def test_version_reflects_any_member_bump(composed_world):
 
     assert v1 != v0, "低版本 member 变化后组合体 version 必须变化"
     assert v1 == 6
+
+
+# ── get_loader_by_name / get_loader 边界分支覆盖 ──
+
+async def test_get_loader_by_name_cross_only(composed_world):
+    """cross 层独有的关系名经 get_loader_by_name 能取到（cross-only 命中分支）。"""
+    composed = composed_world["composed"]
+    loader = composed.get_loader_by_name("orders")  # orders 仅在跨边界层
+    assert loader is not None
+
+
+async def test_get_loader_by_name_missing_returns_none(composed_world):
+    """不存在的关系名 → None（total==0 分支）。"""
+    composed = composed_world["composed"]
+    assert composed.get_loader_by_name("nonexistent_rel") is None
+
+
+async def test_get_loader_cross_loader_class(composed_world):
+    """get_loader(cross_loader_cls) 取组合体自持的跨边界 loader（cross 分支）。"""
+    composed = composed_world["composed"]
+    rel_info = composed.get_relationship(CeUser, "orders")
+    loader = composed.get_loader(rel_info.loader)  # cross loader 类 → _cross_loader_classes
+    assert loader is not None
+
+
+async def test_get_loader_unknown_class_raises_keyerror(composed_world):
+    """不属于任何 member/cross 的 loader 类 → KeyError。"""
+    composed = composed_world["composed"]
+
+    class _Unknown(DataLoader):
+        async def batch_load_fn(self, keys):
+            return [None] * len(keys)
+
+    with pytest.raises(KeyError):
+        composed.get_loader(_Unknown)
