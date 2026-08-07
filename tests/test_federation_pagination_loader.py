@@ -150,17 +150,17 @@ async def test_paginated_loader_aligns_per_key_by_join_key():
 
     assert len(results) == 3
     # key=2
-    assert [it.title for it in results[0]["items"]] == ["R3"]
-    assert results[0]["pagination"]["has_more"] is False
-    assert results[0]["pagination"]["total_count"] == 1
+    assert [it.title for it in results[0].items] == ["R3"]
+    assert results[0].pagination["has_more"] is False
+    assert results[0].pagination["total_count"] == 1
     # key=1
-    assert [it.title for it in results[1]["items"]] == ["R1", "R2"]
-    assert results[1]["pagination"]["has_more"] is True
-    assert results[1]["pagination"]["total_count"] == 7
+    assert [it.title for it in results[1].items] == ["R1", "R2"]
+    assert results[1].pagination["has_more"] is True
+    assert results[1].pagination["total_count"] == 7
     # key=99 missing → empty page (not an error)
-    assert results[2]["items"] == []
-    assert results[2]["pagination"]["has_more"] is False
-    assert results[2]["pagination"]["total_count"] == 0
+    assert results[2].items == []
+    assert results[2].pagination["has_more"] is False
+    assert results[2].pagination["total_count"] == 0
     # exactly one gql sent (SC-006)
     assert len(fake.calls) == 1
 
@@ -246,8 +246,8 @@ async def test_paginated_loader_aligns_uuid_join_key():
     set_remote_selection(loader, _selection(limit=5, offset=0))
     # UUID objects, out of order — alignment must bridge UUID ↔ string.
     results = await loader.load_many([pk2, pk1])
-    assert results[0]["items"][0].title == "U2"
-    assert results[1]["items"][0].title == "U1"
+    assert results[0].items[0].title == "U2"
+    assert results[1].items[0].title == "U1"
 
 
 @pytest.mark.asyncio

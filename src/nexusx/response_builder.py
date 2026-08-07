@@ -14,7 +14,9 @@ from typing import Any, ForwardRef, get_args, get_origin
 
 from pydantic import BaseModel, create_model
 
-from nexusx.core_builder import FieldResolution, build_model, is_paginated_package
+from nexusx.core_builder import FieldResolution, build_model
+from nexusx.loader.pagination import PaginatedPackage
+from nexusx.loader.registry import RelationshipKind
 from nexusx.query_parser import FieldSelection
 from nexusx.utils.type_utils import coerce_to_dict, get_field_type, is_list_annotation
 
@@ -58,6 +60,10 @@ class ERFieldResolver:
                 nested_type=getattr(fed_rel, "target_entity", None),
                 nested_shape=_list_shape(
                     bool(getattr(fed_rel, "is_list", False))
+                ),
+                is_paginated=(
+                    getattr(fed_rel, "page_loader", None) is not None
+                    or getattr(fed_rel, "kind", None) == RelationshipKind.REMOTE_PAGED
                 ),
             )
         # SQLAlchemy / SQLModel / annotations fallback. ``get_relation_entity``
@@ -417,16 +423,12 @@ def _validate_and_dump(
                 data[field_name] = None
                 continue
 
-            # Paginated package: nested_value is {items: [...], pagination: {...}}
-            # or a pydantic model with items/pagination. Mirror the runtime
-            # handling in _serialize_paginated_package: recursively serialize
-            # items, filter pagination to the requested sub-keys (specs/018 T005).
-            if is_paginated_package(nested_tree):
-                pkg = coerce_to_dict(nested_value)
-                if not isinstance(pkg, dict):
-                    continue
+            # Paginated package: intent is carried by the value's type
+            # (PaginatedPackage), not sniffed from the tree. Recursively
+            # serialize items, filter pagination to the requested sub-keys
+            # (specs/018 T005 / specs/019 pagination-intent fix).
+            if isinstance(nested_value, PaginatedPackage):
                 pag_pkg: dict[str, Any] = {}
-                items_value = pkg.get("items") or []
                 items_tree = nested_tree.get("items") or {}
                 pag_pkg["items"] = [
                     serialize_with_model(
@@ -435,10 +437,10 @@ def _validate_and_dump(
                         value_accessor=value_accessor,
                         relation_entity_resolver=relation_entity_resolver,
                     )
-                    for it in items_value
+                    for it in nested_value.items
                 ]
                 pagination_tree = nested_tree.get("pagination") or {}
-                pagination_value = coerce_to_dict(pkg.get("pagination")) or {}
+                pagination_value = coerce_to_dict(nested_value.pagination) or {}
                 if pagination_tree:
                     pag_pkg["pagination"] = {
                         k: v for k, v in pagination_value.items()

@@ -288,7 +288,7 @@ def _build_page_result(
 
     If entity_kls is provided, RowMapping objects are converted to entity instances.
     """
-    from nexusx.loader.pagination import Pagination
+    from nexusx.loader.pagination import PaginatedPackage, Pagination
 
     effective_limit = page_args.effective_limit
     page_rows = rows[:effective_limit]
@@ -315,10 +315,7 @@ def _build_page_result(
         total_count=total_count,
     )
 
-    return {
-        "items": page_rows,
-        "pagination": pagination,
-    }
+    return PaginatedPackage(items=page_rows, pagination=pagination)
 
 
 def create_page_one_to_many_loader(

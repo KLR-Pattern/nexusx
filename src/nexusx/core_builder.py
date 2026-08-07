@@ -67,6 +67,11 @@ class FieldResolution:
     nested_type: type[BaseModel] | None
     default: Any = ...
     nested_shape: Callable[[type[BaseModel]], Any] | None = None
+    # True when this relationship is paginated (RelationshipInfo.page_loader set
+    # or kind == REMOTE_PAGED). The model builder branches on this explicit
+    # intent instead of sniffing the selection for an "items" key (which
+    # misclassifies ordinary relationships named "items"). specs/019 pagination fix.
+    is_paginated: bool = False
 
 
 class FieldResolver(Protocol):
@@ -88,27 +93,15 @@ class FieldResolver(Protocol):
         ...
 
 
-def is_paginated_package(tree: Any) -> bool:
-    """True if a field_tree dict (or dict value) is a paginated package.
-
-    ``items`` is the marker key — ``pagination`` is optional (a client may
-    select only ``{ items {...} }``; requiring both would silently treat such
-    a query as a plain nested field and pass RowMappings through raw, leaking
-    internal columns — specs/021 hardening). Shared by the build path (dict →
-    FieldSelection), the recursive serializer (response_builder) and the
-    resolver's duck-type checks.
-    """
-    return isinstance(tree, dict) and "items" in tree
-
-
 def _is_paginated_package_sel(selection: FieldSelection) -> bool:
-    """True if selection represents a paginated package (``{items, ...}``).
+    """True if selection has the paginated-package shape (``{items, ...}``).
 
-    FieldSelection variant of ``is_paginated_package`` — ``items`` is the
-    marker, ``pagination`` optional (specs/021 hardening). entity-first gql
-    produces this shape when the query selects ``field { items { ... } }``
-    (with or without ``pagination``); UseCase never does (no paginated
-    package in DTO land).
+    Used by ``build_model`` as a *secondary guard* alongside
+    ``FieldResolution.is_paginated`` (the primary intent from
+    ``RelationshipInfo``). The check is safe because ``is_paginated`` already
+    filters out ordinary relationships named ``items`` — this only confirms
+    the query actually selected the ``{items}`` shape on a known-paginated
+    relationship (specs/019 pagination-intent fix).
     """
     return (
         selection.sub_fields is not None
@@ -185,7 +178,7 @@ def build_model(
                 "sub-selection"
             )
 
-        if allow_paginated and _is_paginated_package_sel(child_sel):
+        if allow_paginated and resolution.is_paginated and _is_paginated_package_sel(child_sel):
             # Paginated package: {items, pagination} shape (entity-first only).
             items_sel = child_sel.sub_fields.get("items")
             pagination_sel = child_sel.sub_fields.get("pagination")

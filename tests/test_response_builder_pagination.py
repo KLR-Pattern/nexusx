@@ -7,6 +7,7 @@ dispatch 用 ``rel_info.page_loader``,值经 ``paged_provider`` 注入(见
 注入相关的旧断言已随 020 删除(model 不再携带 paged 信息)。
 """
 
+from types import SimpleNamespace
 from typing import Optional
 
 from sqlmodel import Field, Relationship, SQLModel
@@ -46,7 +47,21 @@ def test_paginated_package_field_renders_result_type_shape():
     field_tree = {
         "posts": {"items": {"title": None}, "pagination": {"has_more": None}},
     }
-    model = build_response_model(RB2User, field_tree)
+
+    # specs/019 pagination fix: 分页判定改用关系意图（RelationshipInfo.page_loader
+    # 经 relation_entity_resolver），不再靠 field_tree 字面。这里用 resolver
+    # 模拟 posts 是分页关系；model 仍只承载 {items, pagination} 形状。
+    def resolver(entity, field_name):
+        if field_name == "posts":
+            return SimpleNamespace(
+                target_entity=RB2Post, is_list=True,
+                page_loader=object(), kind="local",
+            )
+        return None
+
+    model = build_response_model(
+        RB2User, field_tree, relation_entity_resolver=resolver,
+    )
     field = model.model_fields["posts"]
     inner = field.annotation
     assert hasattr(inner, "model_fields"), f"expected Result pydantic model, got {inner!r}"

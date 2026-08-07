@@ -142,7 +142,7 @@ class TestBuildPageResult:
             total_count=1,
             has_next_page=False,
         )
-        assert result["items"] == [obj]
+        assert result.items == [obj]
 
     def test_dict_conversion(self):
         from pydantic import BaseModel as PydanticBase
@@ -161,8 +161,8 @@ class TestBuildPageResult:
             has_next_page=False,
             entity_kls=FakeEntity,
         )
-        assert len(result["items"]) == 1
-        assert result["items"][0].name == "test"
+        assert len(result.items) == 1
+        assert result.items[0].name == "test"
 
     def test_truncates_by_effective_limit(self):
         result = _build_page_result(
@@ -171,9 +171,9 @@ class TestBuildPageResult:
             total_count=5,
             has_next_page=True,
         )
-        assert result["items"] == [1, 2]
-        assert result["pagination"].has_more is True
-        assert result["pagination"].total_count == 5
+        assert result.items == [1, 2]
+        assert result.pagination.has_more is True
+        assert result.pagination.total_count == 5
 
 
 # ---------------------------------------------------------------------------
@@ -239,9 +239,9 @@ class TestPageOneToManyLoader:
         results = await loader.load_many([cmd])
 
         assert len(results) == 1
-        assert len(results[0]["items"]) == 1
-        assert results[0]["pagination"].total_count == 2
-        assert results[0]["pagination"].has_more is True
+        assert len(results[0].items) == 1
+        assert results[0].pagination.total_count == 2
+        assert results[0].pagination.has_more is True
 
     @pytest.mark.usefixtures("test_db")
     async def test_offset_pagination(self):
@@ -260,8 +260,8 @@ class TestPageOneToManyLoader:
         cmd = PageLoadCommand(fk_value=1, page_args=PageArgs(limit=1, offset=1))
         results = await loader.load_many([cmd])
 
-        assert len(results[0]["items"]) == 1
-        assert results[0]["pagination"].has_more is False
+        assert len(results[0].items) == 1
+        assert results[0].pagination.has_more is False
 
     @pytest.mark.usefixtures("test_db")
     async def test_offset_beyond_total(self):
@@ -280,9 +280,9 @@ class TestPageOneToManyLoader:
         cmd = PageLoadCommand(fk_value=1, page_args=PageArgs(limit=1, offset=100))
         results = await loader.load_many([cmd])
 
-        assert results[0]["items"] == []
-        assert results[0]["pagination"].total_count == 2
-        assert results[0]["pagination"].has_more is False
+        assert results[0].items == []
+        assert results[0].pagination.total_count == 2
+        assert results[0].pagination.has_more is False
 
     @pytest.mark.usefixtures("test_db")
     async def test_batch_multiple_parents(self):
@@ -306,8 +306,8 @@ class TestPageOneToManyLoader:
         results = await loader.load_many(cmds)
 
         assert len(results) == 2
-        assert len(results[0]["items"]) == 2
-        assert len(results[1]["items"]) == 2
+        assert len(results[0].items) == 2
+        assert len(results[1].items) == 2
 
     @pytest.mark.usefixtures("test_db")
     async def test_nonexistent_fk(self):
@@ -326,8 +326,8 @@ class TestPageOneToManyLoader:
         cmd = PageLoadCommand(fk_value=999, page_args=PageArgs(limit=10))
         results = await loader.load_many([cmd])
 
-        assert results[0]["items"] == []
-        assert results[0]["pagination"].total_count == 0
+        assert results[0].items == []
+        assert results[0].pagination.total_count == 0
 
 
 # ---------------------------------------------------------------------------
@@ -378,10 +378,10 @@ class TestPageManyToManyLoader:
         results = await loader.load_many([cmd])
 
         assert len(results) == 1
-        assert len(results[0]["items"]) == 1
-        assert results[0]["pagination"].total_count == 2
+        assert len(results[0].items) == 1
+        assert results[0].pagination.total_count == 2
         # limit=1, offset=0, total=2 → 1 item remains → has_more=True.
-        assert results[0]["pagination"].has_more is True
+        assert results[0].pagination.has_more is True
 
     @pytest.mark.usefixtures("test_db_m2m")
     async def test_offset_beyond_total(self):
@@ -403,9 +403,9 @@ class TestPageManyToManyLoader:
         cmd = PageLoadCommand(fk_value=1, page_args=PageArgs(limit=1, offset=100))
         results = await loader.load_many([cmd])
 
-        assert results[0]["items"] == []
-        assert results[0]["pagination"].total_count == 2
-        assert results[0]["pagination"].has_more is False
+        assert results[0].items == []
+        assert results[0].pagination.total_count == 2
+        assert results[0].pagination.has_more is False
 
     @pytest.mark.usefixtures("test_db_m2m")
     async def test_batch_multiple_articles(self):
@@ -432,8 +432,8 @@ class TestPageManyToManyLoader:
         results = await loader.load_many(cmds)
 
         assert len(results) == 2
-        assert len(results[0]["items"]) == 2
-        assert len(results[1]["items"]) == 2
+        assert len(results[0].items) == 2
+        assert len(results[1].items) == 2
 
     @pytest.mark.usefixtures("test_db_m2m")
     async def test_nonexistent_fk(self):
@@ -455,8 +455,8 @@ class TestPageManyToManyLoader:
         cmd = PageLoadCommand(fk_value=999, page_args=PageArgs(limit=10))
         results = await loader.load_many([cmd])
 
-        assert results[0]["items"] == []
-        assert results[0]["pagination"].total_count == 0
+        assert results[0].items == []
+        assert results[0].pagination.total_count == 0
 
 
 class TestPagedOverrideFromDict:
