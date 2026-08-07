@@ -180,40 +180,18 @@ class ProductDTO(DefineSubset):
     )
 
 
-_resolver_cls = None
-
-
 class CatalogService(UseCaseService):
     """Business-logic surface over the federated graph."""
 
     @query
-    async def composed_tree(cls) -> list[dict]:
-        """DefineSubset + Resolver over federated schema.
-
-        DTOs declared at module load with RemoteRef — federate resolves them.
-        Resolver auto-loads the cross-service tree via RemoteLoaders.
-        model_dump serializes everything (relationships are model_fields).
-        No gql string, no for-loop, no dynamic type().
-        """
-        global _resolver_cls
-        if _resolver_cls is None:
-            _resolver_cls = handler._er_manager.create_resolver()
-        async with async_session() as s:
-            products = (await s.exec(select(Product))).all()
-        dtos = [ProductDTO(id=p.id, name=p.name) for p in products]
-        resolved = await _resolver_cls().resolve(dtos)
-        return [p.model_dump(mode="json") for p in resolved]
-
-    @query
-    async def compose_review_tree(cls) -> list[ReviewDTO]:
+    async def composed_tree(cls) -> list[ReviewDTO]:
         """Composed federated graph as a nested DTO tree (RESTful-style).
 
         The return type is itself the composition — ReviewDTO → comments →
         CommentDTO → author → UserDTO → config → UserConfigDTO — so the REST
-        response (``/catalog/.../compose_review_tree``) and the UseCase voyager
-        page show the full cross-service structure as one nested resource.
-        Review/Comment/User rows live on the remote services; for
-        resolver-driven rows rooted at the local Product use ``composed_tree``.
+        response and the UseCase voyager page show the full cross-service
+        structure as one nested resource. Review/Comment/User rows live on the
+        remote services (reviews/users); this method exposes the type graph.
         """
         return []
 
