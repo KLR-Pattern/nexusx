@@ -85,5 +85,5 @@ uv run python benchmarks/bench_resolver.py
 ```bash
 uv run pytest tests/test_composed_er_manager.py tests/test_composed_federation.py -v  # 阶段 1
 uv run pytest                                                                          # 全量零回归
-uv run python spike_composed_er.py                                                     # spike 独立验证（分支上）
+uv run python specs/019-composable-er-manager/spike_composed_er.py                      # spike 独立验证
 ```

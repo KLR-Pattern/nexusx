@@ -10,7 +10,7 @@
 
 **technical approach**：引入 `ComposedErManager`——一个「按 entity 委托的查询代理 + 跨边界关系叠加层」。多个自洽的子 ErManager（各自单 engine、loader 焊死各自 session）组合成一个总代理，它满足 `LoaderRegistry` 协议，`create_resolver()` 产出单一总代理 Resolver，跨 engine resolve 对用户透明。本质是「同进程版的 federation」（与 012 跨进程 federation 对偶）。
 
-**spike 已验证**（`spike_composed_er.py`，分支上）：
+**spike 已验证**（`spike_composed_er.py`）：
 - UseCase 路径跨 engine resolve（含二级钻取）4 断言全绿
 - ER 图合并（4 实体同图 + 跨库边）全绿
 - Resolver 本体、ErDiagram 生成层 0 改动

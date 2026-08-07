@@ -13,7 +13,7 @@
 2. 「不仅是在图中拼装，还要在 resolver 后端真用上两个组件的关联，通过某个 DataLoader / relationship 定义互相的关联」（运行时跨 engine resolve）
 3. 「ErManager 是不是也可以形成一种可组合的模式？」（给出解法核心）
 
-**spike 验证**: `spike_composed_er.py`（分支上，resolve + ER 图双绿）
+**spike 验证**: `spike_composed_er.py`（resolve + ER 图双绿）
 
 ---
 
