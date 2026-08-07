@@ -12,7 +12,7 @@
 - 导出：`src/nexusx/__init__.py` + `src/nexusx/loader/__init__.py`
 - 阶段 2：`src/nexusx/handler.py` + `src/nexusx/mcp/application.py`
 - 测试：`tests/test_composed_er_manager.py` + `tests/test_composed_federation.py` + `tests/test_composed_handler.py`
-- 参考实现：`spike_composed_er.py`（分支上，已验证 resolve + ER 图）
+- 参考实现：`spike_composed_er.py`（已验证 resolve + ER 图）
 
 ## Phase 1: Setup（共享基础设施）
 
@@ -84,7 +84,7 @@
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [x] T026 [P] 多 engine 组合可运行 demo（spike_composed_er.py：两 engine + 跨库 resolve + ER 图，`uv run python spike_composed_er.py` 即跑）
+- [x] T026 [P] 多 engine 组合可运行 demo（spike_composed_er.py：两 engine + 跨库 resolve + ER 图，`uv run python specs/019-composable-er-manager/spike_composed_er.py` 即跑）
 - [x] T027 跑全量测试套件零回归：`uv run pytest`
 - [x] T028 [P] 跑 benchmark 确认组合体委托开销可忽略：`uv run python benchmarks/bench_resolver.py`
 - [x] T029 更新 `CHANGELOG.md`（英文，pydantic-resolve 风格）+ 相关 `docs/`

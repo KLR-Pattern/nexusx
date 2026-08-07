@@ -4,7 +4,7 @@
 
 ## 概述：spike 验证基线
 
-`spike_composed_er.py`（分支上）已实证「同进程多 engine 组合」成立：
+`spike_composed_er.py` 已实证「同进程多 engine 组合」成立：
 - 两个 SQLite engine（blog/shop）+ 两个自洽 ErManager + 一条跨库 `Relationship`
 - `ComposedErManager` 按 entity 委托，`create_resolver()` 产出总代理 Resolver
 - 一次 `resolve()` 跨 engine + 二级钻取全通（4 断言绿）
