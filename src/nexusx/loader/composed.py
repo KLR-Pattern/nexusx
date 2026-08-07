@@ -132,9 +132,9 @@ class ComposedErManager:
             for cls in m.get_all_entities():
                 if cls in self._route:
                     raise ValueError(
-                        f"实体 {cls!r} 被多个 member 注册"
-                        f"（{self._route[cls]!r} 与 {m!r}），"
-                        f"ComposedErManager 要求成员实体集互斥"
+                        f"Entity {cls!r} is registered by multiple members "
+                        f"({self._route[cls]!r} and {m!r}); "
+                        f"ComposedErManager requires mutually exclusive entity sets"
                     )
                 self._route[cls] = m
             for _entity, rels in m.get_all_relationships().items():
@@ -149,26 +149,29 @@ class ComposedErManager:
         for source_entity, rel in cross_relationships or []:
             if source_entity not in self._route:
                 raise ValueError(
-                    f"跨边界关系 source {source_entity!r} 未在任一 member 注册"
+                    f"Cross-boundary relationship source {source_entity!r} "
+                    f"is not registered in any member"
                 )
             if rel.target_entity not in self._route:
                 raise ValueError(
-                    f"跨边界关系 {source_entity.__name__}.{rel.name} 的 target "
-                    f"{rel.target_entity!r} 未在任一 member 注册"
+                    f"Cross-boundary relationship {source_entity.__name__}.{rel.name} "
+                    f"target {rel.target_entity!r} is not registered in any member"
                 )
             rel_info = _build_custom_relationship_info(rel)
             bucket = self._cross_rels.setdefault(source_entity, {})
             if rel.name in bucket:
                 raise ValueError(
-                    f"跨边界关系 {source_entity.__name__}.{rel.name} 重复声明"
+                    f"Cross-boundary relationship {source_entity.__name__}.{rel.name} "
+                    f"is declared more than once"
                 )
             # cross 关系名撞 member 本地关系 → 报错（构造期 fail-fast，避免
             # get_relationships 静默用 cross 顶替本地 ORM 关系）
             local_owner = self._route[source_entity]
             if rel.name in local_owner.get_relationships(source_entity):
                 raise ValueError(
-                    f"跨边界关系 {source_entity.__name__}.{rel.name} 与 member "
-                    f"本地关系同名，会顶替本地关系；请改用不同名字"
+                    f"Cross-boundary relationship {source_entity.__name__}.{rel.name} "
+                    f"shadows a member-local relationship of the same name; "
+                    f"use a different name"
                 )
             bucket[rel.name] = rel_info
 
@@ -301,7 +304,8 @@ class ComposedErManager:
         if loader_cls in self._cross_loader_classes():
             return self._get_cross_loader(loader_cls)
         raise KeyError(
-            f"loader_cls {loader_cls!r} 不属于任何成员 ErManager 或跨边界关系"
+            f"loader_cls {loader_cls!r} belongs to no member ErManager "
+            f"or cross-boundary relationship"
         )
 
     def get_dto_loader(
