@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased] — specs/019 可组合 ErManager（同进程多 engine 组合）
+
+新增 `ComposedErManager`：把多个自洽的 `ErManager`（各自单 engine）组合成一个
+「按 entity 委托的查询代理 + 跨边界关系叠加层」，满足 `LoaderRegistry` 协议。
+`create_resolver()` 产出单一总代理 Resolver，跨 engine resolve 对用户透明。
+本质是「同进程版的 federation」（与 specs/012 跨进程 federation 对偶）。
+
+### Features
+
+- **`ComposedErManager`**（阶段1，`src/nexusx/loader/composed.py`）：按 entity
+  委托 + 跨边界关系在组合体层 `cross_relationships` 集中声明（成员无感，单独使用
+  纯粹）+ `_fed_registry` 只读聚合视图。
+- **`LoaderRegistry` Protocol**：从 `= ErManager` 别名升级为正式
+  `@runtime_checkable` Protocol，显式化 Resolver/ER 图 的查询接口契约。
+- **`GraphQLHandler` / `Application` 的 `er_manager=` 注入**（阶段2）：新增可选
+  `er_manager=` + `entities=`（与 `base=` 互斥），entity-first 路径支持多 engine。
+  关系解析走 `er_manager.create_resolver()`，关系解析层 0 改动。
+
+### Notes
+
+- **纯 additive / 非 breaking**：`ErManager` / `Resolver` / `ErDiagram` 0 改动；
+  全量 1505 passed 零回归。
+- **federation 正交可叠加**（FR-017）：mutating 操作（`federate`/`initialize`）落子
+  `ErManager`，组合体只查询委托 + `_fed_registry` 聚合；子 member 各自 federate，
+  物化的 remote type 经组合体委托可见。`get_loader` 动态查找 federate 后新增的 loader
+  （如 `RemoteLoader`）——US5 测试矩阵兜住的组合性漏洞。
+
 ## [Unreleased] — specs/018 DTO-first gql execution
 
 把 entity-first gql 的 serialize 统一到 `response_builder` 心智模型(从 gql

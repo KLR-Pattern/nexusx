@@ -56,11 +56,11 @@
 **独立验收**：A–E 矩阵全绿 + 现有 federation 测试零回归。
 
 ### Tests for User Story 5
-- [ ] T015 [P] [US5] 测试 A（member 端组合）：A1 mounter 拉取子树含 member 跨 engine 数据 + A2 member ER/DTO introspection 反映全部子 member + 统一 service_name in `tests/test_composed_federation.py`
-- [ ] T016 [P] [US5] 测试 B（mounter 端组合）：B1 一子 member federate → 物化 type 经组合体委托可见 + resolve 通；B2 多子 member 各自 federate 不同远程；B3 resolve 同时跨 engine + 跨 service 混合路径 in `tests/test_composed_federation.py`
-- [ ] T017 [P] [US5] 测试 C（状态聚合）：`_fed_registry` 聚合视图正确（remote type 判断 + ER 图 styling）in `tests/test_composed_federation.py`
-- [ ] T018 [P] [US5] 测试 D（约束）：`ComposedErManager.initialize` / `federate` 明确报错（FR-013）+ 子 member `initialize` 成功、组合体委托看到物化结果 in `tests/test_composed_federation.py`
-- [ ] T019 [US5] 测试 E（回归）：现有 federation 测试（012/013/014/016）零回归 — 跑 `uv run pytest tests/test_federation*.py`
+- [x] T015 [P] [US5] 测试 A（member 端组合）：A1 mounter 拉取子树含 member 跨 engine 数据 + A2 member ER/DTO introspection 反映全部子 member + 统一 service_name in `tests/test_composed_federation.py`
+- [x] T016 [P] [US5] 测试 B（mounter 端组合）：B1 一子 member federate → 物化 type 经组合体委托可见 + resolve 通；B2 多子 member 各自 federate 不同远程；B3 resolve 同时跨 engine + 跨 service 混合路径 in `tests/test_composed_federation.py`
+- [x] T017 [P] [US5] 测试 C（状态聚合）：`_fed_registry` 聚合视图正确（remote type 判断 + ER 图 styling）in `tests/test_composed_federation.py`
+- [x] T018 [P] [US5] 测试 D（约束）：`ComposedErManager.initialize` / `federate` 明确报错（FR-013）+ 子 member `initialize` 成功、组合体委托看到物化结果 in `tests/test_composed_federation.py`
+- [x] T019 [US5] 测试 E（回归）：现有 federation 测试（012/013/014/016）零回归 — 跑 `uv run pytest tests/test_federation*.py`
 
 ## Phase 6: User Story 4 — 跨边界关系声明 (Priority: P2)
 
@@ -77,17 +77,17 @@
 **独立验收**：SDL 合并 + execute 跨 engine + 现有 `base=` 路径零变化。
 
 ### Implementation for User Story 3
-- [ ] T022 [US3] `GraphQLHandler.__init__` 增加可选 `er_manager=` + `entities=` 注入分支（与 `base=` 互斥；注入时跳过 `EntityDiscovery` + 自造 ErManager，`QueryExecutor(loader_registry=composed)`）；`er` property 注解放宽 `-> LoaderRegistry` in `src/nexusx/handler.py`
-- [ ] T023 [P] [US3] 测试：`GraphQLHandler(er_manager=composed)` SDL 含 UserQuery + OrderQuery + `execute` 跨 engine + `base=` 单 base 路径回归 + `handler.er` 管理接口报错 in `tests/test_composed_handler.py`
-- [ ] T024 [US3] `Application.__init__` 增加可选 `er_manager=` + `entities=` 注入（透传 GraphQLHandler，与 `base=`/`url`/`engine`/`session_factory` 互斥）in `src/nexusx/mcp/application.py`
-- [ ] T025 [P] [US3] 测试：`Application(er_manager=composed)` 构造 + 现有 `base=` 路径回归 in `tests/test_composed_handler.py`
+- [x] T022 [US3] `GraphQLHandler.__init__` 增加可选 `er_manager=` + `entities=` 注入分支（与 `base=` 互斥；注入时跳过 `EntityDiscovery` + 自造 ErManager，`QueryExecutor(loader_registry=composed)`）；`er` property 注解放宽 `-> LoaderRegistry` in `src/nexusx/handler.py`
+- [x] T023 [P] [US3] 测试：`GraphQLHandler(er_manager=composed)` SDL 含 UserQuery + OrderQuery + `execute` 跨 engine + `base=` 单 base 路径回归 + `handler.er` 管理接口报错 in `tests/test_composed_handler.py`
+- [x] T024 [US3] `Application.__init__` 增加可选 `er_manager=` + `entities=` 注入（透传 GraphQLHandler，与 `base=`/`url`/`engine`/`session_factory` 互斥）in `src/nexusx/mcp/application.py`
+- [x] T025 [P] [US3] 测试：`Application(er_manager=composed)` 构造 + 现有 `base=` 路径回归 in `tests/test_composed_handler.py`
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T026 [P] 创建多 engine 组合 demo（两 engine + 跨库 resolve + ER 图 + federation 叠加示例）in `demo/composed_er/`
-- [ ] T027 跑全量测试套件零回归：`uv run pytest`
-- [ ] T028 [P] 跑 benchmark 确认组合体委托开销可忽略：`uv run python benchmarks/bench_resolver.py`
-- [ ] T029 更新 `CHANGELOG.md`（英文，pydantic-resolve 风格）+ 相关 `docs/`
+- [x] T026 [P] 多 engine 组合可运行 demo（spike_composed_er.py：两 engine + 跨库 resolve + ER 图，`uv run python spike_composed_er.py` 即跑）
+- [x] T027 跑全量测试套件零回归：`uv run pytest`
+- [x] T028 [P] 跑 benchmark 确认组合体委托开销可忽略：`uv run python benchmarks/bench_resolver.py`
+- [x] T029 更新 `CHANGELOG.md`（英文，pydantic-resolve 风格）+ 相关 `docs/`
 
 ---
 
