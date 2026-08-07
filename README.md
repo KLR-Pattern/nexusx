@@ -3,142 +3,482 @@
 [![pypi](https://img.shields.io/pypi/v/nexusx.svg)](https://pypi.python.org/pypi/nexusx)
 [![PyPI Downloads](https://static.pepy.tech/badge/nexusx/month)](https://pepy.tech/projects/nexusx)
 
-nexusx turns a SQLModel database into two things: a GraphQL **query interface**
-that's friendlier than writing SQL, and **business logic** that ships as REST,
-GraphQL, MCP, and CLI from a single signature.
+**Build SQLModel applications for people and AI.**
+
+nexusx turns SQLModel relationships into a batch-loaded query graph, then
+turns typed business methods into REST, GraphQL, MCP, and CLI interfaces.
+
+Start with normal SQLModel entities. Add delivery protocols when you need them.
 
 ```mermaid
 flowchart LR
-    subgraph Logic["Business logic — one signature, many transports"]
-        s["UseCaseService<br/>methods"]
-        s --> rest["REST / OpenAPI"]
-        s --> gql2["GraphQL"]
-        s --> mcp2["MCP (AI agents)"]
-        s --> cli["CLI"]
-    end
-    subgraph Query["Query surface — friendlier than SQL"]
-        e["SQLModel entities<br/>+ relationships"]
-        e --> gql1["GraphQL"]
-        e --> mcp1["MCP"]
-        e --> er["ER diagrams (Voyager)"]
-    end
+    models["SQLModel entities"]
+    data_graph["Data graph<br/>relationships + loaders"]
+    dto["Typed DTOs<br/>DefineSubset + Resolver"]
+    usecase["Business use cases"]
+
+    models --> data_graph --> dto --> usecase
+    data_graph --> data_gql["GraphQL"]
+    data_graph --> data_mcp["MCP"]
+    data_graph --> er["ER / Voyager"]
+    usecase --> rest["REST / OpenAPI"]
+    usecase --> operation_gql["GraphQL"]
+    usecase --> operation_mcp["MCP"]
+    usecase --> cli["CLI"]
 ```
 
-## What it does for you
+## Why nexusx
 
-**1. A query interface over your database — not another query writer.**
+A SQLModel application usually grows through the same stages:
 
-`GraphQLHandler` reflects your entities and relationships into a read surface
-where you declare the shape you want — `users { posts { comments } }` — and
-nexusx compiles it to optimal SQL: one batched round-trip per level, columns
-pruned to what you selected, per-parent pagination. N+1 and over-fetching
-aren't pitfalls to avoid; they're structurally impossible. Turn on
-`auto_query_config` for `by_id` and equality `by_filter`; richer predicates
-(range, like, ordering) are one `@query` method that rejoins the same surface.
-[Voyager](docs/advanced/voyager.md) renders the schema as an interactive ER
-diagram, so the query interface is self-documenting.
+1. Define entities and relationships.
+2. Write resolvers or joins to read nested data.
+3. Create response DTOs that do not expose every database column.
+4. Repeat the same business operation for REST, GraphQL, and AI tools.
+5. Rebuild the relationship map again for documentation and service boundaries.
 
-**2. Business logic, on every transport.**
+nexusx keeps those stages connected:
 
-A `UseCaseService` method is plain async Python. One signature becomes a
-FastAPI route (with OpenAPI), an MCP tool for AI agents, a CLI command — and a
-GraphQL field. Note this GraphQL is *different* from the one above: it projects
-**business operations**, not your raw data graph, and it's built AI-first
-(compact `describe_*` discovery, no 50K-token introspection dump). The same
-codebase serves a web frontend, power integrations, and an AI agent without
-rewriting the logic three times.
+| You define | nexusx derives |
+|---|---|
+| SQLModel entities and relationships | GraphQL schema, DataLoaders, ER diagrams |
+| A `DefineSubset` DTO | Minimal SQL columns, nested relationship loading, derived fields |
+| A `UseCaseService` method | REST route, GraphQL field, MCP operation, CLI command |
+| A non-ORM batch function | A relationship that works with the same loaders, DTOs, and diagrams |
 
-Both pillars speak "GraphQL," but they are different surfaces:
+The result is less translation code between your database, application layer,
+web API, and AI interface.
 
-|  | SQLModel GraphQL (`GraphQLHandler`) | UseCaseService GraphQL (`compose_query`) |
-|---|---|---|
-| What it is | A query interface over your DB | A projection of business methods |
-| Source | Auto-reflected from entities + relations | Hand-written `@query` / `@mutation` |
-| Built for | Browsing / slicing your data graph | Invoking operations (app + AI) |
-| Introspection | Full (GraphiQL-friendly) | Rejected (AI-first, compact `describe_*`) |
+## First query
 
-## In 30 seconds
-
-**The query surface** — entities become a GraphQL and MCP query interface:
-
-```python
-from sqlmodel import SQLModel, Field, Relationship, select
-from nexusx import query, GraphQLHandler
-from nexusx.mcp import create_simple_mcp_server
-
-class User(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    name: str
-    posts: list["Post"] = Relationship(back_populates="author")  # ← the entire resolver
-
-    @query
-    async def users(cls, limit: int = 10) -> list["User"]:
-        async with session() as s:
-            return (await s.exec(select(cls).limit(limit))).all()
-
-class Post(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    title: str
-    author_id: int = Field(foreign_key="user.id")
-    author: User | None = Relationship(back_populates="posts")
-
-# GraphQL — { users { posts { title } } } is 2 SQL round-trips, not 1+N
-GraphQLHandler(base=SQLModel, session_factory=session)
-
-# MCP — Claude / Cursor call get_schema + graphql_query, fetching SDL on demand
-create_simple_mcp_server(base=SQLModel, name="Blog", session_factory=session)
-```
-
-**The business-logic surface** — one service class becomes REST + MCP:
-
-```python
-from nexusx import (
-    query, UseCaseService, UseCaseAppConfig,
-    create_use_case_router, create_use_case_graphql_mcp_server,
-)
-
-class SprintService(UseCaseService):
-    @query
-    async def list_sprints(cls) -> list[SprintSummary]:
-        """Get all sprints with task counts."""
-        ...
-
-cfg = UseCaseAppConfig(name="project", services=[SprintService])
-app.include_router(create_use_case_router(cfg))        # REST + OpenAPI
-create_use_case_graphql_mcp_server(apps=[cfg]).run()   # MCP for AI agents
-```
-
-## When to reach for it
-
-- You want a **friendlier query interface** over a SQLModel database than writing SQL — graph-shaped reads, N+1-proof, selection-driven.
-- You need **more than one transport** from one codebase — REST + GraphQL, or app + AI agent.
-- You have **non-ORM relations** (Redis, search, external APIs) that should flow through the same loader / DTO / diagram plumbing as native ones.
-
-## When *not* to
-
-- You only ever need **one REST handler per endpoint** and are happy writing them by hand — plain FastAPI is simpler.
-- You want **fine-grained resolver control** over a large GraphQL schema — Strawberry gives you more knobs.
-
-## Install
+Install nexusx:
 
 ```bash
 pip install nexusx
-pip install nexusx[fastmcp]   # MCP support
 ```
 
-Requires Python ≥ 3.10.
+Define entities as normal SQLModel classes:
 
-## Learn more
+```python
+from sqlmodel import Field, Relationship, SQLModel
 
-- [Quick Start](docs/guide/quick_start.md) — entities, DTOs, the UseCase layer
-- [Feature highlights](docs/feature-highlights.md) — the design decisions, in depth
-- [Voyager visualization](docs/advanced/voyager.md) — interactive ER + service diagrams
-- [Federation](docs/advanced/federation.md) — compose multiple nexusx services into one graph (same-architecture; no gateway)
-- [Auto query](docs/guide/graphql_auto_query.md) — `by_id` / `by_filter` without writing `@query`
-- [Clean Architecture comparison](docs/clean-architecture-comparison.md)
-- [Changelog](docs/changelog.md)
-- Demos: `bash start_all.sh` · [4-phase AI skill](skills/nexusx-4phase/)
 
-## Status
+class BaseEntity(SQLModel):
+    pass
 
-**Stable** — follows semantic versioning. Bug reports and PRs welcome. MIT.
+
+class User(BaseEntity, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+
+    tasks: list["Task"] = Relationship(back_populates="owner")
+
+
+class Sprint(BaseEntity, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+
+    tasks: list["Task"] = Relationship(back_populates="sprint")
+
+
+class Task(BaseEntity, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    title: str
+    done: bool = False
+    sprint_id: int = Field(foreign_key="sprint.id")
+    owner_id: int = Field(foreign_key="user.id")
+
+    sprint: Sprint | None = Relationship(back_populates="tasks")
+    owner: User | None = Relationship(back_populates="tasks")
+```
+
+Create a query interface:
+
+```python
+from nexusx import AutoQueryConfig, GraphQLHandler
+
+from .database import async_session
+
+
+handler = GraphQLHandler(
+    base=BaseEntity,
+    session_factory=async_session,
+    auto_query_config=AutoQueryConfig(),
+)
+```
+
+The entities now have `by_id` and `by_filter` query roots:
+
+```graphql
+{
+  Sprint {
+    by_filter(limit: 10) {
+      id
+      name
+      tasks {
+        id
+        title
+        done
+        owner {
+          id
+          name
+        }
+      }
+    }
+  }
+}
+```
+
+No relationship resolver is required. nexusx inspects the SQLAlchemy
+relationship metadata and creates the DataLoaders.
+
+For the query above, it loads:
+
+1. The requested sprints.
+2. All tasks for those sprint IDs in one batch.
+3. All owners for those task owner IDs in one batch.
+
+The number of relationship queries grows with the depth of the graph, not with
+the number of returned rows. Selected fields are also propagated down to SQL,
+so unrequested columns do not need to be loaded.
+
+Add a small FastAPI endpoint when you want GraphiQL or HTTP access:
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
+
+
+class GraphQLRequest(BaseModel):
+    query: str
+
+
+app = FastAPI()
+
+
+@app.get("/graphql", response_class=HTMLResponse)
+async def graphiql():
+    return handler.get_graphiql_html()
+
+
+@app.post("/graphql")
+async def graphql(request: GraphQLRequest):
+    return await handler.execute(request.query)
+```
+
+This is the **data graph**: a convenient, selection-driven interface for
+exploring and reading your entity relationships.
+
+## Shape application responses
+
+Database entities are not always good API contracts. A task table might contain
+internal columns that should never be returned, while the application response
+needs an owner summary and derived fields.
+
+`DefineSubset` creates an independent Pydantic DTO from selected entity fields:
+
+```python
+from nexusx import DefineSubset
+
+
+class UserSummary(DefineSubset):
+    __subset__ = (User, ("id", "name"))
+
+
+class TaskSummary(DefineSubset):
+    __subset__ = (
+        Task,
+        ("id", "title", "done", "sprint_id", "owner_id"),
+    )
+
+    owner: UserSummary | None = None
+
+
+class SprintSummary(DefineSubset):
+    __subset__ = (Sprint, ("id", "name"))
+
+    tasks: list[TaskSummary] = []
+    task_count: int = 0
+
+    def post_task_count(self):
+        return len(self.tasks)
+```
+
+The field name `owner` matches the `Task.owner` relationship, so nexusx loads it
+automatically and converts the result to `UserSummary`. The same applies to
+`SprintSummary.tasks`.
+
+Load only the root columns required by the DTO, then resolve its relationship
+tree:
+
+```python
+from nexusx import ErManager, build_dto_select
+
+
+er = ErManager(
+    entities=[User, Sprint, Task],
+    session_factory=async_session,
+)
+Resolver = er.create_resolver()
+
+
+async def load_sprints() -> list[SprintSummary]:
+    statement = build_dto_select(SprintSummary)
+
+    async with async_session() as session:
+        rows = (await session.exec(statement)).all()
+
+    dtos = [SprintSummary(**dict(row._mapping)) for row in rows]
+    return await Resolver().resolve(dtos)
+```
+
+`DefineSubset` and `Resolver` provide the same selection-driven loading model
+outside GraphQL. They can be used in FastAPI handlers, background jobs, tests,
+or business services.
+
+As response trees become more advanced, nexusx also provides:
+
+- `resolve_*` hooks to override how a field is loaded.
+- `post_*` hooks to compute fields after children are ready.
+- `ExposeAs` to pass values from ancestors to descendants.
+- `SendTo` and `Collector` to aggregate values from descendants.
+- `Paged` for per-parent top-N relationship loading.
+
+## Define a business use case
+
+Once the response contract is stable, expose business intent instead of raw
+database access:
+
+```python
+from nexusx import UseCaseService, query
+
+
+class SprintService(UseCaseService):
+    """Sprint planning operations."""
+
+    @query
+    async def list_sprints(cls) -> list[SprintSummary]:
+        """List sprints with their tasks, owners, and task count."""
+        return await load_sprints()
+```
+
+This is plain async Python. It can be tested by calling
+`SprintService.list_sprints()` directly.
+
+Now describe the application once:
+
+```python
+from nexusx import UseCaseAppConfig
+
+
+project_api = UseCaseAppConfig(
+    name="project",
+    services=[SprintService],
+    description="Project planning operations",
+)
+```
+
+The same configuration can be attached to different delivery protocols.
+
+### REST and OpenAPI
+
+```python
+from fastapi import FastAPI
+from nexusx import create_use_case_router
+
+
+app = FastAPI()
+app.include_router(create_use_case_router(project_api))
+```
+
+The service method becomes a typed FastAPI route and appears in OpenAPI.
+
+### MCP for AI agents
+
+Install the optional MCP integration:
+
+```bash
+pip install "nexusx[fastmcp]"
+```
+
+```python
+from nexusx import create_use_case_graphql_mcp_server
+
+
+mcp = create_use_case_graphql_mcp_server(
+    apps=[project_api],
+    name="Project API",
+)
+mcp.run()
+```
+
+AI agents discover the application progressively:
+
+```text
+list_apps
+    -> describe_compose_schema
+        -> describe_compose_method
+            -> compose_query
+```
+
+Instead of loading a full GraphQL introspection document into the model context,
+the agent asks for the application, service, and method details it needs.
+
+### CLI
+
+Install the optional CLI integration:
+
+```bash
+pip install "nexusx[cli]"
+```
+
+```python
+from nexusx import create_use_case_cli
+
+
+cli = create_use_case_cli(project_api)
+cli()
+```
+
+The same method is now available as a command without moving business logic
+into the CLI layer.
+
+## One model, two graphs
+
+nexusx exposes GraphQL in two different places because they solve different
+problems:
+
+| | Data graph | Operation graph |
+|---|---|---|
+| Entry point | `GraphQLHandler` | `UseCaseService` |
+| Source | SQLModel entities and relationships | Typed business methods |
+| Main purpose | Browse and slice connected data | Invoke application operations |
+| Typical users | Developers and internal tools | Web clients, integrations, and AI agents |
+| Discovery | Full GraphQL introspection and GraphiQL | Compact service and method discovery |
+
+Use the data graph when the caller needs flexible relationship traversal. Use
+the operation graph when the caller should invoke a stable business capability.
+Applications can use either one or both.
+
+## Three ideas behind nexusx
+
+### Selection is a first-class concept
+
+A field selection is not limited to the GraphQL transport. It influences:
+
+- The GraphQL response shape.
+- The columns loaded from SQL.
+- The fields copied into a `DefineSubset` DTO.
+- The nested relationships resolved by `Resolver`.
+- The fields returned to an MCP caller.
+- Whether optional pagination metadata such as `total_count` is calculated.
+
+### Relationships are not limited to the ORM
+
+SQLAlchemy relationships are discovered automatically, but a relationship can
+also be backed by Redis, a search engine, another database, or an external API.
+Declare a `Relationship` with an async batch function and it joins the same
+loader, DTO, GraphQL, and ER-diagram infrastructure.
+
+### Delivery is layered on later
+
+`UseCaseService` methods do not depend on FastAPI, MCP, GraphQL, or CLI request
+objects. Protocol-specific builders inspect the same typed signature and add
+the appropriate adapter. `FromContext` injects trusted values such as user ID,
+tenant ID, or request ID without exposing them as client-controlled arguments.
+
+## Performance by construction
+
+nexusx uses the requested response shape to plan relationship loading:
+
+- DataLoader batches many-to-one, one-to-many, and many-to-many relationships.
+- SQLAlchemy `load_only` limits selected entity columns.
+- Loader requirements from multiple consumers are merged safely.
+- Per-parent pagination uses SQL window functions instead of one query per parent.
+- `total_count` is skipped when the response does not request it.
+- Dynamic response models are cached by selection structure.
+
+See [Feature highlights](docs/feature-highlights.md) for the design details and
+[benchmarks](benchmarks/) for the benchmark suite.
+
+## Beyond one database
+
+The same relationship model extends into more advanced architectures:
+
+- **Custom relationships** connect Redis, search, SDKs, and external APIs.
+- **Virtual entities** use ordinary Pydantic models as non-table graph roots.
+- **Voyager** renders entities, DTOs, use cases, and their dependencies.
+- **Entity federation** composes multiple nexusx data graphs without a central gateway.
+- **DTO federation** loads public DTO trees across service boundaries.
+- **Multi-app MCP** combines independently packaged applications and databases.
+
+Federation is intentionally homogeneous: it composes nexusx services rather
+than acting as a general-purpose third-party GraphQL supergraph.
+
+## When to use nexusx
+
+nexusx is a good fit when:
+
+- Your application already uses SQLModel and has relationship-heavy reads.
+- You need REST for applications and MCP for AI agents from the same logic.
+- You want stable DTO contracts without duplicating entity field definitions.
+- Some relationships come from non-ORM data sources.
+- A modular monolith may later evolve into cooperating services.
+
+nexusx is probably not the best fit when:
+
+- You only need a few hand-written REST endpoints.
+- You need complete resolver-level control over a large public GraphQL schema.
+- Your services use unrelated stacks and require a general federation gateway.
+- You prefer explicit protocol-specific code over convention and introspection.
+
+Plain FastAPI is simpler for the first case. Strawberry provides more direct
+control for a GraphQL-first application.
+
+## Installation
+
+```bash
+pip install nexusx
+```
+
+Optional integrations:
+
+```bash
+pip install "nexusx[fastmcp]"     # MCP servers
+pip install "nexusx[federation]"  # Cross-service composition
+pip install "nexusx[cli]"         # Typer CLI generation
+```
+
+nexusx requires Python 3.10 or newer.
+
+## Learn in layers
+
+Start with the layer your application needs:
+
+| Goal | Guide |
+|---|---|
+| Run the first GraphQL query | [Quick start](docs/guide/quick_start.md) |
+| Understand the entity query surface | [GraphQL mode](docs/guide/graphql_mode.md) |
+| Generate `by_id` and `by_filter` | [Automatic queries](docs/guide/graphql_auto_query.md) |
+| Build stable application DTOs | [Core API](docs/guide/core_api.md) |
+| Add derived fields and tree data flow | [Core API advanced](docs/guide/core_api_advanced.md) |
+| Connect a non-ORM data source | [Custom relationships](docs/guide/custom_relationship.md) |
+| Expose use cases to web and AI | [UseCase services](docs/advanced/use_case_service.md) |
+| Add an MCP interface | [MCP services](docs/advanced/mcp_service.md) |
+| Visualize the architecture | [Voyager](docs/advanced/voyager.md) |
+| Compose nexusx services | [Federation](docs/advanced/federation.md) |
+
+For complete runnable examples, see [`demo/`](demo/). For the progressive
+Schema-to-SDK development workflow, see the
+[4-phase nexusx skill](skills/nexusx-4phase/).
+
+## Project
+
+- [Documentation](docs/index.md)
+- [Feature highlights](docs/feature-highlights.md)
+- [Architecture comparison](docs/clean-architecture-comparison.md)
+- [Changelog](CHANGELOG.md)
+- [Issue tracker](https://github.com/allmonday/nexusx/issues)
+
+nexusx follows semantic versioning and is distributed under the MIT license.
