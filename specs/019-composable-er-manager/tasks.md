@@ -16,18 +16,18 @@
 
 ## Phase 1: Setup（共享基础设施）
 
-- [ ] T001 创建 `src/nexusx/loader/composed.py` 模块文件 + 中文模块 docstring（说明 ComposedErManager = 同进程 federation 对偶、按 entity 委托 + 跨边界叠加层）
+- [x] T001 创建 `src/nexusx/loader/composed.py` 模块文件 + 中文模块 docstring（说明 ComposedErManager = 同进程 federation 对偶、按 entity 委托 + 跨边界叠加层）
 
 ## Phase 2: Foundational（阻塞前置，所有 User Story 依赖）
 
-- [ ] T002 定义 `LoaderRegistry` Protocol（`@runtime_checkable`，方法集见 data-model.md §1）in `src/nexusx/loader/composed.py`
-- [ ] T003 实现 `ComposedErManager.__init__`：参数（`members` + `cross_relationships` + `service_name`）+ 建立 `_route`/`_loader_owner`/`_cross_rels` + 构造期校验（空成员/`full_class_name` 重名/跨边界 target 缺失 → fail-fast `ValueError`）in `src/nexusx/loader/composed.py`
-- [ ] T004 [P] 实现按 entity 委托的查询方法（`has_entity` / `get_relationships`（含叠加）/ `get_relationship` / `get_loader_for_entity`（含跨边界分支）/ `get_loader_by_name` / `get_loader`（反向路由）/ `get_dto_loader`）in `src/nexusx/loader/composed.py`
-- [ ] T005 [P] 实现跨边界关系叠加层：`cross_relationships` → `RelationshipInfo`（复用 `_build_custom_relationship_info` 逻辑）+ `get_relationships` 合并本地与跨边界 + `get_all_relationships` 叠加 in `src/nexusx/loader/composed.py`
-- [ ] T006 [P] 实现 `create_resolver`（照搬 `ErManager.create_resolver` 5 行，注入组合体自身）+ `clear_cache`（聚合所有成员）+ `get_all_entities` in `src/nexusx/loader/composed.py`
-- [ ] T007 [P] 实现 `_fed_registry` 聚合视图（`_CompositeFedRegistryView`：`qualified_of` / `all_classes` / `service_colors` 遍历成员 `_fed_registry`）in `src/nexusx/loader/composed.py`
-- [ ] T008 [P] 实现 federation member 暴露聚合（`service_name` + `get_public_dtos` / `get_dto_classes` 聚合所有成员 + `_expose_mounted_endpoints`）in `src/nexusx/loader/composed.py`
-- [ ] T009 导出 `ComposedErManager` + `LoaderRegistry`：加入 `__all__` in `src/nexusx/__init__.py`，并在 `src/nexusx/loader/__init__.py` 导出
+- [x] T002 定义 `LoaderRegistry` Protocol（`@runtime_checkable`，方法集见 data-model.md §1）in `src/nexusx/loader/composed.py`
+- [x] T003 实现 `ComposedErManager.__init__`：参数（`members` + `cross_relationships` + `service_name`）+ 建立 `_route`/`_loader_owner`/`_cross_rels` + 构造期校验（空成员/`full_class_name` 重名/跨边界 target 缺失 → fail-fast `ValueError`）in `src/nexusx/loader/composed.py`
+- [x] T004 [P] 实现按 entity 委托的查询方法（`has_entity` / `get_relationships`（含叠加）/ `get_relationship` / `get_loader_for_entity`（含跨边界分支）/ `get_loader_by_name` / `get_loader`（反向路由）/ `get_dto_loader`）in `src/nexusx/loader/composed.py`
+- [x] T005 [P] 实现跨边界关系叠加层：`cross_relationships` → `RelationshipInfo`（复用 `_build_custom_relationship_info` 逻辑）+ `get_relationships` 合并本地与跨边界 + `get_all_relationships` 叠加 in `src/nexusx/loader/composed.py`
+- [x] T006 [P] 实现 `create_resolver`（照搬 `ErManager.create_resolver` 5 行，注入组合体自身）+ `clear_cache`（聚合所有成员）+ `get_all_entities` in `src/nexusx/loader/composed.py`
+- [x] T007 [P] 实现 `_fed_registry` 聚合视图（`_CompositeFedRegistryView`：`qualified_of` / `all_classes` / `service_colors` 遍历成员 `_fed_registry`）in `src/nexusx/loader/composed.py`
+- [x] T008 [P] 实现 federation member 暴露聚合（`service_name` + `get_public_dtos` / `get_dto_classes` 聚合所有成员 + `_expose_mounted_endpoints`）in `src/nexusx/loader/composed.py`
+- [x] T009 导出 `ComposedErManager` + `LoaderRegistry`：加入 `__all__` in `src/nexusx/__init__.py`，并在 `src/nexusx/loader/__init__.py` 导出
 
 ## Phase 3: User Story 1 — 同进程多 engine UseCase 跨库 resolve (Priority: P1) 🎯 MVP
 
@@ -35,11 +35,11 @@
 **独立验收**：`UserDTO.posts`（blog session）+ `UserDTO.orders`（shop session 跨库）+ `orders[*].items`（shop session 二级钻取）全通。
 
 ### Tests for User Story 1
-- [ ] T010 [P] [US1] 集成测试：两 engine（blog SQLite + shop SQLite）+ 跨库 resolve + 二级钻取（对应 spike 4 断言）in `tests/test_composed_er_manager.py`
-- [ ] T011 [US1] 测试已知坑：root DTO 只填 subset 标量字段（勿 `model_validate(orm)`，验证 DetachedInstanceError 不发生）+ 跨边界 loader 闭包使用目标 session in `tests/test_composed_er_manager.py`
+- [x] T010 [P] [US1] 集成测试：两 engine（blog SQLite + shop SQLite）+ 跨库 resolve + 二级钻取（对应 spike 4 断言）in `tests/test_composed_er_manager.py`
+- [x] T011 [US1] 测试已知坑：root DTO 只填 subset 标量字段（勿 `model_validate(orm)`，验证 DetachedInstanceError 不发生）+ 跨边界 loader 闭包使用目标 session in `tests/test_composed_er_manager.py`
 
 ### Implementation for User Story 1
-- [ ] T012 [US1] 从 `spike_composed_er.py` 产品化 ComposedErManager 用法到测试（声明跨边界 `Relationship` 用组合体层 `cross_relationships=`，非源实体 `__relationships__`）in `tests/test_composed_er_manager.py`
+- [x] T012 [US1] 从 `spike_composed_er.py` 产品化 ComposedErManager 用法到测试（声明跨边界 `Relationship` 用组合体层 `cross_relationships=`，非源实体 `__relationships__`）in `tests/test_composed_er_manager.py`
 
 ## Phase 4: User Story 2 — 跨 engine ER 图合并 (Priority: P1)
 
@@ -47,8 +47,8 @@
 **独立验收**：图含全部实体 + 跨库边 + federation styling 不被 `_fed_registry` 聚合破坏。
 
 ### Tests for User Story 2
-- [ ] T013 [P] [US2] 测试：`ErDiagram.from_er_manager(composed).to_mermaid()` 含 4 实体 + 跨库边 `User ||--o{ Order : orders` in `tests/test_composed_er_manager.py`
-- [ ] T014 [P] [US2] 测试：`ErDiagramDotBuilder(composed)` DOT 渲染跨 engine（验证 `_fed_registry` 聚合视图下 styling 不缺失）in `tests/test_composed_er_manager.py`
+- [x] T013 [P] [US2] 测试：`ErDiagram.from_er_manager(composed).to_mermaid()` 含 4 实体 + 跨库边 `User ||--o{ Order : orders` in `tests/test_composed_er_manager.py`
+- [x] T014 [P] [US2] 测试：`ErDiagramDotBuilder(composed)` DOT 渲染跨 engine（验证 `_fed_registry` 聚合视图下 styling 不缺失）in `tests/test_composed_er_manager.py`
 
 ## Phase 5: User Story 5 — federation × ComposedErManager 叠加测试矩阵 (Priority: P1)
 
@@ -68,8 +68,8 @@
 **独立验收**：`cross_relationships` 声明 → resolve + ER 图边；非法声明 fail-fast。
 
 ### Tests for User Story 4
-- [ ] T020 [P] [US4] 测试：`cross_relationships` 声明跨边界关系 → resolver 跨库 resolve + ER 图画出边 in `tests/test_composed_er_manager.py`
-- [ ] T021 [US4] 测试：构造期校验 fail-fast（重名实体 / 空 members / 跨边界 source-target 缺失 / `Relationship` 非法）in `tests/test_composed_er_manager.py`
+- [x] T020 [P] [US4] 测试：`cross_relationships` 声明跨边界关系 → resolver 跨库 resolve + ER 图画出边 in `tests/test_composed_er_manager.py`
+- [x] T021 [US4] 测试：构造期校验 fail-fast（重名实体 / 空 members / 跨边界 source-target 缺失 / `Relationship` 非法）in `tests/test_composed_er_manager.py`
 
 ## Phase 7: User Story 3 — entity-first GraphQLHandler 注入 (Priority: P2，阶段 2)
 

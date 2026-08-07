@@ -6,11 +6,13 @@ from nexusx.loader.pagination import (
     Pagination,
     create_result_type,
 )
-from nexusx.loader.registry import ErManager, LoaderRegistry, RelationshipInfo
+from nexusx.loader.composed import ComposedErManager, LoaderRegistry
+from nexusx.loader.registry import ErManager, RelationshipInfo
 
 __all__ = [
     "ErManager",
-    "LoaderRegistry",  # backward-compatible alias
+    "LoaderRegistry",
+    "ComposedErManager",
     "RelationshipInfo",
     "PageArgs",
     "PageLoadCommand",

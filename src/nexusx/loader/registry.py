@@ -926,5 +926,5 @@ class ErManager:
         return BoundResolver
 
 
-# Backward-compatible alias
-LoaderRegistry = ErManager
+# LoaderRegistry 现为正式 Protocol，定义在 nexusx.loader.composed（specs/019）。
+# ErManager 天然满足该 Protocol。从 nexusx.loader 或 nexusx.loader.composed 导入。
