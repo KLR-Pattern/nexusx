@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.4.0."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.4.1."
 ---
 
 # Changelog
@@ -11,6 +11,23 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
 
 ## 5.4
+
+### 5.4.1 (2026-8-8)
+
+- fix:
+  - **Correct stale PyPI metadata and dedupe dev dependencies**:
+    Package metadata still advertised `Development Status :: 3 - Alpha` with the
+    v0.x-era description "GraphQL SDL generation and query optimization for
+    SQLModel", contradicting the README which declared semver-stable maturity back
+    at v4.0 — so every PyPI visitor saw an Alpha-tagged, mis-described project.
+    Bumped to `5 - Production/Stable` and rewrote the description to reflect the
+    current positioning (batch-loaded query graph + multi-protocol methods +
+    "for people and AI"). Also collapsed the duplicate `dev` dependency
+    definitions: `[project.optional-dependencies].dev` (PEP 621, `pytest>=7`)
+    clashed with `[dependency-groups].dev` (PEP 735, `pytest>=9`); the PEP 621
+    one was removed and its two unique packages (`pytest-benchmark`, `greenlet`)
+    folded into the dependency-groups dev group. `uv sync --all-extras` (CI) is
+    unaffected — verified by 1523 tests passing.
 
 ### 5.4.0 (2026-8-8)
 
