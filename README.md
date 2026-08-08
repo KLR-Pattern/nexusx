@@ -410,6 +410,7 @@ The same relationship model extends into more advanced architectures:
 - **Virtual entities** use ordinary Pydantic models as non-table graph roots.
 - **Voyager** renders entities, DTOs, use cases, and their dependencies.
 - **Entity federation** composes multiple nexusx data graphs without a central gateway.
+- **ComposedErManager** composes multiple engines within one process (the same-process dual of federation).
 - **DTO federation** loads public DTO trees across service boundaries.
 - **Multi-app MCP** combines independently packaged applications and databases.
 
@@ -468,6 +469,7 @@ Start with the layer your application needs:
 | Add an MCP interface | [MCP services](docs/advanced/mcp_service.md) |
 | Visualize the architecture | [Voyager](docs/advanced/voyager.md) |
 | Compose nexusx services | [Federation](docs/advanced/federation.md) |
+| Compose engines in one process | [ComposedErManager](docs/advanced/composed_er_manager.md) |
 
 For complete runnable examples, see [`demo/`](demo/). For the progressive
 Schema-to-SDK development workflow, see the

@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from aiodataloader import DataLoader
 from pydantic import BaseModel
@@ -926,5 +926,76 @@ class ErManager:
         return BoundResolver
 
 
-# Backward-compatible alias
-LoaderRegistry = ErManager
+@runtime_checkable
+class LoaderRegistry(Protocol):
+    """``ErManager`` / ``ComposedErManager`` 共同满足的「registry 只读契约」。
+
+    覆盖四类消费方的读取依赖面，逐条列出以便组合体实现不漏：
+
+    - **Resolver**（auto-load）：实体/关系查询、loader 获取、生命周期、``_split_mode``
+      /``_fed_registry``
+    - **ER 图**（``ErDiagram.from_er_manager``）：``get_all_entities`` /
+      ``get_all_relationships`` / ``_fed_registry``
+    - **federation introspection**（``serialize_er_introspection`` /
+      ``serialize_dto_introspection``）：``service_name`` /
+      ``_expose_mounted_endpoints`` / ``get_dto_classes`` / ``get_public_dtos``
+    - **GraphQLHandler 缓存**：``version``（SDL/introspection 的 cache key）
+
+    ``ErManager`` 天然满足（其方法/属性是本 Protocol 的超集）；``ComposedErManager``
+    按实体委托 + 聚合满足。本 Protocol 原为 ``= ErManager`` 的 internal 别名，此处
+    升级为正式 Protocol（无 isinstance 实例化依赖，升级不 breaking）。
+
+    注意：本 Protocol **只含只读查询面**。federation 的 mutating 管理（``federate`` /
+    ``initialize`` / ``add_virtual_entities`` / ``aclose_federation`` / 写 ``service_name``）
+    按 FR-013 不在组合体上实现，仍只在 ``ErManager`` 上。
+    """
+
+    # — 实体/关系查询（按 entity 路由）—
+    def has_entity(self, entity: type) -> bool: ...
+    def get_relationships(self, entity: type) -> dict[str, Any]: ...
+    def get_relationship(self, entity: type, name: str) -> Any | None: ...
+    def get_loader_for_entity(
+        self, entity: type, rel_name: str, type_key: frozenset[str] | None = None
+    ) -> DataLoader | None: ...
+
+    # — 按 name / 按 class 兜底 —
+    def get_loader_by_name(
+        self, name: str, type_key: frozenset[str] | None = None
+    ) -> DataLoader | None: ...
+    def get_loader(
+        self,
+        loader_cls: type[DataLoader],
+        *,
+        type_key: frozenset[str] | None = None,
+        force_split: bool = False,
+        params_key: tuple | None = None,
+    ) -> DataLoader: ...
+
+    # — federation γ（DTO loader；组合体返回中性/聚合）—
+    def get_dto_loader(
+        self, owner_dto: Any, field_name: str | None = None
+    ) -> Any | None: ...
+
+    # — 生命周期 / 缓存 —
+    def clear_cache(self) -> None: ...
+    def create_resolver(self) -> type: ...
+
+    # — Resolver / ER 图 读取的属性 —
+    @property
+    def _split_mode(self) -> bool: ...
+    @property
+    def _fed_registry(self) -> Any: ...
+
+    # — ER 图额外用 —
+    def get_all_entities(self) -> list[type]: ...
+    def get_all_relationships(self) -> dict[type, dict[str, Any]]: ...
+
+    # — federation introspection / handler 缓存 读取面（specs/019 补全）—
+    @property
+    def service_name(self) -> str | None: ...
+    @property
+    def _expose_mounted_endpoints(self) -> bool: ...
+    @property
+    def version(self) -> int: ...
+    def get_dto_classes(self) -> list[type]: ...
+    def get_public_dtos(self) -> list[type]: ...

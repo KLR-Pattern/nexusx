@@ -399,7 +399,7 @@ def _create_page_by_keys_in_query(
 
         from sqlalchemy import func, select
 
-        from nexusx.loader.pagination import PageArgs, Pagination
+        from nexusx.loader.pagination import KeyedPaginatedPackage, PageArgs, Pagination
 
         if arg_name not in kwargs:
             msg = f"Missing required argument: {arg_name}"
@@ -510,11 +510,12 @@ def _create_page_by_keys_in_query(
                 pagination = Pagination(has_more=has_more)
                 if want_total_count:
                     pagination.total_count = total_counts.get(v, 0)
-                packages.append({
-                    field_name: v,
-                    "items": items,
-                    "pagination": pagination,
-                })
+                packages.append(KeyedPaginatedPackage(
+                    items=items,
+                    pagination=pagination,
+                    fk_field=field_name,
+                    fk_value=v,
+                ))
             return packages
 
     func_obj = (

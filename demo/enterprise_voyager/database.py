@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -43,7 +45,7 @@ from demo.enterprise_voyager.models import (
     Workspace,
 )
 
-engine = create_async_engine("sqlite+aiosqlite:///enterprise_voyager_demo.db", echo=False)
+engine = create_async_engine(f"sqlite+aiosqlite:///{Path(__file__).parent / 'enterprise_voyager_demo.db'}", echo=False)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

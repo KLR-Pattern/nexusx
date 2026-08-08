@@ -8,6 +8,7 @@ from sqlmodel import SQLModel, select
 
 from nexusx.decorator import mutation, query
 from nexusx.execution.query_executor import QueryExecutor
+from nexusx.loader.pagination import KeyedPaginatedPackage
 from nexusx.loader.registry import ErManager
 from nexusx.query_parser import FieldSelection, QueryParser
 from nexusx.response_builder import get_relationship_names
@@ -86,8 +87,8 @@ class TestResolveResultFederationBranching:
             },
         )
         rows = [
-            {"items": [{"k": 1}], "pagination": {"has_more": False}},
-            {"items": [{"k": 2}], "pagination": {"has_more": False}},
+            KeyedPaginatedPackage(items=[{"k": 1}], pagination={"has_more": False}),
+            KeyedPaginatedPackage(items=[{"k": 2}], pagination={"has_more": False}),
         ]
 
         # Not a pagination root → rows go through verbatim. Before the fix this
@@ -114,8 +115,8 @@ class TestResolveResultFederationBranching:
             },
         )
         rows = [
-            {"items": [{"k": 1}], "pagination": {"has_more": False}},
-            {"items": [{"k": 2}], "pagination": {"has_more": False}},
+            KeyedPaginatedPackage(items=[{"k": 1}], pagination={"has_more": False}),
+            KeyedPaginatedPackage(items=[{"k": 2}], pagination={"has_more": False}),
         ]
 
         # Pagination root → BFS recurses into the flattened items only.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from graphql import parse
 
@@ -16,6 +16,10 @@ from nexusx.loader.registry import ErManager
 from nexusx.query_parser import QueryParser
 from nexusx.sdl_generator import SDLGenerator
 from nexusx.standard_queries import AutoQueryConfig, add_standard_queries
+
+if TYPE_CHECKING:
+    # specs/019: er_manager 注入路径接受任意 LoaderRegistry（ErManager / ComposedErManager）
+    from nexusx.loader.registry import LoaderRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +55,7 @@ class GraphQLHandler:
 
     def __init__(
         self,
-        base: type,
+        base: type | None = None,
         session_factory: Callable | None = None,
         query_description: str | None = None,
         mutation_description: str | None = None,
@@ -60,8 +64,23 @@ class GraphQLHandler:
         service_name: str | None = None,
         expose_mounted_endpoints: bool = False,
         dto_classes: list[type] | None = None,
+        er_manager: LoaderRegistry | None = None,
+        entities: list[type] | None = None,
     ):
         """Initialize the GraphQL handler.
+
+        Two mutually-exclusive construction paths:
+
+        - ``base=`` (default): discover entities from a SQLModel base, build an
+          ErManager internally.
+        - ``er_manager=`` (specs/019 US3, injection): inject a pre-built
+          ``LoaderRegistry`` (e.g. ComposedErManager for multi-engine) + an
+          explicit ``entities`` list. Skips discovery and internal ErManager
+          construction; relationship resolution delegates to the injected
+          registry (``QueryExecutor`` calls ``er_manager.create_resolver()``).
+          ``auto_query_config`` is unsupported here — multi-engine standard
+          queries have ambiguous session ownership (FR-012), use ``@query``
+          methods that fetch their own session.
 
         Args:
             base: SQLModel base class. All subclasses with @query/@mutation
@@ -87,7 +106,16 @@ class GraphQLHandler:
                 owns. Those flagged federation_public (via SubsetConfig) are
                 exposed through the DTO introspection endpoint for γ-path
                 federation (specs/016). Default None — no public DTOs.
+            er_manager: Pre-built ``LoaderRegistry`` (e.g. ComposedErManager).
+                Mutually exclusive with ``base`` (specs/019 US3).
+            entities: Entity classes to expose on the injection path. Defaults
+                to ``er_manager.get_all_entities()``.
         """
+        if er_manager is not None and base is not None:
+            raise ValueError("Provide at most one of: base, er_manager")
+        if er_manager is None and base is None:
+            raise ValueError("GraphQLHandler requires either base= or er_manager=")
+
         if auto_query_config is not None and session_factory is None:
             # Backward compat: fall back to deprecated session_factory from config.
             deprecated_sf = getattr(
@@ -107,33 +135,48 @@ class GraphQLHandler:
         self._query_description = query_description
         self._mutation_description = mutation_description
 
-        # Discover entities with decorators and their related entities
-        discovery = EntityDiscovery(base)
-        self.entities = discovery.discover(include_all=auto_query_config is not None)
+        if er_manager is not None:
+            # specs/019 US3 注入路径：用预构造 registry + 合并实体集，跳过 discovery
+            # 与内部 ErManager 构造。关系解析委托注入的 registry（multi-engine）。
+            if auto_query_config is not None:
+                raise ValueError(
+                    "auto_query_config is not supported with er_manager injection "
+                    "(multi-engine standard queries have ambiguous session ownership; "
+                    "use @query methods that fetch their own session)"
+                )
+            self._er_manager = er_manager
+            self.entities = (
+                list(entities) if entities is not None
+                else er_manager.get_all_entities()
+            )
+        else:
+            # Discover entities with decorators and their related entities
+            discovery = EntityDiscovery(base)
+            self.entities = discovery.discover(include_all=auto_query_config is not None)
 
-        # Add standard queries if auto_query_config is provided. The config is
-        # pure policy; the session_factory comes from this handler (resolved
-        # from the caller — Application / builder / direct).
-        if auto_query_config is not None:
-            add_standard_queries(self.entities, auto_query_config, session_factory)
+            # Add standard queries if auto_query_config is provided. The config is
+            # pure policy; the session_factory comes from this handler (resolved
+            # from the caller — Application / builder / direct).
+            if auto_query_config is not None:
+                add_standard_queries(self.entities, auto_query_config, session_factory)
 
-        # Build ErManager for DataLoader-based relationship resolution
-        self._er_manager = ErManager(
-            entities=self.entities,
-            session_factory=session_factory,
-            enable_pagination=enable_pagination,
-            service_name=service_name,
-            expose_mounted_endpoints=expose_mounted_endpoints,
-            dto_classes=dto_classes,
-        )
+            # Build ErManager for DataLoader-based relationship resolution
+            self._er_manager = ErManager(
+                entities=self.entities,
+                session_factory=session_factory,
+                enable_pagination=enable_pagination,
+                service_name=service_name,
+                expose_mounted_endpoints=expose_mounted_endpoints,
+                dto_classes=dto_classes,
+            )
 
-        # specs/016 γ-path: register a DTO batch root per federation-public DTO
-        # the member owns (served by /nexusx/dto-batch). No-op for β-only
-        # members; runs after ErManager is built so the batch root's
-        # create_resolver() sees the wired entity set at query time.
-        from nexusx.standard_queries import add_dto_batch_roots
+            # specs/016 γ-path: register a DTO batch root per federation-public DTO
+            # the member owns (served by /nexusx/dto-batch). No-op for β-only
+            # members; runs after ErManager is built so the batch root's
+            # create_resolver() sees the wired entity set at query time.
+            from nexusx.standard_queries import add_dto_batch_roots
 
-        add_dto_batch_roots(self._er_manager)
+            add_dto_batch_roots(self._er_manager)
 
         # SDL / introspection generators are built LAZILY off the live ErManager,
         # version-cached: they refresh automatically after er.initialize() adds
@@ -208,10 +251,12 @@ class GraphQLHandler:
         return self._intro_cache[1]
 
     @property
-    def er(self) -> ErManager:
-        """The ER-diagram manager — owns entities, relationships, and federation
-        (``await handler.er.initialize()`` runs it). The handler is a pure
-        GraphQL view over this; federation is the ErManager's concern."""
+    def er(self) -> LoaderRegistry:
+        """The ER-diagram registry — owns entities, relationships, and (for
+        ErManager) federation. ``await handler.er.initialize()`` runs federation
+        on the base path. On the er_manager injection path (specs/019) this
+        returns the injected registry (e.g. ComposedErManager); its management
+        methods (federate/initialize) are unavailable — those run on sub-members."""
         return self._er_manager
 
     def get_sdl(self, include_mutations: bool = True) -> str:
@@ -250,8 +295,21 @@ class GraphQLHandler:
         return GRAPHIQL_HTML.replace("{graphql_url}", endpoint)
 
     async def aclose(self) -> None:
-        """Close federation resources (httpx.AsyncClient). Call on shutdown."""
-        await self._er_manager.aclose_federation()
+        """Close federation resources (httpx.AsyncClient). Call on shutdown.
+
+        specs/019 注入路径下 ``er_manager`` 是 ComposedErManager（按 FR-013 无
+        ``aclose_federation``），federation 资源在各子 member —— 逐个委托。
+        """
+        members = getattr(self._er_manager, "_members", None)
+        if members is not None:
+            for m in members:
+                closer = getattr(m, "aclose_federation", None)
+                if closer is not None:
+                    await closer()
+        else:
+            closer = getattr(self._er_manager, "aclose_federation", None)
+            if closer is not None:
+                await closer()
 
     async def execute(
         self,
