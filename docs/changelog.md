@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.3.0."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.4.0."
 ---
 
 # Changelog
@@ -9,6 +9,31 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 - **Patch (x.y.Z)**: Bug fixes and minor improvements
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
+
+## 5.4
+
+### 5.4.0 (2026-8-8)
+
+- feat:
+  - **ComposedErManager — compose multiple engines in one process (#132)**:
+    Combine several self-contained `ErManager`s (each on its own engine/session)
+    into a single query proxy. A resolver from the composed manager traverses
+    entities across different databases transparently, with no HTTP bridge — the
+    same-process dual of federation (specs/012). Cross-engine edges are declared
+    on the composition layer (`cross_relationships=`), so members stay
+    self-contained and usable alone. Ships with `GraphQLHandler` / `Application`
+    `er_manager=` injection and a `LoaderRegistry` Protocol upgraded from an
+    `ErManager` alias to a real contract.
+
+- fix:
+  - **Pagination detection uses explicit intent, not structure sniffing (#132)**:
+    Detection keyed off the literal `"items"` string, so any ordinary
+    relationship named `items` (`Order ── items ── OrderItem`) was misread as a
+    paginated package and the parent field was silently dropped — `items` was an
+    undocumented reserved word. Producers now return a typed
+    `PaginatedPackage` / `KeyedPaginatedPackage`; the build path reads
+    `RelationshipInfo.is_paginated`; consumers branch on `isinstance`.
+    Relationship naming is free again.
 
 ## 5.3
 
