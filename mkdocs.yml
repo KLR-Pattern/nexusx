@@ -71,6 +71,7 @@ nav:
     - UseCase + FastAPI: ./advanced/use_case_fastapi.md
     - Voyager Visualization: ./advanced/voyager.md
     - Federation: ./advanced/federation.md
+    - ComposedErManager: ./advanced/composed_er_manager.md
   - Articles:
     - Design Highlights: ./feature-highlights.md
     - Clean Architecture Comparison: ./clean-architecture-comparison.md
