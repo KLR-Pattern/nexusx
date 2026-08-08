@@ -65,6 +65,7 @@ nav:
     - Virtual Entities: ./guide/virtual_entities.md
     - Custom Relationships: ./guide/custom_relationship.md
     - ER Diagram Visualization: ./guide/er_diagram_visual.md
+    - Troubleshooting: ./guide/troubleshooting.md
   - Advanced:
     - MCP Service: ./advanced/mcp_service.md
     - UseCase Service: ./advanced/use_case_service.md
@@ -129,6 +130,7 @@ plugins:
             "Virtual Entities": "虚拟实体"
             "Custom Relationships": "自定义关系"
             "ER Diagram Visualization": "ER 图可视化"
+            "Troubleshooting": "常见问题"
             "MCP Service": "MCP 服务"
             "UseCase Service": "UseCase 服务"
             "UseCase + FastAPI": "UseCase + FastAPI"
