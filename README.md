@@ -3,7 +3,7 @@
 [![pypi](https://img.shields.io/pypi/v/nexusx.svg)](https://pypi.python.org/pypi/nexusx)
 [![PyPI Downloads](https://static.pepy.tech/badge/nexusx/month)](https://pepy.tech/projects/nexusx)
 
-**Build SQLModel applications for people and AI.**
+**Build applications for people and AI.**
 
 nexusx turns SQLModel relationships into a batch-loaded query graph, then
 turns typed business methods into REST, GraphQL, MCP, and CLI interfaces.
