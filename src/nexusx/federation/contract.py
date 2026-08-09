@@ -115,7 +115,7 @@ class DTOFragment(BaseModel):
     # EntityFragment.scalar_fields. DTOs have no ORM column/relationship split,
     # so every model_fields entry is a scalar from the federation standpoint.
     scalar_fields: list[FieldDescriptor] = Field(default_factory=list)
-    join_key: str  # federation join key (SubsetConfig.federation_join_key)
+    join_key: str  # federation join key (derived from entity __federation_keys__)
     batch_root: BatchRoot  # generated DTO batch root (by_<join_key>_in DTO variant)
     # Cross-service out-edges on the DTO (__relationships__).
     remote_refs: list[RelDescriptor] = Field(default_factory=list)

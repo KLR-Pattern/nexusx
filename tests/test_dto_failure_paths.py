@@ -26,6 +26,7 @@ class _WireBase(SQLModel):
 
 class _WireProduct(_WireBase, table=True):
     __tablename__ = "dto_wire_product"
+    __federation_keys__ = ["id"]
     id: int | None = SQLField(default=None, primary_key=True)
     name: str
 
@@ -42,7 +43,6 @@ class _PublicWireDTO(DefineSubset):
         kls=_WireProduct,
         fields=("id", "name"),
         federation_public=True,
-        federation_join_key="id",
     )
 
 

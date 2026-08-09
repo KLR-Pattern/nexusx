@@ -82,8 +82,8 @@ def get_fk_fields(entity: type) -> set[str]:
 
     Detects ``field_info.foreign_key`` (str) and ``metadata`` entries carrying
     a str ``foreign_key`` — SQLModel/SQLAlchemy column FK markers. Shared by
-    query_executor (output filtering), subset (federation_join_key
-    auto-derivation) and standard_queries (PK-vs-FK filtering).
+    query_executor (output filtering), subset (FK auto-include into
+    DTO subset fields) and standard_queries (PK-vs-FK filtering).
     """
     fks: set[str] = set()
     if not hasattr(entity, "model_fields"):

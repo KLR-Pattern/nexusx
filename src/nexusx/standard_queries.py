@@ -991,17 +991,17 @@ def add_dto_batch_roots(er_manager: Any) -> None:
         if join_type_name is None or join_type_name not in _SUPPORTED_JOIN_TYPES:
             supported = ", ".join(sorted(_SUPPORTED_JOIN_TYPES))
             raise ValueError(
-                f"{dto_cls.__name__} federation_join_key {join_key!r} has "
+                f"{dto_cls.__name__} federation join key {join_key!r} has "
                 f"unsupported type {join_type_name!r} on {base_entity.__name__}; "
                 f"DTO federation serializes keys over JSON — supported join-key "
                 f"types: {supported}."
             )
-        # specs/016 Phase 2: resolve a DTO-level __pagination_orders__
-        # (BatchPageConfig) into physical OrderTerms, validated against the
-        # base entity's columns (fail-fast at startup — same gate as entity
-        # __pagination_orders__). Fed to the batch root for per-parent top-N
-        # when the mounter sends order+limit.
-        cfg = getattr(dto_cls, "__pagination_orders__", None)
+        # specs/020 US2: the DTO's order profile comes from the source entity's
+        # __pagination_orders__[join_key] (the DTO no longer carries its own).
+        # Resolved into physical OrderTerms, validated against the base entity's
+        # columns (fail-fast at startup). Fed to the batch root for per-parent
+        # top-N when the mounter sends order+limit.
+        cfg = getattr(base_entity, "__pagination_orders__", {}).get(join_key)
         page_orders_resolved = None
         default_order = None
         if cfg is not None:

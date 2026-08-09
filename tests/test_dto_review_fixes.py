@@ -85,6 +85,7 @@ class _JoinProduct(SQLModel, table=True):
 
 class _JoinReview(SQLModel, table=True):
     __tablename__ = "dto_review_join_review"
+    __federation_keys__ = ["product_id"]
 
     id: int | None = Field(default=None, primary_key=True)
     product_id: int = Field(foreign_key="dto_review_join_product.id")
@@ -96,7 +97,6 @@ class _HiddenJoinDTO(DefineSubset):
         kls=_JoinReview,
         fields=("title",),
         federation_public=True,
-        federation_join_key="product_id",
     )
 
 

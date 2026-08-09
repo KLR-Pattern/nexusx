@@ -107,11 +107,6 @@ class ReviewDTO(DefineSubset):
         kls=Review,
         fields=("title", "rating", "product_id"),
         federation_public=True,
-        federation_join_key="product_id",
-    )
-    __pagination_orders__ = BatchPageConfig(
-        default_order="HIGHEST_RATING",
-        orders={"HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")])},
     )
 
 

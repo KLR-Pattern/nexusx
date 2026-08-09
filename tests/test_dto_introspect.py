@@ -28,6 +28,7 @@ class _IBase(SQLModel):
 
 class _Product(_IBase, table=True):
     __tablename__ = "dto_introspect_product"
+    __federation_keys__ = ["id"]
     id: int | None = SQLField(default=None, primary_key=True)
     name: str
 
@@ -38,7 +39,6 @@ class _PubDTO(DefineSubset):
         kls=_Product,
         fields=("name",),
         federation_public=True,
-        federation_join_key="id",
     )
     name_upper: str | None = None
 

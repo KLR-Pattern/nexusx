@@ -1,23 +1,24 @@
 # Tasks: Federation 配置正交化
 
-## 实现进度（2026-08-09，第二轮 — US1 完成，可继续 US2/US3）
+## 实现进度（2026-08-09，第三轮 — US1+US2+US3 完成，剩 Polish）
 
 **分支**：`020-federation-config-orthogonal`
 
-**已完成（US1 收尾）**：
+**已完成（US1 收尾 + US2 + US3）**：
 - T001 ✅ 分支
 - T003 ✅ 真删 `AutoQueryConfig.batch_keys/batch_pages`（参数 + 赋值）；`manager.py` 错误消息 + `registry.py` docstring 同步去 batch_*
-- T004/T005 ✅ `add_standard_queries` 读 entity dunder 生成根 —— **关键修正**：接手代码「互斥」（有 profile → 只 page_），违背 spec **FR-002**（每个 federation key 都生成 `by_<key>_in`）+ federation manager `full_br` 需求（分页关系同时 wire by_ full loader + page_ paged loader，`manager.py:364`）。改为「叠加」：federation key 总生成 `by_<key>_in`（FR-002），有 order profile 额外生成 `page_by_<key>_in`（FR-003）。此修正修复了所有 pagination=True 联邦测试（B 组 20+ errors 全消）
-- T006 ✅ `registry._resolve_local_page_capability` 加判断：profile key 若在 `__federation_keys__` → 归联邦批量根，不归本地关系 loader（单一 `__pagination_orders__` 载体靠 federation_keys 路由）
-- 测试迁移 ✅ 18 个 federation/dto 测试 + `test_federation_page_config` 全部迁到 entity dunder
-- demo 迁移 ✅ `reviews_app`（Review 加 dunder：product_id 联邦 + comments 本地共用 `__pagination_orders__`，正是 T006 路由场景）+ `users_app`
-- 全量回归 ✅ **1517 passed, 6 skipped**（零回归，基线持平）
+- T004/T005 ✅ `add_standard_queries` 读 entity dunder 生成根 —— **关键修正**：「叠加」非互斥（FR-002 每个 federation key 都生成 `by_<key>_in` + FR-003 有 profile 额外 `page_by_<key>_in`），适配 federation manager `full_br`（分页关系双根）
+- T006 ✅ `registry._resolve_local_page_capability` 加 federation key 路由判断
+- US1 测试/demo 迁移 ✅ 18 federation 测试 + page_config + reviews/users demo
+- T007-T008 ✅ **US2**：γ DTO 不再自带 `__pagination_orders__`，`add_dto_batch_roots` 改读源 entity `__pagination_orders__[join_key]`；元类去掉 DTO 级保留；contracts「有→page_，无→by_」修正为叠加
+- T009-T011 ✅ **US3**：γ DTO join key 从源 entity `__federation_keys__` 推导（单 key 自动 / 多 key 用 `SubsetConfig.federation_key` 选择器）；`federation_join_key` → `federation_key`；stamp `__federation_join_key__` 保留为推导结果缓存（introspect/standard_queries 读它不变）
+- US2/US3 测试/demo 迁移 ✅ 6 dto 测试 + reviews_app ReviewDTO（去 federation_join_key + `__pagination_orders__`）
+- 全量回归 ✅ **1517 passed, 6 skipped**（零回归，两轮均 1517）
 
-**⚠️ 待做（后续对话）**：
-1. **US2**（T007-T008）：移除 γ DTO 单独 `__pagination_orders__` 读取路径（`reviews_app` ReviewDTO @95 仍有；`introspect.py` / `standard_queries.py` γ 分支）；contracts「有→page_，无→by_」措辞需修正为叠加（与 FR-002 对齐）
-2. **US3**（T009-T011）：γ DTO join key 归并到 entity（`reviews_app` ReviewDTO @93 仍有 `federation_join_key`）
-3. **Polish**：T015 docs（federation.md 迁移说明）+ T017 changelog breaking 标注
-4. demo 三层联邦端到端（SC-004）手动验证
+**⚠️ 待做（Polish，后续对话）**：
+1. T015 docs（`federation.md` + `.zh.md` 迁移说明：旧 batch_keys/batch_pages/federation_join_key → 新声明）
+2. T017 changelog breaking 标注（移除 batch_keys/batch_pages/federation_join_key）
+3. SC-004 三层联邦 demo 端到端手动验证
 
 ---
 

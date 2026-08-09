@@ -45,6 +45,12 @@ class _ReviewsBase(SQLModel):
 class Review(_ReviewsBase, table=True):
     __tablename__ = "dprem_review"
     __federation_keys__ = ["product_id"]
+    __pagination_orders__ = {
+        "product_id": BatchPageConfig(
+            default_order="TOP",
+            orders={"TOP": PageOrder([OrderTerm("rating", "desc")])},
+        )
+    }
     id: int | None = SQLField(default=None, primary_key=True)
     product_id: int
     title: str
@@ -67,11 +73,6 @@ class ReviewDTO(DefineSubset):
         kls=Review,
         fields=("title", "rating", "product_id"),
         federation_public=True,
-        federation_join_key="product_id",
-    )
-    __pagination_orders__ = BatchPageConfig(
-        default_order="TOP",
-        orders={"TOP": PageOrder([OrderTerm("rating", "desc")])},
     )
     rating_double: int | None = None
 

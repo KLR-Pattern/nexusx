@@ -428,11 +428,11 @@ class SubsetConfig(BaseModel):
     expose_as: list[tuple[str, str]] | None = None
     send_to: list[tuple[str, str | tuple[str, ...]]] | None = None
     # Federation (γ-path): expose this DTO as a member public DTO.
-    # federation_public=True requires federation_join_key (validated against
-    # the generated DTO's subset fields at class creation — see
-    # _validate_federation_config).
+    # federation_public=True requires the source entity to declare
+    # __federation_keys__; the DTO's join key is derived from it (auto when the
+    # entity has a single federation key; otherwise select via federation_key).
     federation_public: bool = False
-    federation_join_key: str | None = None
+    federation_key: str | None = None
 
     @model_validator(mode="after")
     def _validate_config(self) -> SubsetConfig:
@@ -451,16 +451,19 @@ def _validate_federation_config(
 ) -> None:
     """Validate SubsetConfig federation params against the generated DTO.
 
-    When ``federation_public=True``:
-      * ``federation_join_key`` must be one of the DTO's subset fields (so the
-        member batch root can ``WHERE join_key IN [...]`` against the base
-        entity's column — a Resolver-computed field would not be SQL-filterable).
-      * If omitted, it's auto-derived when the subset contains exactly one FK
-        field (no ambiguity). Zero/multiple FKs → must specify explicitly.
+    When ``federation_public=True`` (specs/020): the join key is derived from
+    the source entity's ``__federation_keys__`` — the DTO no longer declares the
+    key value itself.
+      * Source entity must declare ``__federation_keys__``.
+      * Single federation key → used automatically.
+      * Multiple federation keys → select one via ``federation_key`` (it names a
+        key the entity already declared, not a new value).
+      * The resolved key must be among the DTO's subset fields (so the member
+        batch root can ``WHERE join_key IN [...]`` against the base entity's
+        column — a Resolver-computed field would not be SQL-filterable).
 
-    Fail-fast at class creation: a mistyped or computed join_key is caught
-    here, not at federation query time. Only SubsetConfig can declare a DTO
-    public (the tuple syntax carries no federation params).
+    Fail-fast at class creation. Only SubsetConfig can declare a DTO public
+    (the tuple syntax carries no federation params).
     """
     if not isinstance(subset_info, SubsetConfig) or not subset_info.federation_public:
         return
@@ -468,30 +471,39 @@ def _validate_federation_config(
     subset_fields = getattr(subset_class, "__subset_fields__", None)
     field_set = set(subset_fields) if subset_fields else set(subset_class.model_fields)
 
-    join_key = subset_info.federation_join_key
-    if not join_key:
-        # Auto-derive: if the subset contains exactly one FK field, use it as
-        # the federation join key (no ambiguity, no need to repeat the name).
-        # Zero or multiple FKs in the subset → must specify explicitly.
-        entity = subset_info.kls
-        fk_in_subset = [f for f in get_fk_fields(entity) if f in field_set]
-        if len(fk_in_subset) == 1:
-            join_key = fk_in_subset[0]
-            subset_info.federation_join_key = join_key
-        else:
+    entity = subset_info.kls
+    entity_fed_keys = list(getattr(entity, "__federation_keys__", []) or [])
+    if not entity_fed_keys:
+        raise ValueError(
+            f"{subset_class.__name__}: federation_public=True requires the "
+            f"source entity {entity.__name__} to declare __federation_keys__ "
+            f"(specs/020)."
+        )
+
+    selector = subset_info.federation_key
+    if selector:
+        if selector not in entity_fed_keys:
             raise ValueError(
-                f"{subset_class.__name__}: federation_public=True requires "
-                f"federation_join_key. Could not auto-derive — subset has "
-                f"{len(fk_in_subset)} FK field(s) ({sorted(fk_in_subset)}); "
-                f"specify federation_join_key explicitly."
+                f"{subset_class.__name__}: federation_key {selector!r} is not "
+                f"in {entity.__name__}.__federation_keys__ {entity_fed_keys}."
             )
+        join_key = selector
+    elif len(entity_fed_keys) == 1:
+        join_key = entity_fed_keys[0]
+        subset_info.federation_key = join_key  # back-fill for stamping
+    else:
+        raise ValueError(
+            f"{subset_class.__name__}: {entity.__name__} has multiple "
+            f"federation keys {entity_fed_keys}; specify "
+            f"SubsetConfig(federation_key=...) to select one."
+        )
 
     if join_key not in field_set:
         raise ValueError(
-            f"{subset_class.__name__}: federation_join_key '{join_key}' is not "
+            f"{subset_class.__name__}: federation join key {join_key!r} is not "
             f"a subset field of the DTO (subset fields: {sorted(field_set)}). "
-            f"join_key must be a field sourced from the base entity so the "
-            f"member batch root can filter by it."
+            f"The join key must be among the subset fields so the member batch "
+            f"root can filter by it."
         )
 
 
@@ -508,7 +520,10 @@ def _stamp_federation_metadata(
     """
     if isinstance(subset_info, SubsetConfig):
         subset_class.__federation_public__ = subset_info.federation_public
-        subset_class.__federation_join_key__ = subset_info.federation_join_key
+        # __federation_join_key__ is the entity-derived join key (resolved in
+        # _validate_federation_config from the source entity's
+        # __federation_keys__); the DTO no longer declares the value itself.
+        subset_class.__federation_join_key__ = subset_info.federation_key
     else:
         subset_class.__federation_public__ = False
         subset_class.__federation_join_key__ = None
@@ -1060,12 +1075,10 @@ class SubsetMeta(type):
         subset_class.__subset_fields__ = list(subset_fields)
         subset_class.__subset_auto_excluded__ = auto_excluded or set()
 
-        # Preserve a DTO-level __pagination_orders__ (BatchPageConfig) so
-        # serialize_dto_introspection can expose it for γ remote top-N.
-        # create_model drops custom class attrs, so re-attach from namespace.
-        pagination_orders = namespace.get("__pagination_orders__")
-        if pagination_orders is not None:
-            subset_class.__pagination_orders__ = pagination_orders
+        # specs/020 US2: a DTO no longer carries its own __pagination_orders__ —
+        # the member batch root reads the order profile from the source entity's
+        # __pagination_orders__[join_key]. create_model drops custom class attrs
+        # anyway, so a lingering DTO-level declaration is silently ignored.
 
         return subset_class
 

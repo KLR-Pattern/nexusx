@@ -83,7 +83,7 @@ class ReviewDTO(DefineSubset):
         kls=Review,
         fields=("title", "rating", "product_id"),
         federation_public=True,
-        federation_join_key="product_id",
+        federation_key="product_id",
     )
     rating_double: int | None = None
     author_name: str | None = None

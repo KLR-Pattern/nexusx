@@ -28,9 +28,10 @@ class Review(BaseEntity, table=True):
 2. `__pagination_orders__` 的维度名路由：
    - 在 `__federation_keys__` → 联邦批量 order（生成 `page_by_<key>_in`）
    - 不在 → 本地关系 order（走 loader 本地分页）
-3. 联邦字段的根类型由 order profile 决定：
-   - 有 order profile（在 `__pagination_orders__`）→ `page_by_<key>_in`（分页根）
-   - 无 → `by_<key>_in`（批量根，不分页）
+3. 联邦字段的根生成（FR-002 + FR-003 **叠加**，非互斥）：
+   - **每个** `__federation_keys__` 字段都生成 `by_<key>_in`（批量根，`WHERE key IN`）
+   - 有 order profile 的**额外**生成 `page_by_<key>_in`（分页根）
+   - 分页联邦关系同时 wire 两个根（mounter full loader 用 by_、paged loader 用 page_by_）
 4. 维度名冲突（关系名 == 字段名）：`__federation_keys__` 优先识别为联邦维度。
 
 ## γ DTO（federation_public）
