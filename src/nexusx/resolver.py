@@ -586,11 +586,12 @@ class Resolver:
         if isinstance(node, BaseModel):
             dto_loader_cls = self._registry.get_dto_loader(type(node), loader_name)
             if dto_loader_cls is not None:
-                # γ remote: Paged default (field) + caller context override →
-                # merged → per-params split + side-channel into POST body.
+                # γ remote: Paged default (field) is fixed — caller context no
+                # longer overrides it (pagination params are declarative; runtime
+                # input belongs on the UseCase method signature, not Resolver
+                # context). per-params split + side-channel into POST body.
                 paged_default = getattr(type(node), "__paged_fields__", {}).get(loader_name)
-                paged_caller = self._extract_page_params(loader_name)
-                merged = self._merge_paged(paged_default, paged_caller)
+                merged = paged_default
                 # γ DTO loader-prep primitive (specs/018 US4 / T023): consolidate
                 # the per-params loader + page-params side-channel into one place
                 # so ``set_dto_page_params`` has a single caller (prepare_dto_loader).
@@ -655,21 +656,6 @@ class Resolver:
         if fn not in self._loader_cache:
             self._loader_cache[fn] = DataLoader(batch_load_fn=fn)
         return self._loader_cache[fn]
-
-    def _extract_page_params(self, field_name: str) -> Any:
-        """Read caller page params from Resolver ``context`` (set by the use
-        case method入口 from query args). Per-field dict first
-        (``context[field]``), then global (``context``). Returns an override
-        carrying only caller-provided values, else None (→ no override).
-        """
-        from nexusx.loader.pagination import _PagedOverride
-
-        if not self._context:
-            return None
-        raw = self._context.get(field_name)
-        if not isinstance(raw, dict):
-            raw = self._context
-        return _PagedOverride.from_dict(raw)
 
     @staticmethod
     def _merge_paged(default: Any, caller: Any) -> Any:
@@ -1641,14 +1627,13 @@ class Resolver:
                 )
             else:
                 type_key = generate_type_key_from_dto(first_dto) if first_dto else None
-                # Caller page params (from Resolver context): if present and a
-                # page_loader exists, slice per-parent via PageLoadCommand.
-                # per-params split (params_key) keeps different params in
-                # different batches (aiodataloader: one instance = one batch).
-                # Paged default (field Annotated metadata) + caller override.
+                # Paged default (field Annotated metadata) is fixed — caller
+                # context no longer overrides it (declarative pagination; runtime
+                # input lives on the UseCase method signature). per-params split
+                # (params_key) keeps different field defaults in different batches
+                # (aiodataloader: one instance = one batch).
                 paged_default = getattr(type(first_node), "__paged_fields__", {}).get(rel_name)
-                paged_caller = self._extract_page_params(rel_name)
-                merged = self._merge_paged(paged_default, paged_caller)
+                merged = paged_default
                 use_page_loader = (
                     merged is not None
                     and first_rel.page_loader is not None

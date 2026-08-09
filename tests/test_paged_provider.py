@@ -17,7 +17,6 @@ from types import SimpleNamespace
 from nexusx.execution.query_executor import QueryExecutor
 from nexusx.loader.pagination import Paged
 from nexusx.query_parser import FieldSelection
-from nexusx.resolver import Resolver
 
 
 def _provider():
@@ -89,32 +88,6 @@ def test_provider_returns_paged_instance():
     """Provider always returns a Paged (never None for a paged field)."""
     p = _provider()(_rel(), _field_sel({"limit": 5}), "reviews")
     assert isinstance(p, Paged)
-
-
-def test_explicit_zero_offset_overrides_nonzero_default():
-    """Caller offset=0 is an explicit first-page override, not an omission."""
-    resolver = Resolver(context={"offset": 0})
-    caller = resolver._extract_page_params("reviews")
-
-    assert caller is not None
-    merged = Resolver._merge_paged(
-        Paged(limit=5, offset=4),
-        caller,
-    )
-    assert merged.offset == 0
-
-
-def test_omitted_offset_preserves_nonzero_default():
-    """A caller that only overrides limit must not reset the field offset."""
-    resolver = Resolver(context={"limit": 1})
-    caller = resolver._extract_page_params("reviews")
-
-    merged = Resolver._merge_paged(
-        Paged(limit=5, offset=4),
-        caller,
-    )
-    assert merged.limit == 1
-    assert merged.offset == 4
 
 
 def test_multi_paged_fields_each_get_own_effective():

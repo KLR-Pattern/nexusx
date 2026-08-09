@@ -201,21 +201,6 @@ async def test_remote_paged_member_only_resolves_top_n(federation):
 
 
 @pytest.mark.asyncio
-async def test_remote_paged_caller_overrides(federation):
-    """caller context {limit:1} 覆盖 Paged 默认 limit=2 → top-1。"""
-    catalog_h = federation["catalog"]
-    async with catalog_h.session_factory() as s:
-        products = (await s.exec(select(Product))).all()
-    dtos = [ProductDTO(id=p.id, name=p.name) for p in products]
-
-    ResolverCls = catalog_h._er_manager.create_resolver()
-    resolved = await ResolverCls(context={"limit": 1}).resolve(dtos)
-
-    assert len(resolved[0].reviews) == 1
-    assert resolved[0].reviews[0].rating == 5  # top-1
-
-
-@pytest.mark.asyncio
 async def test_order_without_limit_slices_ordered(federation):
     """F1: Paged(order=...) 无 limit → 仍走 top-N 切片(默认页大小), 不再静默
     无序 full fetch。seed 3 条 → 默认页 20 → 全量但有序(HIGHEST_RATING desc)。"""

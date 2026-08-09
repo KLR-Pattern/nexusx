@@ -184,13 +184,13 @@ class SprintWithTags(DefineSubset):
 # ──────────────────────────────────────────────────────────
 
 class SprintTopTasks(DefineSubset):
-    """Sprint DTO with a Paged tasks field (top-N, caller can override).
+    """Sprint DTO with a Paged tasks field (top-N, fixed).
 
-    ``tasks`` carries ``Paged(limit=2)`` as a default (order omitted → uses
+    ``tasks`` carries ``Paged(limit=2)`` (order omitted → uses
     Sprint.__pagination_orders__ default "NEWEST"); the Resolver slices
-    per-parent via the page_loader (ROW_NUMBER). A caller passing
-    ``Resolver(context={"limit": N, "order": "OLDEST"})`` overrides the default
-    per-query — Paged is the home for params, context the override.
+    per-parent via the page_loader (ROW_NUMBER). Paged is declarative and
+    fixed at the field — runtime input belongs on a UseCase method signature,
+    not Resolver context.
     """
     __subset__ = SubsetConfig(kls=Sprint, fields=['id', 'name'])
 

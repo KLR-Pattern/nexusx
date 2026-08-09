@@ -204,10 +204,10 @@ class ProductDTO(DefineSubset):
 ```
 
 The `Paged(...)` default drives a SQL-level top-N on the member (via its
-`__pagination_orders__` profile); a caller can override per-field through
-`Resolver(context={...})`. Member values are read-only — a mounter adds fields
-with its own `resolve_*` methods / `post_*` hooks, never by mutating member
-values.
+`__pagination_orders__` profile); it is fixed at the field — runtime input
+belongs on a UseCase method signature, not Resolver context. Member values
+are read-only — a mounter adds fields with its own `resolve_*` methods /
+`post_*` hooks, never by mutating member values.
 
 ### β vs γ at a glance
 
@@ -215,7 +215,7 @@ values.
 |---|---|---|
 | Composition unit | entity relationships (`RemoteRelationship`) | public DTO references (`DefineSubset` fields) |
 | Traversal | one nested gql per mounted service per level | Resolver `_batch_auto_load` via `dto-batch` |
-| Pagination | gql args on the relationship field | `Paged(...)` field default + caller context |
+| Pagination | gql args on the relationship field | `Paged(...)` field default (fixed) |
 | Entry | `GraphQLHandler` schema | `UseCaseService` + `create_resolver()` |
 | Member values | instances | DTOs (read-only; mounter computes its own) |
 

@@ -191,8 +191,7 @@ class ProductDTO(DefineSubset):
 ```
 
 `Paged(...)` 默认值驱动 member 侧 SQL 层 top-N(经其 `__pagination_orders__`
-profile);调用方可通过 `Resolver(context={...})` 逐字段覆盖。member 值是只读的——
-mounter 用自己 DTO 上的 `resolve_*` / `post_*` 加字段,不修改 member 值。
+profile);它在字段上固化——运行时入参应在 UseCase 方法签名上,不在 Resolver context。member 值是只读的——mounter 用自己 DTO 上的 `resolve_*` / `post_*` 加字段,不修改 member 值。
 
 ### β vs γ 一览
 
@@ -200,7 +199,7 @@ mounter 用自己 DTO 上的 `resolve_*` / `post_*` 加字段,不修改 member �
 |---|---|---|
 | 组合单元 | 实体关系(`RemoteRelationship`) | public DTO 引用(`DefineSubset` 字段) |
 | 遍历方式 | 每层每挂载服务一次嵌套 gql | Resolver `_batch_auto_load` 走 `dto-batch` |
-| 分页 | 关系字段上的 gql 参数 | `Paged(...)` 字段默认 + caller context |
+| 分页 | 关系字段上的 gql 参数 | `Paged(...)` 字段默认(固化) |
 | 入口 | `GraphQLHandler` schema | `UseCaseService` + `create_resolver()` |
 | member 值 | 实例 | DTO(只读;mounter 自己计算) |
 
