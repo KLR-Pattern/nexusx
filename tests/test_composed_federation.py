@@ -42,6 +42,7 @@ class _CfReviewsBase(SQLModel):
 
 class CfReview(_CfReviewsBase, table=True):
     __tablename__ = "cf_composed_review"
+    __federation_keys__ = ["product_id"]
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     title: str
@@ -149,7 +150,7 @@ async def composed_federation_world():
     reviews_h = GraphQLHandler(
         base=_CfReviewsBase,
         session_factory=reviews_sf,
-        auto_query_config=AutoQueryConfig(batch_keys={"CfReview": ["product_id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="cfreviews",
     )
     composite_app = Starlette(routes=[

@@ -1,22 +1,23 @@
 # Tasks: Federation 配置正交化
 
-## ⚠️ 实现进度（2026-08-09，第一轮对话 — 工作进行中，未完成）
+## 实现进度（2026-08-09，第二轮 — US1 完成，可继续 US2/US3）
 
-**分支**：`020-federation-config-orthogonal`（基于 `fix/paged-core-api-no-context-override`，含 P6 修复）
+**分支**：`020-federation-config-orthogonal`
 
-**已完成**：
+**已完成（US1 收尾）**：
 - T001 ✅ 分支
-- T003/T005 核心逻辑 ✅ `add_standard_queries`（`standard_queries.py`）改读 `entity.__federation_keys__` + `__pagination_orders__`，import OK；`AutoQueryConfig.batch_keys/batch_pages` 标 removed 注释（**未真删**）
+- T003 ✅ 真删 `AutoQueryConfig.batch_keys/batch_pages`（参数 + 赋值）；`manager.py` 错误消息 + `registry.py` docstring 同步去 batch_*
+- T004/T005 ✅ `add_standard_queries` 读 entity dunder 生成根 —— **关键修正**：接手代码「互斥」（有 profile → 只 page_），违背 spec **FR-002**（每个 federation key 都生成 `by_<key>_in`）+ federation manager `full_br` 需求（分页关系同时 wire by_ full loader + page_ paged loader，`manager.py:364`）。改为「叠加」：federation key 总生成 `by_<key>_in`（FR-002），有 order profile 额外生成 `page_by_<key>_in`（FR-003）。此修正修复了所有 pagination=True 联邦测试（B 组 20+ errors 全消）
+- T006 ✅ `registry._resolve_local_page_capability` 加判断：profile key 若在 `__federation_keys__` → 归联邦批量根，不归本地关系 loader（单一 `__pagination_orders__` 载体靠 federation_keys 路由）
+- 测试迁移 ✅ 18 个 federation/dto 测试 + `test_federation_page_config` 全部迁到 entity dunder
+- demo 迁移 ✅ `reviews_app`（Review 加 dunder：product_id 联邦 + comments 本地共用 `__pagination_orders__`，正是 T006 路由场景）+ `users_app`
+- 全量回归 ✅ **1517 passed, 6 skipped**（零回归，基线持平）
 
-**⚠️ 当前分支状态：测试会红**（工作进行中，不可 merge/发版）
-- `add_standard_queries` 改了读 dunder，但 7 个 federation 测试 + demo 的 entity 没有 `__federation_keys__` → by_/page_ 根不生成 → 测试失败
-
-**新对话接手待做（按 tasks.md 顺序）**：
-1. **US1 收尾**：真删 `AutoQueryConfig.batch_keys/batch_pages`（参数+docstring+赋值）+ 迁 7 测试（`tests/test_federation_*.py`，batch_* → entity dunder）+ 迁 demo（reviews/catalog/users_app）+ T006（`_resolve_local_page_capability` 防 federation key 重名）
-2. **US2**（T007-T008）+ **US3**（T009-T011）+ **Polish**（T012-T017）
-3. 全量回归（基线 1517 passed）
-
-**接法**：新对话读本 tasks.md + `specs/020/` + `git diff src/nexusx/standard_queries.py`，继续 `/speckit-implement`。
+**⚠️ 待做（后续对话）**：
+1. **US2**（T007-T008）：移除 γ DTO 单独 `__pagination_orders__` 读取路径（`reviews_app` ReviewDTO @95 仍有；`introspect.py` / `standard_queries.py` γ 分支）；contracts「有→page_，无→by_」措辞需修正为叠加（与 FR-002 对齐）
+2. **US3**（T009-T011）：γ DTO join key 归并到 entity（`reviews_app` ReviewDTO @93 仍有 `federation_join_key`）
+3. **Polish**：T015 docs（federation.md 迁移说明）+ T017 changelog breaking 标注
+4. demo 三层联邦端到端（SC-004）手动验证
 
 ---
 

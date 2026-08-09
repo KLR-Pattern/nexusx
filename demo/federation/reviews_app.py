@@ -54,6 +54,7 @@ class Comment(ReviewsBase, table=True):
 
 class Review(ReviewsBase, table=True):
     __tablename__ = "fed_demo_review"
+    __federation_keys__ = ["product_id"]
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     title: str
@@ -73,6 +74,22 @@ class Review(ReviewsBase, table=True):
             orders={
                 "NEWEST": PageOrder([OrderTerm("id", "desc")]),
                 "OLDEST": PageOrder([OrderTerm("id", "asc")]),
+            },
+        ),
+        # specs/020: product_id is in __federation_keys__ → page_by_product_id_in
+        # batch root; comments is a local relation → local paginated loader. One
+        # carrier, routed by __federation_keys__.
+        "product_id": BatchPageConfig(
+            default_order="HIGHEST_RATING",
+            orders={
+                "HIGHEST_RATING": PageOrder(
+                    [OrderTerm("rating", "desc")],
+                    description="Highest rating first",
+                ),
+                "NEWEST": PageOrder(
+                    [OrderTerm("created_at", "desc")],
+                    description="Newest first",
+                ),
             },
         ),
     }
@@ -126,26 +143,7 @@ handler = GraphQLHandler(
     session_factory=async_session,
     # `by_product_id_in` is the batch root catalog drives (Product → Review).
     # Comment.author → users.User is driven against users' `by_id_in`.
-    auto_query_config=AutoQueryConfig(
-        batch_keys={"Review": ["product_id"]},
-        batch_pages={
-            "Review": {
-                "product_id": BatchPageConfig(
-                    default_order="HIGHEST_RATING",
-                    orders={
-                        "HIGHEST_RATING": PageOrder(
-                            [OrderTerm("rating", "desc")],
-                            description="Highest rating first",
-                        ),
-                        "NEWEST": PageOrder(
-                            [OrderTerm("created_at", "desc")],
-                            description="Newest first",
-                        ),
-                    },
-                )
-            }
-        },
-    ),
+    auto_query_config=AutoQueryConfig(),
     service_name="reviews",
     dto_classes=[ReviewDTO],
     # reviews is itself mounted by catalog AND mounts users — opting in lets

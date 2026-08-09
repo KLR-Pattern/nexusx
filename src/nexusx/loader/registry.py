@@ -131,10 +131,12 @@ def _resolve_local_page_capability(
     """Build a ``BatchPageCapability`` for a local paginated relationship from
     the entity's class-level ``__pagination_orders__`` declaration.
 
-    ``__pagination_orders__`` maps ORM relation name → ``BatchPageConfig`` (the
-    same container federation ``batch_pages`` uses). Profiles are validated with
-    federation's ``_resolve_page_orders`` (enum-safe names, single-column, SQL
-    column, direction, nullable nulls, default∈keys) — fail-fast at startup.
+    ``__pagination_orders__`` is the single order-profile carrier (specs/020):
+    a key that is also in the entity's ``__federation_keys__`` belongs to the
+    federation batch root; otherwise it maps an ORM relation name → a local
+    paginated relationship. Profiles are validated with federation's
+    ``_resolve_page_orders`` (enum-safe names, single-column, SQL column,
+    direction, nullable nulls, default∈keys) — fail-fast at startup.
 
     Returns ``(capability, resolved_orders)`` — ``capability`` is the descriptor
     (names only) used for schema rendering; ``resolved_orders`` carries the
@@ -144,6 +146,13 @@ def _resolve_local_page_capability(
     """
     cfg = getattr(entity_kls, "__pagination_orders__", {}).get(rel_name)
     if cfg is None:
+        return None, None
+    # specs/020 T006: a profile whose key is also in __federation_keys__
+    # belongs to the federation batch root (page_by_<key>_in), not the local
+    # relationship loader. Route by __federation_keys__ so the two coexist in
+    # one __pagination_orders__ carrier without clashing.
+    fed_keys = getattr(entity_kls, "__federation_keys__", []) or []
+    if rel_name in fed_keys:
         return None, None
     from nexusx.federation.contract import BatchPageCapability, PageOrderDescriptor
     from nexusx.standard_queries import _resolve_page_orders

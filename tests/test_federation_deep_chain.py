@@ -48,6 +48,7 @@ class DCUserConfig(DCUsersBase, table=True):
 
 class DCUser(DCUsersBase, table=True):
     __tablename__ = "dc_deep_user"
+    __federation_keys__ = ["id"]
     id: int | None = Field(default=None, primary_key=True)
     name: str
     config: DCUserConfig | None = Relationship(sa_relationship_kwargs={"uselist": False})
@@ -75,6 +76,7 @@ class DCComment(DCReviewsBase, table=True):
 
 class DCReview(DCReviewsBase, table=True):
     __tablename__ = "dc_deep_review"
+    __federation_keys__ = ["product_id"]
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     title: str
@@ -138,12 +140,12 @@ async def test_deep_multibranch_chain_traverses_all_services(_engines):
 
     users_h = GraphQLHandler(
         base=DCUsersBase, session_factory=sf("users"),
-        auto_query_config=AutoQueryConfig(batch_keys={"DCUser": ["id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="users",
     )
     reviews_h = GraphQLHandler(
         base=DCReviewsBase, session_factory=sf("reviews"),
-        auto_query_config=AutoQueryConfig(batch_keys={"DCReview": ["product_id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="reviews",
         expose_mounted_endpoints=True,  # let catalog discover users transitively
     )

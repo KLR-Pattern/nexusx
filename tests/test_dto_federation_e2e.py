@@ -50,6 +50,7 @@ class _UsersBase(SQLModel):
 
 class User(_UsersBase, table=True):
     __tablename__ = "dto_e2e_user"
+    __federation_keys__ = ["id"]
     id: int | None = SQLField(default=None, primary_key=True)
     name: str
 
@@ -61,6 +62,7 @@ class _ReviewsBase(SQLModel):
 
 class Review(_ReviewsBase, table=True):
     __tablename__ = "dto_e2e_review"
+    __federation_keys__ = ["product_id", "author_id"]
     id: int | None = SQLField(default=None, primary_key=True)
     product_id: int
     author_id: int
@@ -202,12 +204,12 @@ async def federation(request):
 
     users_h = GraphQLHandler(
         base=_UsersBase, session_factory=sf("u"),
-        auto_query_config=AutoQueryConfig(batch_keys={"User": ["id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="users",
     )
     reviews_h = GraphQLHandler(
         base=_ReviewsBase, session_factory=sf("r"),
-        auto_query_config=AutoQueryConfig(batch_keys={"Review": ["product_id", "author_id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="reviews",
         expose_mounted_endpoints=True,
         dto_classes=[ReviewDTO],

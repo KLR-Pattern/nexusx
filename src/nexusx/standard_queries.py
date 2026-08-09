@@ -109,8 +109,6 @@ class AutoQueryConfig:
         generate_by_id: bool = True,
         generate_by_filter: bool = True,
         enabled: bool = True,
-        batch_keys: dict[str, list[str]] | None = None,  # removed in 020 — use entity __federation_keys__
-        batch_pages: dict[str, dict[str, BatchPageConfig]] | None = None,  # removed in 020
     ):
         """Initialize the auto query configuration.
 
@@ -147,8 +145,6 @@ class AutoQueryConfig:
         self.generate_by_id = generate_by_id
         self.generate_by_filter = generate_by_filter
         self.enabled = enabled
-        self.batch_keys = batch_keys or {}
-        self.batch_pages = batch_pages or {}
 
 
 async def _create_session_context(session_factory: Any) -> Any:
@@ -755,11 +751,12 @@ def add_standard_queries(
             entity.by_filter = by_filter_method
 
         # Federation batch roots — driven by entity.__federation_keys__ +
-        # __pagination_orders__ (specs/020). A field in __federation_keys__ marks
-        # it as a federation batch entry; if it also has an order profile in
-        # __pagination_orders__ → page_by_<key>_in (paginated root), else
-        # by_<key>_in (plain batch root). Replaces the old AutoQueryConfig
-        # batch_keys / batch_pages — declarative on the entity now.
+        # __pagination_orders__ (specs/020). Every field in __federation_keys__
+        # gets a by_<key>_in batch root (FR-002); one that also has an order
+        # profile in __pagination_orders__ additionally gets a page_by_<key>_in
+        # paginated root (FR-003). The two coexist — a paginated relationship
+        # wires both the full (by_) and paginated (page_) loaders. Replaces the
+        # old AutoQueryConfig batch_keys / batch_pages — declarative on the entity.
         fed_keys = getattr(entity, "__federation_keys__", []) or []
         pagination_orders = getattr(entity, "__pagination_orders__", {}) or {}
         for field_name in fed_keys:
@@ -772,6 +769,15 @@ def add_standard_queries(
             field_type = _unwrap_optional_type(
                 entity.model_fields[field_name].annotation
             )
+            method_name = f"by_{field_name}_in"
+            if not hasattr(entity, method_name):
+                setattr(
+                    entity,
+                    method_name,
+                    _create_by_keys_in_query(
+                        entity, session_factory, field_name, field_type,
+                    ),
+                )
             page_config = pagination_orders.get(field_name)
             if page_config is not None:
                 page_method_name = f"page_by_{field_name}_in"
@@ -781,16 +787,6 @@ def add_standard_queries(
                         page_method_name,
                         _create_page_by_keys_in_query(
                             entity, session_factory, field_name, field_type, page_config,
-                        ),
-                    )
-            else:
-                method_name = f"by_{field_name}_in"
-                if not hasattr(entity, method_name):
-                    setattr(
-                        entity,
-                        method_name,
-                        _create_by_keys_in_query(
-                            entity, session_factory, field_name, field_type,
                         ),
                     )
 

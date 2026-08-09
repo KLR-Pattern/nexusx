@@ -42,12 +42,14 @@ class _CatalogBase(SQLModel):
 
 class TransUser(_UsersBase, table=True):
     __tablename__ = "fed_trans_user"
+    __federation_keys__ = ["id"]
     id: int | None = Field(default=None, primary_key=True)
     name: str
 
 
 class TransReview(_ReviewsBase, table=True):
     __tablename__ = "fed_trans_review"
+    __federation_keys__ = ["product_id", "author_id"]
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     author_id: int
@@ -112,12 +114,12 @@ async def test_transitive_discovery_reaches_users_through_reviews(_engines):
 
     users_h = GraphQLHandler(
         base=_UsersBase, session_factory=users_sf,
-        auto_query_config=AutoQueryConfig(batch_keys={"TransUser": ["id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="users",
     )
     reviews_h = GraphQLHandler(
         base=_ReviewsBase, session_factory=reviews_sf,
-        auto_query_config=AutoQueryConfig(batch_keys={"TransReview": ["product_id", "author_id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="reviews",
         # Opt in so catalog can discover users' endpoint transitively through
         # reviews' introspection payload (suppressed by default to avoid leaking

@@ -137,6 +137,7 @@ class _ColorRevBase(SQLModel):
 
 class ColorReview(_ColorRevBase, table=True):
     __tablename__ = "voyager_color_review"
+    __federation_keys__ = ["product_id"]
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     title: str
@@ -179,7 +180,7 @@ async def test_declared_remote_service_color_renders():
 
     rev_h = GraphQLHandler(
         base=_ColorRevBase, session_factory=sf["rev"],
-        auto_query_config=AutoQueryConfig(batch_keys={"ColorReview": ["product_id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="creviews",
     )
     cat_h = GraphQLHandler(

@@ -44,6 +44,7 @@ class _ReviewsBase(SQLModel):
 
 class Review(_ReviewsBase, table=True):
     __tablename__ = "dprem_review"
+    __federation_keys__ = ["product_id"]
     id: int | None = SQLField(default=None, primary_key=True)
     product_id: int
     title: str
@@ -133,7 +134,7 @@ async def federation():
 
     reviews_h = GraphQLHandler(
         base=_ReviewsBase, session_factory=sf("r"),
-        auto_query_config=AutoQueryConfig(batch_keys={"Review": ["product_id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="reviews", expose_mounted_endpoints=True,
         dto_classes=[ReviewDTO],
     )

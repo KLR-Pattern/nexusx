@@ -41,6 +41,13 @@ class RReviewBase(SQLModel):
 
 class RReview(RReviewBase, table=True):
     __tablename__ = "fed_pag_render_review"
+    __federation_keys__ = ["product_id"]
+    __pagination_orders__ = {
+        "product_id": BatchPageConfig(
+            default_order="HIGHEST_RATING",
+            orders={"HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")])},
+        )
+    }
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     title: str
@@ -107,21 +114,7 @@ async def catalog():
     await _ensure_seed()
     reviews_handler = GraphQLHandler(
         base=RReviewBase, session_factory=_rev_sf,
-        auto_query_config=AutoQueryConfig(
-            batch_keys={"RReview": ["product_id"]},
-            batch_pages={
-                "RReview": {
-                    "product_id": BatchPageConfig(
-                        default_order="HIGHEST_RATING",
-                        orders={
-                            "HIGHEST_RATING": PageOrder(
-                                [OrderTerm("rating", "desc")]
-                            )
-                        },
-                    )
-                }
-            },
-        ),
+        auto_query_config=AutoQueryConfig(),
         service_name="reviews",
     )
     reviews_app = build_federable_app(reviews_handler)

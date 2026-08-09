@@ -40,6 +40,7 @@ class _UsersBase(SQLModel):
 
 class CycUser(_UsersBase, table=True):
     __tablename__ = "cyc_user"
+    __federation_keys__ = ["id"]
     id: int | None = Field(default=None, primary_key=True)
     name: str
     __relationships__ = [
@@ -56,6 +57,7 @@ class _PostsBase(SQLModel):
 
 class CycPost(_PostsBase, table=True):
     __tablename__ = "cyc_post"
+    __federation_keys__ = ["author_id", "id"]
     id: int | None = Field(default=None, primary_key=True)
     author_id: int
     title: str
@@ -107,12 +109,12 @@ async def _build(engines):
 
     users_h = GraphQLHandler(
         base=_UsersBase, session_factory=sf("users"),
-        auto_query_config=AutoQueryConfig(batch_keys={"CycUser": ["id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="svcUsers", expose_mounted_endpoints=True,
     )
     posts_h = GraphQLHandler(
         base=_PostsBase, session_factory=sf("posts"),
-        auto_query_config=AutoQueryConfig(batch_keys={"CycPost": ["author_id", "id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="svcPosts", expose_mounted_endpoints=True,
     )
     composite = Starlette(routes=[
