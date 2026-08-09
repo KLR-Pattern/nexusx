@@ -9,13 +9,14 @@
 - **消费方**：
   1. GraphQLHandler / ErManager 初始化扫描收集
   2. AutoQueryConfig 读它生成 `by_<key>_in` / `page_by_<key>_in` 根
-  3. `__pagination_orders__` 路由用它判断维度是对内还是对外
 
 ## `__pagination_orders__`（已存在，语义扩展）
 
-- **形态**：`__pagination_orders__: dict[str, BatchPageConfig]` —— 维度名 → order profile
-- **语义（扩展）**：维度 key 既可是**本地关系名**（对内分页），也可是 **federation key 字段名**（对外分页）。不再区分。
-- **路由规则**：维度在 `__federation_keys__` → 联邦批量维度；不在 → 本地关系维度
+- **形态**：`__pagination_orders__: BatchPageConfig`（**单一**，该 entity 自己的行怎么排序）
+- **语义（扩展）**：排序是被排序对象的单一属性，与 federation key（分桶维度）/关系归属正交。
+  - 联邦批量分页（owner 自己被外部拉取）→ 读 owner 自己的 `__pagination_orders__`
+  - 本地关系分页（如 Review.comments）→ 读 **target** entity 的 `__pagination_orders__`（Comment 的排序），不在 owner 配
+- **不再有路由规则**：联邦读 owner、本地读 target，两者读不同 entity，天然不冲突。
 
 ## `BatchPageConfig`（已存在，不变）
 
@@ -37,18 +38,14 @@
 ## 关系图
 
 ```
-entity (Review)
-├── __federation_keys__ = ["product_id"]        ← 标记 + 路由信号
-└── __pagination_orders__ = {                    ← 统一 order profile
-      "comments": BatchPageConfig(...),           本地关系维度（不在 federation_keys）
-      "product_id": BatchPageConfig(...),         联邦字段维度（在 federation_keys）
-    }
+entity (Review)                                  entity (Comment)
+├── __federation_keys__ = ["product_id"]  ← 入口  └── __pagination_orders__ = BatchPageConfig(...)  ← Comment 自己的排序
+└── __pagination_orders__ = BatchPageConfig(...) ← Review 自己的排序
 
-框架读取：
-- __federation_keys__ 每个 key
-    → 有 order profile (在 __pagination_orders__) → 生成 page_by_<key>_in
-    → 无 order profile                            → 生成 by_<key>_in
-- __pagination_orders__ 每个维度
-    → 在 __federation_keys__ → 给联邦批量根
-    → 不在                      → 给本地 loader
+两个轴正交，各读其主：
+- 联邦批量分页：读 owner 自己（Review.__pagination_orders__）
+    → entity 有 __pagination_orders__ → 每个 federation key 出 page_by_<key>_in
+    → 无                              → 只 by_<key>_in
+- 本地关系分页：读 target（Comment.__pagination_orders__），不在 owner 配
+    → Comment 被 Review/Post/... 多 owner 挂载，排序只声明一次
 ```

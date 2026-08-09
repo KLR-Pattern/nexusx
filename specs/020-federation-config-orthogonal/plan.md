@@ -6,7 +6,7 @@
 
 ## Summary
 
-把 federation member 侧配置正交化：**联邦外键降为纯标记**（entity `__federation_keys__`）、**order profile 统一**（`__pagination_orders__` 不区分对内对外）、**γ join key 归并到 entity**、**AutoQueryConfig 退化为执行者**（读 entity 生成 by_/page_by 根）。解决正交性分析 5 个问题。breaking（直接删旧配置，federation 用户少）。
+把 federation member 侧配置正交化：**联邦外键降为纯标记**（entity `__federation_keys__`）、**order 单一化归被排序对象**（`__pagination_orders__` 单一，联邦读 owner/本地读 target）、**γ join key 归并到 entity**、**AutoQueryConfig 退化为执行者**（读 entity 生成 by_/page_by 根）。解决正交性分析 5 个问题。breaking（直接删旧配置，federation 用户少）。
 
 ## Technical Context
 
@@ -40,7 +40,7 @@ src/nexusx/
 ├── standard_queries.py      # AutoQueryConfig: 删 batch_keys/batch_pages，改读 entity 生成 by_/page_by 根
 ├── subset.py                # SubsetConfig: federation_join_key 退化为「选择器」（多 key 时选哪个），不再声明 key 值
 ├── loader/
-│   └── registry.py          # 读 entity __federation_keys__ + __pagination_orders__（统一路由，FR-005）
+│   └── registry.py          # 读 entity __federation_keys__ + __pagination_orders__（本地关系读 target，FR-005）
 ├── federation/
 │   ├── introspect.py        # γ DTO 内省: join key 从源 entity __federation_keys__ 推导（不再 DTO federation_join_key）
 │   ├── remote_loader.py     # β/γ fetch 读统一声明

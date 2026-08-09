@@ -64,13 +64,13 @@
 - [ ] T003 [US1] AutoQueryConfig 删除 `batch_keys` / `batch_pages` 字段（`__init__` 签名 + docstring + 赋值）—— `src/nexusx/standard_queries.py`
 - [ ] T004 [US1] 根生成函数 `_create_by_keys_in_query` / `_create_page_by_keys_in_query` 改为接收「从 entity 扫描来的 federation key + 对应 order profile（取自该 entity 的 `__pagination_orders__`）」而非 AutoQueryConfig 的 batch_* —— `src/nexusx/standard_queries.py`
 - [ ] T005 [US1] `add_standard_queries` / handler 初始化遍历 entity 的 `__federation_keys__`，对每个 key 按「有无 order profile」调 `_create_by_*` 生成 `by_<key>_in`（无 profile）/ `page_by_<key>_in`（有 profile）根 —— `src/nexusx/standard_queries.py` + `src/nexusx/handler.py`
-- [ ] T006 [P] [US1] `__pagination_orders__` 统一路由：维度在 `__federation_keys__` → 联邦批量根；不在 → 本地关系 loader（`registry.py` 读 `__pagination_orders__` 时按 `__federation_keys__` 判断维度归属）—— `src/nexusx/loader/registry.py`
+- [x] T006 [P] [US1] ~~`__pagination_orders__` 统一路由~~（**已演进为单一化**：本地关系读 target entity 的 `__pagination_orders__`，联邦读 owner 自己，不靠 federation_keys 路由同一 dict —— 见决策 2）
 
 **Checkpoint**: US1 完成 —— entity 声明 → 生成根 → 路由，端到端可用（demo 单 member 可验证）
 
 ---
 
-## Phase 4: User Story 2 — order profile 统一，不区分对内对外（Priority: P2）
+## Phase 4: User Story 2 — order 单一化归被排序对象（Priority: P2）
 
 **Goal**: 本地关系分页 + 联邦批量分页共用同一 `__pagination_orders__` 载体，框架靠 `__federation_keys__` 自动路由，移除 γ DTO 单独的 `__pagination_orders__` 路径。
 

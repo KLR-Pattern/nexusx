@@ -25,7 +25,7 @@
                          pagination { has_more total_count } }
    } } }
    ```
-3. **期望**：reviews 按 `HIGHEST_RATING` 排序返回 top-5（order 来自 `Review.__pagination_orders__["product_id"]`），分页 metadata 正确。行为与旧 `batch_pages` 配置**等价**。
+3. **期望**：reviews 按 `HIGHEST_RATING` 排序返回 top-5（order 来自 `Review.__pagination_orders__` 单一），分页 metadata 正确。行为与旧 `batch_pages` 配置**等价**。
 
 ## 回归锚点（SC-004）
 

@@ -5,6 +5,13 @@
 ## 声明形态
 
 ```python
+class Comment(BaseEntity, table=True):
+    # Comment 自己的排序 —— 被 Review.comments（或任何 owner）分页时读它
+    __pagination_orders__ = BatchPageConfig(default_order="NEWEST",
+                                            orders={"NEWEST": PageOrder([...])})
+    ...
+
+
 class Review(BaseEntity, table=True):
     product_id: int
     rating: int
@@ -13,26 +20,21 @@ class Review(BaseEntity, table=True):
     # ① 联邦外键标记 —— 哪些字段是联邦批量入口（纯标记，不带 order）
     __federation_keys__ = ["product_id"]
 
-    # ② order profile —— 统一一份，不区分对内（本地关系）对外（联邦批量）
-    __pagination_orders__ = {
-        "comments": BatchPageConfig(default_order="NEWEST",        # 本地关系维度
-                                    orders={"NEWEST": PageOrder([...])}),
-        "product_id": BatchPageConfig(default_order="HIGHEST_RATING",  # 联邦字段维度
-                                      orders={"HIGHEST_RATING": PageOrder([...])}),
-    }
+    # ② Review 自己的排序 —— 被联邦批量分页（page_by_product_id_in）时读它
+    __pagination_orders__ = BatchPageConfig(default_order="HIGHEST_RATING",
+                                            orders={"HIGHEST_RATING": PageOrder([...])})
+    # 注：comments 的排序在 Comment 上，不在 Review —— 排序归被排序对象
 ```
 
 ## 规则
 
 1. `__federation_keys__` 的字段**必须是 entity 的实际字段**（生成 `by_<key>_in` 要 `WHERE key IN (values)`）。
-2. `__pagination_orders__` 的维度名路由：
-   - 在 `__federation_keys__` → 联邦批量 order（生成 `page_by_<key>_in`）
-   - 不在 → 本地关系 order（走 loader 本地分页）
-3. 联邦字段的根生成（FR-002 + FR-003 **叠加**，非互斥）：
+2. `__pagination_orders__` 是 entity 的**单一** BatchPageConfig（该 entity 自己的排序），不按维度分。
+3. 联邦批量分页读 **owner 自己**的 `__pagination_orders__`；本地关系分页读 **target** 的（如 Review.comments 读 Comment 的）。两者读不同 entity。
+4. 联邦字段的根生成（FR-002 + FR-003 **叠加**）：
    - **每个** `__federation_keys__` 字段都生成 `by_<key>_in`（批量根，`WHERE key IN`）
-   - 有 order profile 的**额外**生成 `page_by_<key>_in`（分页根）
+   - entity 声明了 `__pagination_orders__` → 每个 federation key **额外**生成 `page_by_<key>_in`（共用这一个 profile）
    - 分页联邦关系同时 wire 两个根（mounter full loader 用 by_、paged loader 用 page_by_）
-4. 维度名冲突（关系名 == 字段名）：`__federation_keys__` 优先识别为联邦维度。
 
 ## γ DTO（federation_public）
 
@@ -49,7 +51,7 @@ class ReviewDTO(DefineSubset):
 | 旧用法 | 新模型 |
 |---|---|
 | `AutoQueryConfig(batch_keys={"Review":["product_id"]})` | 删 → entity `__federation_keys__` |
-| `AutoQueryConfig(batch_pages={"Review":{"product_id": BatchPageConfig(...)}})` | 删 → entity `__pagination_orders__["product_id"]` |
+| `AutoQueryConfig(batch_pages={"Review":{"product_id": BatchPageConfig(...)}})` | 删 → entity `__pagination_orders__ = BatchPageConfig(...)`（单一） |
 | `SubsetConfig(federation_join_key="product_id")` | 退化为 `federation_key`（选择器，单 key 时省略） |
 | `DTO.__pagination_orders__`（γ 单独的） | 统一到源 entity `__pagination_orders__` |
 
