@@ -38,6 +38,16 @@ class ReviewsBase(SQLModel):
 
 class Comment(ReviewsBase, table=True):
     __tablename__ = "fed_demo_comment"
+    # specs/020: Comment's own sort — read when Review.comments (or any owner's
+    # comments relationship) is locally paginated. Declared once on the sorted
+    # object and reused by every owner; no per-owner duplication.
+    __pagination_orders__ = BatchPageConfig(
+        default_order="NEWEST",
+        orders={
+            "NEWEST": PageOrder([OrderTerm("id", "desc")]),
+            "OLDEST": PageOrder([OrderTerm("id", "asc")]),
+        },
+    )
     id: int | None = Field(default=None, primary_key=True)
     review_id: int = Field(foreign_key="fed_demo_review.id")
     author_id: int
@@ -65,34 +75,23 @@ class Review(ReviewsBase, table=True):
         # Review.comments becomes comments(limit, offset) on the member side.
         sa_relationship_kwargs={"order_by": "Comment.id"},
     )
-    # specs/015: local pagination order profiles — callers can now query
-    #   comments(order: NEWEST|OLDEST, direction: ASC|DESC)
-    # order_by above stays as the fixed fallback when no profile/order is given.
-    __pagination_orders__ = {
-        "comments": BatchPageConfig(
-            default_order="NEWEST",
-            orders={
-                "NEWEST": PageOrder([OrderTerm("id", "desc")]),
-                "OLDEST": PageOrder([OrderTerm("id", "asc")]),
-            },
-        ),
-        # specs/020: product_id is in __federation_keys__ → page_by_product_id_in
-        # batch root; comments is a local relation → local paginated loader. One
-        # carrier, routed by __federation_keys__.
-        "product_id": BatchPageConfig(
-            default_order="HIGHEST_RATING",
-            orders={
-                "HIGHEST_RATING": PageOrder(
-                    [OrderTerm("rating", "desc")],
-                    description="Highest rating first",
-                ),
-                "NEWEST": PageOrder(
-                    [OrderTerm("created_at", "desc")],
-                    description="Newest first",
-                ),
-            },
-        ),
-    }
+    # specs/020: Review's own sort — how its rows order when federated via
+    # page_by_product_id_in (and reused by ReviewDTO). Orthogonal to
+    # __federation_keys__, which only picks the entry field. Comment's own sort
+    # (for Review.comments) lives on Comment, not here.
+    __pagination_orders__ = BatchPageConfig(
+        default_order="HIGHEST_RATING",
+        orders={
+            "HIGHEST_RATING": PageOrder(
+                [OrderTerm("rating", "desc")],
+                description="Highest rating first",
+            ),
+            "NEWEST": PageOrder(
+                [OrderTerm("created_at", "desc")],
+                description="Newest first",
+            ),
+        },
+    )
 
 
 class ReviewDTO(DefineSubset):

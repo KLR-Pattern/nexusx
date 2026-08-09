@@ -100,29 +100,28 @@ Open http://localhost:8022/ for GraphiQL on the catalog service and query
 
 ## Pagination
 
-Pagination and physical sorting are owned by the member. A federation key that
-also has an order profile in `__pagination_orders__` gets a paginated
-`page_by_<key>_in` root (in addition to the plain `by_<key>_in`); physical column
-names and directions stay private to that service.
+Pagination and physical sorting are owned by the member. An entity that declares
+`__pagination_orders__` (a single sort profile) gets a paginated
+`page_by_<key>_in` root for **every** federation key (in addition to the plain
+`by_<key>_in`); physical column names and directions stay private to that
+service. The sort is the entity's own property — orthogonal to which federation
+key is the entry point.
 
 ```python
 from nexusx import BatchPageConfig, OrderTerm, PageOrder
 
 class Review(Base, table=True):
     __tablename__ = "review"
-    __federation_keys__ = ["product_id"]
-    __pagination_orders__ = {
-        "product_id": BatchPageConfig(
-            default_order="NEWEST",
-            orders={
-                "NEWEST": PageOrder([OrderTerm("created_at", "desc")]),
-                "HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")]),
-            },
-        ),
-    }
-    # `__pagination_orders__` is the single order carrier: a key that is in
-    # `__federation_keys__` (product_id) → federated batch root; a key that
-    # isn't (e.g. a local relation name) → local paginated relationship.
+    __federation_keys__ = ["product_id"]          # entry field(s)
+    __pagination_orders__ = BatchPageConfig(      # entity's own sort (single)
+        default_order="NEWEST",
+        orders={
+            "NEWEST": PageOrder([OrderTerm("created_at", "desc")]),
+            "HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")]),
+        },
+    )
+    # federation_keys picks the entry field; __pagination_orders__ picks the
+    # sort — orthogonal. One profile serves every federation key.
 ```
 
 The caller chooses one of those profiles at query time, plus a direction
@@ -184,9 +183,9 @@ class ReviewDTO(DefineSubset):
     __subset__ = SubsetConfig(
         kls=Review, fields=("title", "rating", "product_id"),
         federation_public=True,          # expose via dto-introspection / dto-batch
-        # join key + order profile both come from the source entity now:
+        # join key + order both come from the source entity now:
         #   join key  ← Review.__federation_keys__ (single key → auto)
-        #   order     ← Review.__pagination_orders__["product_id"]
+        #   order     ← Review.__pagination_orders__ (the entity's single sort)
         # multiple federation keys → select via federation_key="product_id".
     )
 
@@ -230,13 +229,16 @@ Federation member config is now declared on the entity; `AutoQueryConfig` and
 | Old (removed in 020) | New |
 |---|---|
 | `AutoQueryConfig(batch_keys={"Review": ["product_id"]})` | `Review.__federation_keys__ = ["product_id"]` |
-| `AutoQueryConfig(batch_pages={"Review": {"product_id": ...}})` | `Review.__pagination_orders__ = {"product_id": ...}` |
+| `AutoQueryConfig(batch_pages={"Review": {"product_id": ...}})` | `Review.__pagination_orders__ = BatchPageConfig(...)` (entity's single sort) |
 | `SubsetConfig(federation_join_key="product_id")` | derived from `Review.__federation_keys__` (auto for a single key; `federation_key=` selects among many) |
-| DTO-level `__pagination_orders__` on `DefineSubset` | read from the source entity's `__pagination_orders__[join_key]` |
+| DTO-level `__pagination_orders__` on `DefineSubset` | read from the source entity's single `__pagination_orders__` |
 
-A federation key always yields a `by_<key>_in` root; an order profile
-additionally yields `page_by_<key>_in` (they coexist — a paginated relationship
-wires both the full and paged loaders).
+A federation key always yields a `by_<key>_in` root; if the entity declares
+`__pagination_orders__`, every federation key additionally yields
+`page_by_<key>_in` (they coexist — a paginated relationship wires both the full
+and paged loaders). Local-relationship pagination reads the **target** entity's
+`__pagination_orders__` (e.g. `Comment`'s sort, when `Review.comments` is
+paginated) — declared once on the sorted object, reused by every owner.
 | Member values | instances | DTOs (read-only; mounter computes its own) |
 
 See `demo/federation/` (reviews publishes `ReviewDTO`; catalog's `ProductDTO`

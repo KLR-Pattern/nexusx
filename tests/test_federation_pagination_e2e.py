@@ -44,15 +44,13 @@ class EPReviewsBase(SQLModel):
 class EPReview(EPReviewsBase, table=True):
     __tablename__ = "fed_pag_e2e_review"
     __federation_keys__ = ["product_id"]
-    __pagination_orders__ = {
-        "product_id": BatchPageConfig(
-            default_order="HIGHEST_RATING",
-            orders={
-                "LOWEST_RATING": PageOrder([OrderTerm("rating", "asc")]),
-                "HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")]),
-            },
-        )
-    }
+    __pagination_orders__ = BatchPageConfig(
+        default_order="HIGHEST_RATING",
+        orders={
+            "LOWEST_RATING": PageOrder([OrderTerm("rating", "asc")]),
+            "HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")]),
+        },
+    )
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     title: str

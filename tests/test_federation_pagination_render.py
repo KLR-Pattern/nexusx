@@ -42,12 +42,10 @@ class RReviewBase(SQLModel):
 class RReview(RReviewBase, table=True):
     __tablename__ = "fed_pag_render_review"
     __federation_keys__ = ["product_id"]
-    __pagination_orders__ = {
-        "product_id": BatchPageConfig(
-            default_order="HIGHEST_RATING",
-            orders={"HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")])},
-        )
-    }
+    __pagination_orders__ = BatchPageConfig(
+        default_order="HIGHEST_RATING",
+        orders={"HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")])},
+    )
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     title: str

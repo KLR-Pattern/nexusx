@@ -750,15 +750,17 @@ def add_standard_queries(
             )
             entity.by_filter = by_filter_method
 
-        # Federation batch roots — driven by entity.__federation_keys__ +
-        # __pagination_orders__ (specs/020). Every field in __federation_keys__
-        # gets a by_<key>_in batch root (FR-002); one that also has an order
-        # profile in __pagination_orders__ additionally gets a page_by_<key>_in
-        # paginated root (FR-003). The two coexist — a paginated relationship
-        # wires both the full (by_) and paginated (page_) loaders. Replaces the
-        # old AutoQueryConfig batch_keys / batch_pages — declarative on the entity.
+        # Federation batch roots — driven by entity.__federation_keys__ (which
+        # fields are batch entry points) + a single entity-level
+        # __pagination_orders__ (how the entity's own rows sort). The two are
+        # ORTHOGONAL: federation_keys picks the entry field, __pagination_orders__
+        # picks the sort — they no longer couple via a per-key dict. Every
+        # federation key gets by_<key>_in; if the entity declares
+        # __pagination_orders__, every federation key additionally gets
+        # page_by_<key>_in (paginated), all sharing that one sort profile.
+        # specs/020.
         fed_keys = getattr(entity, "__federation_keys__", []) or []
-        pagination_orders = getattr(entity, "__pagination_orders__", {}) or {}
+        page_config = getattr(entity, "__pagination_orders__", None)
         for field_name in fed_keys:
             if field_name not in entity.model_fields:
                 msg = (
@@ -778,7 +780,6 @@ def add_standard_queries(
                         entity, session_factory, field_name, field_type,
                     ),
                 )
-            page_config = pagination_orders.get(field_name)
             if page_config is not None:
                 page_method_name = f"page_by_{field_name}_in"
                 if not hasattr(entity, page_method_name):
@@ -996,12 +997,12 @@ def add_dto_batch_roots(er_manager: Any) -> None:
                 f"DTO federation serializes keys over JSON — supported join-key "
                 f"types: {supported}."
             )
-        # specs/020 US2: the DTO's order profile comes from the source entity's
-        # __pagination_orders__[join_key] (the DTO no longer carries its own).
-        # Resolved into physical OrderTerms, validated against the base entity's
-        # columns (fail-fast at startup). Fed to the batch root for per-parent
-        # top-N when the mounter sends order+limit.
-        cfg = getattr(base_entity, "__pagination_orders__", {}).get(join_key)
+        # specs/020: the DTO's order profile is the source entity's single
+        # __pagination_orders__ (shared across all its federation keys — the DTO
+        # inherits the entity's own sort, no per-key lookup). Resolved into
+        # physical OrderTerms, validated against the base entity's columns
+        # (fail-fast at startup). Fed to the batch root for per-parent top-N.
+        cfg = getattr(base_entity, "__pagination_orders__", None)
         page_orders_resolved = None
         default_order = None
         if cfg is not None:

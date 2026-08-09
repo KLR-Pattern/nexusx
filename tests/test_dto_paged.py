@@ -30,6 +30,11 @@ class DPBase(SQLModel):
 
 class DPComment(DPBase, table=True):
     __tablename__ = "dpp_comment"
+    # specs/020: Comment's own sort — read when DPThread.comments is paginated.
+    __pagination_orders__ = BatchPageConfig(
+        default_order="MOST_LIKED",
+        orders={"MOST_LIKED": PageOrder([OrderTerm("likes", "desc", nulls="last")])},
+    )
     id: int | None = Field(default=None, primary_key=True)
     text: str
     likes: int | None = Field(default=None)
@@ -45,14 +50,7 @@ class DPThread(DPBase, table=True):
         back_populates="thread",
         sa_relationship_kwargs={"order_by": "DPComment.id"},
     )
-    __pagination_orders__ = {
-        "comments": BatchPageConfig(
-            default_order="MOST_LIKED",
-            orders={
-                "MOST_LIKED": PageOrder([OrderTerm("likes", "desc", nulls="last")]),
-            },
-        ),
-    }
+    # specs/020: comments order profile lives on DPComment (the sorted object).
 
 
 class DPCommentDTO(DefineSubset):

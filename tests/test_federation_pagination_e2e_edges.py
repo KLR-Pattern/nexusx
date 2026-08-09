@@ -57,15 +57,13 @@ class EdgeMemberBase(SQLModel):
 class EdgeReview(EdgeMemberBase, table=True):
     __tablename__ = "fed_pag_edge_review"
     __federation_keys__ = ["product_id"]
-    __pagination_orders__ = {
-        "product_id": BatchPageConfig(
-            default_order="LOWEST_RATING",
-            orders={
-                "LOWEST_RATING": PageOrder([OrderTerm("rating", "asc")]),
-                "HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")]),
-            },
-        )
-    }
+    __pagination_orders__ = BatchPageConfig(
+        default_order="LOWEST_RATING",
+        orders={
+            "LOWEST_RATING": PageOrder([OrderTerm("rating", "asc")]),
+            "HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")]),
+        },
+    )
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     title: str
@@ -76,12 +74,10 @@ class EdgeReview(EdgeMemberBase, table=True):
 class EdgeSession(EdgeMemberBase, table=True):
     __tablename__ = "fed_pag_edge_session"
     __federation_keys__ = ["account_id"]
-    __pagination_orders__ = {
-        "account_id": BatchPageConfig(
-            default_order="NEWEST",
-            orders={"NEWEST": PageOrder([OrderTerm("started_at", "desc")])},
-        )
-    }
+    __pagination_orders__ = BatchPageConfig(
+        default_order="NEWEST",
+        orders={"NEWEST": PageOrder([OrderTerm("started_at", "desc")])},
+    )
     id: int | None = Field(default=None, primary_key=True)
     account_id: _uuid.UUID
     title: str

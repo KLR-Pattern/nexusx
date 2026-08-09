@@ -225,10 +225,10 @@ async def test_direction_flip_moves_nulls_member_side():
     class _NullsItem(_NullsBase, table=True):
         __tablename__ = "nx14_nulls_item"
         __federation_keys__ = ["group_id"]
-        __pagination_orders__ = {"group_id": BatchPageConfig(
+        __pagination_orders__ = BatchPageConfig(
             default_order="RATING",
             orders={"RATING": PageOrder([OrderTerm("rating", "desc", "last")])},
-        )}
+        )
         id: int | None = Field(default=None, primary_key=True)
         group_id: int
         rating: int | None = None
@@ -301,21 +301,19 @@ class ODReviewsBase(SQLModel):
 class ODReview(ODReviewsBase, table=True):
     __tablename__ = "nx14_od_review"
     __federation_keys__ = ["product_id"]
-    __pagination_orders__ = {
-        "product_id": BatchPageConfig(
-            default_order="HIGHEST_RATING",
-            orders={
-                "HIGHEST_RATING": PageOrder(
-                    [OrderTerm("rating", "desc")],
-                    description="Highest rating first",
-                ),
-                "NEWEST": PageOrder(
-                    [OrderTerm("created_at", "desc")],
-                    description="Newest first",
-                ),
-            },
-        )
-    }
+    __pagination_orders__ = BatchPageConfig(
+        default_order="HIGHEST_RATING",
+        orders={
+            "HIGHEST_RATING": PageOrder(
+                [OrderTerm("rating", "desc")],
+                description="Highest rating first",
+            ),
+            "NEWEST": PageOrder(
+                [OrderTerm("created_at", "desc")],
+                description="Newest first",
+            ),
+        },
+    )
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     title: str

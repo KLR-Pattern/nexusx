@@ -124,35 +124,25 @@ def _extract_sort_field(order_by: Any) -> str:
 
 
 def _resolve_local_page_capability(
-    entity_kls: type[SQLModel],
-    rel_name: str,
     target_entity: type[SQLModel],
 ) -> tuple[Any, Any]:
-    """Build a ``BatchPageCapability`` for a local paginated relationship from
-    the entity's class-level ``__pagination_orders__`` declaration.
+    """Build a ``BatchPageCapability`` for a local paginated relationship.
 
-    ``__pagination_orders__`` is the single order-profile carrier (specs/020):
-    a key that is also in the entity's ``__federation_keys__`` belongs to the
-    federation batch root; otherwise it maps an ORM relation name → a local
-    paginated relationship. Profiles are validated with federation's
-    ``_resolve_page_orders`` (enum-safe names, single-column, SQL column,
-    direction, nullable nulls, default∈keys) — fail-fast at startup.
+    specs/020: the order profile belongs to the SORTED object — the
+    relationship's TARGET (e.g. Comment), not the owner (Review). Comment's sort
+    is declared once on Comment.__pagination_orders__ and reused by every owner
+    that references it, so we read target_entity.__pagination_orders__ here.
+    Profiles are validated with federation's ``_resolve_page_orders`` (enum-safe
+    names, single-column, SQL column, direction, nullable nulls, default∈keys) —
+    fail-fast at startup.
 
     Returns ``(capability, resolved_orders)`` — ``capability`` is the descriptor
     (names only) used for schema rendering; ``resolved_orders`` carries the
     physical ``OrderTerm``s the page_loader needs to build ORDER BY. Both None
-    when the relationship has no profile declaration (falls back to sort_field).
-    specs/015.
+    when the target has no profile (falls back to sort_field). specs/015.
     """
-    cfg = getattr(entity_kls, "__pagination_orders__", {}).get(rel_name)
+    cfg = getattr(target_entity, "__pagination_orders__", None)
     if cfg is None:
-        return None, None
-    # specs/020 T006: a profile whose key is also in __federation_keys__
-    # belongs to the federation batch root (page_by_<key>_in), not the local
-    # relationship loader. Route by __federation_keys__ so the two coexist in
-    # one __pagination_orders__ carrier without clashing.
-    fed_keys = getattr(entity_kls, "__federation_keys__", []) or []
-    if rel_name in fed_keys:
         return None, None
     from nexusx.federation.contract import BatchPageCapability, PageOrderDescriptor
     from nexusx.standard_queries import _resolve_page_orders
@@ -262,7 +252,7 @@ def _inspect_relationships(
             else:
                 # List relationship — create regular + optional paginated loader
                 page_capability, page_orders_resolved = _resolve_local_page_capability(
-                    entity_kls, rel_name, target_entity
+                    target_entity
                 )
                 sort_field = None
                 page_loader = None
@@ -329,7 +319,7 @@ def _inspect_relationships(
             fk_field = source_col.key
 
             page_capability, m2m_orders_resolved = _resolve_local_page_capability(
-                entity_kls, rel_name, target_entity
+                target_entity
             )
             sort_field = None
             page_loader = None

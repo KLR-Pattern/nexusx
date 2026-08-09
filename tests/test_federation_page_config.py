@@ -74,7 +74,7 @@ def _reset_federation_dunders():
     yield
     for kls in (PageConfigItem, PageConfigJson, PageOrderItem):
         kls.__federation_keys__ = []
-        kls.__pagination_orders__ = {}
+        kls.__pagination_orders__ = None
 
 
 @pytest.mark.parametrize(
@@ -121,7 +121,7 @@ def _reset_federation_dunders():
 )
 def test_invalid_page_order_config_rejected(config, message):
     PageConfigItem.__federation_keys__ = ["product_id"]
-    PageConfigItem.__pagination_orders__ = {"product_id": config}
+    PageConfigItem.__pagination_orders__ = config
     with pytest.raises((TypeError, ValueError), match=message):
         add_standard_queries(
             [PageConfigItem],
@@ -135,9 +135,7 @@ def test_invalid_page_order_config_rejected(config, message):
 
 def test_json_order_field_rejected():
     PageConfigJson.__federation_keys__ = ["group_id"]
-    PageConfigJson.__pagination_orders__ = {
-        "group_id": _page_config(OrderTerm("payload"))
-    }
+    PageConfigJson.__pagination_orders__ = _page_config(OrderTerm("payload"))
     with pytest.raises(ValueError, match="unsupported column type"):
         add_standard_queries(
             [PageConfigJson],
@@ -173,18 +171,18 @@ def test_batch_keys_do_not_implicitly_generate_page_root():
 
 def test_multi_key_schema_and_er_capabilities_are_unique_and_semantic():
     PageConfigItem.__federation_keys__ = ["product_id", "category"]
-    PageConfigItem.__pagination_orders__ = {
-        "product_id": BatchPageConfig(
-            default_order="HIGHEST",
-            orders={
-                "HIGHEST": PageOrder(
-                    [OrderTerm("rating", "desc", "last")],
-                    description="Highest rating first",
-                )
-            },
-        ),
-        "category": _page_config(OrderTerm("category")),
-    }
+    # specs/020: single entity-level profile — product_id AND category (both in
+    # __federation_keys__) share it; each gets its own page_by_<key>_in + a
+    # per-field order enum, all backed by this one sort.
+    PageConfigItem.__pagination_orders__ = BatchPageConfig(
+        default_order="HIGHEST",
+        orders={
+            "HIGHEST": PageOrder(
+                [OrderTerm("rating", "desc", "last")],
+                description="Highest rating first",
+            )
+        },
+    )
     handler = GraphQLHandler(
         base=PageConfigBase,
         session_factory=_unused_session,
@@ -278,16 +276,14 @@ async def test_desc_nulls_last_and_pk_tie_breaker_are_stable():
         await session.commit()
 
     PageOrderItem.__federation_keys__ = ["product_id"]
-    PageOrderItem.__pagination_orders__ = {
-        "product_id": BatchPageConfig(
-            default_order="HIGHEST",
-            orders={
-                "HIGHEST": PageOrder(
-                    [OrderTerm("rating", "desc", "last")]
-                )
-            },
-        )
-    }
+    PageOrderItem.__pagination_orders__ = BatchPageConfig(
+        default_order="HIGHEST",
+        orders={
+            "HIGHEST": PageOrder(
+                [OrderTerm("rating", "desc", "last")]
+            )
+        },
+    )
     handler = GraphQLHandler(
         base=PageOrderBase,
         session_factory=session_factory,
