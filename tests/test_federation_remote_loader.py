@@ -197,10 +197,11 @@ def test_batch_roots_introspect_arg_contract():
 
     class T(SQLModel, table=True):
         __tablename__ = "fed_p1a_argroots"
+        __federation_keys__ = ["product_id"]
         id: int | None = Field(default=None, primary_key=True)
         product_id: int
 
-    add_standard_queries([T], AutoQueryConfig(batch_keys={"T": ["product_id"]}), lambda: None)
+    add_standard_queries([T], AutoQueryConfig(), lambda: None)
     roots = {r.name: r for r in _batch_roots(T)}
     br = roots["by_product_id_in"]
     assert br.arg_name == "product_id_list"

@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel, select
 
+from nexusx import BatchPageConfig, OrderTerm, PageOrder
 from nexusx import Relationship as CustomRelationship
 from nexusx import mutation, query
 
@@ -38,6 +39,15 @@ async def _tags_by_task_loader(task_ids: list[int]) -> list[list[Tag]]:
 
 class Task(SQLModel, table=True):
     __tablename__ = "core_api_task"
+
+    # specs/020: Task's own sort — read when Sprint.tasks is paginated.
+    __pagination_orders__ = BatchPageConfig(
+        default_order="NEWEST",
+        orders={
+            "NEWEST": PageOrder([OrderTerm("id", "desc")]),
+            "OLDEST": PageOrder([OrderTerm("id", "asc")]),
+        },
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     title: str

@@ -30,6 +30,7 @@ class UserConfig(UsersBase, table=True):
 
 class User(UsersBase, table=True):
     __tablename__ = "fed_demo_user"
+    __federation_keys__ = ["id"]
     id: int | None = Field(default=None, primary_key=True)
     name: str
     email: str
@@ -55,7 +56,7 @@ async def init_db() -> None:
 handler = GraphQLHandler(
     base=UsersBase,
     session_factory=async_session,
-    auto_query_config=AutoQueryConfig(batch_keys={"User": ["id"]}),
+    auto_query_config=AutoQueryConfig(),
     service_name="users",
 )
 

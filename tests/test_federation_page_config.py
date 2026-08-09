@@ -68,6 +68,15 @@ def _page_config(*terms: OrderTerm) -> BatchPageConfig:
     )
 
 
+@pytest.fixture(autouse=True)
+def _reset_federation_dunders():
+    """每个测试后重置模块级 entity 的 federation dunder，防跨测试污染。"""
+    yield
+    for kls in (PageConfigItem, PageConfigJson, PageOrderItem):
+        kls.__federation_keys__ = []
+        kls.__pagination_orders__ = None
+
+
 @pytest.mark.parametrize(
     ("config", "message"),
     [
@@ -111,30 +120,28 @@ def _page_config(*terms: OrderTerm) -> BatchPageConfig:
     ],
 )
 def test_invalid_page_order_config_rejected(config, message):
+    PageConfigItem.__federation_keys__ = ["product_id"]
+    PageConfigItem.__pagination_orders__ = config
     with pytest.raises((TypeError, ValueError), match=message):
         add_standard_queries(
             [PageConfigItem],
             AutoQueryConfig(
                 generate_by_id=False,
                 generate_by_filter=False,
-                batch_pages={"PageConfigItem": {"product_id": config}},
             ),
             _unused_session,
         )
 
 
 def test_json_order_field_rejected():
+    PageConfigJson.__federation_keys__ = ["group_id"]
+    PageConfigJson.__pagination_orders__ = _page_config(OrderTerm("payload"))
     with pytest.raises(ValueError, match="unsupported column type"):
         add_standard_queries(
             [PageConfigJson],
             AutoQueryConfig(
                 generate_by_id=False,
                 generate_by_filter=False,
-                batch_pages={
-                    "PageConfigJson": {
-                        "group_id": _page_config(OrderTerm("payload"))
-                    }
-                },
             ),
             _unused_session,
         )
@@ -146,6 +153,7 @@ def test_batch_keys_do_not_implicitly_generate_page_root():
 
     class FullOnly(FullOnlyBase, table=True):
         __tablename__ = "fed_page_config_full_only"
+        __federation_keys__ = ["group_id"]
         id: int | None = Field(default=None, primary_key=True)
         group_id: int
 
@@ -154,7 +162,6 @@ def test_batch_keys_do_not_implicitly_generate_page_root():
         AutoQueryConfig(
             generate_by_id=False,
             generate_by_filter=False,
-            batch_keys={"FullOnly": ["group_id"]},
         ),
         _unused_session,
     )
@@ -163,26 +170,25 @@ def test_batch_keys_do_not_implicitly_generate_page_root():
 
 
 def test_multi_key_schema_and_er_capabilities_are_unique_and_semantic():
+    PageConfigItem.__federation_keys__ = ["product_id", "category"]
+    # specs/020: single entity-level profile — product_id AND category (both in
+    # __federation_keys__) share it; each gets its own page_by_<key>_in + a
+    # per-field order enum, all backed by this one sort.
+    PageConfigItem.__pagination_orders__ = BatchPageConfig(
+        default_order="HIGHEST",
+        orders={
+            "HIGHEST": PageOrder(
+                [OrderTerm("rating", "desc", "last")],
+                description="Highest rating first",
+            )
+        },
+    )
     handler = GraphQLHandler(
         base=PageConfigBase,
         session_factory=_unused_session,
         auto_query_config=AutoQueryConfig(
             generate_by_id=False,
             generate_by_filter=False,
-            batch_pages={
-                "PageConfigItem": {
-                    "product_id": BatchPageConfig(
-                        default_order="HIGHEST",
-                        orders={
-                            "HIGHEST": PageOrder(
-                                [OrderTerm("rating", "desc", "last")],
-                                description="Highest rating first",
-                            )
-                        },
-                    ),
-                    "category": _page_config(OrderTerm("category")),
-                }
-            },
         ),
         service_name="member",
     )
@@ -269,24 +275,21 @@ async def test_desc_nulls_last_and_pk_tie_breaker_are_stable():
         )
         await session.commit()
 
+    PageOrderItem.__federation_keys__ = ["product_id"]
+    PageOrderItem.__pagination_orders__ = BatchPageConfig(
+        default_order="HIGHEST",
+        orders={
+            "HIGHEST": PageOrder(
+                [OrderTerm("rating", "desc", "last")]
+            )
+        },
+    )
     handler = GraphQLHandler(
         base=PageOrderBase,
         session_factory=session_factory,
         auto_query_config=AutoQueryConfig(
             generate_by_id=False,
             generate_by_filter=False,
-            batch_pages={
-                "PageOrderItem": {
-                    "product_id": BatchPageConfig(
-                        default_order="HIGHEST",
-                        orders={
-                            "HIGHEST": PageOrder(
-                                [OrderTerm("rating", "desc", "last")]
-                            )
-                        },
-                    )
-                }
-            },
         ),
         service_name="member",
     )

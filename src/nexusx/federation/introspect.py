@@ -309,13 +309,12 @@ def serialize_dto_introspection(er_manager: Any) -> DTOIntrospectionResponse:
             arg_name=f"{join_key}_list",
             arg_type="",
         )
-        # γ remote top-N (specs/016 Phase 2): a DTO-level __pagination_orders__
-        # (BatchPageConfig) exposes the order profiles the member can sort by.
+        # γ remote top-N (specs/020): the order profile is the source entity's
+        # single __pagination_orders__ — the DTO inherits the entity's own sort.
         # Validated against the base entity's physical columns via
-        # _resolve_page_orders — same gate as entity __pagination_orders__,
-        # so a DTO order field that isn't a base-entity column fails fast.
-        cfg = getattr(dto, "__pagination_orders__", None)
-        if cfg is not None and source is not None:
+        # _resolve_page_orders, so an order field that isn't a column fails fast.
+        cfg = getattr(source, "__pagination_orders__", None) if source is not None else None
+        if cfg is not None:
             from nexusx.federation.contract import (
                 BatchPageCapability,
                 PageOrderDescriptor,

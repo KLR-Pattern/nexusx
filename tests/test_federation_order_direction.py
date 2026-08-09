@@ -224,6 +224,11 @@ async def test_direction_flip_moves_nulls_member_side():
 
     class _NullsItem(_NullsBase, table=True):
         __tablename__ = "nx14_nulls_item"
+        __federation_keys__ = ["group_id"]
+        __pagination_orders__ = BatchPageConfig(
+            default_order="RATING",
+            orders={"RATING": PageOrder([OrderTerm("rating", "desc", "last")])},
+        )
         id: int | None = Field(default=None, primary_key=True)
         group_id: int
         rating: int | None = None
@@ -246,10 +251,6 @@ async def test_direction_flip_moves_nulls_member_side():
         base=_NullsBase, session_factory=sf,
         auto_query_config=AutoQueryConfig(
             generate_by_id=False, generate_by_filter=False,
-            batch_pages={"_NullsItem": {"group_id": BatchPageConfig(
-                default_order="RATING",
-                orders={"RATING": PageOrder([OrderTerm("rating", "desc", "last")])},
-            )}},
         ),
         service_name="member",
     )
@@ -299,6 +300,20 @@ class ODReviewsBase(SQLModel):
 
 class ODReview(ODReviewsBase, table=True):
     __tablename__ = "nx14_od_review"
+    __federation_keys__ = ["product_id"]
+    __pagination_orders__ = BatchPageConfig(
+        default_order="HIGHEST_RATING",
+        orders={
+            "HIGHEST_RATING": PageOrder(
+                [OrderTerm("rating", "desc")],
+                description="Highest rating first",
+            ),
+            "NEWEST": PageOrder(
+                [OrderTerm("created_at", "desc")],
+                description="Newest first",
+            ),
+        },
+    )
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     title: str
@@ -371,26 +386,7 @@ async def od_federation():
     await _od_ensure_seed()
     reviews_handler = GraphQLHandler(
         base=ODReviewsBase, session_factory=_rev_sf,
-        auto_query_config=AutoQueryConfig(
-            batch_keys={"ODReview": ["product_id"]},
-            batch_pages={
-                "ODReview": {
-                    "product_id": BatchPageConfig(
-                        default_order="HIGHEST_RATING",
-                        orders={
-                            "HIGHEST_RATING": PageOrder(
-                                [OrderTerm("rating", "desc")],
-                                description="Highest rating first",
-                            ),
-                            "NEWEST": PageOrder(
-                                [OrderTerm("created_at", "desc")],
-                                description="Newest first",
-                            ),
-                        },
-                    )
-                }
-            },
-        ),
+        auto_query_config=AutoQueryConfig(),
         service_name="reviews",
     )
     reviews_app = build_federable_app(reviews_handler)

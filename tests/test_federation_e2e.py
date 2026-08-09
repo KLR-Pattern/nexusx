@@ -54,6 +54,7 @@ class FedUser(ReviewsBase, table=True):
 
 class FedReview(ReviewsBase, table=True):
     __tablename__ = "fed_e2e_review"
+    __federation_keys__ = ["product_id"]
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     title: str
@@ -139,7 +140,7 @@ async def _build_catalog_and_transport():
     await _ensure_seed()
     reviews_handler = GraphQLHandler(
         base=ReviewsBase, session_factory=_rev_sf,
-        auto_query_config=AutoQueryConfig(batch_keys={"FedReview": ["product_id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="reviews",
     )
     reviews_app = build_federable_app(reviews_handler)

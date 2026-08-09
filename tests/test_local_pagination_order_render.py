@@ -23,6 +23,13 @@ class LPOBase(SQLModel):
 
 class LPOComment(LPOBase, table=True):
     __tablename__ = "lpo_comment"
+    __pagination_orders__ = BatchPageConfig(
+        default_order="NEWEST",
+        orders={
+            "NEWEST": PageOrder([OrderTerm("created_at", "desc")]),
+            "MOST_LIKED": PageOrder([OrderTerm("likes", "desc", nulls="last")]),
+        },
+    )
     id: int | None = Field(default=None, primary_key=True)
     text: str
     likes: int = 0
@@ -39,16 +46,7 @@ class LPOReview(LPOBase, table=True):
         back_populates="review",
         sa_relationship_kwargs={"order_by": "LPOComment.id"},
     )
-    # 类级 order profile 声明(specs/015)
-    __pagination_orders__ = {
-        "comments": BatchPageConfig(
-            default_order="NEWEST",
-            orders={
-                "NEWEST": PageOrder([OrderTerm("created_at", "desc")]),
-                "MOST_LIKED": PageOrder([OrderTerm("likes", "desc", nulls="last")]),
-            },
-        ),
-    }
+    # specs/020: comments order profile lives on LPOComment (the sorted object).
 
 
 LPO_ENTITIES = [LPOReview, LPOComment]

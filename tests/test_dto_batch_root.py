@@ -22,6 +22,7 @@ class _BRBase(SQLModel):
 
 class _Review(_BRBase, table=True):
     __tablename__ = "dto_br_review"
+    __federation_keys__ = ["product_id"]
     id: int | None = SQLField(default=None, primary_key=True)
     product_id: int
     title: str
@@ -33,7 +34,6 @@ class _ReviewDTO(DefineSubset):
         kls=_Review,
         fields=("title", "rating", "product_id"),
         federation_public=True,
-        federation_join_key="product_id",
     )
     # 计算字段（member Resolver 加工）
     rating_double: int | None = None
@@ -135,14 +135,14 @@ def test_public_dto_join_key_validated_at_class_creation():
     """join_key 不在 DTO subset 字段里 → metaclass 期 fail-fast（先于 add_dto_batch_roots）。"""
     import pytest as _pytest
 
-    with _pytest.raises(ValueError, match="federation_join_key"):
+    with _pytest.raises(ValueError, match="federation_key"):
 
         class _BadDTO(DefineSubset):
             __subset__ = SubsetConfig(
                 kls=_Review,
                 fields=("title", "rating", "product_id"),
                 federation_public=True,
-                federation_join_key="nonexistent",
+                federation_key="nonexistent",  # 不在 _Review.__federation_keys__
             )
 
 
@@ -151,6 +151,7 @@ def test_public_dto_join_key_auto_derived_single_fk():
 
     class _FkEnt(_BRBase, table=True):
         __tablename__ = "dto_br_autofk"
+        __federation_keys__ = ["product_id"]
         id: int | None = SQLField(default=None, primary_key=True)
         product_id: int = SQLField(foreign_key="dto_br_review.id")
         title: str
@@ -160,7 +161,7 @@ def test_public_dto_join_key_auto_derived_single_fk():
             kls=_FkEnt,
             fields=("title", "product_id"),
             federation_public=True,
-            # 无 federation_join_key → 自动 product_id(单 FK ∈ subset)
+            # 单 federation key → 自动 product_id（_FkEnt.__federation_keys__）
         )
 
     assert _DTOAuto.__federation_join_key__ == "product_id"
@@ -171,11 +172,12 @@ def test_public_dto_join_key_auto_ambiguous_multiple_fks():
 
     class _MultiFk(_BRBase, table=True):
         __tablename__ = "dto_br_multifk"
+        __federation_keys__ = ["a_id", "b_id"]
         id: int | None = SQLField(default=None, primary_key=True)
         a_id: int = SQLField(foreign_key="dto_br_review.id")
         b_id: int = SQLField(foreign_key="dto_br_review.id")
 
-    with pytest.raises(ValueError, match="auto-derive"):
+    with pytest.raises(ValueError, match="multiple federation keys"):
 
         class _DTOMulti(DefineSubset):
             __subset__ = SubsetConfig(
@@ -197,6 +199,7 @@ def test_add_dto_batch_roots_rejects_unsupported_join_key_type():
 
     class _DecReview(_BRBase, table=True):
         __tablename__ = "dto_br_decimal"
+        __federation_keys__ = ["amount"]
         id: int | None = SQLField(default=None, primary_key=True)
         amount: Decimal | None = SQLField(default=None)
 
@@ -205,7 +208,6 @@ def test_add_dto_batch_roots_rejects_unsupported_join_key_type():
             kls=_DecReview,
             fields=("amount",),
             federation_public=True,
-            federation_join_key="amount",
         )
 
     er = ErManager(
@@ -226,6 +228,7 @@ def test_add_dto_batch_roots_accepts_uuid_join_key():
 
     class _UuidReview(_BRBase, table=True):
         __tablename__ = "dto_br_uuid"
+        __federation_keys__ = ["owner_id"]
         id: UUID | None = SQLField(default=None, primary_key=True)
         owner_id: UUID | None = SQLField(default=None)
 
@@ -234,7 +237,6 @@ def test_add_dto_batch_roots_accepts_uuid_join_key():
             kls=_UuidReview,
             fields=("owner_id",),
             federation_public=True,
-            federation_join_key="owner_id",
         )
 
     er = ErManager(

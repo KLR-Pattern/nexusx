@@ -56,6 +56,14 @@ class EdgeMemberBase(SQLModel):
 # 复用于 default_order 场景（int join key）。
 class EdgeReview(EdgeMemberBase, table=True):
     __tablename__ = "fed_pag_edge_review"
+    __federation_keys__ = ["product_id"]
+    __pagination_orders__ = BatchPageConfig(
+        default_order="LOWEST_RATING",
+        orders={
+            "LOWEST_RATING": PageOrder([OrderTerm("rating", "asc")]),
+            "HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")]),
+        },
+    )
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     title: str
@@ -65,6 +73,11 @@ class EdgeReview(EdgeMemberBase, table=True):
 # UUID join key 场景：account_id 是 UUID 列，作为 page key。
 class EdgeSession(EdgeMemberBase, table=True):
     __tablename__ = "fed_pag_edge_session"
+    __federation_keys__ = ["account_id"]
+    __pagination_orders__ = BatchPageConfig(
+        default_order="NEWEST",
+        orders={"NEWEST": PageOrder([OrderTerm("started_at", "desc")])},
+    )
     id: int | None = Field(default=None, primary_key=True)
     account_id: _uuid.UUID
     title: str
@@ -163,31 +176,7 @@ async def federation():
     await _ensure_seed()
     member_handler = GraphQLHandler(
         base=EdgeMemberBase, session_factory=_mem_sf,
-        auto_query_config=AutoQueryConfig(
-            batch_keys={
-                "EdgeReview": ["product_id"],
-                "EdgeSession": ["account_id"],
-            },
-            batch_pages={
-                "EdgeReview": {
-                    "product_id": BatchPageConfig(
-                        default_order="LOWEST_RATING",
-                        orders={
-                            "LOWEST_RATING": PageOrder([OrderTerm("rating", "asc")]),
-                            "HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")]),
-                        },
-                    )
-                },
-                "EdgeSession": {
-                    "account_id": BatchPageConfig(
-                        default_order="NEWEST",
-                        orders={
-                            "NEWEST": PageOrder([OrderTerm("started_at", "desc")]),
-                        },
-                    )
-                },
-            },
-        ),
+        auto_query_config=AutoQueryConfig(),
         service_name="member",
     )
     member_app = build_federable_app(member_handler)

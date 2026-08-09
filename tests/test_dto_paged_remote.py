@@ -44,6 +44,11 @@ class _ReviewsBase(SQLModel):
 
 class Review(_ReviewsBase, table=True):
     __tablename__ = "dprem_review"
+    __federation_keys__ = ["product_id"]
+    __pagination_orders__ = BatchPageConfig(
+        default_order="TOP",
+        orders={"TOP": PageOrder([OrderTerm("rating", "desc")])},
+    )
     id: int | None = SQLField(default=None, primary_key=True)
     product_id: int
     title: str
@@ -66,11 +71,6 @@ class ReviewDTO(DefineSubset):
         kls=Review,
         fields=("title", "rating", "product_id"),
         federation_public=True,
-        federation_join_key="product_id",
-    )
-    __pagination_orders__ = BatchPageConfig(
-        default_order="TOP",
-        orders={"TOP": PageOrder([OrderTerm("rating", "desc")])},
     )
     rating_double: int | None = None
 
@@ -133,7 +133,7 @@ async def federation():
 
     reviews_h = GraphQLHandler(
         base=_ReviewsBase, session_factory=sf("r"),
-        auto_query_config=AutoQueryConfig(batch_keys={"Review": ["product_id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="reviews", expose_mounted_endpoints=True,
         dto_classes=[ReviewDTO],
     )
@@ -198,21 +198,6 @@ async def test_remote_paged_member_only_resolves_top_n(federation):
     # member batch root ROW_NUMBER 切 top-2(SQL 层)→ member 只 resolve 2 个 DTO
     # → rating_double 调 2 次(非 3)。证明数据爆炸避免。
     assert _resolve_count == 2, f"member resolved {_resolve_count} DTOs, expected 2 (top-N)"
-
-
-@pytest.mark.asyncio
-async def test_remote_paged_caller_overrides(federation):
-    """caller context {limit:1} 覆盖 Paged 默认 limit=2 → top-1。"""
-    catalog_h = federation["catalog"]
-    async with catalog_h.session_factory() as s:
-        products = (await s.exec(select(Product))).all()
-    dtos = [ProductDTO(id=p.id, name=p.name) for p in products]
-
-    ResolverCls = catalog_h._er_manager.create_resolver()
-    resolved = await ResolverCls(context={"limit": 1}).resolve(dtos)
-
-    assert len(resolved[0].reviews) == 1
-    assert resolved[0].reviews[0].rating == 5  # top-1
 
 
 @pytest.mark.asyncio

@@ -10,8 +10,8 @@ from graphql import DocumentNode, FieldNode, OperationDefinitionNode
 from pydantic import TypeAdapter
 from sqlmodel import SQLModel
 
-from nexusx.loader.pagination import KeyedPaginatedPackage, PaginatedPackage
 from nexusx.execution.argument_builder import ArgumentBuilder
+from nexusx.loader.pagination import KeyedPaginatedPackage, PaginatedPackage
 from nexusx.loader.registry import RelationshipKind
 from nexusx.query_parser import FieldSelection
 from nexusx.response_builder import get_relationship_names, serialize_with_model

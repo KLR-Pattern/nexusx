@@ -30,18 +30,8 @@ class Sprint(SQLModel, table=True):
         back_populates="sprint",
         sa_relationship_kwargs={"order_by": "Task.id"},
     )
-    # specs/016 Paged: order profiles for the tasks relationship. A DTO field
-    # `Annotated[list[TaskDTO], Paged(order="NEWEST")]` picks from these; the
-    # page_loader (built from order_by above) executes the slice.
-    __pagination_orders__ = {
-        "tasks": BatchPageConfig(
-            default_order="NEWEST",
-            orders={
-                "NEWEST": PageOrder([OrderTerm("id", "desc")]),
-                "OLDEST": PageOrder([OrderTerm("id", "asc")]),
-            },
-        ),
-    }
+    # specs/020: tasks order profile lives on Task (the sorted object); a DTO
+    # field `Annotated[list[TaskDTO], Paged(order="NEWEST")]` picks from it.
 
     @query
     async def get_sprints(cls, limit: int = 10) -> list["Sprint"]:

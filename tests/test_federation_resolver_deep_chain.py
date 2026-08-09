@@ -47,6 +47,7 @@ class RCUserConfig(_UsersBase, table=True):
 
 class RCUser(_UsersBase, table=True):
     __tablename__ = "rc_resolver_user"
+    __federation_keys__ = ["id"]
     id: int | None = Field(default=None, primary_key=True)
     name: str
     config: RCUserConfig | None = Relationship(sa_relationship_kwargs={"uselist": False})
@@ -73,6 +74,7 @@ class RCComment(_ReviewsBase, table=True):
 
 class RCReview(_ReviewsBase, table=True):
     __tablename__ = "rc_resolver_review"
+    __federation_keys__ = ["product_id"]
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     title: str
@@ -171,12 +173,12 @@ async def test_resolver_deep_chain_via_shared_fetch_primitive(_engines):
 
     users_h = GraphQLHandler(
         base=_UsersBase, session_factory=sf("rcusers"),
-        auto_query_config=AutoQueryConfig(batch_keys={"RCUser": ["id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="rcusers",
     )
     reviews_h = GraphQLHandler(
         base=_ReviewsBase, session_factory=sf("rcreviews"),
-        auto_query_config=AutoQueryConfig(batch_keys={"RCReview": ["product_id"]}),
+        auto_query_config=AutoQueryConfig(),
         service_name="rcreviews", expose_mounted_endpoints=True,
     )
     catalog_h = GraphQLHandler(

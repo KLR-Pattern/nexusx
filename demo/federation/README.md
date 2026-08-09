@@ -94,8 +94,8 @@ await handler.er.initialize()
 | Transitive discovery | catalog reaches `users` via `reviews`' fragment |
 | β nested fetch | one gql per service returns the multi-level nested chain |
 | Multi-level members | `Review→Comment` and `User→UserConfig` resolved locally per service |
-| `by_<key>_in` entry roots | `AutoQueryConfig(batch_keys=...)` on each member |
-| Member-owned pagination order | `AutoQueryConfig(batch_pages=...)` on reviews |
+| `by_<key>_in` entry roots | `__federation_keys__` on each member entity |
+| Member-owned pagination order | `__pagination_orders__` on the reviews entity |
 | Voyager on the composed graph | `http://localhost:8022/voyager` (ER tab) — catalog only |
 
 ## UseCase composition over federated data (DefineSubset + Resolver)
@@ -125,11 +125,9 @@ curl -X POST http://localhost:8022/api/catalog_service/composed_tree \
 class ReviewDTO(DefineSubset):
     __subset__ = SubsetConfig(
         kls=reviews.Review, fields=("title", "rating", "product_id"),
-        federation_public=True, federation_join_key="product_id",
-    )
-    __pagination_orders__ = BatchPageConfig(
-        default_order="HIGHEST_RATING",
-        orders={"HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")])},
+        federation_public=True,
+        # join key + order derived from reviews.Review's
+        # __federation_keys__ / __pagination_orders__ (no DTO-level declaration)
     )
 
 # catalog service: DTO references the member public DTO + Paged default (top-N)

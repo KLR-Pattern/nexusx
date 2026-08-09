@@ -1,8 +1,8 @@
-"""specs/016 Paged 字段声明分页(完整四参 limit/offset/order/direction + caller 覆盖)。
+"""specs/016 Paged 字段声明分页(完整四参 limit/offset/order/direction)。
 
 ``Paged(...)`` 挂 ER relationship 字段(``Annotated[list[Target], Paged(...)]``),
-提供默认分页参数;caller ``Resolver(context=...)`` 可逐字段覆盖。映射 PO2M 完整
-分页(ROW_NUMBER BETWEEN offset+1 AND offset+limit,ORDER BY <order> <direction>)。
+提供固定分页参数(声明固化,运行时不可被 Resolver context 覆盖)。映射 PO2M 完整分页
+(ROW_NUMBER BETWEEN offset+1 AND offset+limit,ORDER BY <order> <direction>)。
 
 种子: T1 三条 comment(likes 5/3/1)。MOST_LIKED(likes desc nulls_last)=[C5,C3,C1]。
 """
@@ -30,6 +30,11 @@ class DPBase(SQLModel):
 
 class DPComment(DPBase, table=True):
     __tablename__ = "dpp_comment"
+    # specs/020: Comment's own sort — read when DPThread.comments is paginated.
+    __pagination_orders__ = BatchPageConfig(
+        default_order="MOST_LIKED",
+        orders={"MOST_LIKED": PageOrder([OrderTerm("likes", "desc", nulls="last")])},
+    )
     id: int | None = Field(default=None, primary_key=True)
     text: str
     likes: int | None = Field(default=None)
@@ -45,14 +50,7 @@ class DPThread(DPBase, table=True):
         back_populates="thread",
         sa_relationship_kwargs={"order_by": "DPComment.id"},
     )
-    __pagination_orders__ = {
-        "comments": BatchPageConfig(
-            default_order="MOST_LIKED",
-            orders={
-                "MOST_LIKED": PageOrder([OrderTerm("likes", "desc", nulls="last")]),
-            },
-        ),
-    }
+    # specs/020: comments order profile lives on DPComment (the sorted object).
 
 
 class DPCommentDTO(DefineSubset):
@@ -128,31 +126,6 @@ async def test_paged_default_top_n(handler):
 
 
 @pytest.mark.asyncio
-async def test_caller_overrides_paged_default(handler):
-    """caller context {limit:1} 覆盖 Paged 默认 limit=2 → top-1。
-
-    Paged 默认 limit=2,caller 传 limit=1 → merged limit=1(caller 赢)。
-    static-ness 解:Paged 是默认,caller 可覆盖。
-    """
-    ResolverCls = handler._er_manager.create_resolver()
-    resolver = ResolverCls(context={"limit": 1})
-    resolved = await resolver.resolve([DPThreadDTO(id=1, title="T1")])
-    assert [c.text for c in resolved[0].comments] == ["C5"]  # top-1
-
-
-@pytest.mark.asyncio
-async def test_paged_offset_second_page(handler):
-    """caller context {offset:1} → 第 2 页(merged offset=1 覆盖 Paged 默认 0)。
-
-    MOST_LIKED 全序 [C5,C3,C1];offset=1 limit=2 → rn BETWEEN 2 AND 3 → [C3,C1]。
-    """
-    ResolverCls = handler._er_manager.create_resolver()
-    resolver = ResolverCls(context={"offset": 1})
-    resolved = await resolver.resolve([DPThreadDTO(id=1, title="T1")])
-    assert [c.text for c in resolved[0].comments] == ["C3", "C1"]
-
-
-@pytest.mark.asyncio
 async def test_paged_order_none_uses_entity_default(handler):
     """Paged(order=None) + caller 不传 → 用 entity default_order(MOST_LIKED)。"""
 
@@ -185,19 +158,3 @@ async def test_paged_multi_parent_batch(handler):
     by_id = {t.id: t for t in resolved}
     assert [c.text for c in by_id[1].comments] == ["C5", "C3"]
     assert [c.text for c in by_id[2].comments] == ["C4", "C2"]
-
-
-@pytest.mark.asyncio
-async def test_caller_only_no_paged_default(handler):
-    """DTO 无 Paged + caller context → caller 驱动(back-compat,Paged default None)。
-
-    没有 Paged 默认时,caller context 单独驱动分页(merged = merge(None, caller) = caller)。
-    """
-    class _DTO(DefineSubset):
-        __subset__ = (DPThread, ("id", "title"))
-        comments: list[DPCommentDTO] = Field(default_factory=list)  # 无 Paged
-
-    ResolverCls = handler._er_manager.create_resolver()
-    resolver = ResolverCls(context={"limit": 1, "order": "MOST_LIKED"})
-    resolved = await resolver.resolve([_DTO(id=1, title="T1")])
-    assert [c.text for c in resolved[0].comments] == ["C5"]  # caller limit=1

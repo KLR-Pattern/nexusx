@@ -496,12 +496,14 @@ def _check_target(
     if br is None:
         raise FederationError(
             f"Type {target!r} does not expose batch root {entry!r}; "
-            f"member must generate it via AutoQueryConfig."
+            f"member must declare it on the entity via __federation_keys__ "
+            f"(specs/020)."
         )
     if not br.arg_name:
         raise FederationError(
             f"Batch root {entry!r} on {target!r} has no determinable argument "
-            f"name; the member must generate it via AutoQueryConfig.batch_keys."
+            f"name; the member must declare the join field in "
+            f"__federation_keys__ (specs/020)."
         )
     if pagination:
         _validate_page_capability(target, br)

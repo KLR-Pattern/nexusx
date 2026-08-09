@@ -40,12 +40,14 @@ class _CB(SQLModel):
 
 class DSUser(_UB, table=True):
     __tablename__ = "fed_ds_user"
+    __federation_keys__ = ["id"]
     id: int | None = Field(default=None, primary_key=True)
     name: str
 
 
 class DSReview(_RB, table=True):
     __tablename__ = "fed_ds_review"
+    __federation_keys__ = ["product_id", "author_id"]
     id: int | None = Field(default=None, primary_key=True)
     product_id: int
     author_id: int
@@ -116,12 +118,12 @@ async def test_composed_tree_via_beta_fetch_and_model_validate():
 
         users_h = GraphQLHandler(
             base=_UB, session_factory=sf("u"),
-            auto_query_config=AutoQueryConfig(batch_keys={"DSUser": ["id"]}),
+            auto_query_config=AutoQueryConfig(),
             service_name="users",
         )
         reviews_h = GraphQLHandler(
             base=_RB, session_factory=sf("r"),
-            auto_query_config=AutoQueryConfig(batch_keys={"DSReview": ["product_id", "author_id"]}),
+            auto_query_config=AutoQueryConfig(),
             service_name="reviews",
             expose_mounted_endpoints=True,
         )

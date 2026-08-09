@@ -159,25 +159,19 @@ async def get_sprints_with_tags():
 
 
 @app.get("/api/sprints/top-tasks")
-async def get_sprints_top_tasks(limit: int | None = None, order: str | None = None):
-    """Level 6: Paged — top-N tasks per sprint (caller overrides Paged default).
+async def get_sprints_top_tasks():
+    """Level 6: Paged — top-N tasks per sprint (Paged field default, fixed).
 
-    SprintTopTasks.tasks carries ``Paged(limit=2, order="NEWEST")`` as a
-    default; the page_loader slices per-parent (ROW_NUMBER). Query params
-    ``?limit=N&order=OLDEST`` flow through Resolver context to override the
-    field default per-request — Paged is the params home, context the override.
+    SprintTopTasks.tasks carries ``Paged(limit=2)`` (order omitted → Sprint
+    __pagination_orders__ default "NEWEST"); the page_loader slices per-parent
+    (ROW_NUMBER). Paged is declarative and fixed at the field — runtime input
+    belongs on a UseCase method signature, not Resolver context.
     """
     stmt = build_dto_select(SprintTopTasks)
     async with async_session() as session:
         rows = (await session.exec(stmt)).all()
     dtos = [SprintTopTasks(**dict(row._mapping)) for row in rows]
-    context: dict = {}
-    if limit is not None:
-        context["limit"] = limit
-    if order is not None:
-        context["order"] = order
-    resolver = Resolver(context=context) if context else Resolver()
-    resolved = await resolver.resolve(dtos)
+    resolved = await Resolver().resolve(dtos)
     return [r.model_dump() for r in resolved]
 
 
