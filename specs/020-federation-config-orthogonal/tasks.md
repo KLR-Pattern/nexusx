@@ -1,5 +1,25 @@
 # Tasks: Federation 配置正交化
 
+## ⚠️ 实现进度（2026-08-09，第一轮对话 — 工作进行中，未完成）
+
+**分支**：`020-federation-config-orthogonal`（基于 `fix/paged-core-api-no-context-override`，含 P6 修复）
+
+**已完成**：
+- T001 ✅ 分支
+- T003/T005 核心逻辑 ✅ `add_standard_queries`（`standard_queries.py`）改读 `entity.__federation_keys__` + `__pagination_orders__`，import OK；`AutoQueryConfig.batch_keys/batch_pages` 标 removed 注释（**未真删**）
+
+**⚠️ 当前分支状态：测试会红**（工作进行中，不可 merge/发版）
+- `add_standard_queries` 改了读 dunder，但 7 个 federation 测试 + demo 的 entity 没有 `__federation_keys__` → by_/page_ 根不生成 → 测试失败
+
+**新对话接手待做（按 tasks.md 顺序）**：
+1. **US1 收尾**：真删 `AutoQueryConfig.batch_keys/batch_pages`（参数+docstring+赋值）+ 迁 7 测试（`tests/test_federation_*.py`，batch_* → entity dunder）+ 迁 demo（reviews/catalog/users_app）+ T006（`_resolve_local_page_capability` 防 federation key 重名）
+2. **US2**（T007-T008）+ **US3**（T009-T011）+ **Polish**（T012-T017）
+3. 全量回归（基线 1517 passed）
+
+**接法**：新对话读本 tasks.md + `specs/020/` + `git diff src/nexusx/standard_queries.py`，继续 `/speckit-implement`。
+
+---
+
 **Input**: Design documents from `/specs/020-federation-config-orthogonal/`（spec.md / plan.md / research.md / data-model.md / contracts/）
 
 **Tests**: 含迁移 + 新声明模型测试（本 feature 是重构，测试跟随迁移）。
@@ -18,7 +38,7 @@
 
 **Purpose**: feature 分支（复用既有 src/nexusx，无新基础设施）
 
-- [ ] T001 开 feature 分支 `020-federation-config-orthogonal`（基于 master，或基于当前 fix/paged-core-api-no-context-override 分支叠加以包含 P6 修复）
+- [x] T001 开 feature 分支 `020-federation-config-orthogonal`（基于 master，或基于当前 fix/paged-core-api-no-context-override 分支叠加以包含 P6 修复）
 
 ---
 
