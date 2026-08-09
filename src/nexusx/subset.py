@@ -37,7 +37,6 @@ from pydantic.fields import FieldInfo
 from sqlmodel import SQLModel
 
 from nexusx.resolver import POST_PREFIX, RESOLVE_PREFIX  # noqa: F401
-from nexusx.utils.type_utils import get_fk_fields
 
 # ──────────────────────────────────────────────────────────
 # Constants
