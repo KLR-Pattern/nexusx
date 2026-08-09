@@ -10,6 +10,23 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
 
+## Unreleased
+
+- breaking:
+  - **Federation member config orthogonalized to the entity (specs/020)**: Removed
+    `AutoQueryConfig.batch_keys` / `batch_pages` and `SubsetConfig.federation_join_key`.
+    Member federation capability is now declared on the entity:
+    - `__federation_keys__` — which fields are federation batch entry keys; each generates a
+      `by_<key>_in` root (`WHERE key IN (values)`).
+    - `__pagination_orders__` — the single order-profile carrier: a key in
+      `__federation_keys__` additionally yields a `page_by_<key>_in` root, while a local
+      relation name yields a local paginated loader (one carrier, routed by
+      `__federation_keys__`).
+    - γ DTO (`federation_public=True`) join key + order are derived from the source entity's
+      `__federation_keys__` / `__pagination_orders__`; `SubsetConfig.federation_join_key` →
+      `federation_key` (a selector for multi-key entities, auto for a single key).
+    `AutoQueryConfig` now holds only toggles (`default_limit`, `generate_by_id`, ...).
+
 ## 5.4
 
 ### 5.4.1 (2026-8-8)

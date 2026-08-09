@@ -1,6 +1,6 @@
 # Tasks: Federation 配置正交化
 
-## 实现进度（2026-08-09，第三轮 — US1+US2+US3 完成，剩 Polish）
+## 实现进度（2026-08-09，第四轮 — 全部完成，待发版）
 
 **分支**：`020-federation-config-orthogonal`
 
@@ -15,10 +15,9 @@
 - US2/US3 测试/demo 迁移 ✅ 6 dto 测试 + reviews_app ReviewDTO（去 federation_join_key + `__pagination_orders__`）
 - 全量回归 ✅ **1517 passed, 6 skipped**（零回归，两轮均 1517）
 
-**⚠️ 待做（Polish，后续对话）**：
-1. T015 docs（`federation.md` + `.zh.md` 迁移说明：旧 batch_keys/batch_pages/federation_join_key → 新声明）
-2. T017 changelog breaking 标注（移除 batch_keys/batch_pages/federation_join_key）
-3. SC-004 三层联邦 demo 端到端手动验证
+**Polish ✅**：SC-004 demo 端到端验证通过（β deep chain catalog→reviews→users errors None + γ composed_tree）；docs（federation.md/.zh.md 代码示例改新声明 + 迁移说明表 + demo README）；changelog breaking 标注（Unreleased 段）
+
+**剩余**：发版（release skill；breaking → major；changelog Unreleased → 定版本号 + tag）
 
 ---
 

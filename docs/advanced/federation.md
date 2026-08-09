@@ -50,17 +50,24 @@ batch entry root for each join key the mounter will use:
 ```python
 from nexusx.federation.introspect import build_federable_app
 
+# Declare federation join keys on the entity (specs/020) — the member's batch
+# entry roots are generated from these, not from AutoQueryConfig.
+class Review(Base, table=True):
+    __tablename__ = "review"
+    __federation_keys__ = ["product_id"]   # → generates by_product_id_in(values)
+
 handler = GraphQLHandler(
     base=Base, session_factory=session,
-    auto_query_config=AutoQueryConfig(batch_keys={"Review": ["product_id"]}),
+    auto_query_config=AutoQueryConfig(),    # pure toggles now (default_limit etc.)
     service_name="reviews",
 )
 app = build_federable_app(handler)   # mounts POST /graphql + GET /nexusx/er-introspection
 ```
 
-`AutoQueryConfig(batch_keys=...)` generates `by_product_id_in(values: list)`
-roots (`where field.in_(values)`) — the entry points the mounter's remote
-loader drives. This is a generally-useful capability beyond federation.
+`__federation_keys__` generates a `by_<key>_in(values: list)` root
+(`WHERE key IN (values)`) for each declared field — the entry point the
+mounter's remote loader drives. `AutoQueryConfig` now holds only toggles
+(`default_limit`, `generate_by_id`, ...).
 
 ## Mount + query
 
@@ -93,31 +100,29 @@ Open http://localhost:8022/ for GraphiQL on the catalog service and query
 
 ## Pagination
 
-Pagination and physical sorting are owned by the member. The member explicitly
-publishes named semantic order profiles through `batch_pages`; physical column
+Pagination and physical sorting are owned by the member. A federation key that
+also has an order profile in `__pagination_orders__` gets a paginated
+`page_by_<key>_in` root (in addition to the plain `by_<key>_in`); physical column
 names and directions stay private to that service.
 
 ```python
 from nexusx import BatchPageConfig, OrderTerm, PageOrder
 
-AutoQueryConfig(
-    batch_keys={"Review": ["product_id"]},
-    batch_pages={
-        "Review": {
-            "product_id": BatchPageConfig(
-                default_order="NEWEST",
-                orders={
-                    "NEWEST": PageOrder(
-                        [OrderTerm("created_at", "desc")]
-                    ),
-                    "HIGHEST_RATING": PageOrder(
-                        [OrderTerm("rating", "desc")]
-                    ),
-                },
-            )
-        }
-    },
-)
+class Review(Base, table=True):
+    __tablename__ = "review"
+    __federation_keys__ = ["product_id"]
+    __pagination_orders__ = {
+        "product_id": BatchPageConfig(
+            default_order="NEWEST",
+            orders={
+                "NEWEST": PageOrder([OrderTerm("created_at", "desc")]),
+                "HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")]),
+            },
+        ),
+    }
+    # `__pagination_orders__` is the single order carrier: a key that is in
+    # `__federation_keys__` (product_id) → federated batch root; a key that
+    # isn't (e.g. a local relation name) → local paginated relationship.
 ```
 
 The caller chooses one of those profiles at query time, plus a direction
@@ -179,11 +184,10 @@ class ReviewDTO(DefineSubset):
     __subset__ = SubsetConfig(
         kls=Review, fields=("title", "rating", "product_id"),
         federation_public=True,          # expose via dto-introspection / dto-batch
-        federation_join_key="product_id",  # auto-derivable when the subset has exactly one FK
-    )
-    __pagination_orders__ = BatchPageConfig(
-        default_order="HIGHEST_RATING",
-        orders={"HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")])},
+        # join key + order profile both come from the source entity now:
+        #   join key  ← Review.__federation_keys__ (single key → auto)
+        #   order     ← Review.__pagination_orders__["product_id"]
+        # multiple federation keys → select via federation_key="product_id".
     )
 
 handler = GraphQLHandler(base=Base, ..., dto_classes=[ReviewDTO])
@@ -217,6 +221,22 @@ are read-only — a mounter adds fields with its own `resolve_*` methods /
 | Traversal | one nested gql per mounted service per level | Resolver `_batch_auto_load` via `dto-batch` |
 | Pagination | gql args on the relationship field | `Paged(...)` field default (fixed) |
 | Entry | `GraphQLHandler` schema | `UseCaseService` + `create_resolver()` |
+
+## Migration from pre-020 (`batch_keys` / `batch_pages` / `federation_join_key`)
+
+Federation member config is now declared on the entity; `AutoQueryConfig` and
+`SubsetConfig` no longer carry it. To migrate:
+
+| Old (removed in 020) | New |
+|---|---|
+| `AutoQueryConfig(batch_keys={"Review": ["product_id"]})` | `Review.__federation_keys__ = ["product_id"]` |
+| `AutoQueryConfig(batch_pages={"Review": {"product_id": ...}})` | `Review.__pagination_orders__ = {"product_id": ...}` |
+| `SubsetConfig(federation_join_key="product_id")` | derived from `Review.__federation_keys__` (auto for a single key; `federation_key=` selects among many) |
+| DTO-level `__pagination_orders__` on `DefineSubset` | read from the source entity's `__pagination_orders__[join_key]` |
+
+A federation key always yields a `by_<key>_in` root; an order profile
+additionally yields `page_by_<key>_in` (they coexist — a paginated relationship
+wires both the full and paged loaders).
 | Member values | instances | DTOs (read-only; mounter computes its own) |
 
 See `demo/federation/` (reviews publishes `ReviewDTO`; catalog's `ProductDTO`

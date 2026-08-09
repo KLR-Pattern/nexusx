@@ -47,17 +47,23 @@ root:
 ```python
 from nexusx.federation.introspect import build_federable_app
 
+# 在 entity 上声明联邦 join key(specs/020)——member 的批量入口根从这里生成,
+# 不再来自 AutoQueryConfig。
+class Review(Base, table=True):
+    __tablename__ = "review"
+    __federation_keys__ = ["product_id"]   # → 生成 by_product_id_in(values)
+
 handler = GraphQLHandler(
     base=Base, session_factory=session,
-    auto_query_config=AutoQueryConfig(batch_keys={"Review": ["product_id"]}),
+    auto_query_config=AutoQueryConfig(),    # 现在只持开关(default_limit 等)
     service_name="reviews",
 )
 app = build_federable_app(handler)   # 挂载 POST /graphql + GET /nexusx/er-introspection
 ```
 
-`AutoQueryConfig(batch_keys=...)` 生成 `by_product_id_in(values: list)` root
-(`where field.in_(values)`)——挂载方远程 loader 驱动的入口。这是单体 nexusx 也
-受益的通用能力,非联邦专属。
+`__federation_keys__` 为每个声明字段生成 `by_<key>_in(values: list)` root
+(`WHERE key IN (values)`)——挂载方远程 loader 驱动的入口。`AutoQueryConfig`
+现在只持开关(`default_limit`、`generate_by_id` 等)。
 
 ## 挂载 + 查询
 
@@ -90,30 +96,27 @@ http://localhost:8022/(catalog 服务的 GraphiQL),查
 
 ## 分页
 
-分页和物理排序归数据所在的 member。member 通过 `batch_pages` 显式发布命名的
-语义 order profile，实际列名和方向不跨服务暴露。
+分页和物理排序归数据所在的 member。在 `__federation_keys__` 里的字段若同时在
+`__pagination_orders__` 有 order profile,会额外生成 `page_by_<key>_in` 分页根
+(与 `by_<key>_in` 共存);实际列名和方向不跨服务暴露。
 
 ```python
 from nexusx import BatchPageConfig, OrderTerm, PageOrder
 
-AutoQueryConfig(
-    batch_keys={"Review": ["product_id"]},
-    batch_pages={
-        "Review": {
-            "product_id": BatchPageConfig(
-                default_order="NEWEST",
-                orders={
-                    "NEWEST": PageOrder(
-                        [OrderTerm("created_at", "desc")]
-                    ),
-                    "HIGHEST_RATING": PageOrder(
-                        [OrderTerm("rating", "desc")]
-                    ),
-                },
-            )
-        }
-    },
-)
+class Review(Base, table=True):
+    __tablename__ = "review"
+    __federation_keys__ = ["product_id"]
+    __pagination_orders__ = {
+        "product_id": BatchPageConfig(
+            default_order="NEWEST",
+            orders={
+                "NEWEST": PageOrder([OrderTerm("created_at", "desc")]),
+                "HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")]),
+            },
+        ),
+    }
+    # `__pagination_orders__` 是单一 order 载体:在 `__federation_keys__` 里的
+    # key(product_id)→联邦批量根;不在的(如本地关系名)→本地分页关系。
 ```
 
 查询者在查询期挑选其中一个 profile，并指定方向（`ASC`/`DESC`）。挂载方把
@@ -166,11 +169,10 @@ class ReviewDTO(DefineSubset):
     __subset__ = SubsetConfig(
         kls=Review, fields=("title", "rating", "product_id"),
         federation_public=True,              # 通过 dto-introspection / dto-batch 暴露
-        federation_join_key="product_id",    # subset 恰好含一个 FK 时可省略(自动派生)
-    )
-    __pagination_orders__ = BatchPageConfig(
-        default_order="HIGHEST_RATING",
-        orders={"HIGHEST_RATING": PageOrder([OrderTerm("rating", "desc")])},
+        # join key + order profile 现在都从源 entity 读:
+        #   join key  ← Review.__federation_keys__(单 key 自动)
+        #   order     ← Review.__pagination_orders__["product_id"]
+        # 多 federation key 时用 federation_key="product_id" 选择。
     )
 
 handler = GraphQLHandler(base=Base, ..., dto_classes=[ReviewDTO])
@@ -202,6 +204,20 @@ profile);它在字段上固化——运行时入参应在 UseCase 方法签名�
 | 分页 | 关系字段上的 gql 参数 | `Paged(...)` 字段默认(固化) |
 | 入口 | `GraphQLHandler` schema | `UseCaseService` + `create_resolver()` |
 | member 值 | 实例 | DTO(只读;mounter 自己计算) |
+
+## 从 pre-020 迁移(`batch_keys` / `batch_pages` / `federation_join_key`)
+
+联邦 member 配置现在声明在 entity 上;`AutoQueryConfig` 和 `SubsetConfig` 不再承载它。迁移:
+
+| 旧(020 移除) | 新 |
+|---|---|
+| `AutoQueryConfig(batch_keys={"Review": ["product_id"]})` | `Review.__federation_keys__ = ["product_id"]` |
+| `AutoQueryConfig(batch_pages={"Review": {"product_id": ...}})` | `Review.__pagination_orders__ = {"product_id": ...}` |
+| `SubsetConfig(federation_join_key="product_id")` | 从 `Review.__federation_keys__` 推导(单 key 自动;多 key 用 `federation_key=` 选) |
+| `DefineSubset` 上的 DTO 级 `__pagination_orders__` | 从源 entity 的 `__pagination_orders__[join_key]` 读 |
+
+一个 federation key 总会生成 `by_<key>_in` 根;有 order profile 时额外生成
+`page_by_<key>_in`(两者共存——分页联邦关系同时 wire full 和 paged 两个 loader)。
 
 可运行示例见 `demo/federation/`(reviews 发布 `ReviewDTO`;catalog 的
 `ProductDTO` 引用它)。
