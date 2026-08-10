@@ -24,6 +24,7 @@ from src.db import async_session
 from src.models import BaseEntity, er, mount_method  # noqa: E402
 from src.service.sprint.service import SprintService  # noqa: E402
 from src.service.task.service import TaskService  # noqa: E402
+from src.service.user.service import UserService  # noqa: E402
 
 # ── Mount methods onto entities (must be called before GraphQL handler) ──
 
@@ -52,8 +53,8 @@ mcp_http = mcp.http_app(path="/", transport="streamable-http", stateless_http=Tr
 
 use_case_config = UseCaseAppConfig(
     name="template",
-    services=[TaskService, SprintService],
-    description="Task & Sprint business services",
+    services=[UserService, TaskService, SprintService],
+    description="User, Task & Sprint business services",
 )
 
 use_case_mcp = create_use_case_graphql_mcp_server(
@@ -98,7 +99,7 @@ app.add_middleware(
 from nexusx import create_use_case_voyager  # noqa: E402
 
 voyager_app = create_use_case_voyager(
-    services=[TaskService, SprintService],
+    services=[UserService, TaskService, SprintService],
     er_manager=er,
     name="Template API",
 )
