@@ -97,7 +97,7 @@ class Review(ReviewsBase, table=True):
 class ReviewDTO(DefineSubset):
     """member public DTO: subset of Review + federation order profiles.
 
-    Exposed via dto_classes below; catalog's ProductDTO.reviews references it
+    Auto-discovered via federation_public (022); catalog's ProductDTO.reviews references it
     (γ DTO federation). __pagination_orders__ drives the member batch root's
     ROW_NUMBER top-N when catalog sends order+limit via Paged.
     """
@@ -139,7 +139,7 @@ handler = GraphQLHandler(
     # Comment.author → users.User is driven against users' `by_id_in`.
     auto_query_config=AutoQueryConfig(),
     service_name="reviews",
-    dto_classes=[ReviewDTO],
+    # dto_classes 不传 — ReviewDTO federation_public=True 自动发现（022）
     # reviews is itself mounted by catalog AND mounts users — opting in lets
     # catalog discover users' endpoint transitively through reviews. Leaf
     # services (users) and root services (catalog) don't need this. In production

@@ -189,7 +189,8 @@ class ReviewDTO(DefineSubset):
         # multiple federation keys → select via federation_key="product_id".
     )
 
-handler = GraphQLHandler(base=Base, ..., dto_classes=[ReviewDTO])
+handler = GraphQLHandler(base=Base, ..., service_name="reviews")
+# ReviewDTO federation_public=True → 自动发现（022），不需 dto_classes
 ```
 
 The member exposes two extra endpoints: `GET /nexusx/dto-introspection` (the

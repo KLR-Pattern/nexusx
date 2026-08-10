@@ -121,7 +121,7 @@ curl -X POST http://localhost:8022/api/catalog_service/composed_tree \
   is the cross-service projection. (Hence the DTOs below stop at `Review`.)
 
 ```python
-# reviews service: member PUBLIC DTO (016 γ) — exposed via dto_classes=[ReviewDTO]
+# reviews service: member PUBLIC DTO (016 γ) — auto-discovered via federation_public (022)
 class ReviewDTO(DefineSubset):
     __subset__ = SubsetConfig(
         kls=reviews.Review, fields=("title", "rating", "product_id"),
