@@ -104,6 +104,8 @@ class Review(SQLModel, table=True):
 
 **声明 entity + DTO（Phase 1-2），框架生成一切 API 形态（Phase 3-4）。**
 
+> 📋 **完整 public API + code snippet 速查**：见 [`references/api-reference.md`](references/api-reference.md)（17 类 API + 6.0 旧 API 迁移表）。
+
 | Phase | 职责 | 产出 |
 |-------|------|------|
 | **Phase 0** | 需求确认 | 实体 + 关系 + 聚合根 + 用例方法（与用户反复确认） |
