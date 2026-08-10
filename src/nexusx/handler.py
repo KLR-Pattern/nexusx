@@ -117,18 +117,11 @@ class GraphQLHandler:
             raise ValueError("GraphQLHandler requires either base= or er_manager=")
 
         if auto_query_config is not None and session_factory is None:
-            # Backward compat: fall back to deprecated session_factory from config.
-            deprecated_sf = getattr(
-                auto_query_config, "_deprecated_session_factory", None
+            raise ValueError(
+                "auto_query_config requires a session_factory (a database "
+                "connection). Pass session_factory to GraphQLHandler, "
+                "Application (url/engine/session_factory), or the MCP builder."
             )
-            if deprecated_sf is not None:
-                session_factory = deprecated_sf
-            else:
-                raise ValueError(
-                    "auto_query_config requires a session_factory (a database "
-                    "connection). Pass session_factory to GraphQLHandler, "
-                    "Application (url/engine/session_factory), or the MCP builder."
-                )
 
         self.session_factory = session_factory
         self.enable_pagination = enable_pagination
