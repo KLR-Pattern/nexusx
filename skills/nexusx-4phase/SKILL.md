@@ -8,6 +8,53 @@ argument-hint: "[项目路径] 创建四阶段项目的目标目录"
 
 基于 nexusx 的渐进式开发方法论。项目在一个 `src/` 目录下逐步演进，每个阶段在上一阶段基础上新增代码。
 
+## nexusx 原理与工作机制
+
+> 在进入四阶段之前，先理解 nexusx 的核心抽象和机制 —— 这决定了每个阶段写什么、为什么这么写。
+
+### nexusx 是什么
+
+nexusx 是一个 **schema-to-API 生成器**：你声明 SQLModel entity + DefineSubset DTO，框架自动生成 GraphQL schema、REST 路由、MCP server、CLI 和 TS SDK —— 零样板。
+
+### 四个核心抽象
+
+| 抽象 | 职责 | 类比 |
+|------|------|------|
+| **SQLModel entity**（`table=True`） | 数据模型 + `@query`/`@mutation` 方法 | 数据库表 + 视图存储过程 |
+| **DefineSubset**（DTO） | 视图层：字段选择 + `resolve_*`/`post_*` 计算字段 | GraphQL fragment + resolver |
+| **Resolver** | DTO 树解析引擎（BFS + DataLoader 批量） | GraphQL execution engine |
+| **ErManager** | entity 关系管理（DataLoader + federation 联邦） | ORM session + DataLoader registry |
+
+### 两套暴露范式
+
+```mermaid
+flowchart LR
+    subgraph EF["entity-first（自动，早期范式）"]
+        E["SQLModel entity + @query"] --> GH["GraphQLHandler"]
+        GH --> GQL["GraphQL schema（自动发现 entity）"]
+    end
+    subgraph UC["use-case-first（显式，主推范式）"]
+        UCS["UseCaseService + @query"] --> UAC["UseCaseAppConfig"]
+        UAC --> R["create_use_case_router / mcp / cli"]
+    end
+    DS["DefineSubset / Loader / Paged<br/>两套共用"] -.-> EF
+    DS -.-> UC
+```
+
+- **entity-first**：`GraphQLHandler(base=BaseEntity)` → 自动发现 entity + `@query` → GraphQL schema。适合快速原型。
+- **use-case-first**（**4phase 主推**）：`UseCaseService` + `UseCaseAppConfig` → 显式生成 REST / MCP / CLI / GraphQL。适合生产应用。
+
+### 关键机制
+
+- **DataLoader 批量**：所有关系加载走 DataLoader，自动 batch（防 N+1）。字段名匹配 entity 关系 → 隐式 auto-load；不匹配用 `Loader(name)` 显式指定。
+- **Core API 原语**（在 DTO 上组合）：`resolve_*`（拉数据）、`post_*`（子节点就绪后计算）、`Loader`（DataLoader 注入）、`ExposeAs`/`SendTo`/`Collector`（跨层数据流）、`Paged`（字段级分页声明，固化）。
+- **federation**（跨服务联邦）：member 声明 `__federation_keys__`（入口字段）+ `__pagination_orders__`（排序 profile），mounter 自动探测 + 批量拉取（β entity 路径 + γ DTO 路径）。无需 gateway/router。
+- **声明 vs 执行分离**：entity / DTO 只声明「是什么」（数据 + 能力标记），框架负责「怎么执行」（生成查询根、路由、MCP、SDK）。
+
+### 一句话
+
+**声明 entity + DTO（Phase 1-2），框架生成一切 API 形态（Phase 3-4）。**
+
 | Phase | 职责 | 产出 |
 |-------|------|------|
 | **Phase 0** | 需求确认 | 实体 + 关系 + 聚合根 + 用例方法（与用户反复确认） |
