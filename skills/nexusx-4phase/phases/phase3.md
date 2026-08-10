@@ -37,10 +37,10 @@
   )
   app.include_router(use_case_router)
   ```
-- **`create_jsonrpc_router()` JSON-RPC 2.0 路由** — 替代 REST 路由的方案，方法命名为 `ServiceName.method_name`。适用于需要轻量 RPC 协议的场景
+- **`create_use_case_jsonrpc_router()` JSON-RPC 2.0 路由** — 替代 REST 路由的方案，方法命名为 `ServiceName.method_name`。适用于需要轻量 RPC 协议的场景
   ```python
-  from nexusx import create_jsonrpc_router
-  app.include_router(create_jsonrpc_router(use_case_config))
+  from nexusx import create_use_case_jsonrpc_router
+  app.include_router(create_use_case_jsonrpc_router(use_case_config))
   ```
 - **`create_use_case_cli()` 生成 Typer CLI** — 将 UseCaseService 方法暴露为 CLI 命令，每个 service 成为一个命令组，每个方法成为子命令
   ```python
@@ -80,7 +80,7 @@
   | MCP（AI agent） | `create_use_case_graphql_mcp_server` | Claude Desktop / Cursor 等 MCP client；4 层渐进披露控制 token |
   | GraphQL HTTP | 自建 `/graphql` + `compose_introspect` | 标准 GraphQL 生态（GraphiQL、Apollo、curl）；需要 schema 内省 |
   | REST | `create_use_case_router` | OpenAPI 友好的传统 HTTP 客户端；自动生成文档 |
-  | JSON-RPC | `create_jsonrpc_router` | 轻量 RPC（与 REST 二选一） |
+  | JSON-RPC | `create_use_case_jsonrpc_router` | 轻量 RPC（与 REST 二选一） |
   | CLI | `create_use_case_cli` | 本地调试 / 脚本化任务 |
   | 可视化 | `create_use_case_voyager` | 开发期 ER / 服务结构可视化 |
 - **main.py 典型模式 — REST + MCP + Voyager**（按需扩展 GraphQL HTTP / JSON-RPC / CLI）：
@@ -100,7 +100,7 @@
   app.include_router(create_use_case_router(app_config))
 
   # JSON-RPC（替代 REST 的轻量方案，二选一）
-  # app.include_router(create_jsonrpc_router(app_config))
+  # app.include_router(create_use_case_jsonrpc_router(app_config))
 
   # CLI（可选，生成 Typer CLI 命令行工具）
   # cli = create_use_case_cli(app_config)
@@ -157,7 +157,7 @@
 9. **UseCaseService 方法必须声明返回类型注解** — 3.0 起 compose schema 生成器（`build_compose_schema`）强校验，缺注解的方法在 MCP server 构造时抛 `MissingReturnAnnotationError`；同时 `create_use_case_router()` 也通过 `get_type_hints(method).get("return")` 提取返回类型作为 `response_model`
 10. **methods.py 返回 Model，service.py 负责 DTO 转换** — methods.py 是纯业务逻辑层，所有方法（query + mutation）返回 ORM Model 实体。service.py 统一调用 methods.py，DTO 转换在 service.py 中进行：(1) list 方法调 methods 拿 `list[Model]` → `[DtoType.model_validate(m) for m in models]` → `Resolver().resolve(dtos)`；(2) 单条 get 方法调 methods 拿 `Model | None` → `DtoType.model_validate(entity)` → `Resolver().resolve(dto)`；(3) mutation 方法同单条 get。service.py 不直接操作数据库
 11. **`create_use_case_graphql_mcp_server()` 返回 FastMCP 实例，可直接添加 `@mcp.prompt()`** — 如果项目需要 MCP prompt 功能，这个挂载点很方便
-12. **`create_jsonrpc_router()` 提供轻量 RPC 协议** — 方法命名为 `ServiceName.method_name`，适合不需要 REST 语义的场景。与 `create_use_case_router()` 二选一
+12. **`create_use_case_jsonrpc_router()` 提供轻量 RPC 协议** — 方法命名为 `ServiceName.method_name`，适合不需要 REST 语义的场景。与 `create_use_case_router()` 二选一
 13. **`create_use_case_cli()` 生成 Typer CLI 命令行工具** — 每个 service 成为一个命令组，每个方法成为子命令。适合需要本地调试脚本的场景。需要额外依赖 `typer`
 14. **3.0 起 UseCase MCP 只有 GraphQL 模式**（`create_use_case_graphql_mcp_server`）。老的两套直接调用式 MCP（`create_use_case_mcp_server` 4 层 + `create_use_case_flat_server` 扁平）已**移除**，迁移见 `docs/migrations/3.0-use-case-graphql.md`。GraphQL 模式下 Layer 3 (`compose_query`) 接收标准 GraphQL 字符串而非 JSON 参数表，支持字段投影、嵌套查询、参数透传；同时**拒绝内省**保持 MCP 响应紧凑
 15. **GraphQL HTTP endpoint 与 MCP 是两条独立通道** — MCP 走 MCP 协议（4 层渐进披露，Layer 3 拒绝内省）；GraphQL HTTP endpoint 走标准 GraphQL over HTTP（接受内省以兼容 GraphiQL）。两者共用同一个 `ComposeSchema`，但路由不同：MCP 的内省走 Layer 1/2 工具，HTTP 的内省走 `compose_introspect`

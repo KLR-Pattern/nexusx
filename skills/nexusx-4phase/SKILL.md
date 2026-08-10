@@ -318,7 +318,7 @@ fe/                 # Phase 4 前端 SDK
     └── client/         # HTTP client
 ```
 
-**REST 路由通过 `create_use_case_router(use_case_config)` 自动生成**，不需要手写 `router/` 目录。也可使用 `create_jsonrpc_router()` 替代 REST（JSON-RPC 2.0 协议）。
+**REST 路由通过 `create_use_case_router(use_case_config)` 自动生成**，不需要手写 `router/` 目录。也可使用 `create_use_case_jsonrpc_router()` 替代 REST（JSON-RPC 2.0 协议）。
 
 ## 阶段间变化对照
 
