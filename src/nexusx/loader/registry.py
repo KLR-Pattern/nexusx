@@ -42,10 +42,12 @@ class RelationshipKind:
     - REMOTE_COALESCED: a relationship on a materialized remote type, resolved
       by the owning service within the parent fetch (β coalescing). Not
       BFS-traversed; the serializer reads it off the instance attribute.
-    - REMOTE_PAGED: a declared RemoteRelationship with ``pagination=True``
-      (``page_by_<key>_in`` via ``fetch_remote_subtree(paged=True)``).
-    - REMOTE_PLAIN: a declared RemoteRelationship without pagination
-      (``by_<key>_in`` via ``fetch_remote_subtree()``).
+    - REMOTE_PAGED: a federation relationship where the member exposes
+      ``page_by_<key>_in`` (auto-detected from ``__pagination_orders__``,
+      specs/021 — no longer declared via ``RemoteRelationship.pagination``);
+      paged fetch via ``fetch_remote_subtree(paged=True)``.
+    - REMOTE_PLAIN: a federation relationship where the member only exposes
+      ``by_<key>_in`` (no ``page_by_``); plain fetch via ``fetch_remote_subtree()``.
     """
 
     LOCAL = "local"

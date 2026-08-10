@@ -180,7 +180,7 @@ def serialize_er_introspection(er_manager: Any) -> ERIntrospectionResponse:
                     is_list=r_info.is_list,
                     pagination=r_info.is_list
                     and (
-                        # federation 远程分页(RemoteRelationship pagination=True)
+                        # federation 远程分页（member 暴露 page_by_，r_info.pagination）
                         getattr(r_info, "pagination", False)
                         and target_service is not None
                     )
