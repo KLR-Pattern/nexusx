@@ -2,7 +2,7 @@
 
 Covers GitHub issue #117:
 
-- ``create_simple_mcp_server`` / ``create_mcp_server`` / ``Application`` must thread
+- ``create_single_app_mcp_server`` / ``create_multi_app_mcp_server`` / ``Application`` must thread
   ``enable_pagination`` and ``auto_query_config`` through to the underlying
   ``GraphQLHandler`` so the MCP surface matches the GraphQL surface.
 - The MCP server builders must fail fast (``ValueError``) when a schema has no
@@ -20,7 +20,7 @@ import pytest
 from sqlmodel import Field, Relationship, SQLModel
 
 from nexusx import AutoQueryConfig, GraphQLHandler, query
-from nexusx.mcp import Application, create_mcp_server, create_simple_mcp_server
+from nexusx.mcp import Application, create_multi_app_mcp_server, create_single_app_mcp_server
 from nexusx.mcp.application import _coerce_to_application
 from nexusx.mcp.managers.single_app_manager import SingleAppManager
 
@@ -186,11 +186,11 @@ class TestEmptySchemaGuard:
 
     def test_simple_server_raises_on_empty_schema(self) -> None:
         with pytest.raises(ValueError, match="no operations"):
-            create_simple_mcp_server(base=_EmptyBase)
+            create_single_app_mcp_server(base=_EmptyBase)
 
     def test_multi_app_server_raises_and_names_app(self) -> None:
         with pytest.raises(ValueError, match=r"app 'solo-empty'"):
-            create_mcp_server(
+            create_multi_app_mcp_server(
                 apps=[Application(name="solo-empty", base=_EmptyBase)]
             )
 
@@ -202,7 +202,7 @@ class TestEmptySchemaGuard:
     def test_auto_query_counts_as_operation(self) -> None:
         """auto_query_config injects by_id → non-empty → no raise."""
         cfg = AutoQueryConfig()
-        mcp = create_simple_mcp_server(
+        mcp = create_single_app_mcp_server(
             base=_AutoOnlyBase,
             session_factory=_DummySessionFactory(),
             auto_query_config=cfg,
@@ -211,7 +211,7 @@ class TestEmptySchemaGuard:
 
     def test_simple_server_default_with_query_succeeds(self) -> None:
         """Backward-compat: a normal base with @query builds fine, no guard trip."""
-        mcp = create_simple_mcp_server(base=_PlainBase)
+        mcp = create_single_app_mcp_server(base=_PlainBase)
         assert mcp is not None
 
 

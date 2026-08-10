@@ -15,7 +15,7 @@ template: home.html
 | 派生字段 | `post_*` 方法 | 在嵌套数据就绪后自动执行 |
 | 跨层传递数据 | `ExposeAs`、`SendTo`、`Collector` | 向下传上下文，向上聚合结果 |
 | 非 ORM 关系 | `Relationship(...)` | 同一 DataLoader 基础设施，支持自动加载 |
-| 一个 AI 就绪的 API | `create_simple_mcp_server(base=...)` | 渐进式 MCP 工具暴露 |
+| 一个 AI 就绪的 API | `create_single_app_mcp_server(base=...)` | 渐进式 MCP 工具暴露 |
 | 拆成微服务 | `RemoteRelationship` / `federation_public` DTO | 同构联邦：读模型跨服务组合，entity 主体不动 |
 
 ## 适合谁

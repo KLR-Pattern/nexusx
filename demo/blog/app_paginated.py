@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from demo.blog.database import async_session, init_db
 from demo.blog.models import BaseEntity
 from nexusx import AutoQueryConfig, GraphQLHandler
-from nexusx.mcp import create_simple_mcp_server
+from nexusx.mcp import create_single_app_mcp_server
 
 
 class GraphQLRequest(BaseModel):
@@ -41,7 +41,7 @@ handler = GraphQLHandler(
 # FastMCP's streamable-http session manager initializes inside its lifespan;
 # if that lifespan isn't run by the parent app, every /mcp request 500s with
 # "Task group is not initialized".
-mcp_server = create_simple_mcp_server(
+mcp_server = create_single_app_mcp_server(
     base=BaseEntity,
     name="nexusx Blog (Paginated) MCP",
     desc="Blog system — query users/posts/comments (paginated GraphQL)",

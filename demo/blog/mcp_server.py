@@ -10,13 +10,13 @@ Usage:
 
 from demo.blog.database import async_session
 from demo.blog.models import BaseEntity
-from nexusx.mcp import Application, create_mcp_server
+from nexusx.mcp import Application, create_multi_app_mcp_server
 
 
 def main() -> None:
     import sys
 
-    mcp = create_mcp_server(
+    mcp = create_multi_app_mcp_server(
         apps=[
             Application(
                 name="Blog",

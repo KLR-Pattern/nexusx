@@ -58,7 +58,7 @@ Three things determine a framework's Clean Architecture maturity:
 - **UseCaseService methods are the business-logic entry point**: the classmethods decorated with `@query` / `@mutation` are simultaneously the external contract (translated by each protocol builder into GraphQL fields / REST endpoints / MCP tools) and the executable body of business logic. The method body can be the full business logic or a thin wrapper calling external pure functions (a project-structure choice, not enforced by the library).
 - **DefineSubset is a declarative DTO**: auto-generates a Pydantic model from SQLModel entity metadata; the field set is declared explicitly by the developer via `__subset__` (including whether FK columns are included).
 - **Resolver is a model-driven response builder**: walks the object tree via BFS, automatically batch-loading relational data.
-- **The same UseCaseService method serves multiple APIs**: translated to different protocols via builders like `create_use_case_graphql_mcp_server` / `create_use_case_router` / `create_use_case_cli`, with zero changes to the business method.
+- **The same UseCaseService method serves multiple APIs**: translated to different protocols via builders like `create_use_case_mcp_server` / `create_use_case_router` / `create_use_case_cli`, with zero changes to the business method.
 
 ## Detailed Framework Analysis
 
@@ -194,7 +194,7 @@ nexusx and Litestar lead on DTO automation. nexusx's DefineSubset goes further â
 
 | Framework | REST | GraphQL | MCP | Unification level |
 |------|------|---------|-----|----------|
-| **nexusx** | `create_use_case_router()` | `GraphQLHandler` | `create_use_case_graphql_mcp_server()` | Three-way unified |
+| **nexusx** | `create_use_case_router()` | `GraphQLHandler` | `create_use_case_mcp_server()` | Three-way unified |
 | **Litestar** | Native | Strawberry plugin | None | Two-way (not unified) |
 | **Django** | DRF | graphene-django | None | Two-way (not unified) |
 | **Strawberry** | None (needs FastAPI) | Native | None | Single surface |

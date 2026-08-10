@@ -7,11 +7,11 @@ across multiple independent databases.
 Each app is represented as a self-contained :class:`Application` instance —封装
 SQLModel ``base`` 加完整的数据库连接信息（``url`` / ``engine`` / ``session_factory``
 三选一）。Application 可作为独立 Python 包发布，再由合并项目组装到
-``create_mcp_server(apps=[...])`` 使用，无需在合并项目里重新声明连接资源。
+``create_multi_app_mcp_server(apps=[...])`` 使用，无需在合并项目里重新声明连接资源。
 
 Example:
     ```python
-    from nexusx.mcp import Application, create_mcp_server
+    from nexusx.mcp import Application, create_multi_app_mcp_server
 
     apps = [
         Application(
@@ -30,7 +30,7 @@ Example:
         ),
     ]
 
-    mcp = create_mcp_server(
+    mcp = create_multi_app_mcp_server(
         apps=apps,
         name="My Multi-App GraphQL API"
     )
@@ -53,7 +53,7 @@ singleton via a Python package; the merging project simply imports and assembles
     # In the merging project:
     from blog_app import blog
     from shop_app import shop
-    mcp = create_mcp_server(apps=[blog, shop], name="Gateway")
+    mcp = create_multi_app_mcp_server(apps=[blog, shop], name="Gateway")
     ```
 
 """
@@ -61,8 +61,8 @@ singleton via a Python package; the merging project simply imports and assembles
 from __future__ import annotations
 
 __all__ = [
-    "create_mcp_server",
-    "create_simple_mcp_server",
+    "create_multi_app_mcp_server",
+    "create_single_app_mcp_server",
     "Application",
     "MultiAppManager",
     "SingleAppManager",
@@ -71,4 +71,4 @@ __all__ = [
 
 from nexusx.mcp.application import Application
 from nexusx.mcp.managers import AppResources, MultiAppManager, SingleAppManager
-from nexusx.mcp.server import create_mcp_server, create_simple_mcp_server
+from nexusx.mcp.server import create_multi_app_mcp_server, create_single_app_mcp_server

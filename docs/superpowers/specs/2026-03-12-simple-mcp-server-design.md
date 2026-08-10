@@ -6,7 +6,7 @@ Add a simplified MCP server entry point for single-app scenarios, providing only
 
 ## Motivation
 
-The current `create_mcp_server` uses a three-layer progressive disclosure pattern with 7 tools:
+The current `create_multi_app_mcp_server` uses a three-layer progressive disclosure pattern with 7 tools:
 - Layer 0: `list_apps`
 - Layer 1: `list_queries`, `list_mutations`
 - Layer 2: `get_query_schema`, `get_mutation_schema`
@@ -19,7 +19,7 @@ For lightweight single-app applications, this pattern adds unnecessary complexit
 ### Function Signature
 
 ```python
-def create_simple_mcp_server(
+def create_single_app_mcp_server(
     base: type,
     name: str = "nexusx API",
     description: str = "GraphQL API for SQLModel entities",
@@ -42,10 +42,10 @@ def create_simple_mcp_server(
 ### Usage Example
 
 ```python
-from nexusx.mcp import create_simple_mcp_server
+from nexusx.mcp import create_single_app_mcp_server
 from myapp.models import BaseEntity
 
-mcp = create_simple_mcp_server(
+mcp = create_single_app_mcp_server(
     base=BaseEntity,
     name="My Blog API",
     description="Blog system with users and posts",
@@ -102,9 +102,9 @@ async def execute_mutation(mutation: str) -> dict:
 
 ```
 src/nexusx/mcp/
-├── __init__.py              # Export create_simple_mcp_server
-├── server.py                # create_mcp_server (existing)
-├── simple_server.py         # create_simple_mcp_server (new)
+├── __init__.py              # Export create_single_app_mcp_server
+├── server.py                # create_multi_app_mcp_server (existing)
+├── simple_server.py         # create_single_app_mcp_server (new)
 └── tools/
     ├── multi_app_tools.py   # Existing 7 tools
     └── simple_tools.py      # New 3 tools
@@ -123,20 +123,20 @@ Update `src/nexusx/mcp/__init__.py`:
 
 ```python
 __all__ = [
-    "create_mcp_server",
-    "create_simple_mcp_server",  # New
+    "create_multi_app_mcp_server",
+    "create_single_app_mcp_server",  # New
     "AppConfig",
     "MultiAppManager",
     "AppResources",
 ]
 
-from nexusx.mcp.server import create_mcp_server
-from nexusx.mcp.simple_server import create_simple_mcp_server  # New
+from nexusx.mcp.server import create_multi_app_mcp_server
+from nexusx.mcp.simple_server import create_single_app_mcp_server  # New
 ```
 
 ## Comparison
 
-| Aspect | create_mcp_server | create_simple_mcp_server |
+| Aspect | create_multi_app_mcp_server | create_single_app_mcp_server |
 |--------|-------------------|--------------------------|
 | Target | Multi-app scenarios | Single-app scenarios |
 | Tools | 7 | 3 |

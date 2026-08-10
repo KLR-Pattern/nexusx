@@ -1,6 +1,6 @@
 # UseCase API Reference
 
-Define business services with `UseCaseService`, expose them via the 3.0+ GraphQL MCP (`create_use_case_graphql_mcp_server`), FastAPI REST (`create_use_case_router`), JSON-RPC (`create_jsonrpc_router`), CLI (`create_use_case_cli`), or a plain GraphQL HTTP endpoint (`build_compose_schema` + `compose_introspect`).
+Define business services with `UseCaseService`, expose them via the 3.0+ GraphQL MCP (`create_use_case_mcp_server`), FastAPI REST (`create_use_case_router`), JSON-RPC (`create_use_case_jsonrpc_router`), CLI (`create_use_case_cli`), or a plain GraphQL HTTP endpoint (`build_compose_schema` + `compose_introspect`).
 
 ## UseCaseService
 
@@ -69,14 +69,14 @@ config = UseCaseAppConfig(
 | `description` | `str \| None` | No | Application description |
 | `context_extractor` | `Callable \| None` | No | MCP context extraction function |
 
-## create_use_case_graphql_mcp_server
+## create_use_case_mcp_server
 
 Create an MCP server for UseCase services with multi-app support and four-layer progressive disclosure. Generates a real GraphQL schema (introspection-compatible, GraphiQL-friendly) from `UseCaseService` signatures; Layer 3 accepts standard GraphQL query strings.
 
 ```python
-from nexusx.use_case import create_use_case_graphql_mcp_server, UseCaseAppConfig
+from nexusx.use_case import create_use_case_mcp_server, UseCaseAppConfig
 
-mcp = create_use_case_graphql_mcp_server(
+mcp = create_use_case_mcp_server(
     apps=[
         UseCaseAppConfig(
             name="project",

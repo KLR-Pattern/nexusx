@@ -9,7 +9,7 @@ import pytest
 from sqlmodel import Field, SQLModel
 
 from nexusx import query
-from nexusx.mcp import Application, MultiAppManager, create_mcp_server
+from nexusx.mcp import Application, MultiAppManager, create_multi_app_mcp_server
 
 
 class _TestBase(SQLModel):
@@ -70,7 +70,7 @@ class TestCreateMcpServerLifespan:
     @pytest.mark.asyncio
     async def test_lifespan_disposes_on_exit(self):
         app = _make_app()
-        mcp = create_mcp_server(apps=[app], name="Test Server")
+        mcp = create_multi_app_mcp_server(apps=[app], name="Test Server")
 
         # FastMCP's _lifespan_manager is a no-arg async context manager method
         async with mcp._lifespan_manager():
@@ -83,7 +83,7 @@ class TestCreateMcpServerLifespan:
     async def test_lifespan_idempotent(self):
         """Verify _lifespan_manager is idempotent (FastMCP caches the result)."""
         app = _make_app()
-        mcp = create_mcp_server(apps=[app], name="Test Server")
+        mcp = create_multi_app_mcp_server(apps=[app], name="Test Server")
 
         async with mcp._lifespan_manager():
             pass

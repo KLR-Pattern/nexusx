@@ -69,7 +69,7 @@ def test_replacement_documented_in_migration_guide() -> None:
     guide = repo_root / "docs" / "migrations" / "3.0-use-case-graphql.md"
     assert guide.exists(), f"Migration guide missing at {guide}"
     text = guide.read_text(encoding="utf-8")
-    assert "create_use_case_graphql_mcp_server" in text
+    assert "create_use_case_mcp_server" in text
     for removed in _REMOVED_NAMES:
         assert removed in text, (
             f"Migration guide must mention removed entry '{removed}'"
@@ -85,6 +85,6 @@ def test_replacement_documented_in_changelog() -> None:
     assert changelog.exists()
     text = changelog.read_text(encoding="utf-8")
     assert "## 3.0.0" in text
-    assert "create_use_case_graphql_mcp_server" in text
+    assert "create_use_case_mcp_server" in text
     for removed in _REMOVED_NAMES:
         assert removed in text

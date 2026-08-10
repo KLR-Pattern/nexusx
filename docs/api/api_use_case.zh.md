@@ -1,6 +1,6 @@
 # UseCase API 参考
 
-定义 `UseCaseService` 业务服务，通过 3.0+ 的 GraphQL MCP（`create_use_case_graphql_mcp_server`）、FastAPI REST（`create_use_case_router`）、JSON-RPC（`create_jsonrpc_router`）、CLI（`create_use_case_cli`）或独立 GraphQL HTTP endpoint（`build_compose_schema` + `compose_introspect`）对外暴露。
+定义 `UseCaseService` 业务服务，通过 3.0+ 的 GraphQL MCP（`create_use_case_mcp_server`）、FastAPI REST（`create_use_case_router`）、JSON-RPC（`create_use_case_jsonrpc_router`）、CLI（`create_use_case_cli`）或独立 GraphQL HTTP endpoint（`build_compose_schema` + `compose_introspect`）对外暴露。
 
 ## UseCaseService
 
@@ -62,14 +62,14 @@ config = UseCaseAppConfig(
 | `description` | `str \| None` | 否 | 应用描述 |
 | `context_extractor` | `Callable \| None` | 否 | MCP 上下文提取函数 |
 
-## create_use_case_graphql_mcp_server
+## create_use_case_mcp_server
 
-使用 `create_use_case_graphql_mcp_server` 创建 UseCase 服务的 MCP 服务端，支持多应用和四层渐进式披露。会从 `UseCaseService` 签名自动生成真正的 GraphQL schema（兼容 GraphiQL）；Layer 3 接收标准 GraphQL 查询字符串。
+使用 `create_use_case_mcp_server` 创建 UseCase 服务的 MCP 服务端，支持多应用和四层渐进式披露。会从 `UseCaseService` 签名自动生成真正的 GraphQL schema（兼容 GraphiQL）；Layer 3 接收标准 GraphQL 查询字符串。
 
 ```python
-from nexusx.use_case import create_use_case_graphql_mcp_server, UseCaseAppConfig
+from nexusx.use_case import create_use_case_mcp_server, UseCaseAppConfig
 
-mcp = create_use_case_graphql_mcp_server(
+mcp = create_use_case_mcp_server(
     apps=[
         UseCaseAppConfig(
             name="project",

@@ -1,6 +1,6 @@
 """UseCase JSON-RPC Demo — remote-callable JSON-RPC 2.0 endpoint.
 
-Demonstrates ``create_jsonrpc_router()`` with a running HTTP server,
+Demonstrates ``create_use_case_jsonrpc_router()`` with a running HTTP server,
 plus a self-test client that calls every endpoint via httpx.
 
 Run:
@@ -36,7 +36,7 @@ from demo.use_case.mcp_server import SprintService, TaskService, UserService
 # JSON-RPC lives on feat/jsonrpc-router; this demo uses the same imports
 # that would be available after that branch is merged.
 from nexusx import UseCaseAppConfig
-from nexusx.use_case.jsonrpc import create_jsonrpc_router
+from nexusx.use_case.jsonrpc import create_use_case_jsonrpc_router
 
 app_config = UseCaseAppConfig(
     name="project",
@@ -65,7 +65,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(create_jsonrpc_router(app_config))
+app.include_router(create_use_case_jsonrpc_router(app_config))
 
 
 @app.get("/")

@@ -13,9 +13,9 @@ pip install nexusx[fastmcp]
 最简模式——传入 SQLModel 基类即可：
 
 ```python
-from nexusx.mcp import create_simple_mcp_server
+from nexusx.mcp import create_single_app_mcp_server
 
-mcp = create_simple_mcp_server(
+mcp = create_single_app_mcp_server(
     base=SQLModel,
     name="My API",
     session_factory=async_session,  # 查询数据库时提供
@@ -33,7 +33,7 @@ mcp.run()  # stdio 模式
 只有在确实需要写入数据时才显式开启 mutation：
 
 ```python
-mcp = create_simple_mcp_server(
+mcp = create_single_app_mcp_server(
     base=SQLModel,
     session_factory=async_session,
     allow_mutation=True,
@@ -49,9 +49,9 @@ mcp = create_simple_mcp_server(
 封装 `base` 类加完整的数据库连接信息：
 
 ```python
-from nexusx.mcp import Application, create_mcp_server
+from nexusx.mcp import Application, create_multi_app_mcp_server
 
-mcp = create_mcp_server(
+mcp = create_multi_app_mcp_server(
     apps=[
         Application(
             name="blog",
@@ -72,7 +72,7 @@ mcp.run()
 ```
 
 每个 `Application` 自带数据库连接资源，合并项目无需再提供 `session_factory` 或
-其他连接配置——子项目 `pip install` 后 import 进来，传给 `create_mcp_server` 即可。
+其他连接配置——子项目 `pip install` 后 import 进来，传给 `create_multi_app_mcp_server` 即可。
 
 多应用工具增加了应用级导航：
 
@@ -87,7 +87,7 @@ mcp.run()
 `get_mutation_schema` 和 `graphql_mutation`。默认只读模式不会注册这些工具。
 
 !!! tip
-    单应用场景用 `create_simple_mcp_server`——更简单，工具调用更少。只有当 AI 代理需要跨多个数据库或领域工作时才用 `create_mcp_server`。
+    单应用场景用 `create_single_app_mcp_server`——更简单，工具调用更少。只有当 AI 代理需要跨多个数据库或领域工作时才用 `create_multi_app_mcp_server`。
 
 ## 跨项目合并：把 Application 作为独立包导出
 
@@ -102,14 +102,14 @@ blog = Application(name="blog", base=BlogBase, url=BLOG_DATABASE_URL)
 # 在合并项目里
 from blog_app import blog
 from shop_app import shop
-from nexusx.mcp import create_mcp_server
+from nexusx.mcp import create_multi_app_mcp_server
 
-mcp = create_mcp_server(apps=[blog, shop], name="Gateway")
+mcp = create_multi_app_mcp_server(apps=[blog, shop], name="Gateway")
 mcp.run()
 ```
 
 合并项目组装 3 个子项目通常不超过 10 行代码——`pip install blog-app shop-app auth-app`、
-import、传给 `create_mcp_server`、run。
+import、传给 `create_multi_app_mcp_server`、run。
 
 !!! note
     旧的 `AppConfig` dict 形式（`{"name": ..., "base": ..., "session_factory": ...}`）
@@ -120,7 +120,7 @@ import、传给 `create_mcp_server`、run。
 当业务方法或关系加载器需要访问数据库时，传入 `session_factory`：
 
 ```python
-mcp = create_simple_mcp_server(
+mcp = create_single_app_mcp_server(
     base=SQLModel,
     name="My API",
     session_factory=async_session,
@@ -142,8 +142,8 @@ mcp.run(transport="streamable-http", host="0.0.0.0", port=8003)
 
 ## 回顾
 
-- `create_simple_mcp_server` 创建单应用 MCP 服务，默认提供 2 个只读工具
-- `create_mcp_server` 处理多应用场景，提供应用级导航
+- `create_single_app_mcp_server` 创建单应用 MCP 服务，默认提供 2 个只读工具
+- `create_multi_app_mcp_server` 处理多应用场景，提供应用级导航
 - mutation 工具必须通过 `allow_mutation=True` 显式开启
 - 两者都支持 `stdio`（CLI）和 `streamable-http`（HTTP）传输模式
 - `session_factory` 用于数据库查询和关系加载

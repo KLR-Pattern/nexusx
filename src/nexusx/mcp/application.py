@@ -1,7 +1,7 @@
 """Self-contained :class:`Application` —— nexusx mcp 的最小可导出单元。
 
 一个 :class:`Application` 封装 SQLModel 业务模型 + 数据库连接信息 + GraphQL 元数据，
-可作为独立 Python 包导出，再由合并项目组装到 ``create_mcp_server(apps=[...])``。
+可作为独立 Python 包导出，再由合并项目组装到 ``create_multi_app_mcp_server(apps=[...])``。
 
 详见 ``specs/009-app-self-contained/``（spec、plan、contracts、quickstart）。
 """

@@ -8,7 +8,7 @@ from nexusx import mutation, query
 # Skip all tests in this module if fastmcp is not installed
 pytest.importorskip("fastmcp")
 
-from nexusx.mcp import Application, create_mcp_server  # noqa: E402
+from nexusx.mcp import Application, create_multi_app_mcp_server  # noqa: E402
 
 
 def _get_tools_dict(mcp):
@@ -92,7 +92,7 @@ def multi_app_mcp():
             mutation_description="Mutate shop data",
         ),
     ]
-    return create_mcp_server(apps=apps, name="Test Multi-App", allow_mutation=True)
+    return create_multi_app_mcp_server(apps=apps, name="Test Multi-App", allow_mutation=True)
 
 
 class TestMultiAppTools:
@@ -371,7 +371,7 @@ class TestMultiAppToolsReadOnlyMode:
         apps = [
             Application(name="blog", base=BlogBaseEntity, description="Blog application"),
         ]
-        return create_mcp_server(apps=apps, name="Test Read-Only", allow_mutation=False)
+        return create_multi_app_mcp_server(apps=apps, name="Test Read-Only", allow_mutation=False)
 
     def test_list_apps_mutations_count_zero(self, read_only_mcp):
         """Test list_apps returns mutations_count=0 when allow_mutation=False."""

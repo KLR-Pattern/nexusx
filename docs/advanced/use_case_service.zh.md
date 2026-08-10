@@ -105,7 +105,7 @@ Layer 3（`compose_query`）接收标准 GraphQL 查询字符串，agent 可以�
 
 - `UseCaseService` 子类通过 `@query` 和 `@mutation` 暴露异步业务方法
 - 未装饰的方法以及以下划线 `_` 开头的方法不会被暴露
-- `create_use_case_graphql_mcp_server` 创建四层渐进披露的 GraphQL MCP 服务
+- `create_use_case_mcp_server` 创建四层渐进披露的 GraphQL MCP 服务
 - 方法的 docstring 成为 AI 代理看到的 schema 与 MCP 发现描述
 
 ## 下一步

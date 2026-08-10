@@ -48,12 +48,12 @@ class SprintService(UseCaseService):
 
 ## Step 2: Expose to MCP
 
-Wrap your services in an MCP server. The 3.0+ entry point is `create_use_case_graphql_mcp_server` — it generates a real GraphQL schema from your `UseCaseService` signatures and exposes it through a four-layer progressive-disclosure MCP:
+Wrap your services in an MCP server. The 3.0+ entry point is `create_use_case_mcp_server` — it generates a real GraphQL schema from your `UseCaseService` signatures and exposes it through a four-layer progressive-disclosure MCP:
 
 ```python
-from nexusx.use_case import UseCaseAppConfig, create_use_case_graphql_mcp_server
+from nexusx.use_case import UseCaseAppConfig, create_use_case_mcp_server
 
-mcp = create_use_case_graphql_mcp_server(
+mcp = create_use_case_mcp_server(
     apps=[
         UseCaseAppConfig(
             name="project",
@@ -183,7 +183,7 @@ OpenAPI documentation is generated automatically — visit `/docs` to see the in
 
 - `UseCaseService` subclasses expose async methods with `@query` and `@mutation`
 - Method docstrings become schema and MCP discovery descriptions
-- `create_use_case_graphql_mcp_server` creates a four-layer progressive-discovery GraphQL MCP service
+- `create_use_case_mcp_server` creates a four-layer progressive-discovery GraphQL MCP service
 - `create_use_case_router` generates FastAPI POST routes from the same service class
 - Body parameters become request body; `FromContext` parameters are injected via `context_extractor`
 

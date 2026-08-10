@@ -37,7 +37,7 @@ def _ensure_operations(handler: GraphQLHandler, context: str) -> None:
         )
 
 
-def create_mcp_server(
+def create_multi_app_mcp_server(
     apps: list[Application],
     name: str = "Multi-App nexusx API",
     allow_mutation: bool = False,
@@ -88,7 +88,7 @@ def create_mcp_server(
         ```python
         from myapp.blog import BlogBaseEntity, BLOG_DATABASE_URL
         from myapp.shop import ShopBaseEntity, SHOP_DATABASE_URL
-        from nexusx.mcp import Application, create_mcp_server
+        from nexusx.mcp import Application, create_multi_app_mcp_server
 
         apps = [
             Application(
@@ -107,7 +107,7 @@ def create_mcp_server(
             ),
         ]
 
-        mcp = create_mcp_server(
+        mcp = create_multi_app_mcp_server(
             apps=apps,
             name="My Multi-App GraphQL API"
         )
@@ -138,7 +138,7 @@ def create_mcp_server(
     # Fail fast if any app's schema has no operations (no @query/@mutation
     # and no auto_query_config) — otherwise the MCP serves an empty schema.
     for app_name, resources in manager.apps.items():
-        _ensure_operations(resources.handler, f"create_mcp_server (app '{app_name}')")
+        _ensure_operations(resources.handler, f"create_multi_app_mcp_server (app '{app_name}')")
 
     # Wire lifespan so manager.dispose() runs on server shutdown,
     # releasing any engines owned by Applications constructed with url=.
@@ -158,7 +158,7 @@ def create_mcp_server(
     return mcp
 
 
-def create_simple_mcp_server(
+def create_single_app_mcp_server(
     base: type,
     name: str = "nexusx API",
     desc: str | None = None,
@@ -208,7 +208,7 @@ def create_simple_mcp_server(
         ```python
         from sqlmodel import SQLModel
         from nexusx import query
-        from nexusx.mcp import create_simple_mcp_server
+        from nexusx.mcp import create_single_app_mcp_server
 
         class BaseEntity(SQLModel):
             pass
@@ -222,7 +222,7 @@ def create_simple_mcp_server(
                 return await fetch_users()
 
         # Create simplified MCP server
-        mcp = create_simple_mcp_server(
+        mcp = create_single_app_mcp_server(
             base=BaseEntity,
             name="My Blog API",
             desc="Blog system with users and posts"
@@ -236,7 +236,7 @@ def create_simple_mcp_server(
         ```
 
     Note:
-        For multi-app scenarios with separate databases, use create_mcp_server()
+        For multi-app scenarios with separate databases, use create_multi_app_mcp_server()
         instead, which provides app discovery and routing capabilities.
 
     Tools provided (when allow_mutation=False, default):
@@ -259,7 +259,7 @@ def create_simple_mcp_server(
         enable_pagination=enable_pagination,
         auto_query_config=auto_query_config,
     )
-    _ensure_operations(manager.handler, "create_simple_mcp_server")
+    _ensure_operations(manager.handler, "create_single_app_mcp_server")
 
     # Create the FastMCP server
     mcp = FastMCP(name)

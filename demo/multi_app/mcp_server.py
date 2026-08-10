@@ -16,7 +16,7 @@ which application to use.
 
 import asyncio
 
-from nexusx.mcp import Application, create_mcp_server
+from nexusx.mcp import Application, create_multi_app_mcp_server
 
 from .database import BLOG_DATABASE_URL, SHOP_DATABASE_URL
 from .models import BlogBaseEntity, ShopBaseEntity
@@ -51,7 +51,7 @@ def main():
     ]
 
     # Create the MCP server
-    mcp = create_mcp_server(
+    mcp = create_multi_app_mcp_server(
         apps=apps,
         name="Multi-App GraphQL MCP Server",
     )

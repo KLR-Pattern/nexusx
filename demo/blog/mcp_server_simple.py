@@ -1,4 +1,4 @@
-"""Simple MCP server demo using create_simple_mcp_server.
+"""Simple MCP server demo using create_single_app_mcp_server.
 
 This demo shows how to create a simplified MCP server for single-app scenarios
 with only 3 tools: get_schema, graphql_query, graphql_mutation.
@@ -17,7 +17,7 @@ from sqlmodel import SQLModel
 
 from demo.blog.database import async_session
 from nexusx import mutation, query
-from nexusx.mcp import create_simple_mcp_server
+from nexusx.mcp import create_single_app_mcp_server
 
 
 # Define base entity
@@ -83,7 +83,7 @@ async def init_db():
 
 
 # Create simplified MCP server
-mcp = create_simple_mcp_server(
+mcp = create_single_app_mcp_server(
     base=BaseEntity,
     name="Demo Simple Blog GraphQL MCP Server",
     desc="Blog system with users (simplified 3-tool version)",

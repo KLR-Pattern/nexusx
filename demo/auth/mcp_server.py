@@ -25,7 +25,7 @@ Authentication:
 from demo.auth.auth import MCPAuthMiddleware
 from demo.blog.database import async_session, init_db
 from demo.blog.models import BaseEntity
-from nexusx.mcp import Application, create_mcp_server
+from nexusx.mcp import Application, create_multi_app_mcp_server
 
 
 async def lifespan(app):
@@ -35,7 +35,7 @@ async def lifespan(app):
 
 def main() -> None:
     """Run MCP server with authentication middleware."""
-    mcp = create_mcp_server(
+    mcp = create_multi_app_mcp_server(
         apps=[
             Application(
                 name="Blog",

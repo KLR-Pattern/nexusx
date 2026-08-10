@@ -108,10 +108,10 @@ def test_voyager_documented_routes_and_methods() -> None:
 
 def test_simple_mcp_is_read_only_by_default() -> None:
     pytest.importorskip("fastmcp")
-    from nexusx.mcp import create_simple_mcp_server
+    from nexusx.mcp import create_single_app_mcp_server
 
-    read_only = create_simple_mcp_server(base=DocumentedBase)
-    writable = create_simple_mcp_server(
+    read_only = create_single_app_mcp_server(base=DocumentedBase)
+    writable = create_single_app_mcp_server(
         base=DocumentedBase,
         allow_mutation=True,
     )

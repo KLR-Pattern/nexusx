@@ -1,6 +1,6 @@
 """JSON-RPC 2.0 router for UseCaseService.
 
-Provides ``create_jsonrpc_router()`` to create a FastAPI endpoint that
+Provides ``create_use_case_jsonrpc_router()`` to create a FastAPI endpoint that
 exposes UseCaseService methods via JSON-RPC 2.0 protocol.
 
 Method naming: ``ServiceName.method_name`` (e.g. ``SprintService.list_sprints``).
@@ -294,7 +294,7 @@ async def _handle_single_request(
 # ---------------------------------------------------------------------------
 
 
-def create_jsonrpc_router(
+def create_use_case_jsonrpc_router(
     config: UseCaseAppConfig,
     path: str = "/rpc",
     context_extractor: Callable[[Any], dict[str, Any] | Awaitable[dict[str, Any]]]
@@ -316,7 +316,7 @@ def create_jsonrpc_router(
 
     Example::
 
-        router = create_jsonrpc_router(
+        router = create_use_case_jsonrpc_router(
             UseCaseAppConfig(
                 name="project",
                 services=[UserService, TaskService],

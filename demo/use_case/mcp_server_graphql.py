@@ -1,6 +1,6 @@
 """Minimal UseCase GraphQL MCP demo — no ErManager, no DataLoader, no Resolver.
 
-Shows the smallest possible ``create_use_case_graphql_mcp_server`` setup so
+Shows the smallest possible ``create_use_case_mcp_server`` setup so
 the new 3.0 entry point is easy to evaluate without pulling in the full
 Core API stack. For a richer example with ErManager + Resolver + DefineSubset
 DTOs, see ``demo/use_case/mcp_server.py``.
@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from nexusx import (
     UseCaseAppConfig,
     UseCaseService,
-    create_use_case_graphql_mcp_server,
+    create_use_case_mcp_server,
     mutation,
     query,
 )
@@ -59,7 +59,7 @@ class UserService(UseCaseService):
 
 
 def main() -> None:
-    mcp = create_use_case_graphql_mcp_server(
+    mcp = create_use_case_mcp_server(
         apps=[
             UseCaseAppConfig(
                 name="demo",

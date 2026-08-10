@@ -4,7 +4,7 @@ Public API (3.0+):
 - UseCase GraphQL MCP: ``create_use_case_graphql_mcp_server``, plus
   direct schema access via ``build_compose_schema`` / ``ComposeSchema`` /
   ``ComposeSchemaError``.
-- FastAPI / JSON-RPC / Voyager: ``create_router``, ``create_jsonrpc_router``.
+- FastAPI / JSON-RPC / Voyager: ``create_router``, ``create_use_case_jsonrpc_router``.
 """
 
 from nexusx.use_case.business import UseCaseService, get_return_type
@@ -17,7 +17,7 @@ from nexusx.use_case.compose_schema import (
     build_compose_schema,
 )
 from nexusx.use_case.context import FromContext
-from nexusx.use_case.jsonrpc import create_jsonrpc_router
+from nexusx.use_case.jsonrpc import create_use_case_jsonrpc_router
 from nexusx.use_case.router import create_router
 from nexusx.use_case.selection import SelectionError
 from nexusx.use_case.types import UseCaseAppConfig
@@ -31,7 +31,7 @@ __all__ = [
     "compose_introspect",
     # Orthogonal surfaces (unchanged in 3.0)
     "create_use_case_cli",
-    "create_jsonrpc_router",
+    "create_use_case_jsonrpc_router",
     "create_router",
     # Service / config / annotations
     "UseCaseService",

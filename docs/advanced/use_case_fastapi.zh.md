@@ -56,7 +56,7 @@ from fastapi import FastAPI
 from nexusx import (
     UseCaseAppConfig,
     UseCaseService,
-    create_use_case_graphql_mcp_server,
+    create_use_case_mcp_server,
     query,
 )
 
@@ -71,7 +71,7 @@ class SprintService(UseCaseService):
         ...
 
 # MCP 模式（AI 代理）
-mcp = create_use_case_graphql_mcp_server(
+mcp = create_use_case_mcp_server(
     apps=[
         UseCaseAppConfig(name="project", services=[SprintService]),
     ],

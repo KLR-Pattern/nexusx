@@ -2,14 +2,14 @@
 
 MCP 服务配置的完整 API 参考。
 
-## create_simple_mcp_server
+## create_single_app_mcp_server
 
-使用 `create_simple_mcp_server` 创建单应用 MCP 服务。
+使用 `create_single_app_mcp_server` 创建单应用 MCP 服务。
 
 ```python
-from nexusx.mcp import create_simple_mcp_server
+from nexusx.mcp import create_single_app_mcp_server
 
-mcp = create_simple_mcp_server(
+mcp = create_single_app_mcp_server(
     base=SQLModel,
     name="My API",
     session_factory=async_session,
@@ -18,7 +18,7 @@ mcp = create_simple_mcp_server(
 ```
 
 !!! tip
-    适用于单应用场景。如果你需要管理多个独立的应用（如 blog + shop），使用 `create_mcp_server`。
+    适用于单应用场景。如果你需要管理多个独立的应用（如 blog + shop），使用 `create_multi_app_mcp_server`。
 
 ### 参数
 
@@ -42,14 +42,14 @@ mcp = create_simple_mcp_server(
 传入 `allow_mutation=True` 后，才会额外注册
 `graphql_mutation(mutation)`。
 
-## create_mcp_server
+## create_multi_app_mcp_server
 
-使用 `create_mcp_server` 创建多应用 MCP 服务。
+使用 `create_multi_app_mcp_server` 创建多应用 MCP 服务。
 
 ```python
-from nexusx.mcp import Application, create_mcp_server
+from nexusx.mcp import Application, create_multi_app_mcp_server
 
-mcp = create_mcp_server(
+mcp = create_multi_app_mcp_server(
     apps=[
         Application(name="blog", base=BlogBase, url=BLOG_DATABASE_URL),
         Application(name="shop", base=ShopBase, url=SHOP_DATABASE_URL),
@@ -85,11 +85,11 @@ mcp = create_mcp_server(
 
 `Application` 是多应用场景下**自包含、可独立导出**的单元。每个 `Application`
 封装 SQLModel `base` 加完整的数据库连接信息（URL / engine / session 工厂三选一），
-可作为 Python 包发布到 PyPI 或私有索引，再由合并项目组装到 `create_mcp_server`
+可作为 Python 包发布到 PyPI 或私有索引，再由合并项目组装到 `create_multi_app_mcp_server`
 里使用，无需在合并项目里重新声明连接资源。
 
 ```python
-from nexusx.mcp import Application, create_mcp_server
+from nexusx.mcp import Application, create_multi_app_mcp_server
 
 blog = Application(
     name="blog",
@@ -103,7 +103,7 @@ shop = Application(
     url="postgresql+asyncpg://user:pass@host/shop",
 )
 
-mcp = create_mcp_server(apps=[blog, shop], name="多应用 API")
+mcp = create_multi_app_mcp_server(apps=[blog, shop], name="多应用 API")
 ```
 
 ### 独立使用（无需挂到 mcp server）
@@ -149,7 +149,7 @@ Application(name='blog', url='postgresql+asyncpg://user:***@host/blog', owned=Tr
 
 ## 旧版 dict 配置
 
-`create_mcp_server` 的 `apps` 参数仍兼容以下字典结构，但会触发
+`create_multi_app_mcp_server` 的 `apps` 参数仍兼容以下字典结构，但会触发
 `DeprecationWarning`。新代码应使用 `Application` 实例。
 
 | 字段 | 类型 | 说明 |

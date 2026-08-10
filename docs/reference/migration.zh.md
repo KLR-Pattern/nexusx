@@ -34,7 +34,7 @@ RPC 模块已全面重构为 UseCase 模式。
 | 旧名称 | 新名称 |
 |--------|--------|
 | `RpcService` | `UseCaseService` |
-| `create_rpc_mcp_server` | `create_use_case_graphql_mcp_server` |
+| `create_rpc_mcp_server` | `create_use_case_mcp_server` |
 | `create_rpc_voyager` | `create_use_case_voyager` |
 | `RpcVoyager` | `UseCaseVoyager` |
 
@@ -66,13 +66,13 @@ mcp = create_rpc_mcp_server(
 from nexusx import (
     UseCaseAppConfig,
     UseCaseService,
-    create_use_case_graphql_mcp_server,
+    create_use_case_mcp_server,
 )
 
 class SprintService(UseCaseService):
     ...
 
-mcp = create_use_case_graphql_mcp_server(
+mcp = create_use_case_mcp_server(
     apps=[
         UseCaseAppConfig(
             name="project",

@@ -290,12 +290,12 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 ### 3.7.0 (2026-7-19)
 
 - feat:
-  - **Self-contained `Application` class (specs/009-app-self-contained)**: `nexusx.mcp.Application` is now the minimal exportable unit of a "business app" in the MCP system. An `Application` bundles a SQLModel `base` + one of three mutually-exclusive connection inputs (`url` / `engine` / `session_factory`, or none) + GraphQL metadata, so it can be shipped as an independent Python package (`pip install blog-app`) and assembled into a gateway via `create_mcp_server(apps=[...])`. This fully decouples the app's schema/connection definition from the MCP server that runs it.
+  - **Self-contained `Application` class (specs/009-app-self-contained)**: `nexusx.mcp.Application` is now the minimal exportable unit of a "business app" in the MCP system. An `Application` bundles a SQLModel `base` + one of three mutually-exclusive connection inputs (`url` / `engine` / `session_factory`, or none) + GraphQL metadata, so it can be shipped as an independent Python package (`pip install blog-app`) and assembled into a gateway via `create_multi_app_mcp_server(apps=[...])`. This fully decouples the app's schema/connection definition from the MCP server that runs it.
 
     Key designs: **resource ownership follows the source** — the `url=` path owns the engine it creates and `dispose()` tears it down; `engine=` / `session_factory=` are treated as external and `dispose()` is a no-op (avoids double-dispose, releasing foreign engines, and leaks). **Three connection forms are mutually exclusive**, validated at construction (`ValueError("Provide at most one of: url, engine, session_factory")`). **Schema-only mode** — construct with no connection args for pure schema introspection (`entity_names` / SDL), the key case for distributing an app as a package whose author doesn't know the user's DB URL. **Idempotent `dispose()`** guards three overlapping exits (MCP server lifespan shutdown, `async with Application(...)`, explicit `await dispose()`). **URL credentials are redacted** in `__repr__` and error messages (via SQLAlchemy `make_url().render_as_string(hide_password=True)`). **Cross-app name conflicts fail at construction** in `MultiAppManager` rather than at runtime.
 
     ```python
-    from nexusx.mcp import Application, create_mcp_server
+    from nexusx.mcp import Application, create_multi_app_mcp_server
 
     # Single app standalone (schema introspection + direct query)
     blog = Application(name="blog", base=BlogBase, url="sqlite+aiosqlite:///blog.db")
@@ -303,7 +303,7 @@ description: "Release-by-release changelog for nexusx, following semver — majo
     result = await blog.resources.handler.execute("{ users { id name } }")
 
     # Multiple apps composed into one MCP server
-    mcp = create_mcp_server(apps=[blog, shop], name="Gateway")
+    mcp = create_multi_app_mcp_server(apps=[blog, shop], name="Gateway")
     mcp.run()  # lifespan exit disposes all owned engines
     ```
 
@@ -312,9 +312,9 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 
     ```python
     # Before (deprecated)
-    create_mcp_server(apps=[{"name": "blog", "base": BlogBase, "url": "..."}], name="Gateway")
+    create_multi_app_mcp_server(apps=[{"name": "blog", "base": BlogBase, "url": "..."}], name="Gateway")
     # After
-    create_mcp_server(apps=[Application(name="blog", base=BlogBase, url="...")], name="Gateway")
+    create_multi_app_mcp_server(apps=[Application(name="blog", base=BlogBase, url="...")], name="Gateway")
     ```
 
     Compatibility window: 3.7.x keeps the dict form with a warning; 3.8.0 removes it. Migrate before upgrading to 3.8.
@@ -474,9 +474,9 @@ Port of pydantic-resolve v5.10.2 (`184886d`) — three `INPUT_OBJECT` correctnes
 ### 3.0.0 (2026-6-20)
 
 - breaking change:
-  - **Removed the old direct-call UseCase MCP entry points**: Introduced a new execution chain where `UseCaseService` auto-generates a **real GraphQL schema** and builds the MCP service on top (mirroring pydantic-resolve's compose). Two old direct-call use_case MCP entry points (invoke-Python-method-with-JSON-args) are hard-removed. The GraphQL/MCP-orthogonal `create_use_case_router` (FastAPI REST) and `create_use_case_voyager` (visualization) are unchanged. Removed: `create_use_case_mcp_server` (4-layer MCP, Layer 3 = `call_use_case` direct method call) → `create_use_case_graphql_mcp_server` (Layer 3 = `compose_query` taking a GraphQL string); `create_use_case_flat_server` (one-method-one-tool flat MCP) → `create_use_case_graphql_mcp_server`; `ServiceIntrospector` (SDL-style strings) → `ComposeSchema` (real introspection JSON + SDL). Migration: `docs/migrations/3.0-use-case-graphql.md`. Version: strict semver — public API removal = major (2.10.1 → 3.0.0).
+  - **Removed the old direct-call UseCase MCP entry points**: Introduced a new execution chain where `UseCaseService` auto-generates a **real GraphQL schema** and builds the MCP service on top (mirroring pydantic-resolve's compose). Two old direct-call use_case MCP entry points (invoke-Python-method-with-JSON-args) are hard-removed. The GraphQL/MCP-orthogonal `create_use_case_router` (FastAPI REST) and `create_use_case_voyager` (visualization) are unchanged. Removed: `create_use_case_mcp_server` (4-layer MCP, Layer 3 = `call_use_case` direct method call) → `create_use_case_mcp_server` (Layer 3 = `compose_query` taking a GraphQL string); `create_use_case_flat_server` (one-method-one-tool flat MCP) → `create_use_case_mcp_server`; `ServiceIntrospector` (SDL-style strings) → `ComposeSchema` (real introspection JSON + SDL). Migration: `docs/migrations/3.0-use-case-graphql.md`. Version: strict semver — public API removal = major (2.10.1 → 3.0.0).
 - feat:
-  - **UseCase GraphQL + 4-layer MCP**: New public API: `create_use_case_graphql_mcp_server(apps, name)` (4-layer progressive disclosure: `list_apps` → `describe_compose_schema` → `describe_compose_method` → `compose_query`); `build_compose_schema(app) -> ComposeSchema`; `ComposeSchema` (`render_introspection()`/`render_sdl()`/`render_method_sdl()`); `compose_introspect(schema, query)` (GraphiQL-style introspection, paired with MCP Layer 3 which rejects introspection — MCP uses progressive disclosure, HTTP GraphiQL uses full introspection); `ComposeSchemaError` and subclasses. Fixed three-layer schema (`Query` → `*ServiceQuery` → methods). Layer 3 takes a standard GraphQL string and **rejects introspection** (`__schema`/`__type`/`__typename`), returning `{data: null, errors: [...]}` to steer exploration to Layers 1/2. Execution boundary: the GraphQL layer does **not** wrap the service method's return in another `Resolver` — the method already does `Resolver().resolve(dtos)` internally; the outer layer only calls the method → field projection (`subset.build_subset_model`) → serialization.
+  - **UseCase GraphQL + 4-layer MCP**: New public API: `create_use_case_mcp_server(apps, name)` (4-layer progressive disclosure: `list_apps` → `describe_compose_schema` → `describe_compose_method` → `compose_query`); `build_compose_schema(app) -> ComposeSchema`; `ComposeSchema` (`render_introspection()`/`render_sdl()`/`render_method_sdl()`); `compose_introspect(schema, query)` (GraphiQL-style introspection, paired with MCP Layer 3 which rejects introspection — MCP uses progressive disclosure, HTTP GraphiQL uses full introspection); `ComposeSchemaError` and subclasses. Fixed three-layer schema (`Query` → `*ServiceQuery` → methods). Layer 3 takes a standard GraphQL string and **rejects introspection** (`__schema`/`__type`/`__typename`), returning `{data: null, errors: [...]}` to steer exploration to Layers 1/2. Execution boundary: the GraphQL layer does **not** wrap the service method's return in another `Resolver` — the method already does `Resolver().resolve(dtos)` internally; the outer layer only calls the method → field projection (`subset.build_subset_model`) → serialization.
 - preserved (unchanged):
-  - `UseCaseService`/`BusinessMeta`/`@query`/`@mutation`/`FromContext`/`UseCaseAppConfig`, `create_use_case_router`, `create_jsonrpc_router`, `create_use_case_voyager`, and all GraphQL-mode capabilities (`GraphQLHandler`/`SDLGenerator`/existing `mcp/`).
+  - `UseCaseService`/`BusinessMeta`/`@query`/`@mutation`/`FromContext`/`UseCaseAppConfig`, `create_use_case_router`, `create_use_case_jsonrpc_router`, `create_use_case_voyager`, and all GraphQL-mode capabilities (`GraphQLHandler`/`SDLGenerator`/existing `mcp/`).
 

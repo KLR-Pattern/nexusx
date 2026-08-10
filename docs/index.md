@@ -15,7 +15,7 @@ template: home.html
 | Derived fields | `post_*` methods | Auto-execute after nested data is ready |
 | Cross-layer data flow | `ExposeAs`, `SendTo`, `Collector` | Pass context downward, aggregate results upward |
 | Non-ORM relationships | `Relationship(...)` | Same DataLoader infrastructure, supports auto-loading |
-| An AI-ready API | `create_simple_mcp_server(base=...)` | Progressive MCP tool exposure |
+| An AI-ready API | `create_single_app_mcp_server(base=...)` | Progressive MCP tool exposure |
 | Split into microservices | `RemoteRelationship` / `federation_public` DTO | Homogeneous federation: read-model composition across services, entity body unchanged |
 
 ## Who Is This For

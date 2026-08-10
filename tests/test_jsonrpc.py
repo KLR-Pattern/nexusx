@@ -1,4 +1,4 @@
-"""Tests for create_jsonrpc_router — JSON-RPC 2.0 endpoint for UseCaseService."""
+"""Tests for create_use_case_jsonrpc_router — JSON-RPC 2.0 endpoint for UseCaseService."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from nexusx.decorator import mutation, query
 from nexusx.use_case.business import UseCaseService
 from nexusx.use_case.context import FromContext
-from nexusx.use_case.jsonrpc import create_jsonrpc_router
+from nexusx.use_case.jsonrpc import create_use_case_jsonrpc_router
 from nexusx.use_case.types import UseCaseAppConfig
 
 # ──────────────────────────────────────────────────
@@ -91,7 +91,7 @@ def _extract_user(request):
 
 def _make_app(config: UseCaseAppConfig, **kwargs) -> TestClient:
     app = FastAPI()
-    router = create_jsonrpc_router(config, **kwargs)
+    router = create_use_case_jsonrpc_router(config, **kwargs)
     app.include_router(router)
     return TestClient(app)
 
@@ -311,12 +311,12 @@ class TestRouterConfig:
     def test_returns_api_router(self):
         from fastapi import APIRouter
 
-        router = create_jsonrpc_router(UseCaseAppConfig(name="test", services=[UserService]))
+        router = create_use_case_jsonrpc_router(UseCaseAppConfig(name="test", services=[UserService]))
         assert isinstance(router, APIRouter)
 
     def test_custom_path(self):
         app = FastAPI()
-        router = create_jsonrpc_router(
+        router = create_use_case_jsonrpc_router(
             UseCaseAppConfig(name="test", services=[UserService]), path="/api/rpc",
         )
         app.include_router(router)
@@ -327,7 +327,7 @@ class TestRouterConfig:
     def test_context_extractor_override(self):
         """Router-level context_extractor overrides config-level."""
         app = FastAPI()
-        router = create_jsonrpc_router(
+        router = create_use_case_jsonrpc_router(
             UseCaseAppConfig(name="test", services=[ContextService]),
             context_extractor=lambda r: {"user_id": 999},
         )
@@ -469,7 +469,7 @@ class TestRpcErrors:
 def remote_server():
     """Start a real HTTP server in a background thread."""
     _app = FastAPI()
-    _router = create_jsonrpc_router(
+    _router = create_use_case_jsonrpc_router(
         UseCaseAppConfig(
             name="test",
             services=[UserService, PingService, ContextService],

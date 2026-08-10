@@ -334,7 +334,7 @@ class SprintService(UseCaseService):
 config = UseCaseAppConfig(name="project", services=[SprintService])
 
 # Same config → four delivery surfaces
-mcp = create_use_case_graphql_mcp_server(apps=[config])
+mcp = create_use_case_mcp_server(apps=[config])
 app.include_router(create_use_case_router(config))
 graphql_schema = build_compose_schema(config)
 cli = create_use_case_cli(config)
@@ -346,7 +346,7 @@ Underlying mechanism:
 2. **One builder per protocol**:
    - `compose_schema.py`: scans `_business_methods`, combining method signature (`inspect.signature`) + return-type annotation (`get_type_hints`) into a GraphQL schema (`dict[str, TypeInfo]`, see item 13);
    - `router.py:create_use_case_router`: scans methods the same way, translating to a FastAPI router where each method becomes a POST endpoint;
-   - `compose_mcp_server.py:create_use_case_graphql_mcp_server`: exposes app/schema/method discovery plus GraphQL execution through four generic MCP tools;
+   - `compose_mcp_server.py:create_use_case_mcp_server`: exposes app/schema/method discovery plus GraphQL execution through four generic MCP tools;
    - `cli.py:create_use_case_cli`: translates into Typer command groups and commands.
 3. **Protocol-shared parts**: argument resolution (`FromContext`), response projection (selection), error model (`errors.py`), type mapping (`compose_type_mapper.py`) are all protocol-agnostic and reused by all four builders.
 

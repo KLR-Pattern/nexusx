@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add `create_simple_mcp_server` function for single-app scenarios with 3 simplified tools.
+**Goal:** Add `create_single_app_mcp_server` function for single-app scenarios with 3 simplified tools.
 
 **Architecture:** Create a new `simple_server.py` module that wraps a single `base` class into an `AppResources` instance and registers 3 tools (`get_schema`, `execute_query`, `execute_mutation`). Reuse existing `AppResources`, `GraphQLHandler`, and error handling infrastructure.
 
@@ -15,8 +15,8 @@
 | File | Action | Purpose |
 |------|--------|---------|
 | `src/nexusx/mcp/tools/simple_tools.py` | Create | 3 simplified MCP tools |
-| `src/nexusx/mcp/simple_server.py` | Create | `create_simple_mcp_server` function |
-| `src/nexusx/mcp/__init__.py` | Modify | Export `create_simple_mcp_server` |
+| `src/nexusx/mcp/simple_server.py` | Create | `create_single_app_mcp_server` function |
+| `src/nexusx/mcp/__init__.py` | Modify | Export `create_single_app_mcp_server` |
 | `tests/test_mcp.py` | Modify | Add tests for simple server |
 
 ---
@@ -42,7 +42,7 @@ class TestSimpleMCPServer:
         from sqlmodel import Field, SQLModel
 
         from nexusx import query
-        from nexusx.mcp import create_simple_mcp_server
+        from nexusx.mcp import create_single_app_mcp_server
 
         class TestBase(SQLModel):
             pass
@@ -56,7 +56,7 @@ class TestSimpleMCPServer:
                 """Get all users."""
                 return []
 
-        mcp = create_simple_mcp_server(
+        mcp = create_single_app_mcp_server(
             base=TestBase,
             name="Test API",
             description="Test description",
@@ -241,7 +241,7 @@ if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
 
-def create_simple_mcp_server(
+def create_single_app_mcp_server(
     base: type,
     name: str = "nexusx API",
     description: str = "GraphQL API for SQLModel entities",
@@ -255,7 +255,7 @@ def create_simple_mcp_server(
     - **execute_query**: Executes GraphQL queries
     - **execute_mutation**: Executes GraphQL mutations
 
-    Unlike create_mcp_server which uses progressive disclosure with 7 tools,
+    Unlike create_multi_app_mcp_server which uses progressive disclosure with 7 tools,
     this simplified version provides direct access to the schema and execution.
 
     Args:
@@ -269,10 +269,10 @@ def create_simple_mcp_server(
 
     Example:
         ```python
-        from nexusx.mcp import create_simple_mcp_server
+        from nexusx.mcp import create_single_app_mcp_server
         from myapp.models import BaseEntity
 
-        mcp = create_simple_mcp_server(
+        mcp = create_single_app_mcp_server(
             base=BaseEntity,
             name="My Blog API",
             description="Blog system with users and posts",
@@ -310,23 +310,23 @@ def create_simple_mcp_server(
     return mcp
 ```
 
-- [ ] **Step 2: Update __init__.py to export create_simple_mcp_server**
+- [ ] **Step 2: Update __init__.py to export create_single_app_mcp_server**
 
 ```python
 # src/nexusx/mcp/__init__.py
 # Update __all__ and add import
 
 __all__ = [
-    "create_mcp_server",
-    "create_simple_mcp_server",  # Add this
+    "create_multi_app_mcp_server",
+    "create_single_app_mcp_server",  # Add this
     "AppConfig",
     "MultiAppManager",
     "AppResources",
 ]
 
 from nexusx.mcp.managers import AppResources, MultiAppManager
-from nexusx.mcp.server import create_mcp_server
-from nexusx.mcp.simple_server import create_simple_mcp_server  # Add this
+from nexusx.mcp.server import create_multi_app_mcp_server
+from nexusx.mcp.simple_server import create_single_app_mcp_server  # Add this
 from nexusx.mcp.types.app_config import AppConfig
 ```
 
@@ -353,7 +353,7 @@ Expected: PASS
         from sqlmodel import Field, SQLModel
 
         from nexusx import query
-        from nexusx.mcp import create_simple_mcp_server
+        from nexusx.mcp import create_single_app_mcp_server
 
         class TestBase(SQLModel):
             pass
@@ -366,7 +366,7 @@ Expected: PASS
             async def get_all(cls) -> list[TestItem]:
                 return [TestItem(id=1, name="Test")]
 
-        mcp = create_simple_mcp_server(base=TestBase, name="Test API")
+        mcp = create_single_app_mcp_server(base=TestBase, name="Test API")
 
         # Execute query via tool
         result = await mcp._tool_manager._tools["execute_query"].fn(
@@ -392,12 +392,12 @@ Expected: PASS
         """Test that execute_query with empty string returns error."""
         from sqlmodel import SQLModel
 
-        from nexusx.mcp import create_simple_mcp_server
+        from nexusx.mcp import create_single_app_mcp_server
 
         class TestBase(SQLModel):
             pass
 
-        mcp = create_simple_mcp_server(base=TestBase, name="Test API")
+        mcp = create_single_app_mcp_server(base=TestBase, name="Test API")
 
         result = await mcp._tool_manager._tools["execute_query"].fn(query="")
 
@@ -421,7 +421,7 @@ Expected: PASS
         from sqlmodel import Field, SQLModel
 
         from nexusx import mutation
-        from nexusx.mcp import create_simple_mcp_server
+        from nexusx.mcp import create_single_app_mcp_server
 
         class TestBase(SQLModel):
             pass
@@ -434,7 +434,7 @@ Expected: PASS
             async def create(cls, name: str) -> TestProduct:
                 return TestProduct(id=1, name=name)
 
-        mcp = create_simple_mcp_server(base=TestBase, name="Test API")
+        mcp = create_single_app_mcp_server(base=TestBase, name="Test API")
 
         # Execute mutation via tool
         result = await mcp._tool_manager._tools["execute_mutation"].fn(
@@ -462,7 +462,7 @@ git add src/nexusx/mcp/tools/simple_tools.py
 git add src/nexusx/mcp/simple_server.py
 git add src/nexusx/mcp/__init__.py
 git add tests/test_mcp.py
-git commit -m "feat: add create_simple_mcp_server for single-app scenarios
+git commit -m "feat: add create_single_app_mcp_server for single-app scenarios
 
 Add simplified MCP server entry point with 3 tools:
 - get_schema: Returns complete GraphQL SDL

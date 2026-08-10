@@ -58,7 +58,7 @@ Clean Architecture 的核心主张：**业务逻辑不依赖框架、数据库�
 - **UseCaseService 方法即业务逻辑入口**：`@query` / `@mutation` 装饰的 classmethod 既是对外契约（被各协议 builder 翻译成 GraphQL field / REST endpoint / MCP tool），也是业务逻辑的执行体。方法体可以是完整业务逻辑，也可以是薄包装调用外部纯函数（项目结构选择，不由库强制）
 - **DefineSubset 是声明式 DTO**：从 SQLModel 实体元数据自动生成 Pydantic 模型，字段集合由开发者通过 `__subset__` 显式声明（包括 FK 列是否包含）
 - **Resolver 是模型驱动的响应构建器**：通过 BFS 遍历对象树，自动批量加载关系数据
-- **同一份 UseCaseService 方法服务多种 API**：通过 `create_use_case_graphql_mcp_server` / `create_use_case_router` / `create_use_case_cli` 等 builder 翻译到不同协议，业务方法零修改
+- **同一份 UseCaseService 方法服务多种 API**：通过 `create_use_case_mcp_server` / `create_use_case_router` / `create_use_case_cli` 等 builder 翻译到不同协议，业务方法零修改
 
 ## 各框架详细分析
 
@@ -194,7 +194,7 @@ nexusx 和 Litestar 在 DTO 自动化上领先。nexusx 的 DefineSubset 更进�
 
 | 框架 | REST | GraphQL | MCP | 统一程度 |
 |------|------|---------|-----|----------|
-| **nexusx** | `create_use_case_router()` | `GraphQLHandler` | `create_use_case_graphql_mcp_server()` | 三面统一 |
+| **nexusx** | `create_use_case_router()` | `GraphQLHandler` | `create_use_case_mcp_server()` | 三面统一 |
 | **Litestar** | 原生 | Strawberry 插件 | 无 | 两面（非统一） |
 | **Django** | DRF | graphene-django | 无 | 两面（非统一） |
 | **Strawberry** | 无（需 FastAPI） | 原生 | 无 | 单面 |

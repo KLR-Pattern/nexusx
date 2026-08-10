@@ -49,7 +49,7 @@ Voyager accepts a service list while MCP wraps that same list in
 `UseCaseAppConfig`:
 
 ```python
-from nexusx.use_case import UseCaseAppConfig, create_use_case_graphql_mcp_server
+from nexusx.use_case import UseCaseAppConfig, create_use_case_mcp_server
 from nexusx.voyager import create_use_case_voyager
 
 config = UseCaseAppConfig(
@@ -58,7 +58,7 @@ config = UseCaseAppConfig(
 )
 
 # MCP service (AI agents)
-mcp = create_use_case_graphql_mcp_server(apps=[config], name="API")
+mcp = create_use_case_mcp_server(apps=[config], name="API")
 
 # Voyager visualization (developers)
 voyager = create_use_case_voyager(services=config.services, er_manager=er)

@@ -2,14 +2,14 @@
 
 Create MCP services for AI agent integration with GraphQL-based tools.
 
-## create_simple_mcp_server
+## create_single_app_mcp_server
 
 Create a single-app MCP service with GraphQL-based tools.
 
 ```python
-from nexusx.mcp import create_simple_mcp_server
+from nexusx.mcp import create_single_app_mcp_server
 
-mcp = create_simple_mcp_server(
+mcp = create_single_app_mcp_server(
     base=SQLModel,
     name="My API",
     session_factory=async_session,
@@ -42,14 +42,14 @@ mcp = create_simple_mcp_server(
 With `allow_mutation=True`, the server additionally registers
 `graphql_mutation(mutation)`.
 
-## create_mcp_server
+## create_multi_app_mcp_server
 
 Create a multi-app MCP service that manages multiple applications.
 
 ```python
-from nexusx.mcp import Application, create_mcp_server
+from nexusx.mcp import Application, create_multi_app_mcp_server
 
-mcp = create_mcp_server(
+mcp = create_multi_app_mcp_server(
     apps=[
         Application(name="blog", base=BlogBase, url=BLOG_DATABASE_URL),
         Application(name="shop", base=ShopBase, url=SHOP_DATABASE_URL),
@@ -90,7 +90,7 @@ Python distribution and assembled into a merging project's MCP server without
 re-declaring connection resources.
 
 ```python
-from nexusx.mcp import Application, create_mcp_server
+from nexusx.mcp import Application, create_multi_app_mcp_server
 
 blog = Application(
     name="blog",
@@ -104,7 +104,7 @@ shop = Application(
     url="postgresql+asyncpg://user:pass@host/shop",
 )
 
-mcp = create_mcp_server(apps=[blog, shop], name="Multi-App API")
+mcp = create_multi_app_mcp_server(apps=[blog, shop], name="Multi-App API")
 ```
 
 ### Standalone usage (no MCP server required)
