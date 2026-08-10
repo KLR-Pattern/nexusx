@@ -3,12 +3,35 @@
 [![pypi](https://img.shields.io/pypi/v/nexusx.svg)](https://pypi.python.org/pypi/nexusx)
 [![PyPI Downloads](https://static.pepy.tech/badge/nexusx/month)](https://pepy.tech/projects/nexusx)
 
-**Build applications for people and AI.**
+**Build applications for people and AI — from the same source, not by wrapping.**
 
-nexusx turns SQLModel relationships into a batch-loaded query graph, then
-turns typed business methods into REST, GraphQL, MCP, and CLI interfaces.
+nexusx generates GraphQL, REST, MCP, CLI, and TS SDK from the **same typed
+business methods**. Every protocol shares one batch-loaded query graph
+(DataLoader, N+1-proof) and one set of typed DTOs (`DefineSubset`). This is
+**semantic-level isomorphism** — not transport-level wrapping.
 
-Start with normal SQLModel entities. Add delivery protocols when you need them.
+**For people** — write SQLModel entities + typed DTOs; get REST routes, GraphQL
+schema, CLI, and TS SDK without boilerplate. Change business logic once → all
+protocols update in sync.
+
+**For AI** — MCP is a first-class protocol with **strong typing** and
+**GraphQL under the hood** — the biggest win is **context efficiency**.
+Traditional RESTful APIs return large, fixed-shape objects; AI agents have no way
+to shrink the response, so context windows fill up with irrelevant data. nexusx's
+MCP runs GraphQL queries under the hood: AI agents **select exactly the fields
+they need** (field-level selection, not whole-object dump), keeping responses
+lean and context-efficient. Every operation carries full typed input/output
+schemas. Combined with progressive disclosure (app discovery → method overview →
+schema → execution) and DataLoader batch-loading (one MCP call → fully-nested,
+N+1-proof data tree), AI gets rich, typed, on-demand data — and only what it
+asked for.
+
+| You declare | nexusx generates |
+|---|---|
+| SQLModel entity + relationships | GraphQL schema + DataLoader batching (N+1-proof) + ER diagrams |
+| `DefineSubset` DTO | Minimal-column queries + nested relationship loading + computed fields |
+| `UseCaseService` method | REST route + GraphQL field + MCP operation + CLI command |
+| Entity `__federation_keys__` | Cross-service federation (auto-detected + batch-fetched) |
 
 ```mermaid
 flowchart LR
