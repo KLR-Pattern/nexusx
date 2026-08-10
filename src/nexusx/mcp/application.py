@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
@@ -110,11 +109,6 @@ class Application:
             pass
         else:
             # ── 连接信息互斥校验（至多一个） ────────────────────────────────
-            # Backward compat: AutoQueryConfig may carry a deprecated session_factory.
-            if session_factory is None and auto_query_config is not None:
-                session_factory = getattr(
-                    auto_query_config, "_deprecated_session_factory", None
-                )
             provided = sum(1 for x in (url, engine, session_factory) if x is not None)
             if provided > 1:
                 raise ValueError(
@@ -266,54 +260,14 @@ class Application:
         )
 
 
-def _coerce_to_application(
-    app: Application | dict[str, Any],
-    index: int = 0,
-) -> Application:
-    """把 ``Application | AppConfig dict`` 统一转换为 :class:`Application`。
-
-    dict 输入触发 ``DeprecationWarning``。
-    """
-    if isinstance(app, Application):
-        return app
-    if isinstance(app, dict):
-        warnings.warn(
-            "Passing AppConfig dict is deprecated; use Application(...) instead. "
-            "Example migration:\n"
-            "  # before\n"
-            "  {\"name\": \"blog\", \"base\": B, \"url\": \"...\"}\n"
-            "  # after\n"
-            "  Application(name=\"blog\", base=B, url=\"...\")\n"
-            "The dict form will be removed in v3.8.0.",
-            DeprecationWarning,
-            stacklevel=3,
+def _coerce_to_application(app: Application, index: int = 0) -> Application:
+    """Validate ``app`` is an :class:`Application` (dict form removed)."""
+    if not isinstance(app, Application):
+        raise TypeError(
+            f"App at index {index} must be an Application instance, "
+            f"got {type(app).__name__}"
         )
-        if "name" not in app or not app["name"]:
-            raise ValueError(
-                f"App config at index {index} is missing required field 'name'"
-            )
-        if "base" not in app or app["base"] is None:
-            app_label = app.get("name", f"index {index}")
-            raise ValueError(
-                f"App '{app_label}' is missing required field 'base'"
-            )
-        return Application(
-            name=app["name"],
-            base=app["base"],
-            url=app.get("url"),
-            engine=app.get("engine"),
-            session_factory=app.get("session_factory"),
-            description=app.get("description", ""),
-            query_description=app.get("query_description"),
-            mutation_description=app.get("mutation_description"),
-            aliases=app.get("aliases"),
-            enable_pagination=app.get("enable_pagination", False),
-            auto_query_config=app.get("auto_query_config"),
-        )
-    raise TypeError(
-        f"App at index {index} must be Application or AppConfig dict, "
-        f"got {type(app).__name__}"
-    )
+    return app
 
 
 @asynccontextmanager

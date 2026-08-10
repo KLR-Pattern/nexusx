@@ -56,8 +56,6 @@ singleton via a Python package; the merging project simply imports and assembles
     mcp = create_mcp_server(apps=[blog, shop], name="Gateway")
     ```
 
-The legacy ``AppConfig`` dict form is still accepted but triggers a
-``DeprecationWarning``; it will be removed in a future release.
 """
 
 from __future__ import annotations
@@ -66,7 +64,6 @@ __all__ = [
     "create_mcp_server",
     "create_simple_mcp_server",
     "Application",
-    "AppConfig",  # deprecated; kept for compatibility window
     "MultiAppManager",
     "SingleAppManager",
     "AppResources",
@@ -75,4 +72,3 @@ __all__ = [
 from nexusx.mcp.application import Application
 from nexusx.mcp.managers import AppResources, MultiAppManager, SingleAppManager
 from nexusx.mcp.server import create_mcp_server, create_simple_mcp_server
-from nexusx.mcp.types.app_config import AppConfig

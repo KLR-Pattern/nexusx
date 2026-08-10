@@ -117,30 +117,7 @@ class AutoQueryConfig:
             generate_by_id: Whether to generate by_id query.
             generate_by_filter: Whether to generate by_filter query.
             enabled: Whether standard queries are enabled.
-
-        Note:
-            ``session_factory`` was removed from this constructor — pass it to
-            ``GraphQLHandler`` / ``Application`` instead. If you pass a callable
-            positionally (old API), it is accepted with a DeprecationWarning and
-            stored as ``_deprecated_session_factory`` for the container to pick up.
         """
-        # ── Backward compat: detect old session_factory-as-first-arg ──────
-        # Before the refactor, AutoQueryConfig(session_factory, ...) was the
-        # signature. Now session_factory lives on the container. If someone
-        # passes a non-int positionally, it's the old session_factory.
-        self._deprecated_session_factory: Any = None
-        if not isinstance(default_limit, int):
-            import warnings
-
-            warnings.warn(
-                "AutoQueryConfig(session_factory) is deprecated — pass "
-                "session_factory to GraphQLHandler / Application instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            self._deprecated_session_factory = default_limit
-            default_limit = 10
-
         self.default_limit = default_limit
         self.generate_by_id = generate_by_id
         self.generate_by_filter = generate_by_filter

@@ -1,31 +1,6 @@
-"""App configuration types for multi-app MCP support."""
+"""App configuration types for multi-app MCP support.
 
-from __future__ import annotations
-
-from collections.abc import Callable
-from typing import TYPE_CHECKING, TypedDict
-
-if TYPE_CHECKING:
-    from sqlmodel import SQLModel
-
-
-class AppConfig(TypedDict, total=False):
-    """Configuration for a single GraphQL application.
-
-    Attributes:
-        name: Unique identifier for the application (e.g., "blog", "shop")
-        base: SQLModel base class for this application
-        description: Human-readable description of the application
-        session_factory: Async session factory for DataLoader relationship loading
-        query_description: Description for the Query type in GraphQL schema
-        mutation_description: Description for the Mutation type in GraphQL schema
-        aliases: Optional alternate names that can route to this application
-    """
-
-    name: str
-    base: type[SQLModel]
-    description: str | None
-    session_factory: Callable | None
-    query_description: str | None
-    mutation_description: str | None
-    aliases: list[str]
+The legacy ``AppConfig`` TypedDict was removed — use :class:`Application` instead.
+This module is kept as a placeholder to avoid breaking stale imports; it can be
+deleted once all references are cleared.
+"""

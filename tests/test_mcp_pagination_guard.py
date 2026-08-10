@@ -158,16 +158,14 @@ class TestThreadingBothOptions:
         assert via_app == bare
         assert "by_id(" in via_app and "by_filter(" in via_app
 
-    def test_dict_coerce_threads_both_options(self) -> None:
+    def test_app_threads_both_options(self) -> None:
         cfg = AutoQueryConfig()
-        app = _coerce_to_application(
-            {
-                "name": "x",
-                "base": _ThreadingBase,
-                "session_factory": _DummySessionFactory(),
-                "enable_pagination": True,
-                "auto_query_config": cfg,
-            }
+        app = Application(
+            name="x",
+            base=_ThreadingBase,
+            session_factory=_DummySessionFactory(),
+            enable_pagination=True,
+            auto_query_config=cfg,
         )
         sdl = app.resources.handler.get_sdl()
         assert "by_id(" in sdl and "by_filter(" in sdl

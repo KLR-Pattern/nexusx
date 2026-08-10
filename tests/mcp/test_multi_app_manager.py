@@ -250,24 +250,3 @@ class TestMultiAppManager:
             Application(name="app", base=MockBaseEntity1, aliases="alias")  # type: ignore[arg-type]
         with pytest.raises(ValueError):
             Application(name="app", base=MockBaseEntity1, aliases=[""])
-
-    # ── Legacy dict compat path (verifies deprecation behavior) ──────────
-
-    def test_dict_form_triggers_deprecation_warning(self):
-        """Passing a dict should emit DeprecationWarning but still work."""
-        import warnings
-
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            manager = MultiAppManager([{"name": "x", "base": MockBaseEntity1}])
-            assert "x" in manager.apps
-            assert len(caught) == 1
-            assert issubclass(caught[0].category, DeprecationWarning)
-
-    def test_dict_missing_name_raises(self):
-        with pytest.raises(ValueError, match="missing required field 'name'"):
-            MultiAppManager([{"base": MockBaseEntity1}])  # type: ignore[list-item]
-
-    def test_dict_missing_base_raises(self):
-        with pytest.raises(ValueError, match="missing required field 'base'"):
-            MultiAppManager([{"name": "invalid"}])  # type: ignore[list-item]

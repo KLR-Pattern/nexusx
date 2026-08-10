@@ -191,7 +191,7 @@ class TestMCPServerCreation:
         from sqlmodel import Field, SQLModel
 
         from nexusx import query
-        from nexusx.mcp import create_mcp_server
+        from nexusx.mcp import Application, create_mcp_server
 
         class TestBase(SQLModel):
             pass
@@ -205,11 +205,7 @@ class TestMCPServerCreation:
                 return []
 
         apps = [
-            {
-                "name": "test",
-                "base": TestBase,
-                "description": "Test application",
-            }
+            Application(name="test", base=TestBase, description="Test application"),
         ]
         mcp = create_mcp_server(
             apps=apps,

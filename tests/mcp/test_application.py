@@ -374,23 +374,6 @@ class TestCoerceToApplication:
         app = Application(name="x", base=_TestBase)
         assert _coerce_to_application(app) is app
 
-    def test_dict_triggers_deprecation_warning(self):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            app = _coerce_to_application({"name": "x", "base": _TestBase})
-            assert app.name == "x"
-            assert len(caught) == 1
-            assert issubclass(caught[0].category, DeprecationWarning)
-            assert "deprecated" in str(caught[0].message)
-
-    def test_dict_missing_name_raises(self):
-        with pytest.raises(ValueError, match="missing required field 'name'"):
-            _coerce_to_application({"base": _TestBase})
-
-    def test_dict_missing_base_raises(self):
-        with pytest.raises(ValueError, match="missing required field 'base'"):
-            _coerce_to_application({"name": "x"})
-
     def test_invalid_type_raises(self):
-        with pytest.raises(TypeError, match="must be Application or AppConfig"):
+        with pytest.raises(TypeError, match="must be an Application instance"):
             _coerce_to_application("not an app")  # type: ignore[arg-type]

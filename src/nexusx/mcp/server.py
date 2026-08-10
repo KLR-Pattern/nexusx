@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nexusx.mcp.application import Application
 from nexusx.mcp.managers import MultiAppManager
@@ -38,7 +38,7 @@ def _ensure_operations(handler: GraphQLHandler, context: str) -> None:
 
 
 def create_mcp_server(
-    apps: list[Application | dict[str, Any]],
+    apps: list[Application],
     name: str = "Multi-App nexusx API",
     allow_mutation: bool = False,
 ) -> FastMCP:
@@ -68,9 +68,8 @@ def create_mcp_server(
     All tools (except list_apps) require a mandatory app_name parameter.
 
     Args:
-        apps: List of :class:`Application` instances (preferred), or legacy
-            ``AppConfig`` dicts (deprecated, triggers ``DeprecationWarning``).
-            Each app has its own GraphQL schema and independent database.
+        apps: List of :class:`Application` instances. Each app has its own
+            GraphQL schema and independent database.
         name: Name of the MCP server (shown in MCP clients).
         allow_mutation: If True, registers mutation-related tools (list_mutations,
             get_mutation_schema, graphql_mutation) and includes mutations_count
@@ -119,10 +118,6 @@ def create_mcp_server(
         # Or run with HTTP transport
         mcp.run(transport="streamable-http")
         ```
-
-    .. deprecated::
-        Passing ``AppConfig`` dict entries is deprecated; use :class:`Application`
-        instead. The dict form will be removed in a future release.
 
     Tools provided (when allow_mutation=False, default):
         - list_apps(): List all available apps

@@ -369,11 +369,7 @@ class TestMultiAppToolsReadOnlyMode:
     def read_only_mcp(self):
         """Create a multi-app MCP server without mutation support."""
         apps = [
-            {
-                "name": "blog",
-                "base": BlogBaseEntity,
-                "description": "Blog application",
-            },
+            Application(name="blog", base=BlogBaseEntity, description="Blog application"),
         ]
         return create_mcp_server(apps=apps, name="Test Read-Only", allow_mutation=False)
 

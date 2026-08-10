@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nexusx.mcp.managers.app_resources import AppResources
 
@@ -18,16 +18,14 @@ class MultiAppManager:
     - Routing tool calls to the correct application
     - Providing app discovery functionality
 
-    Accepts either :class:`Application` objects (preferred) or legacy
-    ``AppConfig`` dicts (deprecated, triggers ``DeprecationWarning``).
+    Accepts :class:`Application` objects.
     """
 
-    def __init__(self, apps: list[Application | dict[str, Any]]):
+    def __init__(self, apps: list[Application]):
         """Initialize the multi-app manager.
 
         Args:
-            apps: List of :class:`Application` objects, or legacy ``AppConfig``
-                dicts (deprecated).
+            apps: List of :class:`Application` objects.
 
         Example:
             ```python
@@ -48,7 +46,6 @@ class MultiAppManager:
         from nexusx.mcp.application import Application as _Application
         from nexusx.mcp.application import _coerce_to_application
 
-        # Coerce each element to Application (dict → Application + DeprecationWarning)
         coerced: list[_Application] = [
             _coerce_to_application(app, index=i) for i, app in enumerate(apps)
         ]
