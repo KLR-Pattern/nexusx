@@ -10,10 +10,12 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
 
-## Unreleased
+## 6.0
 
-- breaking:
-  - **Federation member config orthogonalized to the entity (specs/020)**: Removed
+### 6.0.0 (2026-8-10)
+
+- breaking change:
+  - **Federation member config orthogonalized to the entity (specs/020, #133)**: Removed
     `AutoQueryConfig.batch_keys` / `batch_pages` and `SubsetConfig.federation_join_key`.
     Member federation capability is now declared on the entity:
     - `__federation_keys__` — which fields are federation batch entry keys; each generates a
@@ -26,7 +28,7 @@ description: "Release-by-release changelog for nexusx, following semver — majo
       `__federation_keys__` / `__pagination_orders__`; `SubsetConfig.federation_join_key` →
       `federation_key` (a selector for multi-key entities, auto for a single key).
     `AutoQueryConfig` now holds only toggles (`default_limit`, `generate_by_id`, ...).
-  - **Federation pagination auto-detected, `RemoteRelationship.pagination` removed (specs/021)**:
+  - **Federation pagination auto-detected, `RemoteRelationship.pagination` removed (specs/021, #134)**:
     The per-edge `RemoteRelationship(pagination=True/False)` parameter is gone.
     Federation pagination is now **auto-detected**: the mounter probes the member's
     `page_by_<join_remote>_in` root (from `__pagination_orders__`) and wires the paged
@@ -34,6 +36,21 @@ description: "Release-by-release changelog for nexusx, following semver — majo
     stays local-only (member/mounter symmetric, each its own local relationships).
     Fixes the "per-edge pagination doesn't propagate" gap (multi-hop pagination no
     longer breaks when an intermediate edge forgets `pagination=True`).
+  - **Deprecated API cleanup — AppConfig dict + AutoQueryConfig(session_factory)**:
+    Removed the legacy `AppConfig` dict form for `create_mcp_server` apps (use `Application`
+    instances). Removed `AutoQueryConfig(session_factory)` positional compat (pass
+    `session_factory` to `GraphQLHandler` / `Application` instead).
+  - **`create_*` factory naming unified**:
+    `create_mcp_server` → `create_multi_app_mcp_server`; `create_simple_mcp_server` →
+    `create_single_app_mcp_server` (symmetric multi/single); `create_jsonrpc_router` →
+    `create_use_case_jsonrpc_router` (`use_case` prefix consistency).
+
+- feat:
+  - **DTO auto-discovery — `federation_public` without `dto_classes` (#135)**:
+    A DTO with `federation_public=True` is now auto-discovered from its source entity
+    (`__subset__.kls`) — no need to pass `dto_classes=[DTO]` to the handler. The metaclass
+    registers public DTOs on their source entity; the handler discovers them via its entity
+    list. Eliminates the redundant two-step (federation_public + dto_classes).
 
 ## 5.4
 
