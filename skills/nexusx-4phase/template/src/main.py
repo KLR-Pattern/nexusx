@@ -18,7 +18,7 @@ from nexusx import (  # noqa: E402
     UseCaseAppConfig,
     create_use_case_graphql_mcp_server,
 )
-from nexusx.mcp import Application, create_mcp_server  # noqa: E402
+from nexusx.mcp import Application, create_multi_app_mcp_server  # noqa: E402
 from src.database import init_db
 from src.db import async_session
 from src.models import BaseEntity, er, mount_method  # noqa: E402
@@ -36,7 +36,7 @@ graphql_handler = GraphQLHandler(
     session_factory=async_session,
 )
 
-mcp = create_mcp_server(
+mcp = create_multi_app_mcp_server(
     apps=[
         Application(
             name="template",
