@@ -63,7 +63,6 @@ class BEntity(_ReviewsBase, table=True):
         RemoteRelationship(
             fk="id", target=list[users.CEntity],
             name="cs", join_remote="b_id",
-            pagination=True,
         ),
     ]
 
@@ -77,7 +76,6 @@ class AEntity(_CatalogBase, table=True):
         RemoteRelationship(
             fk="id", target=list[reviews.BEntity],
             name="bs", join_remote="a_id",
-            pagination=True,
         ),
     ]
 

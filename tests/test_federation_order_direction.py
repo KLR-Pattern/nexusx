@@ -329,7 +329,6 @@ class ODProduct(ODCatalogBase, table=True):
         RemoteRelationship(
             fk="id", target=list[_reviews.ODReview],
             name="reviews", join_remote="product_id",
-            pagination=True,
         ),
     ]
 

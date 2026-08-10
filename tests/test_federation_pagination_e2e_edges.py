@@ -95,7 +95,6 @@ class EdgeDefaultProduct(EdgeCatalogBase, table=True):
         RemoteRelationship(
             fk="id", target=list[member.EdgeReview],
             name="reviews", join_remote="product_id",
-            pagination=True,
         ),
     ]
 
@@ -110,7 +109,6 @@ class EdgeAccount(EdgeCatalogBase, table=True):
         RemoteRelationship(
             fk="account_uuid", target=list[member.EdgeSession],
             name="sessions", join_remote="account_id",
-            pagination=True,
         ),
     ]
 

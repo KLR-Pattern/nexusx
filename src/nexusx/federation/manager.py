@@ -346,33 +346,34 @@ def _validate_and_wire_remote_relationship(
     Fail-fast is preserved: any invalid rrel raises before the ErManager is
     frozen, so partial wiring never reaches query serving.
     """
-    if rrel.pagination and not rrel.is_list:
-        raise FederationError(
-            f"RemoteRelationship {rrel.name!r} enables pagination but its "
-            f"target is to-one (not list[...]); pagination only applies to "
-            f"to-many relationships."
-        )
-    # One _check_target per root: page root (or the full root when not
-    # paginated), plus the full root when paginated.
-    remote_field, page_br = _check_target(
+    # specs/021: pagination auto-detected from member's page_by_ root (no
+    # per-edge RemoteRelationship.pagination). _check_target returns is_paged.
+    remote_field, page_br, is_paged = _check_target(
         rrel.qualified_name,
         rrel.join_remote,
         endpoints,
         fragments,
-        pagination=rrel.pagination,
+        can_page=rrel.is_list,
     )
-    full_br = (
-        _check_target(rrel.qualified_name, rrel.join_remote, endpoints, fragments)[1]
-        if rrel.pagination
-        else page_br
-    )
+    # When paged, also need the full (by_) root for the non-paginated loader.
+    if is_paged:
+        full_br = _find_batch_root(
+            fragments[rrel.qualified_name], rrel.join_remote, pagination=False,
+        )
+        if full_br is None or not full_br.arg_name:
+            raise FederationError(
+                f"Type {rrel.qualified_name!r} does not expose full root "
+                f"by_{rrel.join_remote}_in (needed alongside page_by_)."
+            )
+    else:
+        full_br = page_br
     _check_join_contract(
         source_entity=source_entity,
         rrel=rrel,
         remote_field_type=remote_field.type_name,
         batch_arg_type=page_br.arg_type,
     )
-    if rrel.pagination:
+    if is_paged:
         _check_join_contract(
             source_entity=source_entity,
             rrel=rrel,
@@ -400,14 +401,14 @@ def _validate_and_wire_remote_relationship(
         "loader": loader_cls,
         "target_service": srv,
         "description": rrel.description,
-        "pagination": rrel.pagination,
+        "pagination": is_paged,
         "kind": (
             RelationshipKind.REMOTE_PAGED
-            if rrel.pagination
+            if is_paged
             else RelationshipKind.REMOTE_PLAIN
         ),
     }
-    if rrel.pagination:
+    if is_paged:
         # Store the member's page capability so SDL/__schema can render the
         # `order` enum + default, and bake only the default order into the
         # loader (the chosen order/direction arrive per-query). specs/014.
@@ -464,15 +465,16 @@ def _check_target(
     join_remote: str,
     services: dict[str, str],
     fragments: dict[str, EntityFragment],
-    pagination: bool = False,
-) -> tuple[FieldDescriptor, BatchRoot]:
-    """Validate a declared remote target; return its batch root for wiring.
+    *,
+    can_page: bool = True,
+) -> tuple[FieldDescriptor, BatchRoot, bool]:
+    """Validate a declared remote target; return ``(remote_field, batch_root,
+    is_paged)`` where ``is_paged`` is auto-detected (specs/021).
 
-    Checks service/type/join field, the required full or paginated root, its
-    argument contract, and pagination capability when applicable. The caller
-    chooses the order profile at query time, so no order is pinned here
-    (specs/014); this only verifies the member advertised a non-empty,
-    self-consistent capability.
+    Tries ``page_by_<join_remote>_in`` first (member has
+    ``__pagination_orders__``); falls back to ``by_<join_remote>_in``. The
+    caller wires paged/full loaders based on ``is_paged``; the query's
+    ``limit``/``order`` drive top-N at runtime.
     """
     srv, _typename = parse_qualified_name(target)
     if srv not in services:
@@ -487,12 +489,13 @@ def _check_target(
             f"Type {target!r} has no scalar field {join_remote!r} "
             f"(needed as join key). Fields: {sorted(scalar_fields)}"
         )
-    entry = (
-        f"page_by_{join_remote}_in"
-        if pagination
-        else f"by_{join_remote}_in"
-    )
-    br = _find_batch_root(frag, join_remote, pagination=pagination)
+    # specs/021: auto-detect page_by_ first (member capability), fall back to by_.
+    # can_page=False (to-one) skips page_by_ — pagination is to-many top-N only.
+    br = _find_batch_root(frag, join_remote, pagination=True) if can_page else None
+    is_paged = br is not None
+    if br is None:
+        br = _find_batch_root(frag, join_remote, pagination=False)
+    entry = f"page_by_{join_remote}_in" if is_paged else f"by_{join_remote}_in"
     if br is None:
         raise FederationError(
             f"Type {target!r} does not expose batch root {entry!r}; "
@@ -505,9 +508,9 @@ def _check_target(
             f"name; the member must declare the join field in "
             f"__federation_keys__ (specs/020)."
         )
-    if pagination:
+    if is_paged:
         _validate_page_capability(target, br)
-    return remote_field, br
+    return remote_field, br, is_paged
 
 
 def _validate_page_capability(

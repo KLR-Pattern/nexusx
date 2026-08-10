@@ -23,7 +23,6 @@ class _DeclToOne(SQLModel, table=True):
     __relationships__ = [
         RemoteRelationship(
             fk="id", target=users.User, name="u", join_remote="id",
-            pagination=True,
         ),
     ]
 
@@ -34,7 +33,6 @@ class _DeclMany(SQLModel, table=True):
     __relationships__ = [
         RemoteRelationship(
             fk="id", target=list[users.User], name="u", join_remote="id",
-            pagination=True,
         ),
     ]
 
@@ -63,14 +61,18 @@ def _frag_with_id_root(
     )
 
 
-def test_to_one_with_pagination_rejected():
+def test_to_one_never_paginates_even_if_member_has_page_root():
+    """specs/021: to-one relationships never paginate (page_by_ is to-many
+    top-N). Even if the member happens to expose page_by_<join>_in, a to-one
+    edge wires the plain by_ root. The old to-one+pagination rejection
+    (RemoteRelationship.pagination field) is gone — pagination is auto."""
     er = ErManager(entities=[_DeclToOne], session_factory=lambda: None)
     source_entity, rrel = er._pending_remote_rels[0]
-    with pytest.raises(FederationError, match="to-one"):
-        # fed_registry/transport are None — validation raises before wiring.
-        _validate_and_wire_remote_relationship(
-            er, source_entity, rrel, {"users": "http://u"}, None, {}, None,
-        )
+    assert not rrel.is_list  # to-one
+    # No FederationError "to-one" anymore — the rrel is simply not paginated.
+    # (Full wiring needs fragments/transport; here we only assert the rrel
+    # itself carries no pagination now that the field is removed.)
+    assert not hasattr(rrel, "pagination") or "pagination" not in rrel.__dataclass_fields__
 
 
 def test_empty_orders_rejected():

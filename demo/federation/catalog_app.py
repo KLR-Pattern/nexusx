@@ -77,7 +77,6 @@ class Product(CatalogBase, table=True):
         RemoteRelationship(
             fk="id", target=list[reviews.Review],
             name="reviews", join_remote="product_id",
-            pagination=True,
         ),
     ]
 

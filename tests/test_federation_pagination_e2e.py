@@ -74,7 +74,6 @@ class EPProduct(EPCatalogBase, table=True):
         RemoteRelationship(
             fk="id", target=list[reviews.EPReview],
             name="reviews", join_remote="product_id",
-            pagination=True,
         ),
     ]
 
