@@ -28,7 +28,7 @@
 
 **⚠️ CRITICAL**: 本阶段完成前不得开始任何 US
 
-- [ ] T002 RemoteRelationship 移除 `pagination` 字段（参数 + 赋值 + docstring）—— `src/nexusx/federation/`（RemoteRelationship 定义处，grep `class RemoteRelationship` 定位）
+- [x] T002 RemoteRelationship 移除 `pagination` 字段（参数 + 赋值 + docstring）—— `src/nexusx/federation/`（RemoteRelationship 定义处，grep `class RemoteRelationship` 定位）
 
 **Checkpoint**: RemoteRelationship 无 pagination，下游可改读 page_by_ 探测
 
@@ -40,9 +40,9 @@
 
 **Independent Test**: 给定 A→B 联邦，B 有 `__pagination_orders__`（暴露 page_by_），A 的 RemoteRelationship 不写 pagination，A 查 `bs(limit:N) { items }` → top-N Result 正常；B 无 `__pagination_orders__` → A 查 `bs { ... }` → list。
 
-- [ ] T003 [US1] `_check_target` 改为探测 member fragment 的 `page_by_<join_remote>_in` 存在（取代 `pagination=rrel.pagination`）—— `src/nexusx/federation/manager.py`
-- [ ] T004 [US1] `_validate_and_wire_remote_relationship` 的 pagination 来源改（从 rrel.pagination → page_by_ 探测）；双 loader（full_br/page_br）跟随 —— `src/nexusx/federation/manager.py`
-- [ ] T005 [US1] `remote_loader.py` loader wire 跟随（有 page_by_ → paged + full；无 → plain）—— `src/nexusx/federation/remote_loader.py`
+- [x] T003 [US1] `_check_target` 改为探测 member fragment 的 `page_by_<join_remote>_in` 存在（取代 `pagination=rrel.pagination`）—— `src/nexusx/federation/manager.py`
+- [x] T004 [US1] `_validate_and_wire_remote_relationship` 的 pagination 来源改（从 rrel.pagination → page_by_ 探测）；双 loader（full_br/page_br）跟随 —— `src/nexusx/federation/manager.py`
+- [x] T005 [US1] `remote_loader.py` loader wire 跟随（有 page_by_ → paged + full；无 → plain）—— `src/nexusx/federation/remote_loader.py`
 
 **Checkpoint**: US1 完成 —— 去掉 pagination 后，联邦分页自动按 member 能力工作（单层 A→B 可验证）
 
@@ -54,11 +54,11 @@
 
 **Independent Test**: member 有 page_by_ → SDL 渲染 Result{items, pagination}；无 → list。多层穿透（A→B→C，B/C 不写 pagination）自动分页，不崩。
 
-- [ ] T006 [P] [US2] `is_active_paginated_relationship` REMOTE_PAGED 判定改（从 rrel.pagination → member 暴露 page_by_/loader 有 page_by_）—— `src/nexusx/utils/pagination_schema.py`
-- [ ] T007 [P] [US2] `sdl_generator.py` 跟随 is_active（Result 渲染）—— `src/nexusx/sdl_generator.py`
-- [ ] T008 [P] [US2] `introspection.py` 跟随 is_active —— `src/nexusx/introspection.py`
-- [ ] T009 [US2] 测试迁移：所有 `RemoteRelationship(pagination=...)` 删参数（federation 测试 + demo）—— `tests/test_federation_*.py` + `demo/federation/`
-- [ ] T010 [US2] 测试新增/强化：多层穿透（A→B→C 不写 pagination 自动分页，不崩）+ 无 limit 全量 Result + to-one 不受影响 —— `tests/test_federation_pagination_transitive.py`（迁移 + 新场景）
+- [x] T006 [P] [US2] `is_active_paginated_relationship` REMOTE_PAGED 判定改（从 rrel.pagination → member 暴露 page_by_/loader 有 page_by_）—— `src/nexusx/utils/pagination_schema.py`
+- [x] T007 [P] [US2] `sdl_generator.py` 跟随 is_active（Result 渲染）—— `src/nexusx/sdl_generator.py`
+- [x] T008 [P] [US2] `introspection.py` 跟随 is_active —— `src/nexusx/introspection.py`
+- [x] T009 [US2] 测试迁移：所有 `RemoteRelationship(pagination=...)` 删参数（federation 测试 + demo）—— `tests/test_federation_*.py` + `demo/federation/`
+- [x] T010 [US2] 测试新增/强化：多层穿透（A→B→C 不写 pagination 自动分页，不崩）+ 无 limit 全量 Result + to-one 不受影响 —— `tests/test_federation_pagination_transitive.py`（迁移 + 新场景）
 
 **Checkpoint**: US2 完成 —— schema 同步 + 测试覆盖（多层穿透自动分页是核心验证点）
 
@@ -68,10 +68,10 @@
 
 **Goal**: demo 迁移 + docs 更新 + changelog breaking + 全量回归。
 
-- [ ] T011 [P] [US3] demo 迁移：`demo/federation/{catalog,reviews,users}_app.py` 删 RemoteRelationship pagination= —— `demo/federation/`
-- [ ] T012 [P] [US3] docs 更新：`docs/advanced/federation.md` + `.zh.md`（去 pagination，联邦分页 = member 能力 + 参数驱动）+ note 16（分页场景全览）—— `docs/advanced/`
-- [ ] T013 [US3] changelog breaking 标注（移除 RemoteRelationship.pagination）—— `docs/changelog.md`
-- [ ] T014 [US3] 全量回归 + ruff：`uv run pytest`（基线 1517）零回归 + `uv run ruff check src/` green —— `tests/` + `src/`
+- [x] T011 [P] [US3] demo 迁移：`demo/federation/{catalog,reviews,users}_app.py` 删 RemoteRelationship pagination= —— `demo/federation/`
+- [x] T012 [P] [US3] docs 更新：`docs/advanced/federation.md` + `.zh.md`（去 pagination，联邦分页 = member 能力 + 参数驱动）+ note 16（分页场景全览）—— `docs/advanced/`
+- [x] T013 [US3] changelog breaking 标注（移除 RemoteRelationship.pagination）—— `docs/changelog.md`
+- [x] T014 [US3] 全量回归 + ruff：`uv run pytest`（基线 1517）零回归 + `uv run ruff check src/` green —— `tests/` + `src/`
 
 **Checkpoint**: US3 完成 —— demo/docs/changelog/回归全 done
 

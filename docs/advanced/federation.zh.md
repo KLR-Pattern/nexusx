@@ -120,13 +120,15 @@ class Review(Base, table=True):
 
 查询者在查询期挑选其中一个 profile，并指定方向（`ASC`/`DESC`）。挂载方把
 profile 名渲染成 schema 的 enum，并在关系字段上加 `order`/`direction`
-参数 —— `RemoteRelationship` 不再静态绑定 order：
+参数 —— `RemoteRelationship` 不声明 pagination（specs/021：联邦分页自动，
+member 有 `__pagination_orders__` → mounter 自动走 `page_by_`，查询参数
+`limit`/`order` 运行时驱动 top-N）：
 
 ```python
 RemoteRelationship(
     fk="id", target=list[reviews.Review],
     name="reviews", join_remote="product_id",
-    pagination=True,
+    # 无 pagination 参数 —— member 有 __pagination_orders__ 时自动分页
 )
 ```
 
