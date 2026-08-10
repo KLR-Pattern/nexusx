@@ -128,7 +128,8 @@ def test_add_dto_batch_roots_skips_non_public():
     er = ErManager(entities=[_Review], session_factory=lambda: None, service_name="reviews")
     er._dto_classes = [_InternalDTO]
     add_dto_batch_roots(er)
-    assert er._dto_batch_roots == {}
+    # _InternalDTO（非 public）不生成 batch root
+    assert _InternalDTO.__name__ not in er._dto_batch_roots
 
 
 def test_public_dto_join_key_validated_at_class_creation():

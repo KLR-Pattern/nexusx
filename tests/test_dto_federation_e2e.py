@@ -212,7 +212,7 @@ async def federation(request):
         auto_query_config=AutoQueryConfig(),
         service_name="reviews",
         expose_mounted_endpoints=True,
-        dto_classes=[ReviewDTO],
+        # dto_classes 不传 —— ReviewDTO federation_public=True 自动发现（_public_dto_registry[Review]）
     )
     catalog_h = GraphQLHandler(
         base=_CatalogBase, session_factory=sf("c"),

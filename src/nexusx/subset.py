@@ -53,6 +53,7 @@ SUBSET_REFERENCE = "__nexusx_subset_source__"
 # plain BaseModel (data from other channels). Both have well-defined
 # `model_fields` schemas that can be subsetted.
 _subset_registry: dict[type[BaseModel], type[BaseModel]] = {}
+_public_dto_registry: dict[type[BaseModel], list[type[BaseModel]]] = {}
 
 
 def get_subset_source(dto_class: type[BaseModel]) -> type[SQLModel] | None:
@@ -714,6 +715,8 @@ class SubsetMeta(type):
         )
         _validate_federation_config(subset_info, subset_class)
         _stamp_federation_metadata(subset_info, subset_class)
+        if getattr(subset_class, "__federation_public__", False):
+            _public_dto_registry.setdefault(entity_kls, []).append(subset_class)
         if remote_field_refs:
             subset_class.__nexusx_remote_field_refs__ = remote_field_refs
         if paged_fields:

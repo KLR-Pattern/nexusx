@@ -646,15 +646,29 @@ class ErManager:
     def get_public_dtos(self) -> list[type[BaseModel]]:
         """Federation-public DTOs owned by this member (γ-path composition source).
 
-        Filtered from ``dto_classes`` by the ``__federation_public__`` stamp the
-        DefineSubset metaclass sets from SubsetConfig. These are the DTOs the
-        independent DTO introspection endpoint serializes into DTOFragment
-        (specs/016). Returns ``[]`` when no public DTOs are declared.
+        specs/022: auto-discovered from ``_public_dto_registry`` keyed by the
+        source entity (``__subset__.kls``) — every entity this ErManager manages
+        contributes its public DTOs automatically. Manually-passed
+        ``dto_classes`` are merged in (backward compat / override). No need to
+        pass ``dto_classes=[ReviewDTO]`` just to make a ``federation_public=True``
+        DTO discoverable — the metaclass registers it on the source entity.
         """
-        return [
-            d for d in self._dto_classes
-            if getattr(d, "__federation_public__", False)
-        ]
+        from nexusx.subset import _public_dto_registry
+
+        dtos: list[type[BaseModel]] = []
+        seen: set[type] = set()
+        # Auto-discover: entities this ErManager manages → their public DTOs
+        for entity in self._registry.keys():
+            for dto in _public_dto_registry.get(entity, []):
+                if dto not in seen:
+                    seen.add(dto)
+                    dtos.append(dto)
+        # Merge manually-passed dto_classes (backward compat / override)
+        for d in self._dto_classes:
+            if getattr(d, "__federation_public__", False) and d not in seen:
+                seen.add(d)
+                dtos.append(d)
+        return dtos
 
     def register_dto_loader(
         self,
