@@ -68,9 +68,11 @@ class RemoteRelationship:
         join_remote: Corresponding field on the remote type; the remote service
             must expose a ``by_<join_remote>_in`` batch query root.
         description: Optional ER-diagram documentation.
-        pagination: Whether this to-many relationship uses member-side offset
-            pagination. The order profile is chosen by the caller at query time
-            (``reviews(order: ..., direction: ...)``) — it is NOT pinned here.
+
+            Federation pagination is no longer declared here (specs/021): the
+            mounter auto-detects the member's ``page_by_<join_remote>_in`` root
+            (from ``__pagination_orders__``) and drives top-N via the query's
+            ``limit``/``order`` args at runtime.
     """
 
     fk: str
@@ -78,7 +80,6 @@ class RemoteRelationship:
     name: str
     join_remote: str
     description: str | None = None
-    pagination: bool = False
     # Derived from `target` (list[...] => True); not passed by callers.
     is_list: bool = field(default=False, init=False)
 

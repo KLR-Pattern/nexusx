@@ -69,7 +69,6 @@ class NLProduct(NLCatalogBase, table=True):
         RemoteRelationship(
             fk="id", target=list[reviews.NLReview],
             name="reviews", join_remote="product_id",
-            pagination=True,
         ),
     ]
 

@@ -26,6 +26,14 @@ description: "Release-by-release changelog for nexusx, following semver — majo
       `__federation_keys__` / `__pagination_orders__`; `SubsetConfig.federation_join_key` →
       `federation_key` (a selector for multi-key entities, auto for a single key).
     `AutoQueryConfig` now holds only toggles (`default_limit`, `generate_by_id`, ...).
+  - **Federation pagination auto-detected, `RemoteRelationship.pagination` removed (specs/021)**:
+    The per-edge `RemoteRelationship(pagination=True/False)` parameter is gone.
+    Federation pagination is now **auto-detected**: the mounter probes the member's
+    `page_by_<join_remote>_in` root (from `__pagination_orders__`) and wires the paged
+    loader; the query's `limit`/`order` drive top-N at runtime. `enable_pagination`
+    stays local-only (member/mounter symmetric, each its own local relationships).
+    Fixes the "per-edge pagination doesn't propagate" gap (multi-hop pagination no
+    longer breaks when an intermediate edge forgets `pagination=True`).
 
 ## 5.4
 

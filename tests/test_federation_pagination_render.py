@@ -64,7 +64,6 @@ class RProduct(RProductBase, table=True):
         RemoteRelationship(
             fk="id", target=list[reviews.RReview],
             name="reviews", join_remote="product_id",
-            pagination=True,
         ),
     ]
 

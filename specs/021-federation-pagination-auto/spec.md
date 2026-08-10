@@ -4,7 +4,14 @@
 
 ## 一句话
 
-去掉 `RemoteRelationship(pagination=True/False)` 这个 per-edge 参数；mounter 自动按 member 已声明的分页能力（`__pagination_orders__` → `page_by_<key>_in`）选择走分页根还是批量根。分页在 ER diagram 级别回归「全局开启/关闭」语义，不再逐边声明。
+去掉 `RemoteRelationship(pagination=True/False)` 这个 per-edge 参数。联邦分页完全由 **member 能力（`__pagination_orders__` → `page_by_<key>_in` 自动暴露）+ 查询参数（limit/order 运行时驱动）** 决定，mounter 零联邦分页配置。member 自己的本地关系分页仍由 `enable_pagination` 控制（member/mounter 对称，各管各的本地）。
+
+## Clarifications
+
+### Session 2026-08-10
+
+- Q: 去掉 `RemoteRelationship.pagination` 后 `enable_pagination` 的角色？ → A: **保持独立**（Option A）。`__pagination_orders__` 控联邦 `page_by_` 生成，`enable_pagination` 控本地关系分页。两者正交（延续 020）。"全局"语义已满足 —— 控制都在 member 级（entity dunder + handler 开关），非 mounter per-edge。
+- Q: member 支持分页时 mounter 能否 opt-out / 谁控联邦分页？ → A: **mounter 的 `enable_pagination` 不接管联邦关系**（修正早前"接管"设想）。联邦分页完全由 **member 能力 + 查询参数**驱动：member 有 `page_by_`（`__pagination_orders__`）→ mounter 自动 wire → 关系 `Result{items, pagination}`，`limit` 可选（带 → top-N，不带 → 全量）；member 无 → `by_` → list。mounter 查询带 limit → top-N；不带 → 全量（不切片）。mounter 的 `enable_pagination` 只管 mounter 自己的本地关系（与 member enable 对称）。
 
 ## 动机
 
@@ -38,30 +45,29 @@ A 配了 A→B 的 `pagination=True`，**不会**让 B→C 自动开。B→C 要
 
 ## 设计方向
 
-### 去掉 `RemoteRelationship.pagination`
+### 去掉 `RemoteRelationship.pagination`，联邦分页 = member 能力 + 查询参数驱动
 
-mounter 改为**自动选择**（`_check_target` 内部）：
+per-edge `RemoteRelationship(pagination=True/False)` 移除。联邦分页不再由 mounter 任何静态开关控制，而是：
 
-```python
-br = _find_batch_root(frag, join_remote, pagination=True)    # 先找 page_by_<key>_in
-if br is None:
-    br = _find_batch_root(frag, join_remote, pagination=False)  # 回退 by_<key>_in
-```
+- **member 能力**（`__pagination_orders__` → 自动暴露 `page_by_<key>_in`）决定 mounter 能不能分页拉
+- **查询参数**（mounter 查询时传的 `limit`/`order`）决定这次拉不拉 top-N
 
-- member 有 `__pagination_orders__`（暴露 `page_by_`）→ mounter 自动走分页根 → 关系渲染 `Result{items, pagination}`
-- member 无（只 `by_`）→ 自动回退批量根 → 关系渲染普通 list
-- **mounter 不再声明 pagination**；中间层（B→C）无需任何配置，A 的查询穿透到 C 自然分页（自动消费 member 能力 = 自动传递）
+具体：
+- member 有 `__pagination_orders__`（暴露 `page_by_`）→ mounter 自动 wire `page_by_` → 关系渲染 `Result{items, pagination}`，`limit` **可选**：带 limit → top-N 切片；不带 → 全量（不做分页）
+- member 无 `__pagination_orders__`（只 `by_`）→ mounter wire `by_` → 关系渲染 list（全量）
+- to-one 关系不受影响（从不分页）
 
-### 分页控制回归 member 侧（ER diagram 级全局）
+member 的 `page_by_` 能力独立 —— mounter 不能删，只按查询参数决定调 `page_by_`（带 limit）还是 `by_`（不带）。
 
-去掉 per-edge 后，分页的全部控制权在 member：
+### 分页控制：member 声明能力 + 本地开关；联邦由参数驱动
 
-| 控制点 | 作用 | 层级 |
+| 控制点 | 作用 | 归属 |
 |---|---|---|
-| `__pagination_orders__`（entity） | member 暴不暴露 `page_by_`（联邦分页能力）+ 排序 profile | entity 级 |
-| `enable_pagination`（handler） | member 自己本地关系（comments）分页的总开关 | handler 级（全局） |
+| `__pagination_orders__`（entity dunder） | member 暴不暴露 `page_by_`（联邦分页能力）+ 排序 profile | member |
+| `enable_pagination`（handler） | 该服务**自己本地关系**（comments）分页的总开关 | member 或 mounter（各管各的本地） |
+| 查询参数 `limit`/`order`（mounter → member） | 联邦拉取时这次要不要 top-N | 运行时（查询驱动） |
 
-mounter 侧零分页配置 —— 只读 member 的能力。
+mounter 侧**零联邦分页配置**：无 `RemoteRelationship.pagination`，`enable_pagination` 也只管 mounter 本地关系（不控联邦）。联邦分页 = member 能力（`__pagination_orders__`）+ 查询参数（limit）。`enable_pagination` 在 member/mounter 对称：各管各的本地关系分页。
 
 ## 影响分析
 
@@ -77,15 +83,14 @@ mounter 侧零分页配置 —— 只读 member 的能力。
 
 ### schema 形态统一
 
-- to-many 联邦关系：只要 member 支持分页（有 `__pagination_orders__`），mounter schema 一律 `Result{items, pagination}`。不再有「普通 list」选项（当前 `pagination=False` 的形态消失）。
-- 客户端查询统一：`rel(limit, order) { items { ... } pagination { has_more } }`。
+- to-many 联邦关系：member 有 `__pagination_orders__` → mounter schema 一律 `Result{items, pagination}`（`limit` 可选：带 → top-N，不带 → 全量）；member 无 → list。
+- 客户端查询：`rel(limit, order) { items { ... } pagination { has_more } }`（带 limit）或 `rel { items { ... } }`（不带，全量，仍 Result 结构）。
 - to-one 不受影响（从不分页，照旧 by_id_in）。
 
 ## 开放问题（待 spec-kit clarify）
 
-1. **`enable_pagination` 的角色是否扩展**：当前只管本地关系分页。用户愿景是「ER diagram 级全局开关」—— 是否让 `enable_pagination` 也控制联邦 `page_by_` 的生成（即 member 关掉它就既不分页本地、也不暴露联邦 page_by_）？还是保持两者独立（`__pagination_orders__` 管联邦、`enable_pagination` 管本地）？
-   - 倾向：保持独立（两者正交，020 已确立）。但「全局开关」的语义可能需要一个新的统一概念。
-2. **mounter 能否强制不分页**：去掉后，member 支持分页时 mounter 总是走 page_by_。是否有场景 mounter 想要全量 list（不要 Result）？`page_by_(limit=None)` 可返全部，但结构仍是 Result。若确有需求，保留一个 opt-out（如 `RemoteRelationship(no_pagination=True)`，反向语义，默认 False）。
+1. ~~`enable_pagination` 的角色是否扩展~~（✅ 已决策 Session 2026-08-10）：**保持独立**。`__pagination_orders__` 控联邦 `page_by_`，`enable_pagination` 控本地关系。两者正交。"全局"= 控制都在 member 级（非 mounter per-edge），已满足。
+2. ~~mounter 能否强制不分页 / 谁控联邦分页~~（✅ 已决策 Session 2026-08-10，后修正）：**mounter `enable_pagination` 不控联邦**。联邦分页 = member 能力（`page_by_` 自动暴露）+ 查询参数（`limit` 运行时驱动）。member 有 `page_by_` → Result（limit 可选）；无 → list。mounter 零联邦分页配置。
 3. **introspection/SDL 渲染**：`page_by_` 存在性 → 关系类型（Result vs list），需同步 sdl_generator / introspection。
 
 ## 关联
