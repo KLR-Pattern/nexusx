@@ -6,7 +6,7 @@ authors = [{ name = "tangkikodo", email = "allmonday@126.com" }]
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-keywords = ["sqlmodel", "graphql", "sqlalchemy", "fastapi"]
+keywords = ["sqlmodel", "graphql", "sqlalchemy", "fastapi", "mcp", "ai", "ai-agents", "model-context-protocol", "context-efficiency", "dataloader"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",

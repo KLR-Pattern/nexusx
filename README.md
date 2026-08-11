@@ -3,6 +3,8 @@
 [![pypi](https://img.shields.io/pypi/v/nexusx.svg)](https://pypi.python.org/pypi/nexusx)
 [![PyPI Downloads](https://static.pepy.tech/badge/nexusx/month)](https://pepy.tech/projects/nexusx)
 
+> **Tools are fixed functions; data is a graph.**
+
 **Build applications for Human and AI — from the same source, not by wrapping.**
 
 nexusx generates GraphQL, REST, MCP, CLI, and TS SDK from the **same typed
