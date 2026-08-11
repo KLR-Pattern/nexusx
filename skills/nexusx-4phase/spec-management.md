@@ -20,9 +20,9 @@ specs/<编号>-<需求简述>/
 ├── story.md        # 用户原始需求 + Overview Design
 ├── phase0.md       # 需求确认
 ├── phase1.md       # Schema + ER Diagram
-├── phase2.md       # Loader 实现
-├── phase3.md       # UseCase + MCP
-└── phase4.md       # TS SDK
+├── phase2.md       # 业务方法实现 + Entity 挂载
+├── phase3.md       # UseCase + 选定的服务接口
+└── phase4.md       # TS SDK（启用时）
 ```
 
 ## 文件内容格式
@@ -66,7 +66,7 @@ Phase 0 全部确认后、进入 Phase 1 之前，在 `story.md` 中补充 `## O
 - **实体关系**：ER 图（文本格式）
 - **聚合根**：明确入口实体
 - **关键设计决策**：第三方库选型、分页策略、幂等策略等（表格形式）
-- **四阶段产出**：每个 Phase 的预期交付物概要
+- **四个实施阶段产出**：Phase 1-4 的预期交付物概要
 
 目的：让团队在进入 Phase 1 之前对系统全貌有清晰共识。
 
@@ -74,10 +74,10 @@ Phase 0 全部确认后、进入 Phase 1 之前，在 `story.md` 中补充 `## O
 
 当用户要求创建四阶段项目时：
 
-1. **创建 spec 目录**: 用户首次描述需求时，在项目根目录创建 `specs/<编号>-<需求简述>/`，将用户原始需求写入 `story.md`，预建 phase0 ~ phase4 空文件
-2. **Phase 0**: 按 SKILL.md 中 Step 0-1 ~ 0-8 逐步与用户确认（**Step 0-7 DB 选型必须明确，决定 Phase 1 是否引入 alembic**）。确认后写入 `phase0.md`，补充 `story.md` 的 Overview Design。用户全部确认后才继续
-3. **创建项目结构**: 目录 + pyproject.toml（依赖 `nexusx>=3.2`）。**注意**：nexusx 默认不包含 ASGI 服务器，pyproject.toml 需额外添加 `uvicorn` 和 async DB driver 依赖（in-memory/file sqlite → `aiosqlite`；postgresql → `asyncpg`；mysql → `aiomysql`），启动命令为 `uvicorn src.main:app --reload`。持久化场景还需加 `alembic>=1.13`
-4. **Phase 1~4**: 依次读取对应 phase 文件（`phases/phase1.md` ~ `phases/phase4.md`），按 V 型模型执行。每个阶段完成后暂停等用户确认
+1. **创建 spec 目录**: 用户首次描述需求时，在项目根目录创建 `specs/<编号>-<需求简述>/`，将用户原始需求写入 `story.md`；phase 文件在对应阶段开始时创建，不预建无意义的空文件
+2. **Phase 0**: 按 Step 0-1 ~ 0-8 完成预检。新项目确认关键决策；现有项目先从代码和配置提取结论。Step 0-7 的 DB/迁移策略必须明确。完成后写入 `phase0.md` 并补充 Overview Design
+3. **创建项目结构**: 目录 + pyproject.toml（依赖 `nexusx>=6,<7`；启用 MCP/CLI 时使用 `nexusx[fastmcp,cli]>=6,<7`）。nexusx 默认不包含 ASGI server 和 DB driver，需额外添加 `uvicorn` 与对应 async driver。持久化场景还需加 `alembic>=1.13`
+4. **Phase 1~4**: 依次读取对应 phase 文件，按 V 型模型执行。新项目在关键阶段等待确认；用户要求端到端执行或增量迭代时可连续完成并集中汇报
 
 ## 迭代功能的处理
 
@@ -85,9 +85,9 @@ Phase 0 全部确认后、进入 Phase 1 之前，在 `story.md` 中补充 `## O
 
 1. **仍需创建 spec 目录** — `specs/<编号>-<需求简述>/`，story.md 记录原始需求
 2. **Phase 0 快速确认** — 只确认变更部分（新增实体/字段/方法），不变的部分不重复讨论
-3. **允许合并 Phase 实现，但 spec 写入不可跳过** — 可以将 Phase 1-3 合并为一次编码，但编码完成后必须逐 Phase 回填 spec 文件（验收标准 + 产出文件）
-4. **交付前执行 spec 完整性检查** — 确认所有 phaseN.md 非空后再告知用户完成
+3. **允许合并 Phase 实现，但适用阶段的 spec 写入不可跳过** — 可以将 Phase 1-3 合并为一次编码，完成后逐 Phase 记录验收标准与产出
+4. **交付前执行 spec 完整性检查** — 只检查本次实际执行的 phase 文件；未启用 Phase 4 时不创建或强制填写 phase4.md
 
 ## 交付前校验
 
-- **交付前必须校验 spec 文件完整性** — 在告诉用户"任务完成"之前，检查 `specs/<编号>-*/` 下所有 .md 文件是否有内容（非空文件）。合并 Phase 实现时尤其容易遗漏 spec 写入。可用 `wc -l` 快速检查。空文件 = 未完成
+- **交付前必须校验适用 spec 文件完整性** — 检查本次创建的 story.md 与实际执行的 phaseN.md 是否非空。空文件应删除或补全，不能用占位文件冒充已完成阶段

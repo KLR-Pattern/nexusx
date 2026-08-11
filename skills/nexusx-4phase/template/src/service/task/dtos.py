@@ -1,10 +1,7 @@
-"""Task-related DTOs — UserSummary, TaskSummary."""
+"""Task-related DTOs — TaskSummary with the shared UserSummary."""
 from nexusx import DefineSubset, SubsetConfig
-from src.models import Task, User
-
-
-class UserSummary(DefineSubset):
-    __subset__ = SubsetConfig(kls=User, fields=["id", "name"])
+from src.models import Task
+from src.service.user.dtos import UserSummary
 
 
 class TaskSummary(DefineSubset):

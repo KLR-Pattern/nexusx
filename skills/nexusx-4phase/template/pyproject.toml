@@ -2,14 +2,13 @@
 name = "nexusx-template"
 version = "0.1.0"
 description = "nexusx 四阶段开发模板"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
-    "nexusx>=3.2",
+    "nexusx[cli,fastmcp]>=6,<7",
     "fastapi",
     "uvicorn",
     "sqlmodel",
     "aiosqlite",
-    "fastmcp>=3.1,<3.2",
 ]
 
 [project.optional-dependencies]

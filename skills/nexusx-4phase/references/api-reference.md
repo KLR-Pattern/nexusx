@@ -1,6 +1,6 @@
-# nexusx Public API Reference（6.0+）
+# nexusx 4phase 常用 API Reference（6.x）
 
-> 所有公共 API + 最小 code snippet，按使用场景分类。详细原理见 SKILL.md「nexusx 原理与工作机制」。
+> 4phase 工作流常用 API + 最小 code snippet，按使用场景分类。函数签名以当前 6.x 源码为准；完整 public API 以包导出和正式 API 文档为准。
 
 ---
 
@@ -27,7 +27,7 @@ class User(SQLModel, table=True):
 
 ```python
 class UserSummary(DefineSubset):
-    __subset__ = SubsetConfig(kls=User, fields=("id", "name"))
+    __subset__ = SubsetConfig(kls=User, fields=["id", "name"])
     # 元组简写也行: __subset__ = (User, ("id", "name"))
 ```
 
@@ -67,6 +67,8 @@ class Product(SQLModel, table=True):
 ## ⑦ Paged（字段级分页，固化）
 
 ```python
+from nexusx.loader.pagination import Paged
+
 class SprintTopTasks(DefineSubset):
     __subset__ = (Sprint, ("id", "name"))
     tasks: Annotated[list[TaskSummary], Paged(limit=2)] = []  # 固定 top-2
@@ -78,13 +80,18 @@ class SprintTopTasks(DefineSubset):
 # Loader — DataLoader 注入（显式指定 batch key）
 def resolve_author(self, loader=Loader("users")): return loader.load(self.author_id)
 
-# ExposeAs + SendTo + Collector — 跨层数据流
+# ExposeAs — 当前字段向后代暴露
 class SprintReport(DefineSubset):
     __subset__ = SubsetConfig(kls=Sprint, fields=["id", "name"],
-                              expose_as=[("name", "sprint_name")],   # 暴露给子节点
-                              send_to=[("owner", "contributors")])   # 子→父
+                              expose_as=[("name", "sprint_name")])
+    tasks: list[TaskSummary] = []
     contributors: list[UserSummary] = []
     def post_contributors(self, c=Collector("contributors")): return c.values()
+
+# SendTo — 后代字段发送给祖先同名 Collector
+class TaskSummary(DefineSubset):
+    __subset__ = (Task, ("id", "title"))
+    owner: Annotated[UserSummary | None, SendTo("contributors")] = None
 ```
 
 ## ⑨ Relationship（自定义非 ORM 关系）
@@ -92,7 +99,7 @@ class SprintReport(DefineSubset):
 ```python
 class Task(SQLModel, table=True):
     __relationships__ = [Relationship(
-        target=list[Tag], name="tags", loader=load_tags_batch)]
+        fk="id", target=list[Tag], name="tags", loader=load_tags_batch)]
 ```
 
 ## ⑩ FromContext（请求级 context 注入）
@@ -106,7 +113,7 @@ class ReportService(UseCaseService):
 ## ⑪ entity-first MCP（对偶命名）
 
 ```python
-# 多 app（progressive disclosure: list_apps → list_queries → get_schema → graphql_query）
+# 多 app（list_apps → list_queries → get_query_schema → graphql_query）
 from nexusx.mcp import Application, create_multi_app_mcp_server
 mcp = create_multi_app_mcp_server(
     apps=[Application(name="blog", base=BlogBase, url=BLOG_URL)],
@@ -114,7 +121,10 @@ mcp = create_multi_app_mcp_server(
 
 # 单 app（简化: get_schema + graphql_query）
 from nexusx.mcp import create_single_app_mcp_server
-mcp = create_single_app_mcp_server(base=BaseEntity, url=DB_URL)
+mcp = create_single_app_mcp_server(
+    base=BaseEntity,
+    session_factory=async_session,
+)
 ```
 
 ## ⑫ use-case-first 工厂（统一 create_use_case_* 前缀）

@@ -62,7 +62,10 @@ class Task(BaseEntity, table=True):
         back_populates="tasks",
         sa_relationship_kwargs={"lazy": "noload"},
     )
-    owner: Optional["User"] = Relationship(sa_relationship_kwargs={"lazy": "noload"})
+    owner: Optional["User"] = Relationship(
+        back_populates="tasks",
+        sa_relationship_kwargs={"lazy": "noload"},
+    )
 
 
 # ── Method mounting (Phase 2) ─────────────────────────────────────────

@@ -19,7 +19,7 @@
 - **如果 Phase 0 Step 0-3 选了虚拟实体根**（普通 `pydantic.BaseModel`，不落表）：在 `ErManager(entities=[...])` 创建后、`create_resolver()` 调用**之前**，调用 `er.add_virtual_entities([CurrentUser, Page, ...])` 注册。虚拟实体通过类属性 `__relationships__` 声明关系（不是 SQLAlchemy `Relationship`）。注册后再调 `er.create_resolver()`，否则注册表已冻结会抛 `RuntimeError`。详见 `docs/guide/virtual_entities.md`
 
 **V 降 — 定义验收标准:**
-进入 Phase 1 实现之前，在 `spec/phase1.md` 中记录以下验收标准：
+进入 Phase 1 实现之前，在当前需求目录的 `phase1.md` 中记录以下验收标准：
 
 | # | 验收项 | 验证方式 |
 |---|--------|----------|
@@ -56,7 +56,7 @@
 - ❌ uvicorn `--reload` 模式下，改 `db.py` URL 后会立即 reload，老的 `init_db()` 可能跑了一次 create_all 把表建到新文件里 → 后续 autogenerate 看到表已存在生成空迁移。**解决**：先 dump 数据 → 删 DB 文件 → 改代码 → autogenerate → upgrade → load_seed
 
 **V 升 — 逐条回查验收:**
-按验收标准逐条验证，用户确认后才写入 `spec/phase1.md`：
+按验收标准逐条验证，并将结果写入当前需求目录的 `phase1.md`：
 
 - [ ] 1. Voyager ER 图：实体节点、关系线、聚合根高亮
 - [ ] 2. Entity 纯字段：无 @query/@mutation 方法，无 `nexusx` 导入
@@ -65,7 +65,7 @@
 
 ## 踩坑经验
 
-1. **engine/session 必须独立为 `db.py`** — `models.py` 需要 `async_session`，`database.py` 需要 models，放在同一文件会导致循环导入。`db.py` 只放 engine + session_factory，不导入任何 model
+1. **engine/session 必须独立为 `db.py`** — `database.py`、service methods 和 ErManager 都可能依赖 session factory，而数据库初始化又依赖 models；放在同一文件容易造成循环导入。`db.py` 只放 engine + session_factory，不导入任何 model
 2. **`pyproject.toml` 必须配置 `packages = ["src"]`** — hatchling 默认按项目名找目录，`src/` 布局需要显式指定 `[tool.hatch.build.targets.wheel]`
 3. **目录命名不能以数字开头** — Python 模块名限制
 4. **每个 Model 必须有 docstring，每个 Field 必须有 description** — Phase 1 就要确保语义清晰，description 会传递到 OpenAPI spec

@@ -1,19 +1,27 @@
-# User Service
+# UserService
 
 ## 服务目的
 
-用户管理服务。
+用户管理服务，提供用户查询与创建能力。
 
 ## 用途
 
-（Phase 3 补充）
+- 列出全部用户
+- 创建用户并返回公开 DTO
 
 ## 方法需求
 
-（Phase 3 补充）
+| 方法 | 说明 | 返回 |
+|------|------|------|
+| `list_users` | 获取全部用户 | `list[UserSummary]` |
+| `create_user` | 按名称创建用户 | `UserSummary` |
+
+## DTO
+
+- `UserSummary` — id, name
 
 ## 变更记录
 
-| 日期 | 变更内容 |
+| 阶段 | 变更内容 |
 |------|----------|
-| | 初始化 |
+| Phase 3 | 初始创建，实现 list_users 和 create_user |

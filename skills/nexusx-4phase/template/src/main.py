@@ -1,7 +1,7 @@
 """FastAPI application entry point.
 
-Phase 1: Voyager (ER diagram) + GraphiQL
-Phase 2: + GraphQL with database + seed data
+Phase 1: Voyager (ER diagram) + database seed data
+Phase 2: + entity-first GraphQL and GraphiQL
 Phase 3: + REST + MCP + Voyager with services
 """
 from contextlib import asynccontextmanager
@@ -88,7 +88,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

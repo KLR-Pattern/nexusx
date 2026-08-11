@@ -5,7 +5,7 @@
 **前提**: Phase 3 必须使用 `create_use_case_router()` 生成 REST 路由（而非手写 router），才能在 OpenAPI spec 中正确暴露 `response_model`。
 
 **V 降 — 定义验收标准:**
-确认后写入 `spec/phase4.md`：
+启用 Phase 4 时，将验收标准写入当前需求目录的 `phase4.md`：
 
 | # | 验收项 | 验证方式 |
 |---|--------|----------|
@@ -35,11 +35,11 @@ export default defineConfig({
 });
 ```
 
-2. 创建 `fe/package.json`，添加依赖和脚本：
+2. 创建 `fe/package.json`，添加依赖和脚本。生成器属于独立工具链，应使用项目实际验证过的精确版本并提交 lockfile；以下版本仅是配置示例：
 ```json
 {
   "scripts": { "generate-client": "openapi-ts" },
-  "devDependencies": { "@hey-api/openapi-ts": "^0.98" }
+  "devDependencies": { "@hey-api/openapi-ts": "0.98.0" }
 }
 ```
 
@@ -61,4 +61,4 @@ cd fe && npm install && npm run generate-client
 
 ## 踩坑经验
 
-1. **`@hey-api/sdk` 的 `asClass` 已废弃** — v0.97+ 使用 `operations: { strategy: 'byTags' }` 替代 `asClass: true`，按 OpenAPI tags 分组生成 SDK class。注意 0.98.0 引入了 breaking change，升级时务必看 release notes
+1. **不要使用浮动 major/minor 范围生成并提交 SDK** — 固定已验证版本并提交 npm lockfile；升级生成器时重新生成 SDK、检查 diff 并运行 TypeScript 编译
