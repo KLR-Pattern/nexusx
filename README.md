@@ -10,7 +10,7 @@ business methods**. Every protocol shares one batch-loaded query graph
 (DataLoader, N+1-proof) and one set of typed DTOs (`DefineSubset`). This is
 **semantic-level isomorphism** — not transport-level wrapping.
 
-**For people** — write SQLModel entities + typed DTOs; get REST routes, GraphQL
+**For Human** — write SQLModel entities + typed DTOs; get REST routes, GraphQL
 schema, CLI, and TS SDK without boilerplate. Change business logic once → all
 protocols update in sync.
 
