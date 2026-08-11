@@ -504,6 +504,7 @@ Schema-to-SDK development workflow, see the
 
 - [Documentation](docs/index.md)
 - [Feature highlights](docs/feature-highlights.md)
+- [MCP & context efficiency](docs/mcp-context-efficiency.md)
 - [Architecture comparison](docs/clean-architecture-comparison.md)
 - [Changelog](CHANGELOG.md)
 - [Issue tracker](https://github.com/allmonday/nexusx/issues)
