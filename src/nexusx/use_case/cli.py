@@ -95,7 +95,7 @@ def _build_command(
                 result = apply_selection(result, return_annotation, sel)
             except SelectionError as e:
                 typer.echo(f"selection error: {e}", err=True)
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
         print(json.dumps(_serialize_result(result), indent=2, ensure_ascii=False))
 
     # Set signature for Typer to introspect — use typer.Option so all params
