@@ -71,6 +71,11 @@ class UserService(UseCaseService):
             UserWithTasksDTO(id=2, name="Bob", tasks=[]),
         ]
 
+    @query
+    async def search_users(cls, keyword: Annotated[str, "search term"]) -> list[UserDTO]:
+        """Search users by keyword (Annotated param help test)."""
+        return []
+
 
 class PingService(UseCaseService):
     """Ping service."""
@@ -293,3 +298,24 @@ class TestSelection:
             basic_cli, ["user-service", "list_users", "--select", "name {"]
         )
         assert result.exit_code != 0
+
+    def test_help_lists_return_fields(self, basic_cli):
+        """method --help lists the return DTO's fields (--select needs them)."""
+        result = runner.invoke(basic_cli, ["user-service", "list_users", "--help"])
+        assert result.exit_code == 0
+        assert "Returns UserDTO:" in result.output
+        assert "name" in result.output
+
+    def test_select_error_includes_format_hint(self, basic_cli):
+        """--select with a bad selection reports the expected format."""
+        result = runner.invoke(
+            basic_cli, ["user-service", "list_users", "--select", "name {"]
+        )
+        assert result.exit_code != 0
+        assert "expected" in result.output
+
+    def test_annotated_param_help(self, basic_cli):
+        """A str in Annotated metadata becomes the param's --help text."""
+        result = runner.invoke(basic_cli, ["user-service", "search_users", "--help"])
+        assert result.exit_code == 0
+        assert "search term" in result.output
