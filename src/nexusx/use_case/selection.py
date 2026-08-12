@@ -46,11 +46,19 @@ def apply_selection(result: Any, return_annotation: Any, selection: str) -> Any:
 
 
 def parse_selection(selection: str) -> FieldSelection:
-    """Parse a rootless GraphQL-like selection into a FieldSelection tree."""
+    """Parse a rootless GraphQL-like selection into a FieldSelection tree.
+
+    Accepts both a bare field list (``"name"`` / ``"id tasks { title }"``)
+    and an already-braced fragment (``"{ name }"``); a bare list is wrapped
+    automatically so callers don't have to supply outer braces.
+    """
     if not selection or not selection.strip():
         raise SelectionError("selection cannot be empty")
 
-    query = f"{{ {_RESULT_FIELD} {selection} }}"
+    sel = selection.strip()
+    if not sel.startswith("{"):
+        sel = "{ " + sel + " }"
+    query = f"{{ {_RESULT_FIELD} {sel} }}"
     try:
         parsed = QueryParser().parse(query)
     except Exception as e:

@@ -623,4 +623,12 @@ Schema-to-SDK development workflow, see the
 - [Changelog](CHANGELOG.md)
 - [Issue tracker](https://github.com/allmonday/nexusx/issues)
 
+## Testing
+
+nexusx has **88% test coverage** across **1511 tests** (6 skipped). Run the suite with:
+
+```bash
+uv run pytest
+```
+
 nexusx follows semantic versioning and is distributed under the MIT license.

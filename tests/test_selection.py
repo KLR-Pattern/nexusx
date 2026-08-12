@@ -36,6 +36,25 @@ class TestParseSelectionErrors:
             parse_selection("")
 
 
+class TestParseSelectionSuccess:
+    def test_bare_field_auto_wrapped(self):
+        """A bare field list like 'name' is auto-wrapped and parsed."""
+        fs = parse_selection("name")
+        assert "name" in fs.sub_fields
+
+    def test_braced_fragment_also_works(self):
+        """An already-braced fragment is accepted unchanged."""
+        fs = parse_selection("{ name }")
+        assert "name" in fs.sub_fields
+
+    def test_nested_bare_selection(self):
+        """A bare selection with nested fields is wrapped and parsed."""
+        fs = parse_selection("id tasks { title }")
+        assert "id" in fs.sub_fields
+        assert "tasks" in fs.sub_fields
+        assert "title" in fs.sub_fields["tasks"].sub_fields
+
+
 class TestInferRuntimeAnnotation:
     def test_single_model(self):
         """Single BaseModel instance should return its class."""
