@@ -12,7 +12,8 @@ Run:
     uv run python -m demo.use_case.cli_demo --help
     uv run python -m demo.use_case.cli_demo sprint-service list_sprints
     uv run python -m demo.use_case.cli_demo sprint-service list_sprints --select "name task_count"
-    uv run python -m demo.use_case.cli_demo task-service get_task --task-id 1 --select "title owner { name }"
+    uv run python -m demo.use_case.cli_demo task-service get_task --task-id 1 \
+        --select "title owner { name }"
 """
 
 import asyncio
