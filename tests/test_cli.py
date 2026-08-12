@@ -27,6 +27,17 @@ class UserDTO(BaseModel):
     name: str
 
 
+class TaskDTO(BaseModel):
+    id: int
+    title: str
+
+
+class UserWithTasksDTO(BaseModel):
+    id: int
+    name: str
+    tasks: list[TaskDTO] = []
+
+
 # ──────────────────────────────────────────────────
 # Test Services
 # ──────────────────────────────────────────────────
@@ -51,6 +62,14 @@ class UserService(UseCaseService):
     async def create_user(cls, name: str, email: str) -> UserDTO:
         """Create a new user."""
         return UserDTO(id=99, name=name)
+
+    @query
+    async def list_users_with_tasks(cls) -> list[UserWithTasksDTO]:
+        """Get users with their tasks (for nested selection tests)."""
+        return [
+            UserWithTasksDTO(id=1, name="Alice", tasks=[TaskDTO(id=1, title="T1")]),
+            UserWithTasksDTO(id=2, name="Bob", tasks=[]),
+        ]
 
 
 class PingService(UseCaseService):
@@ -230,3 +249,47 @@ class TestCLIStructure:
     def test_invalid_config_type(self):
         with pytest.raises(TypeError):
             create_use_case_cli("not a config")
+
+
+# ──────────────────────────────────────────────────
+# Tests: --select field projection
+# ──────────────────────────────────────────────────
+
+
+class TestSelection:
+    def test_top_level_selection(self, basic_cli):
+        result = runner.invoke(basic_cli, ["user-service", "list_users", "--select", "name"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert len(data) == 2
+        assert data[0] == {"name": "Alice"}
+        assert "id" not in data[0]
+
+    def test_nested_selection(self, basic_cli):
+        result = runner.invoke(
+            basic_cli,
+            ["user-service", "list_users_with_tasks", "--select", "id tasks { title }"],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data[0] == {"id": 1, "tasks": [{"title": "T1"}]}
+        assert "name" not in data[0]
+
+    def test_no_selection_is_full_output(self, basic_cli):
+        """Without --select, output is the full DTO (backward compat)."""
+        result = runner.invoke(basic_cli, ["user-service", "list_users"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data[0] == {"id": 1, "name": "Alice"}
+
+    def test_selection_on_non_dto_errors(self, basic_cli):
+        """--select on a non-Pydantic return (e.g. str) errors cleanly."""
+        result = runner.invoke(basic_cli, ["ping-service", "ping", "--select", "x"])
+        assert result.exit_code != 0
+
+    def test_invalid_selection_syntax_errors(self, basic_cli):
+        """Malformed selection errors cleanly."""
+        result = runner.invoke(
+            basic_cli, ["user-service", "list_users", "--select", "name {"]
+        )
+        assert result.exit_code != 0

@@ -29,7 +29,9 @@ if TYPE_CHECKING:
 
     from nexusx.use_case.types import UseCaseAppConfig
 
+from nexusx.core_builder import SelectionError
 from nexusx.use_case.business import USE_CASE_METHODS_ATTR
+from nexusx.use_case.selection import apply_selection
 from nexusx.use_case.serialization import serialize_result as _serialize_result
 
 _CAMEL_TO_SNAKE_RE = re.compile(r"(?<!^)(?=[A-Z])")
@@ -64,6 +66,7 @@ def _build_command(
         hints = {}
 
     sig = inspect.signature(func)
+    return_annotation = hints.get("return", sig.return_annotation)
 
     # Build parameter info, mapping FromContext to plain params
     param_infos: list[tuple[str, Any, Any]] = []  # (name, type, default)
@@ -79,7 +82,20 @@ def _build_command(
 
     def _command(**kwargs: Any) -> None:
         # asyncio.run creates a new loop — cannot be called inside an existing loop
+        select = kwargs.pop("select", None)
         result = asyncio.run(method(**kwargs))
+        if select:
+            # apply_selection expects a braced GraphQL fragment "{ ... }"; wrap
+            # a bare field list so users can pass `--select name` or
+            # `--select "id tasks { title }"` without outer braces.
+            sel = select.strip()
+            if not sel.startswith("{"):
+                sel = "{ " + sel + " }"
+            try:
+                result = apply_selection(result, return_annotation, sel)
+            except SelectionError as e:
+                typer.echo(f"selection error: {e}", err=True)
+                raise typer.Exit(1)
         print(json.dumps(_serialize_result(result), indent=2, ensure_ascii=False))
 
     # Set signature for Typer to introspect — use typer.Option so all params
@@ -95,6 +111,19 @@ def _build_command(
                 default=default, annotation=panno,
             )
         )
+    # --select: GraphQL-like field projection (reuses the MCP selection engine).
+    params.append(
+        inspect.Parameter(
+            "select",
+            inspect.Parameter.KEYWORD_ONLY,
+            default=typer.Option(
+                None,
+                "--select",
+                help='GraphQL-like field projection, e.g. "name" or "id tasks { title }"',
+            ),
+            annotation=str,
+        )
+    )
     _command.__signature__ = inspect.Signature(params)  # type: ignore[attr-defined]
     _command.__doc__ = description or method_name
     _command.__name__ = method_name
