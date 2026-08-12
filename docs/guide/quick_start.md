@@ -1,123 +1,154 @@
 # Quick Start
 
-From SQLModel entities to a working GraphQL API in 30 seconds.
+Build and query a GraphQL API from SQLModel entities in one runnable file.
 
-## Installation
+## Install
 
 ```bash
-pip install nexusx
+pip install "nexusx[demo]"
 ```
 
-## Step 1: Define SQLModel Entities
+## Create the Application
 
-Create your entities just like you normally would with SQLModel:
-
-```python
-from sqlmodel import SQLModel, Field, Relationship, select
-
-class User(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    name: str
-    email: str
-    posts: list["Post"] = Relationship(back_populates="author")
-
-class Post(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    title: str
-    author_id: int = Field(foreign_key="user.id")
-    author: User | None = Relationship(back_populates="posts")
-```
-
-Nothing new here — these are standard SQLModel classes with relationships.
-
-## Step 2: Add `@query` and `@mutation`
-
-Add query and mutation methods directly on your entities. nexusx will discover them automatically:
+Create `app.py`:
 
 ```python
-from nexusx import query, mutation
+from contextlib import asynccontextmanager
 
-class Post(SQLModel, table=True):
-    # ... fields as above ...
-
-    @query
-    async def get_all(cls, limit: int = 10) -> list['Post']:
-        """Get all posts."""
-        async with get_session() as session:
-            return (await session.exec(select(cls).limit(limit))).all()
-
-    @mutation
-    async def create(cls, title: str, author_id: int) -> 'Post':
-        """Create a new post."""
-        async with get_session() as session:
-            post = cls(title=title, author_id=author_id)
-            session.add(post)
-            await session.commit()
-            await session.refresh(post)
-            return post
-```
-
-!!! tip
-    The first parameter must be `cls` — the decorator converts it to a classmethod automatically. The method's docstring becomes the GraphQL field description.
-
-## Step 3: Create GraphQLHandler
-
-Wire everything up with a `GraphQLHandler`:
-
-```python
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from nexusx import GraphQLHandler
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-handler = GraphQLHandler(base=SQLModel, session_factory=async_session)
+from nexusx import AutoQueryConfig, GraphQLHandler
+
+
+class BaseEntity(SQLModel):
+    pass
+
+
+class Team(BaseEntity, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    heroes: list["Hero"] = Relationship(back_populates="team")
+
+
+class Hero(BaseEntity, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    team_id: int | None = Field(default=None, foreign_key="team.id")
+    team: Team | None = Relationship(back_populates="heroes")
+
+
+engine = create_async_engine(
+    "sqlite+aiosqlite:///:memory:",
+    poolclass=StaticPool,
+)
+session_factory = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+handler = GraphQLHandler(
+    base=BaseEntity,
+    session_factory=session_factory,
+    auto_query_config=AutoQueryConfig(),
+)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    async with engine.begin() as connection:
+        await connection.run_sync(SQLModel.metadata.create_all)
+
+    async with session_factory() as session:
+        team = Team(name="Avengers")
+        session.add(team)
+        await session.flush()
+        session.add(Hero(name="Spider-Man", team_id=team.id))
+        await session.commit()
+
+    try:
+        yield
+    finally:
+        await handler.aclose()
+        await engine.dispose()
+
+
+app = FastAPI(lifespan=lifespan)
+
 
 class GraphQLRequest(BaseModel):
     query: str
 
-app = FastAPI()
 
 @app.get("/graphql", response_class=HTMLResponse)
-async def graphiql():
+async def graphiql() -> str:
     return handler.get_graphiql_html()
 
+
 @app.post("/graphql")
-async def graphql(req: GraphQLRequest):
-    return await handler.execute(req.query)
+async def graphql(request: GraphQLRequest):
+    return await handler.execute(request.query)
 ```
 
-!!! warning
-    `session_factory` is **required** — DataLoader needs it to execute batch queries. Without it, relationship resolution won't work.
+`StaticPool` keeps the in-memory SQLite database shared across async sessions.
+For a real application, replace the URL with a persistent SQLite or PostgreSQL
+database URL.
 
-## Step 4: Run and Query
+## Run and Query
 
 ```bash
-uvicorn app:app
+uvicorn app:app --reload
 ```
 
-Open http://localhost:8000/graphql and try this query:
+Open `http://127.0.0.1:8000/graphql` and run:
 
 ```graphql
 {
-  Post {
-    get_all(limit: 5) {
+  Team {
+    by_filter {
       id
-      title
-      author { name email }
+      name
+      heroes {
+        id
+        name
+      }
     }
   }
 }
 ```
 
-The framework traverses the GraphQL selection tree, collects FK values layer by layer, and batch-loads relationships via DataLoader. **No matter how many records are returned, each relationship requires only one query.**
+The response contains the seeded team and hero:
 
-## Recap
+```json
+{
+  "data": {
+    "Team": {
+      "by_filter": [
+        {
+          "id": 1,
+          "name": "Avengers",
+          "heroes": [{"id": 1, "name": "Spider-Man"}]
+        }
+      ]
+    }
+  }
+}
+```
 
-- You define standard SQLModel entities — no framework-specific base class needed
-- `@query` and `@mutation` decorators turn methods into GraphQL fields
-- `GraphQLHandler` auto-discovers entities and generates the full GraphQL schema
-- DataLoader resolves relationships automatically with batch loading — no N+1
+## What nexusx Generated
 
-## Next Steps
+- `AutoQueryConfig()` added `by_id` and `by_filter` query roots for both entities.
+- `GraphQLHandler` generated the GraphQL schema from the SQLModel types.
+- The `Team.heroes` relationship is loaded through DataLoader batching, without
+  a hand-written relationship resolver.
 
-Now that you have a working API, learn about the full capabilities of [GraphQL Mode](./graphql_mode.md).
+The tested source is also available at
+[`examples/quickstart.py`](https://github.com/allmonday/nexusx/blob/master/examples/quickstart.py).
+
+Next, read [GraphQL Mode](./graphql_mode.md) to define custom queries and
+mutations.

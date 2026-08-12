@@ -6,6 +6,125 @@ template: home.html
 
 **nexusx** 是一个渐进式 SQLModel 扩展库。你从 ORM 实体出发，添加非 ORM 关系，自动生成 GraphQL API，并用 `DefineSubset` 声明式构建响应 DTO。所有实体关系都可以通过 ER 图可视化。
 
+## 60 秒运行起来
+
+安装依赖：
+
+```bash
+pip install "nexusx[demo]"
+```
+
+创建 `app.py`：
+
+```python
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from nexusx import AutoQueryConfig, GraphQLHandler
+
+
+class BaseEntity(SQLModel):
+    pass
+
+
+class Team(BaseEntity, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    heroes: list["Hero"] = Relationship(back_populates="team")
+
+
+class Hero(BaseEntity, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    team_id: int | None = Field(default=None, foreign_key="team.id")
+    team: Team | None = Relationship(back_populates="heroes")
+
+
+engine = create_async_engine(
+    "sqlite+aiosqlite:///:memory:",
+    poolclass=StaticPool,
+)
+session_factory = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+handler = GraphQLHandler(
+    base=BaseEntity,
+    session_factory=session_factory,
+    auto_query_config=AutoQueryConfig(),
+)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    async with engine.begin() as connection:
+        await connection.run_sync(SQLModel.metadata.create_all)
+
+    async with session_factory() as session:
+        team = Team(name="Avengers")
+        session.add(team)
+        await session.flush()
+        session.add(Hero(name="Spider-Man", team_id=team.id))
+        await session.commit()
+
+    try:
+        yield
+    finally:
+        await handler.aclose()
+        await engine.dispose()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+class GraphQLRequest(BaseModel):
+    query: str
+
+
+@app.get("/graphql", response_class=HTMLResponse)
+async def graphiql() -> str:
+    return handler.get_graphiql_html()
+
+
+@app.post("/graphql")
+async def graphql(request: GraphQLRequest):
+    return await handler.execute(request.query)
+```
+
+启动服务：
+
+```bash
+uvicorn app:app --reload
+```
+
+打开 `http://127.0.0.1:8000/graphql`，执行：
+
+```graphql
+{
+  Team {
+    by_filter {
+      id
+      name
+      heroes {
+        id
+        name
+      }
+    }
+  }
+}
+```
+
+至此已经得到自动生成的 GraphQL schema 和批量关系加载。完整说明见
+[快速开始](./guide/quick_start.zh.md)。
+
 ## 你能得到什么
 
 | 你想要... | 你写... | nexusx 负责... |
