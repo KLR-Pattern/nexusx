@@ -125,6 +125,37 @@ type Mutation {  # 仅当存在 @mutation 方法时
 
 3.0 移除了 2.x 的直接调用式 MCP（`create_use_case_mcp_server`、`create_use_case_flat_server`）。完整 before/after 映射见 [`docs/migrations/3.0-use-case-graphql.md`](../migrations/3.0-use-case-graphql.md)。
 
+## create_use_case_cli
+
+从 `UseCaseAppConfig` 生成 Typer CLI：每个 service 成一个命令组，每个 `@query`/`@mutation` 方法成一个命令。
+
+```python
+from nexusx import create_use_case_cli, UseCaseAppConfig
+
+config = UseCaseAppConfig(name="project", services=[SprintService, TaskService])
+cli = create_use_case_cli(config)
+cli()  # 读取 sys.argv
+```
+
+### 命令层级
+
+- `myapp --help` → 列出 service 命令组
+- `myapp <service> --help` → 列出该 service 的方法
+- `myapp <service> <method> --help` → 方法参数 + 返回 DTO 字段 + `--select`
+
+### `--select` 字段投影
+
+每个方法命令都接受 `--select`，对返回 DTO 做 GraphQL 风格的字段投影——把 JSON 输出裁剪成你要的字段（复用 MCP `compose_query` 的同一个 `apply_selection` 引擎）：
+
+```bash
+myapp sprint-service list_sprints --select "name task_count"
+myapp task-service get_task --task-id 1 --select "title owner { name }"
+```
+
+方法的 `--help` 会列出返回 DTO 的顶层字段（嵌套关系标 `selectable`），让你知道 `--select` 能选什么。
+
+完整示例见 [`demo/use_case/cli_demo.py`](https://github.com/allmonday/nexusx/blob/master/demo/use_case/cli_demo.py)。
+
 ## build_compose_schema / ComposeSchema / compose_introspect
 
 直接访问 schema，用于非 MCP 场景（如自建 GraphQL HTTP endpoint + GraphiQL）。

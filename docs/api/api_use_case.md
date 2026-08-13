@@ -132,6 +132,37 @@ type Mutation {  # only when @mutation methods exist
 
 The 2.x direct-call MCP entries (`create_use_case_mcp_server`, `create_use_case_flat_server`) were removed in 3.0. See [`docs/migrations/3.0-use-case-graphql.md`](../migrations/3.0-use-case-graphql.md) for the before/after mapping.
 
+## create_use_case_cli
+
+Generate a Typer CLI from a `UseCaseAppConfig`: each service becomes a command group, each `@query`/`@mutation` method a command.
+
+```python
+from nexusx import create_use_case_cli, UseCaseAppConfig
+
+config = UseCaseAppConfig(name="project", services=[SprintService, TaskService])
+cli = create_use_case_cli(config)
+cli()  # reads sys.argv
+```
+
+### Command layout
+
+- `myapp --help` → list service command groups
+- `myapp <service> --help` → list the service's methods
+- `myapp <service> <method> --help` → method parameters + return DTO fields + `--select`
+
+### `--select` field projection
+
+Every method command takes `--select` for GraphQL-like field projection over the returned DTO — trim the JSON output to the fields you want (reuses the same `apply_selection` engine as MCP `compose_query`):
+
+```bash
+myapp sprint-service list_sprints --select "name task_count"
+myapp task-service get_task --task-id 1 --select "title owner { name }"
+```
+
+A method's `--help` lists the return DTO's top-level fields (nested relationships marked `selectable`), so you know what `--select` can pick.
+
+See [`demo/use_case/cli_demo.py`](https://github.com/allmonday/nexusx/blob/master/demo/use_case/cli_demo.py) for a complete example.
+
 ## build_compose_schema / ComposeSchema / compose_introspect
 
 Direct schema access for non-MCP use cases (e.g. building a GraphQL HTTP endpoint with GraphiQL).

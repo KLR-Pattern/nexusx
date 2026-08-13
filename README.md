@@ -481,7 +481,21 @@ cli()
 ```
 
 The same method is now available as a command without moving business logic
-into the CLI layer.
+into the CLI layer. Services become command groups, methods become commands,
+and `--help` works at every layer (`myapp --help` → `myapp <service> --help` →
+`myapp <service> <method> --help`).
+
+Every method command also takes `--select` for GraphQL-like field projection —
+trim the JSON output to just the fields you want:
+
+```bash
+myapp sprint-service list_sprints --select "name task_count"
+myapp task-service get_task --task-id 1 --select "title owner { name }"
+```
+
+A method's `--help` also lists the return DTO's fields (nested relationships
+marked `selectable`), so you know what `--select` can pick. See
+[`demo/use_case/cli_demo.py`](demo/use_case/cli_demo.py) for a runnable example.
 
 ## One model, two graphs
 
