@@ -1,27 +1,39 @@
-"""ComposedErManager —— 同进程多 engine 组合（specs/019）。
+"""ComposedErManager — same-process multi-engine composition (specs/019).
 
-ComposedErManager 是「按 entity 委托的查询代理 + 跨边界关系叠加层」：
+ComposedErManager is a "delegate-by-entity query proxy + cross-boundary
+relationship overlay":
 
-- 多个自洽的子 ErManager（各自单 engine、loader 焊死各自 session）组合成一个总代理
-- 满足 ``LoaderRegistry`` 协议，``create_resolver()`` 产出单一总代理 Resolver，
-  跨 engine resolve 对用户透明
-- 跨边界关系在组合体层集中声明（成员对跨边界关联无感，单独使用时纯粹，DD-02）
+- Several self-contained child ErManagers (one engine each, loaders
+  hard-wired to their own session) compose into a single umbrella proxy.
+- Satisfies the ``LoaderRegistry`` protocol; ``create_resolver()`` produces
+  a single umbrella Resolver, making cross-engine resolve transparent to
+  users.
+- Cross-boundary relationships are declared centrally at the composed level
+  (members stay unaware of cross-boundary associations and remain pure when
+  used standalone, DD-02).
 
-本质是「同进程版的 federation」——与 specs/012（跨进程 federation）对偶：
+Essentially "federation in the same process" — the dual of specs/012
+(cross-process federation):
 
-- 012：跨进程 service 组合，跨边界关系走 transport(HTTP)
-- 019：同进程 engine 组合，跨边界关系走进程内 DataLoader（用户闭包）
+- 012: cross-process service composition; cross-boundary relationships go
+  through a transport (HTTP).
+- 019: same-process engine composition; cross-boundary relationships go
+  through in-process DataLoaders (user closures).
 
-federation 正交可叠加（FR-017）：federation 的 mutating 操作（federate/initialize）落子
-ErManager，ComposedErManager 只查询委托 + ``_fed_registry`` 聚合。
+Federation is orthogonal and stackable (FR-017): federation's mutating
+operations (federate/initialize) land on ErManager; ComposedErManager only
+delegates queries and aggregates ``_fed_registry``.
 
-不可变（FR-016）：成员 + 跨边界关系在 ``__init__`` 一次性确定。
-不实现 ErManager 的管理接口（FR-013）：add_virtual_entities / federate / initialize
-等在子 ErManager 上做，调用组合体的对应方法会明确报错。
+Immutable (FR-016): members + cross-boundary relationships are fixed once
+in ``__init__``.
+ErManager's management interface is intentionally NOT implemented (FR-013):
+add_virtual_entities / federate / initialize etc. run on child ErManagers;
+calling them on the composed manager raises an explicit error.
 """
 
-# 不用 ``from __future__ import annotations`` —— 保持方法签名注解（ErManager | None
-# 等）在运行时可求值，与 registry.py 一致。
+# No ``from __future__ import annotations`` — keep method signature
+# annotations (ErManager | None etc.) evaluable at runtime, consistent with
+# registry.py.
 
 from typing import Any
 
@@ -36,11 +48,14 @@ from nexusx.relationship import Relationship
 
 
 class _CompositeFedRegistryView:
-    """只读聚合各子 member 的 ``_fed_registry``（federation 叠加，US5 / FR-017）。
+    """Read-only aggregation of member ``_fed_registry`` objects (federation
+    stacking, US5 / FR-017).
 
-    子 member 各自 federate 后，物化的 remote type 在各自 ``_fed_registry``。
-    本视图遍历成员合并，使 ER 图 styling / remote type 判断正确。无 federation
-    时各成员 ``_fed_registry`` 为 None，本视图方法返回空集 / None。
+    After each child member federates on its own, its materialized remote
+    types live in its own ``_fed_registry``. This view iterates members and
+    merges them so ER-diagram styling / remote-type detection stays correct.
+    Without federation, member ``_fed_registry`` objects are None and this
+    view's methods return empty sets / None.
     """
 
     def __init__(self, members: list[ErManager]):
@@ -83,22 +98,31 @@ class _CompositeFedRegistryView:
 
 
 class ComposedErManager:
-    """组合多个自洽 ErManager 的总代理 + 跨边界关系叠加层。
+    """Umbrella proxy composing several self-contained ErManagers + the
+    cross-boundary relationship overlay.
 
-    满足 :class:`LoaderRegistry` 协议。``create_resolver()`` 产出单一总代理
-    Resolver，跨 engine resolve 对用户透明。
+    Satisfies the :class:`LoaderRegistry` protocol. ``create_resolver()``
+    produces a single umbrella Resolver; cross-engine resolve is transparent
+    to users.
 
     Args:
-        members: 各自自洽的子 ErManager（单 engine，loader 焊死各自 session）。
-            不可空，构造后不可变（FR-016）。成员实体集必须互斥（重名报错）。
-        cross_relationships: 跨 engine 边界关系，形如 ``[(source_entity, Relationship), ...]``。
-            关系在组合体层集中声明（DD-02/FR-008），成员对跨边界关联无感。
-            Relationship.loader 是用户闭包，内部选用目标 engine 的 session。
-        service_name: 组合体作为 federation member 被消费时的统一 service 名
-            （可选；独立使用时不需）。
+        members: Self-contained child ErManagers (one engine each, loaders
+            hard-wired to their own session). Non-empty and immutable after
+            construction (FR-016). Member entity sets must be mutually
+            exclusive (duplicates raise).
+        cross_relationships: Cross-engine boundary relationships, shaped like
+            ``[(source_entity, Relationship), ...]``. Declared centrally at
+            the composed level (DD-02/FR-008); members stay unaware of
+            cross-boundary associations. Relationship.loader is a user
+            closure that picks the target engine's session internally.
+        service_name: Unified service name for the composed manager when it
+            is itself consumed as a federation member (optional; not needed
+            for standalone use).
 
-    不实现 ErManager 的管理接口（FR-013）：``add_virtual_entities`` / ``federate`` /
-    ``initialize`` 等在子 ErManager 上做，调用组合体对应方法会抛 ``AttributeError``。
+    ErManager's management interface is intentionally NOT implemented
+    (FR-013): ``add_virtual_entities`` / ``federate`` / ``initialize`` etc.
+    run on child ErManagers; calling them on the composed manager raises
+    ``AttributeError``.
     """
 
     def __init__(
@@ -116,18 +140,20 @@ class ComposedErManager:
         self._members: list[ErManager] = list(members)
         self._service_name: str | None = service_name
 
-        # entity → 所属 member（委托路由表）
+        # entity → owning member (delegation route table)
         self._route: dict[type, ErManager] = {}
-        # loader_cls → member（反向路由，避免 get_loader 缓存污染）
+        # loader_cls → member (reverse route; avoids get_loader cache pollution)
         self._loader_owner: dict[type, ErManager] = {}
-        # 跨边界关系叠加层：source entity → {rel_name: RelationshipInfo}
+        # Cross-boundary relationship overlay: source entity → {rel_name: RelationshipInfo}
         self._cross_rels: dict[type, dict[str, RelationshipInfo]] = {}
-        # 跨边界 loader 实例缓存（组合体自持有，clear_cache 时清）
+        # Cross-boundary loader instance cache (composed-owned, cleared by clear_cache)
         self._cross_loader_cache: dict[type, DataLoader] = {}
-        # _fed_registry 聚合视图（惰性创建）
+        # _fed_registry aggregate view (created lazily)
         self._fed_registry_view: _CompositeFedRegistryView | None = None
+        # Member grouping map (specs/022, created lazily): cls → (service_name, color)
+        self._member_styling_cache: dict[type, tuple[str, str | None]] | None = None
 
-        # 建立路由表 + loader 反向映射 + 实体互斥校验
+        # Build the route table + loader reverse map + entity exclusivity check
         for m in self._members:
             for cls in m.get_all_entities():
                 if cls in self._route:
@@ -139,13 +165,35 @@ class ComposedErManager:
                 self._route[cls] = m
             for _entity, rels in m.get_all_relationships().items():
                 for rel_info in rels.values():
-                    # loader 与 page_loader 都登记：分页路径经 page_loader 取实例
-                    # （page_loader 是独立类，只登记 loader 会让分页查询 KeyError）
+                    # Register BOTH loader and page_loader: the pagination
+                    # path fetches instances via page_loader (a separate
+                    # class — registering only loader would KeyError on
+                    # paged queries).
                     for _lk in (rel_info.loader, rel_info.page_loader):
                         if _lk is not None:
                             self._loader_owner[_lk] = m
 
-        # 跨边界关系 → RelationshipInfo（复用 _build_custom_relationship_info）
+        # Duplicate member service_name check (specs/022 FR-009): a
+        # duplicated grouping key would merge two members' entities into one
+        # voyager cluster, let their colors overwrite each other
+        # first-come-first-served, and crash on the duplicate DOT cluster id
+        # — fail fast at construction, alongside the entity exclusivity
+        # check.
+        named_members: dict[str, ErManager] = {}
+        for m in self._members:
+            m_name = getattr(m, "service_name", None)
+            if m_name is None:
+                continue
+            if m_name in named_members:
+                raise ValueError(
+                    f"Member service_name '{m_name}' is used by multiple members; "
+                    f"service_name must be unique within a ComposedErManager "
+                    f"(it is the voyager cluster key)"
+                )
+            named_members[m_name] = m
+
+        # Cross-boundary relationships → RelationshipInfo
+        # (reuses _build_custom_relationship_info)
         for source_entity, rel in cross_relationships or []:
             if source_entity not in self._route:
                 raise ValueError(
@@ -164,8 +212,9 @@ class ComposedErManager:
                     f"Cross-boundary relationship {source_entity.__name__}.{rel.name} "
                     f"is declared more than once"
                 )
-            # cross 关系名撞 member 本地关系 → 报错（构造期 fail-fast，避免
-            # get_relationships 静默用 cross 顶替本地 ORM 关系）
+            # A cross relationship shadowing a member-local one raises
+            # (fail fast at construction; otherwise get_relationships would
+            # silently replace the local ORM relationship with the cross one)
             local_owner = self._route[source_entity]
             if rel.name in local_owner.get_relationships(source_entity):
                 raise ValueError(
@@ -175,13 +224,14 @@ class ComposedErManager:
                 )
             bucket[rel.name] = rel_info
 
-    # ── 内部辅助 ────────────────────────────────────────────────
+    # ── Internal helpers ───────────────────────────────────────
 
     def _member_for(self, entity: type) -> ErManager | None:
         return self._route.get(entity)
 
     def _get_cross_loader(self, loader_cls: type[DataLoader]) -> DataLoader:
-        """跨边界 loader 实例由组合体自持有缓存（不走 member.get_loader）。"""
+        """Cross-boundary loader instances are cached by the composed manager
+        (not via member.get_loader)."""
         if loader_cls not in self._cross_loader_cache:
             self._cross_loader_cache[loader_cls] = loader_cls()
         return self._cross_loader_cache[loader_cls]
@@ -194,18 +244,21 @@ class ComposedErManager:
                     cls_set.add(rel_info.loader)
         return cls_set
 
-    # ── Resolver 依赖的查询接口（按 entity 路由 + 跨边界叠加）────────
+    # ── Query interface consumed by the Resolver (route by entity + cross-boundary overlay) ──
 
     def has_entity(self, entity: type) -> bool:
         return entity in self._route
 
     def get_relationships(self, entity: type) -> dict[str, RelationshipInfo]:
-        """委托 member 的本地关系 + 叠加跨边界关系。"""
+        """Delegate to the member's local relationships + overlay the
+        cross-boundary ones."""
         member = self._member_for(entity)
         local = dict(member.get_relationships(entity)) if member else {}
         cross = self._cross_rels.get(entity, {})
         if cross:
-            local.update(cross)  # 合并跨边界关系（构造期已保证不与本地同名）
+            # Merge cross-boundary rels (construction guarantees no clash
+            # with local names).
+            local.update(cross)
         return local
 
     def get_relationship(
@@ -219,7 +272,8 @@ class ComposedErManager:
         rel_name: str,
         type_key: frozenset[str] | None = None,
     ) -> DataLoader | None:
-        """跨边界关系 → 组合体自持有的 loader；本地 → 委托 member。"""
+        """Cross-boundary relationships → composed-owned loader; local →
+        delegate to the member."""
         cross = self._cross_rels.get(entity, {}).get(rel_name)
         if cross is not None and cross.loader is not None:
             return self._get_cross_loader(cross.loader)
@@ -231,12 +285,16 @@ class ComposedErManager:
     def get_loader_by_name(
         self, name: str, type_key: frozenset[str] | None = None
     ) -> DataLoader | None:
-        """按关系名取 loader。
+        """Look up a loader by relationship name.
 
-        跨 member 同名关系抛 ambiguity —— 与 ``ErManager.get_loader_by_name``
-        单体内同名抛 ``ValueError`` 的安全网对齐。若静默「首个获胜」，跨 engine
-        同名关系（如 owner/tags）会用 A engine 的 session 取本该走 B engine 的
-        关系，结果「看似对、其实错」。跨边界叠加层的关系名也参与歧义判定。
+        Same-name relationships across members raise on ambiguity — aligned
+        with ``ErManager.get_loader_by_name``, which raises ``ValueError``
+        on same-name collisions within a single manager. With a silent
+        "first wins", a same-name cross-engine relationship (e.g.
+        owner/tags) would fetch data through engine A's session for a
+        relationship that belongs to engine B — results that look right but
+        are wrong. Cross-boundary overlay names participate in the
+        ambiguity check too.
         """
         member_hits: list[ErManager] = []
         for m in self._members:
@@ -256,9 +314,11 @@ class ComposedErManager:
             )
 
         if member_hits:
-            # 恰一个 member 命中：委托（member 内若多 entity 同名仍由其抛错）
+            # Exactly one member hit: delegate (if several entities inside
+            # the member share the name, its own error still fires)
             return member_hits[0].get_loader_by_name(name, type_key)
-        # 恰跨边界层命中：取其 loader 类，组合体自持实例
+        # Only the cross-boundary layer hit: take its loader class; the
+        # composed manager owns the instance
         for rels in self._cross_rels.values():
             rel_info = rels.get(name)
             if rel_info is not None and rel_info.loader is not None:
@@ -273,17 +333,23 @@ class ComposedErManager:
         force_split: bool = False,
         params_key: tuple | None = None,
     ) -> DataLoader:
-        """反向路由 member loader；跨边界 loader 由组合体自持有。
+        """Reverse-route member loaders; cross-boundary loaders are
+        composed-owned.
 
-        本地 loader 走构造时收集的 ``_loader_owner``；**federate 后 member 新增的
-        loader（如 RemoteLoader）走动态查找**——它们在组合体构造时还不存在
-       （federation 物化发生在子 member ``initialize()`` 之后），构造期收集不到。
-        动态查找遍历 ``member.get_all_relationships()``（含物化关系）定位拥有者。
-        跨边界 loader 由组合体自持有。
+        Local loaders go through ``_loader_owner`` (collected at
+        construction); **loaders a member adds AFTER federate (e.g.
+        RemoteLoader) fall back to dynamic lookup** — they do not exist yet
+        when the composed manager is constructed (federation materializes
+        after the child member's ``initialize()``), so construction-time
+        collection cannot see them. Dynamic lookup walks
+        ``member.get_all_relationships()`` (which includes materialized
+        relationships) to locate the owner. Cross-boundary loaders are
+        composed-owned.
         """
         owner = self._loader_owner.get(loader_cls)
         if owner is None:
-            # federate 后 member 新增的 loader —— 动态查找拥有它的 member
+            # Loader added by a member after federate — dynamically find
+            # the member that owns it
             for m in self._members:
                 for _entity, rels in m.get_all_relationships().items():
                     for rel_info in rels.values():
@@ -311,26 +377,29 @@ class ComposedErManager:
     def get_dto_loader(
         self, owner_dto: Any, field_name: str | None = None
     ) -> Any | None:
-        """聚合 γ DTO loader：遍历成员查找。"""
+        """Aggregate γ DTO loaders: search across members."""
         for m in self._members:
             loader = m.get_dto_loader(owner_dto, field_name)
             if loader is not None:
                 return loader
         return None
 
-    # ── 生命周期 / 缓存 ────────────────────────────────────────
+    # ── Lifecycle / cache ──────────────────────────────────────
 
     def clear_cache(self) -> None:
-        """聚合所有成员的 clear_cache + 清跨边界 loader 缓存。"""
+        """Aggregate all members' clear_cache + clear the cross-boundary
+        loader cache."""
         for m in self._members:
             m.clear_cache()
         self._cross_loader_cache.clear()
 
     def create_resolver(self) -> type:
-        """产出总代理 Resolver（照搬 ErManager.create_resolver，注入组合体自身）。
+        """Produce the umbrella Resolver (mirrors ErManager.create_resolver,
+        injecting the composed manager itself).
 
-        Resolver 本体 0 改动——它的 ``__init__`` 已是 ``loader_registry: Any``，
-        组合体作为 loader_registry 注入后，跨 engine resolve 透明。
+        The Resolver itself is unchanged — its ``__init__`` already takes
+        ``loader_registry: Any``, so injecting the composed manager as the
+        loader_registry makes cross-engine resolve transparent.
         """
         from nexusx.resolver import Resolver as _Resolver
 
@@ -352,22 +421,60 @@ class ComposedErManager:
         BoundResolver.__qualname__ = "Resolver"
         return BoundResolver
 
-    # ── Resolver / ER 图 读取的属性 ────────────────────────────
+    # ── Attributes read by the Resolver / ER diagram ───────────
 
     @property
     def _split_mode(self) -> bool:
-        # 组合体不支持 split 模式（成员各自决定，组合体层面统一为 False）。
-        # 现有 split_mode 用途（query_meta 列裁剪）在 member 内部各自生效。
+        # The composed manager does not support split mode (each member
+        # decides on its own; the composed level reports False uniformly).
+        # Existing split_mode uses (query_meta column pruning) apply inside
+        # each member.
         return False
 
     @property
     def _fed_registry(self) -> Any:
-        """聚合各成员 _fed_registry 的只读视图（federation 叠加，US5）。"""
+        """Read-only aggregate view of members' _fed_registry (federation
+        stacking, US5)."""
         if self._fed_registry_view is None:
             self._fed_registry_view = _CompositeFedRegistryView(self._members)
         return self._fed_registry_view
 
-    # ── ER 图额外用 ────────────────────────────────────────────
+    @property
+    def _member_styling(self) -> dict[type, tuple[str, str | None]]:
+        """Member grouping map (specs/022) — probed by the voyager consumers.
+
+        Keys are member entity classes or DTO classes from ``dto_classes``;
+        values are the owning member's ``(service_name, color)``. Contains
+        ONLY members that declared a ``service_name``: an unnamed member's
+        entities fall back to Python ``__module__`` grouping (the
+        pre-existing behavior), and its color (if any) is silently ignored
+        — color takes effect only through service_name.
+
+        Consumer convention (duck-typed probe in the same style as
+        ``_fed_registry``)::
+
+            styling = getattr(er_manager, "_member_styling", None)
+
+        A standalone ErManager has no such attribute → None → consumers
+        fall back to the status quo (single-manager output stays
+        byte-identical). Immutable (same discipline as FR-016): members are
+        fixed after construction; the map is built lazily and cached once.
+        """
+        if self._member_styling_cache is None:
+            cache: dict[type, tuple[str, str | None]] = {}
+            for m in self._members:
+                m_name = getattr(m, "service_name", None)
+                if m_name is None:
+                    continue
+                m_color = getattr(m, "_voyager_color", None)
+                for cls in m.get_all_entities():
+                    cache[cls] = (m_name, m_color)
+                for dto in getattr(m, "_dto_classes", []):
+                    cache[dto] = (m_name, m_color)
+            self._member_styling_cache = cache
+        return self._member_styling_cache
+
+    # ── Extra surface for the ER diagram ───────────────────────
 
     def get_all_entities(self) -> list[type]:
         return list(self._route.keys())
@@ -377,26 +484,28 @@ class ComposedErManager:
         for m in self._members:
             for entity, rels in m.get_all_relationships().items():
                 merged.setdefault(entity, {}).update(rels)
-        # 叠加跨边界关系
+        # Overlay cross-boundary relationships
         for entity, rels in self._cross_rels.items():
             merged.setdefault(entity, {}).update(rels)
         return merged
 
-    # ── federation member 暴露聚合（作 member 被消费时，US5-A2）─────
+    # ── Federation-member exposure aggregates (when consumed AS a member, US5-A2) ──
 
     @property
     def service_name(self) -> str | None:
         return self._service_name
 
     def get_dto_classes(self) -> list[type]:
-        """聚合所有成员的 DTO 类（federation member introspection 用）。"""
+        """Aggregate all members' DTO classes (for federation member
+        introspection)."""
         classes: list[type] = []
         for m in self._members:
             classes.extend(m.get_dto_classes())
         return classes
 
     def get_public_dtos(self) -> list[type]:
-        """聚合所有成员的 federation-public DTO（γ-path composition source）。"""
+        """Aggregate all members' federation-public DTOs (γ-path
+        composition source)."""
         dtos: list[type] = []
         for m in self._members:
             dtos.extend(m.get_public_dtos())
@@ -404,19 +513,24 @@ class ComposedErManager:
 
     @property
     def _expose_mounted_endpoints(self) -> bool:
-        """取成员的 expose 策略（任一为 True 则暴露，便于 transitively 发现）。"""
+        """Members' expose policy (expose if ANY member is True, enabling
+        transitive discovery)."""
         return any(
             getattr(m, "_expose_mounted_endpoints", False) for m in self._members
         )
 
-    # ── 版本（ER 图 / SDL 缓存用，组合体取成员最大版本）──────────
+    # ── Version (ER diagram / SDL cache key; aggregates member versions) ──
 
     @property
     def version(self) -> int:
-        # 成员 version 单调递增（initialize / add_virtual_entities 各 +1）。
-        # 不能用 max：当某 member 已是高版本主导时，另一低版本 member federate
-        # （version+1）不会改变 max，导致 GraphQLHandler 的 SDL / introspection
-        # 缓存（以 version 为 key）不刷新，schema 缺新物化的 remote type（review #4）。
-        # sum 在「只增」语义下严格单调——任一 member 进入新一代 ⇒ 聚合变化——
-        # 且保持 int，不破坏把 version 当 cache key / 计数的消费面。
+        # Member versions grow monotonically (initialize /
+        # add_virtual_entities each +1). max() would NOT do: when one member
+        # already dominates with a high version, a lower-versioned member
+        # federating (version+1) does not change the max, so
+        # GraphQLHandler's SDL / introspection cache (keyed by version)
+        # would not refresh and the schema would miss newly materialized
+        # remote types (review #4). sum() is strictly monotonic under the
+        # "only grows" discipline — any member entering a new generation
+        # changes the aggregate — and stays an int, preserving consumers
+        # that use version as a cache key / counter.
         return sum(getattr(m, "version", 0) for m in self._members)

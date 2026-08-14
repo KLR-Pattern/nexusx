@@ -9,7 +9,7 @@ from typing import Literal
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from nexusx.voyager.module import build_module_route_tree, build_module_schema_tree
-from nexusx.voyager.render_style import RenderConfig
+from nexusx.voyager.render_style import RenderConfig, text_color_for
 from nexusx.voyager.type import (
     PK,
     FieldInfo,
@@ -247,7 +247,6 @@ class Renderer:
         default_color = self.theme_color if color is None else color
         header_color = self.colors.highlight if node.id == self.schema else default_color
         header_text = node.name
-        text_color = 'white'
 
         # Contract 3 visual distinction for non-SQLModel (virtual) roots:
         # yellow fill, «virtual» UML stereotype prefix, dark text (yellow is
@@ -255,7 +254,11 @@ class Renderer:
         if getattr(node, 'is_virtual', False):
             header_color = self.colors.virtual_fill
             header_text = f'«virtual»\\n{node.name}'
-            text_color = '#000'
+
+        # Text color follows the FINAL fill (computed after the virtual
+        # override): black on light fills (pastel member colors, virtual
+        # yellow), white on dark ones.
+        text_color = text_color_for(header_color)
 
         header = self.template_renderer.render_template(
             'html/schema_header.j2',
@@ -384,13 +387,10 @@ class Renderer:
                 for fm in self.federated_modules
             )
             cluster_style = 'rounded,dashed' if is_federated else 'rounded'
-            pen_style = ''
-
+            # specs/022: a colored cluster also fills its background (member
+            # colors and federation service colors get the same treatment).
             if cluster_color:
-                pen_style = f'pencolor = "{cluster_color}"'
-                pen_style += '\n' + 'penwidth = 3' if color else ''
-            else:
-                pen_style = 'pencolor="#ccc"'
+                cluster_style += ',filled'
 
             return self.template_renderer.render_template(
                 'dot/cluster.j2',
@@ -399,6 +399,7 @@ class Renderer:
                 tooltip=mod.fullname,
                 border_color=self.colors.border,
                 pen_color=cluster_color,
+                fill_color=cluster_color,
                 pen_width=3 if color and not cluster_color else None,
                 cluster_style=cluster_style,
                 content=f'{inner_nodes_str}\n{child_str}'

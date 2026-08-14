@@ -62,6 +62,11 @@ app.mount("/voyager", voyager)
 - 自定义关系（`__relationships__`）
 - DefineSubset → 源实体的对应关系
 
+**多 engine 组合（ComposedErManager）**：设了 `service_name` 的 member，其实体
+自动归入以该名字为标签的 cluster；再设 `color`（如 `"#E3F2FD"`）cluster 会带
+背景色填充。跨 engine 的边横跨两个分组，一眼可辨数据源归属。详见
+[ComposedErManager 文档](composed_er_manager.zh.md#voyager-分组与配色-022)。
+
 ### DefineSubset 追踪
 
 Voyager 自动追踪 DefineSubset DTO 到源实体的映射：

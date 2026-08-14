@@ -43,6 +43,12 @@ class TaskDTO(DefineSubset):
 
 Voyager displays the `TaskDTO` → `Task` subset relationship along with the selected fields.
 
+**Composed engines (ComposedErManager)**: members that declare `service_name`
+automatically cluster their entities under that label, and a declared `color`
+(e.g. `"#E3F2FD"`) fills the cluster background. Cross-engine edges span both
+clusters, making data-source ownership visible at a glance. See the
+[ComposedErManager guide](composed_er_manager.md#voyager-member-clusters-colors-022).
+
 ## Step 2: Reuse the Same Services with MCP
 
 Voyager accepts a service list while MCP wraps that same list in

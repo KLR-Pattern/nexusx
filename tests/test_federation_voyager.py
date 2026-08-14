@@ -202,7 +202,8 @@ async def test_declared_remote_service_color_renders():
         builder.analysis()
         dot = builder.render_dot()
         assert '#3b82f6' in dot  # the declared color reaches the cluster
-        assert 'style="rounded,dashed"' in dot  # dashed
+        # specs/022: a colored cluster also fills — dashed boundary + fill.
+        assert 'style="rounded,dashed,filled"' in dot
     finally:
         await client.aclose()
         for e in eng.values():
@@ -263,7 +264,8 @@ def test_use_case_clusters_federated_remote_type_by_service():
     assert by_name["_UcReviewDTO"].is_federated is False
 
     dot = voyager.render_dot()
-    assert 'style="rounded,dashed"' in dot  # dashed service boundary
+    # specs/022: colored cluster fills its background (dashed boundary + fill).
+    assert 'style="rounded,dashed,filled"' in dot  # dashed service boundary
     assert "#3b82f6" in dot                 # declared color reaches the cluster
     assert "pencolor" in dot
 

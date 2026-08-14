@@ -255,6 +255,20 @@ class TestVoyagerDotBuilderVisualDistinction:
 
         assert "#FFF9C4" in dot or "FFF9C4" in dot
 
+    def test_virtual_node_header_text_is_dark(self):
+        """Dark header text on the light yellow fill (Contract 3: #FFF9C4 is
+        too light for white text — the color must derive from the FINAL fill,
+        not the theme color)."""
+        er = _make_er()
+        er.add_virtual_entities([CurrentUser])
+
+        builder = ErDiagramDotBuilder(er)
+        builder.analysis()
+        dot = builder.render_dot()
+
+        assert '<font color="#000">«virtual»' in dot
+        assert '<font color="white">«virtual»' not in dot
+
     def test_sqlmodel_node_does_not_carry_virtual_signals(self):
         """SQLModel entities must NOT receive virtual styling."""
         er = _make_er()

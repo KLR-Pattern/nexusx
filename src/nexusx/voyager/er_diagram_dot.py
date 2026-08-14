@@ -11,6 +11,11 @@ from nexusx.federation.relationship import parse_qualified_name
 from nexusx.loader.registry import ErManager, RelationshipInfo
 from nexusx.relationship import is_virtual_entity
 from nexusx.voyager.render import DiagramRenderer
+from nexusx.voyager.styling import (
+    member_service_colors,
+    probe_member_styling,
+    resolve_cluster_key,
+)
 from nexusx.voyager.type import (
     PK,
     FieldInfo,
@@ -111,6 +116,9 @@ class ErDiagramDotBuilder:
         self.edge_minlen = edge_minlen
         self.show_methods = show_methods
         self.hide_reverse_relationships = hide_reverse_relationships
+        # ComposedErManager member grouping (specs/022): None for a standalone
+        # ErManager, so member grouping stays inactive (FR-008).
+        self._member_styling = probe_member_styling(er_manager)
 
     def _generate_node_head(self, link_name: str) -> str:
         return f'{link_name}::{PK}'
@@ -153,9 +161,9 @@ class ErDiagramDotBuilder:
             # another service), so it must never render as virtual. Genuine
             # virtuals (qualified_of is None) keep is_virtual_entity's verdict.
             is_virtual = is_virtual_entity(entity_kls) and not fed_qn
-            # module = owning service → each remote service clusters as one flat
-            # box (FR-016 ownership, distinct from local Python modules).
-            module = parse_qualified_name(fed_qn)[0] if fed_qn else entity_kls.__module__
+            # module = cluster key: fed service > member service_name >
+            # Python __module__ (specs/022 FR-003 — styling.resolve_cluster_key).
+            module = resolve_cluster_key(entity_kls, fed_qn, self._member_styling)
 
             self.node_set[full_name] = SchemaNode(
                 id=full_name,
@@ -262,6 +270,11 @@ class ErDiagramDotBuilder:
         service without a declared color renders dashed but uncolored.
         ``federated_modules`` is the set of ALL remote service names — every
         remote cluster is dashed to mark the service boundary.
+
+        specs/022: member colors (``ErManager(color=...)`` via
+        ``ComposedErManager._member_styling``) merge underneath — a member
+        name colliding with a remote service name keeps the federation color
+        (remote ownership wins, mirroring FR-003's module priority).
         """
         fed_reg = getattr(self.er_manager, "_fed_registry", None)
         services: set[str] = set()
@@ -271,7 +284,10 @@ class ErDiagramDotBuilder:
                 if qn:
                     services.add(parse_qualified_name(qn)[0])
 
-        module_color = fed_reg.service_colors() if fed_reg is not None else {}
+        fed_colors = fed_reg.service_colors() if fed_reg is not None else {}
+        # Member colors sit underneath federation colors (remote ownership
+        # wins on collision, mirroring the FR-003 cluster-key priority).
+        module_color = {**member_service_colors(self._member_styling), **fed_colors}
         return module_color, services
 
     def render_dot(self) -> str:

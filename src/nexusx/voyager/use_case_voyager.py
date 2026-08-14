@@ -16,6 +16,11 @@ from nexusx.use_case.business import USE_CASE_METHODS_ATTR, UseCaseService  # no
 from nexusx.use_case.introspector import ServiceIntrospector
 from nexusx.voyager.filter import filter_graph
 from nexusx.voyager.render import Renderer
+from nexusx.voyager.styling import (
+    MemberStyling,
+    member_service_colors,
+    resolve_cluster_key,
+)
 from nexusx.voyager.type import (
     PK,
     CoreData,
@@ -61,6 +66,7 @@ class UseCaseVoyager:
         show_module: bool = True,
         theme_color: str | None = None,
         fed_registry: FederatedTypeRegistry | None = None,
+        member_styling: MemberStyling | None = None,
     ):
         self.services = services
         self.introspector = ServiceIntrospector(services)
@@ -68,6 +74,10 @@ class UseCaseVoyager:
         # cluster by owning service (mirrors ErDiagramDotBuilder). None when the
         # app has no federation; remote types then render as ordinary DTO nodes.
         self._fed_registry = fed_registry
+        # ComposedErManager member grouping (specs/022): cls → (service_name,
+        # color). Forwarded by VoyagerContext from the composed er_manager;
+        # None for standalone apps (member grouping inactive).
+        self._member_styling = member_styling
 
         self.routes: list[Route] = []
         self.nodes: list[SchemaNode] = []
@@ -167,13 +177,14 @@ class UseCaseVoyager:
             # Federation ownership: a materialized remote type carries a
             # qualified name ("srv.TypeName") in the fed_registry; its cluster
             # groups by owning SERVICE (mirrors ErDiagramDotBuilder, FR-016).
-            # Local DTOs keep their Python __module__.
+            # Local DTOs keep their Python __module__, UNLESS registered in a
+            # composed member's dto_classes (specs/022 FR-005).
             fed_qn = (
                 self._fed_registry.qualified_of(schema)
                 if self._fed_registry is not None
                 else None
             )
-            module = parse_qualified_name(fed_qn)[0] if fed_qn else schema.__module__
+            module = resolve_cluster_key(schema, fed_qn, self._member_styling)
 
             self.node_set[full_name] = SchemaNode(
                 id=full_name,
@@ -318,7 +329,14 @@ class UseCaseVoyager:
             if self._fed_registry is not None
             else {}
         )
-        module_color = {**fed_colors, **self.module_color}
+        # specs/022: member colors sit underneath federation colors (remote
+        # ownership wins on collision, mirroring FR-003/FR-005 priority);
+        # user-supplied module_color still overrides everything.
+        module_color = {
+            **member_service_colors(self._member_styling),
+            **fed_colors,
+            **self.module_color,
+        }
         return module_color, services
 
     def render_dot(self, show_pydantic_resolve_meta: bool = False) -> str:
