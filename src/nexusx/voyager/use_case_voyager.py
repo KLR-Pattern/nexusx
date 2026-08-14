@@ -16,6 +16,11 @@ from nexusx.use_case.business import USE_CASE_METHODS_ATTR, UseCaseService  # no
 from nexusx.use_case.introspector import ServiceIntrospector
 from nexusx.voyager.filter import filter_graph
 from nexusx.voyager.render import Renderer
+from nexusx.voyager.styling import (
+    MemberStyling,
+    member_service_colors,
+    resolve_cluster_key,
+)
 from nexusx.voyager.type import (
     PK,
     CoreData,
@@ -61,7 +66,7 @@ class UseCaseVoyager:
         show_module: bool = True,
         theme_color: str | None = None,
         fed_registry: FederatedTypeRegistry | None = None,
-        member_styling: dict[type, tuple[str, str | None]] | None = None,
+        member_styling: MemberStyling | None = None,
     ):
         self.services = services
         self.introspector = ServiceIntrospector(services)
@@ -179,12 +184,7 @@ class UseCaseVoyager:
                 if self._fed_registry is not None
                 else None
             )
-            if fed_qn:
-                module = parse_qualified_name(fed_qn)[0]
-            elif self._member_styling and schema in self._member_styling:
-                module = self._member_styling[schema][0]
-            else:
-                module = schema.__module__
+            module = resolve_cluster_key(schema, fed_qn, self._member_styling)
 
             self.node_set[full_name] = SchemaNode(
                 id=full_name,
@@ -329,15 +329,14 @@ class UseCaseVoyager:
             if self._fed_registry is not None
             else {}
         )
-        member_colors: dict[str, str] = {}
-        if self._member_styling:
-            for name, color in self._member_styling.values():
-                if color:
-                    member_colors[name] = color
         # specs/022: member colors sit underneath federation colors (remote
         # ownership wins on collision, mirroring FR-003/FR-005 priority);
         # user-supplied module_color still overrides everything.
-        module_color = {**member_colors, **fed_colors, **self.module_color}
+        module_color = {
+            **member_service_colors(self._member_styling),
+            **fed_colors,
+            **self.module_color,
+        }
         return module_color, services
 
     def render_dot(self, show_pydantic_resolve_meta: bool = False) -> str:

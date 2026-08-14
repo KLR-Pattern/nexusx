@@ -14,6 +14,7 @@ from nexusx.use_case.business import UseCaseService
 from nexusx.voyager.er_diagram_dot import ErDiagramDotBuilder
 from nexusx.voyager.render import Renderer
 from nexusx.voyager.render_style import DEFAULT_PRIMARY
+from nexusx.voyager.styling import probe_member_styling
 from nexusx.voyager.type import CoreData, SchemaNode, Tag
 from nexusx.voyager.type_helper import get_source, get_vscode_link
 from nexusx.voyager.use_case_voyager import UseCaseVoyager  # noqa: F401
@@ -68,13 +69,8 @@ class VoyagerContext:
             config["fed_registry"] = fed_registry
         # specs/022: member grouping (ComposedErManager only) — DTOs registered
         # in a member's dto_classes cluster by that member's service_name.
-        member_styling = (
-            getattr(self.er_manager, "_member_styling", None)
-            if self.er_manager is not None
-            else None
-        )
-        if member_styling:
-            config["member_styling"] = member_styling
+        # None for standalone apps; UseCaseVoyager treats it as inactive.
+        config["member_styling"] = probe_member_styling(self.er_manager)
         config.update(kwargs)
         return UseCaseVoyager(self.services, **config)
 

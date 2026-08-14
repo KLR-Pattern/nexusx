@@ -11,6 +11,11 @@ from nexusx.federation.relationship import parse_qualified_name
 from nexusx.loader.registry import ErManager, RelationshipInfo
 from nexusx.relationship import is_virtual_entity
 from nexusx.voyager.render import DiagramRenderer
+from nexusx.voyager.styling import (
+    member_service_colors,
+    probe_member_styling,
+    resolve_cluster_key,
+)
 from nexusx.voyager.type import (
     PK,
     FieldInfo,
@@ -111,12 +116,9 @@ class ErDiagramDotBuilder:
         self.edge_minlen = edge_minlen
         self.show_methods = show_methods
         self.hide_reverse_relationships = hide_reverse_relationships
-        # ComposedErManager member grouping (specs/022): cls → (service_name,
-        # color). Duck-typed probe — a standalone ErManager has no such
-        # attribute, so member grouping stays inactive (FR-008).
-        self._member_styling: dict[type, tuple[str, str | None]] | None = (
-            getattr(er_manager, "_member_styling", None)
-        )
+        # ComposedErManager member grouping (specs/022): None for a standalone
+        # ErManager, so member grouping stays inactive (FR-008).
+        self._member_styling = probe_member_styling(er_manager)
 
     def _generate_node_head(self, link_name: str) -> str:
         return f'{link_name}::{PK}'
@@ -159,16 +161,9 @@ class ErDiagramDotBuilder:
             # another service), so it must never render as virtual. Genuine
             # virtuals (qualified_of is None) keep is_virtual_entity's verdict.
             is_virtual = is_virtual_entity(entity_kls) and not fed_qn
-            # module = cluster key. Priority (specs/022 FR-003):
-            #   1. federation qualified name → owning remote service (FR-016)
-            #   2. ComposedErManager member grouping → service_name (FR-002)
-            #   3. Python __module__ (pre-change default)
-            if fed_qn:
-                module = parse_qualified_name(fed_qn)[0]
-            elif self._member_styling and entity_kls in self._member_styling:
-                module = self._member_styling[entity_kls][0]
-            else:
-                module = entity_kls.__module__
+            # module = cluster key: fed service > member service_name >
+            # Python __module__ (specs/022 FR-003 — styling.resolve_cluster_key).
+            module = resolve_cluster_key(entity_kls, fed_qn, self._member_styling)
 
             self.node_set[full_name] = SchemaNode(
                 id=full_name,
@@ -289,13 +284,10 @@ class ErDiagramDotBuilder:
                 if qn:
                     services.add(parse_qualified_name(qn)[0])
 
-        module_color = fed_reg.service_colors() if fed_reg is not None else {}
-        if self._member_styling:
-            member_colors: dict[str, str] = {}
-            for name, color in self._member_styling.values():
-                if color:
-                    member_colors[name] = color
-            module_color = {**member_colors, **module_color}
+        fed_colors = fed_reg.service_colors() if fed_reg is not None else {}
+        # Member colors sit underneath federation colors (remote ownership
+        # wins on collision, mirroring the FR-003 cluster-key priority).
+        module_color = {**member_service_colors(self._member_styling), **fed_colors}
         return module_color, services
 
     def render_dot(self) -> str:

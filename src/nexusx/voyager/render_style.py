@@ -7,6 +7,13 @@ from dataclasses import dataclass, field
 # Default primary color (used for all frameworks in this context)
 DEFAULT_PRIMARY = '#009485'
 
+# Relative-luminance threshold above which a fill counts as "light" and gets
+# dark text. High enough that the dark defaults (#009485 teal ≈ 0.45,
+# #3b82f6 federation blue ≈ 0.48) keep white text, low enough that every
+# recommended pastel member color (≈ 0.94) and the virtual yellow
+# (#FFF9C4 ≈ 0.97) flips to black.
+LIGHT_FILL_LUMINANCE = 0.6
+
 
 def text_color_for(background: str, default: str = 'white') -> str:
     """Pick black or white text for a background color by luminance (W3C).
@@ -29,7 +36,7 @@ def text_color_for(background: str, default: str = 'white') -> str:
     except ValueError:
         return default
     luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
-    return '#000' if luminance > 0.6 else default
+    return '#000' if luminance > LIGHT_FILL_LUMINANCE else default
 
 
 @dataclass
