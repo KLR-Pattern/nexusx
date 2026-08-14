@@ -126,6 +126,8 @@ class ComposedErManager:
         self._cross_loader_cache: dict[type, DataLoader] = {}
         # _fed_registry 聚合视图（惰性创建）
         self._fed_registry_view: _CompositeFedRegistryView | None = None
+        # member 分组映射（specs/022，惰性创建）：cls → (service_name, color)
+        self._member_styling_cache: dict[type, tuple[str, str | None]] | None = None
 
         # 建立路由表 + loader 反向映射 + 实体互斥校验
         for m in self._members:
@@ -144,6 +146,22 @@ class ComposedErManager:
                     for _lk in (rel_info.loader, rel_info.page_loader):
                         if _lk is not None:
                             self._loader_owner[_lk] = m
+
+        # member service_name 查重（specs/022 FR-009）：分组键重名会让两个 member
+        # 的实体并进同一 voyager cluster、颜色先到先得地互相覆盖，且 DOT cluster
+        # id 同名会崩 —— 构造期 fail-fast，与实体互斥校验同位置同风格。
+        named_members: dict[str, ErManager] = {}
+        for m in self._members:
+            m_name = getattr(m, "service_name", None)
+            if m_name is None:
+                continue
+            if m_name in named_members:
+                raise ValueError(
+                    f"Member service_name '{m_name}' is used by multiple members; "
+                    f"service_name must be unique within a ComposedErManager "
+                    f"(it is the voyager cluster key)"
+                )
+            named_members[m_name] = m
 
         # 跨边界关系 → RelationshipInfo（复用 _build_custom_relationship_info）
         for source_entity, rel in cross_relationships or []:
@@ -366,6 +384,36 @@ class ComposedErManager:
         if self._fed_registry_view is None:
             self._fed_registry_view = _CompositeFedRegistryView(self._members)
         return self._fed_registry_view
+
+    @property
+    def _member_styling(self) -> dict[type, tuple[str, str | None]]:
+        """member 分组映射（specs/022）——voyager 消费面探测用。
+
+        key 为成员实体类或 ``dto_classes`` 中的 DTO 类，value 为所属 member 的
+        ``(service_name, color)``。仅含**设了 service_name** 的 member：未设名的
+        member 实体回落 Python ``__module__`` 分组（现状），其 color（若设）随之
+        静默忽略——color 依赖 service_name 生效。
+
+        消费面约定（与 ``_fed_registry`` 同风格的 duck-typing 探测）::
+
+            styling = getattr(er_manager, "_member_styling", None)
+
+        单体 ErManager 无此属性 → None → 消费面回落现状（单图输出逐字不变）。
+        不可变（FR-016 同款纪律）：构造后成员固定，映射惰性构建一次缓存。
+        """
+        if self._member_styling_cache is None:
+            cache: dict[type, tuple[str, str | None]] = {}
+            for m in self._members:
+                m_name = getattr(m, "service_name", None)
+                if m_name is None:
+                    continue
+                m_color = getattr(m, "_voyager_color", None)
+                for cls in m.get_all_entities():
+                    cache[cls] = (m_name, m_color)
+                for dto in getattr(m, "_dto_classes", []):
+                    cache[dto] = (m_name, m_color)
+            self._member_styling_cache = cache
+        return self._member_styling_cache
 
     # ── ER 图额外用 ────────────────────────────────────────────
 

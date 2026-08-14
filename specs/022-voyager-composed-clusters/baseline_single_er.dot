@@ -1,0 +1,54 @@
+digraph world {
+    pad="0.8"
+    nodesep=1.0
+    ranksep=1.2
+    newrank=false
+    compound=false
+    fontname="Helvetica,Arial,sans-serif"
+    node [fontname="Helvetica,Arial,sans-serif"]
+    edge [
+        fontname="Helvetica,Arial,sans-serif"
+        color="gray"
+    ]
+    graph [
+        rankdir = "LR"
+    ];
+    node [
+        fontsize = 16
+    ];
+
+    subgraph cluster_schema {
+        color = "#aaa"
+        margin=28
+        style="dashed"
+        label="  ER Diagram"
+        labeljust="l"
+        fontsize="20"
+        subgraph cluster_module_tests_test_composed_voyager {
+    tooltip="tests.test_composed_voyager"
+    color = "#666"
+    style="rounded"
+    label = "  tests.test_composed_voyager"
+    labeljust = "l"
+"tests.test_composed_voyager.CvTb" [
+    label = <<table border="0" cellborder="1" cellpadding="0" cellspacing="0" bgcolor="white" width="75">
+<tr><td cellpadding="6" bgcolor="#009485" align="center" colspan="1" width="75" port="PK"><font color="white">CvTb</font></td></tr>
+
+</table>>
+    shape = "plain"
+    margin="0.5,0.1"
+];
+"tests.test_composed_voyager.CvHr" [
+    label = <<table border="0" cellborder="1" cellpadding="0" cellspacing="0" bgcolor="white" width="75">
+<tr><td cellpadding="6" bgcolor="#009485" align="center" colspan="1" width="75" port="PK"><font color="white">CvHr</font></td></tr>
+
+</table>>
+    shape = "plain"
+    margin="0.5,0.1"
+];
+
+}
+    }
+
+    
+}

@@ -384,13 +384,10 @@ class Renderer:
                 for fm in self.federated_modules
             )
             cluster_style = 'rounded,dashed' if is_federated else 'rounded'
-            pen_style = ''
-
+            # specs/022: a colored cluster also fills its background (member
+            # colors and federation service colors get the same treatment).
             if cluster_color:
-                pen_style = f'pencolor = "{cluster_color}"'
-                pen_style += '\n' + 'penwidth = 3' if color else ''
-            else:
-                pen_style = 'pencolor="#ccc"'
+                cluster_style += ',filled'
 
             return self.template_renderer.render_template(
                 'dot/cluster.j2',
@@ -399,6 +396,7 @@ class Renderer:
                 tooltip=mod.fullname,
                 border_color=self.colors.border,
                 pen_color=cluster_color,
+                fill_color=cluster_color,
                 pen_width=3 if color and not cluster_color else None,
                 cluster_style=cluster_style,
                 content=f'{inner_nodes_str}\n{child_str}'

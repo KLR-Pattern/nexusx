@@ -66,6 +66,15 @@ class VoyagerContext:
         )
         if fed_registry is not None:
             config["fed_registry"] = fed_registry
+        # specs/022: member grouping (ComposedErManager only) — DTOs registered
+        # in a member's dto_classes cluster by that member's service_name.
+        member_styling = (
+            getattr(self.er_manager, "_member_styling", None)
+            if self.er_manager is not None
+            else None
+        )
+        if member_styling:
+            config["member_styling"] = member_styling
         config.update(kwargs)
         return UseCaseVoyager(self.services, **config)
 

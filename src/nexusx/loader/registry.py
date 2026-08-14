@@ -424,6 +424,7 @@ class ErManager:
         service_name: str | None = None,
         expose_mounted_endpoints: bool = False,
         dto_classes: list[type[BaseModel]] | None = None,
+        color: str | None = None,
     ):
         if base is not None and entities is not None:
             raise ValueError("base and entities are mutually exclusive")
@@ -439,6 +440,12 @@ class ErManager:
         self._split_mode = split_loader_by_type
         # Federation state (no-op when federation is unused).
         self.service_name: str | None = service_name
+        # Voyager cluster color (specs/022) — opt-in visualization metadata.
+        # Consumed only via ComposedErManager._member_styling (each member's
+        # entities/DTOs cluster by service_name); a standalone ErManager never
+        # reads it, so single-manager diagrams are byte-identical. No value
+        # validation: passed through to graphviz as-is (#RRGGBB recommended).
+        self._voyager_color: str | None = color
         # When True, this member advertises the endpoints of services it itself
         # has mounted in its ER-introspection payload (enables transitive
         # discovery). Defaults to False: internal URLs are suppressed (they leak

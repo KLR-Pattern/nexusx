@@ -98,6 +98,48 @@ handler = GraphQLHandler(er_manager=composed, entities=[User, Post, Order, Order
 | Setup | mount at startup (`await handler.federate(...)`) | construct (`ComposedErManager(members=...)`) |
 | Use when | services deploy independently | one service, several databases |
 
+## Voyager member clusters & colors (022)
+
+Once composed, Voyager's ER diagram and UseCase page **cluster by member**: give
+a member a `service_name` and its entities (plus DTOs registered in
+`dto_classes`) group into a cluster labeled with that name; add a `color` and
+the cluster gets a background fill plus a matching border:
+
+```python
+blog_er = ErManager(
+    session_factory=blog_async_session,
+    entities=[CmUser, CmPost],
+    service_name="blog",      # cluster label (unique per composition; duplicates fail at construction)
+    color="#E3F2FD",          # optional, light #RRGGBB recommended
+)
+shop_er = ErManager(
+    session_factory=shop_async_session,
+    entities=[CmOrder, CmOrderItem],
+    service_name="shop",
+    color="#FFF3E0",
+)
+composed = ComposedErManager(members=[blog_er, shop_er], ...)
+```
+
+Notes:
+
+- **Opt-in**: a member without `service_name` falls back to Python-module
+  grouping (the pre-022 behavior); a member without `color` groups but stays
+  unfilled (white). No auto-palette — colors are exactly what you declare.
+- `color` depends on `service_name`: a color without a name is ignored.
+- Ownership priority: federation materialized types cluster by remote service
+  (dashed) > members cluster by `service_name` (rounded) > Python module. The
+  two levels stack without interfering.
+- Route nodes (UseCaseService methods) never member-cluster — service-layer
+  organization and data-source ownership are orthogonal.
+- A standalone (non-composed) ErManager is unaffected: setting `color` on it
+  changes nothing.
+
+Known limitation: if `service_name` shares a prefix with a real local Python
+module (e.g. `service_name="blog"` while module `blogging.models` exists), that
+module's cluster catches the member color — pick names clear of existing module
+prefixes.
+
 ## Design principles
 
 | Decision | Why |

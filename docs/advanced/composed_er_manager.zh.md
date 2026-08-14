@@ -92,6 +92,43 @@ handler = GraphQLHandler(er_manager=composed, entities=[User, Post, Order, Order
 | 装配 | 启动时 mount（`await handler.federate(...)`） | 构造（`ComposedErManager(members=...)`） |
 | 适用场景 | 服务独立部署 | 单服务、多数据库 |
 
+## Voyager 分组与配色（022）
+
+多 engine 组合后，Voyager 的 ER 图和 UseCase 页会**按 member 分 cluster**：给
+member 设 `service_name`，它的实体（以及注册进 `dto_classes` 的 DTO）就归入以
+该名字为标签的独立分组；再设 `color`，分组会带上背景色填充和同色边框：
+
+```python
+blog_er = ErManager(
+    session_factory=blog_async_session,
+    entities=[CmUser, CmPost],
+    service_name="blog",      # cluster 标签（组合体内必须唯一，重名构造期报错）
+    color="#E3F2FD",          # 可选，建议浅色 #RRGGBB
+)
+shop_er = ErManager(
+    session_factory=shop_async_session,
+    entities=[CmOrder, CmOrderItem],
+    service_name="shop",
+    color="#FFF3E0",
+)
+composed = ComposedErManager(members=[blog_er, shop_er], ...)
+```
+
+要点：
+
+- **opt-in**：不设 `service_name` 的 member 回落现状（按 Python module 分组）；不设
+  `color` 的 member 只分组、不填色（白底）。颜色不设自动调色板，完全由你声明。
+- `color` 依赖 `service_name` 生效——只设颜色不设名字时颜色被忽略。
+- 归属优先级：federation 物化类型按远端 service 聚簇（dashed）> member 按
+  `service_name` 聚簇（rounded）> Python module。两级可叠加，互不串扰。
+- Route 节点（UseCaseService 方法）不参与 member 分组——service 层组织方式与
+  数据源归属是两个正交维度。
+- 单体 ErManager（非组合）完全不受影响，设了 `color` 也不产生任何变化。
+
+已知限制：`service_name` 若与本地某个真实 Python module 名前缀相同（如
+service_name=`blog` 而存在模块 `blogging.models`），该模块的 cluster 会被
+member 颜色误命中——取名时避开既有 module 前缀即可。
+
 ## 设计原则
 
 | 决策 | 原因 |

@@ -54,8 +54,21 @@ async def orders_by_user(user_ids: list[int]) -> list[list[CmOrder]]:
 
 
 # Two self-contained ErManagers — one engine each, loader wired to its session.
-blog_er = ErManager(session_factory=blog_async_session, entities=[CmUser, CmPost])
-shop_er = ErManager(session_factory=shop_async_session, entities=[CmOrder, CmOrderItem])
+# service_name + color (specs/022): voyager clusters each member's entities
+# under its name with a light background fill — open /voyager to see the two
+# engines as separate colored clusters, cross-engine edge spanning both.
+blog_er = ErManager(
+    session_factory=blog_async_session,
+    entities=[CmUser, CmPost],
+    service_name="blog",
+    color="#E3F2FD",
+)
+shop_er = ErManager(
+    session_factory=shop_async_session,
+    entities=[CmOrder, CmOrderItem],
+    service_name="shop",
+    color="#FFF3E0",
+)
 
 # Compose: delegate-by-entity + the cross-engine edge declared here (DD-02).
 composed = ComposedErManager(
@@ -119,6 +132,20 @@ async def graphql_endpoint(req: GraphQLRequest) -> dict[str, Any]:
 @app.get("/schema", response_class=PlainTextResponse)
 async def schema_endpoint() -> str:
     return handler.get_sdl()
+
+
+# Voyager (specs/022): ER diagram with per-member clusters & colors —
+# blog (light blue) and shop (light orange) each cluster by service_name.
+from nexusx.voyager import create_use_case_voyager  # noqa: E402
+
+app.mount(
+    "/voyager",
+    create_use_case_voyager(
+        services=[],
+        er_manager=composed,
+        name="Composed ER (blog + shop)",
+    ),
+)
 
 
 if __name__ == "__main__":
