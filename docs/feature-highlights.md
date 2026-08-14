@@ -555,4 +555,4 @@ If you're building a project that needs GraphQL's flexibility + REST's delivery 
 > **Related docs**
 > - [Clean Architecture Comparison](./clean-architecture-comparison.md) — nexusx vs. Litestar / Django / Strawberry et al.
 > - [Cross-Layer Data Flow API](./api/api_cross_layer.md) — `ExposeAs` / `SendTo` / `Collector` API reference
-> - [How it works](https://github.com/allmonday/nexusx/blob/master/how_it_works.md) — full conversion logic and module deep-dive (in-repo)
+> - [How it works](https://github.com/KLR-Pattern/nexusx/blob/master/how_it_works.md) — full conversion logic and module deep-dive (in-repo)

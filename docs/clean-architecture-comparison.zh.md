@@ -306,4 +306,4 @@ _mount(Sprint, create_sprint, mutation)
 
 - `_mount()` / `methods.py` 是 **skill 模板**的一部分，不是 `nexusx` 库 API。直接 `pip install nexusx` 不会获得这些工具——它们在 `skills/nexusx-4phase/template/src/models.py` 中由 skill 提供给 AI agent 或开发者拷贝使用。
 - 你完全可以不采用 skill 的项目结构，直接在 `UseCaseService` 类体内写 `@query` 方法（库的原生用法）。skill 只是提供一种「业务逻辑 / 协议入口」分离更严格的可选约定。
-- 安装 skill：`npx skills add allmonday/nexusx -s nexusx-4phase -a claude-code`（详见仓库 [`skills/nexusx-4phase/SKILL.md`](https://github.com/allmonday/nexusx/blob/master/skills/nexusx-4phase/SKILL.md)）。
+- 安装 skill：`npx skills add KLR-Pattern/nexusx -s nexusx-4phase -a claude-code`（详见仓库 [`skills/nexusx-4phase/SKILL.md`](https://github.com/KLR-Pattern/nexusx/blob/master/skills/nexusx-4phase/SKILL.md)）。

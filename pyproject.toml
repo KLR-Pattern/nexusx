@@ -43,8 +43,8 @@ cli = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/allmonday/nexusx"
-Repository = "https://github.com/allmonday/nexusx"
+Homepage = "https://github.com/KLR-Pattern/nexusx"
+Repository = "https://github.com/KLR-Pattern/nexusx"
 
 [build-system]
 requires = ["hatchling"]

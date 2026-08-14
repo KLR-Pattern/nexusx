@@ -148,7 +148,7 @@ The response contains the seeded team and hero:
   a hand-written relationship resolver.
 
 The tested source is also available at
-[`examples/quickstart.py`](https://github.com/allmonday/nexusx/blob/master/examples/quickstart.py).
+[`examples/quickstart.py`](https://github.com/KLR-Pattern/nexusx/blob/master/examples/quickstart.py).
 
 Next, read [GraphQL Mode](./graphql_mode.md) to define custom queries and
 mutations.

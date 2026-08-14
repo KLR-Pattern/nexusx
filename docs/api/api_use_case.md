@@ -161,7 +161,7 @@ myapp task-service get_task --task-id 1 --select "title owner { name }"
 
 A method's `--help` lists the return DTO's top-level fields (nested relationships marked `selectable`), so you know what `--select` can pick.
 
-See [`demo/use_case/cli_demo.py`](https://github.com/allmonday/nexusx/blob/master/demo/use_case/cli_demo.py) for a complete example.
+See [`demo/use_case/cli_demo.py`](https://github.com/KLR-Pattern/nexusx/blob/master/demo/use_case/cli_demo.py) for a complete example.
 
 ## build_compose_schema / ComposeSchema / compose_introspect
 
@@ -183,7 +183,7 @@ compose_introspect(schema, "{ __schema { types { name } } }")
 # → {"data": {"__schema": {...}}, "errors": None}
 ```
 
-See [`demo/use_case/graphql_server.py`](https://github.com/allmonday/nexusx/blob/master/demo/use_case/graphql_server.py) for a complete FastAPI `/graphql` endpoint example.
+See [`demo/use_case/graphql_server.py`](https://github.com/KLR-Pattern/nexusx/blob/master/demo/use_case/graphql_server.py) for a complete FastAPI `/graphql` endpoint example.
 
 ## create_use_case_voyager
 

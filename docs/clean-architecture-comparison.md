@@ -306,4 +306,4 @@ _mount(Sprint, create_sprint, mutation)
 
 - `_mount()` / `methods.py` are part of the **skill template**, not the `nexusx` library API. `pip install nexusx` does not give you these tools — they live in `skills/nexusx-4phase/template/src/models.py` and are provided by the skill for AI agents or developers to copy.
 - You can completely skip the skill's project structure and write `@query` methods directly inside a `UseCaseService` class body (the library's native usage). The skill only offers an optional convention with stricter separation of "business logic / protocol entry."
-- Install the skill: `npx skills add allmonday/nexusx -s nexusx-4phase -a claude-code` (see the repo's [`skills/nexusx-4phase/SKILL.md`](https://github.com/allmonday/nexusx/blob/master/skills/nexusx-4phase/SKILL.md) for details).
+- Install the skill: `npx skills add KLR-Pattern/nexusx -s nexusx-4phase -a claude-code` (see the repo's [`skills/nexusx-4phase/SKILL.md`](https://github.com/KLR-Pattern/nexusx/blob/master/skills/nexusx-4phase/SKILL.md) for details).

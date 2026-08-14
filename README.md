@@ -625,8 +625,12 @@ Start with the layer your application needs:
 | Compose engines in one process | [ComposedErManager](docs/advanced/composed_er_manager.md) |
 
 For complete runnable examples, see [`demo/`](demo/). For the progressive
-Schema-to-SDK development workflow, see the
-[4-phase nexusx skill](skills/nexusx-4phase/).
+Schema-to-SDK development workflow, install the [4-phase skill](skills/nexusx-4phase/)
+with the open skills CLI (works with Claude Code, Codex, Cursor, and more):
+
+```bash
+npx skills add KLR-Pattern/nexusx -s nexusx-4phase -a claude-code
+```
 
 ## Project
 
@@ -635,7 +639,7 @@ Schema-to-SDK development workflow, see the
 - [MCP & context efficiency](docs/mcp-context-efficiency.md)
 - [Architecture comparison](docs/clean-architecture-comparison.md)
 - [Changelog](CHANGELOG.md)
-- [Issue tracker](https://github.com/allmonday/nexusx/issues)
+- [Issue tracker](https://github.com/KLR-Pattern/nexusx/issues)
 
 ## Testing
 

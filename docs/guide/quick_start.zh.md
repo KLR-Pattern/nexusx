@@ -146,7 +146,7 @@ uvicorn app:app --reload
 - `Team.heroes` 通过 DataLoader 批量加载，不需要手写关系 resolver。
 
 经过测试的源码也可以在
-[`examples/quickstart.py`](https://github.com/allmonday/nexusx/blob/master/examples/quickstart.py)
+[`examples/quickstart.py`](https://github.com/KLR-Pattern/nexusx/blob/master/examples/quickstart.py)
 中找到。
 
 下一步阅读 [GraphQL 模式](./graphql_mode.zh.md)，学习如何定义自定义 query 和

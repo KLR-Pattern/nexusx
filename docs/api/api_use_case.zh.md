@@ -154,7 +154,7 @@ myapp task-service get_task --task-id 1 --select "title owner { name }"
 
 方法的 `--help` 会列出返回 DTO 的顶层字段（嵌套关系标 `selectable`），让你知道 `--select` 能选什么。
 
-完整示例见 [`demo/use_case/cli_demo.py`](https://github.com/allmonday/nexusx/blob/master/demo/use_case/cli_demo.py)。
+完整示例见 [`demo/use_case/cli_demo.py`](https://github.com/KLR-Pattern/nexusx/blob/master/demo/use_case/cli_demo.py)。
 
 ## build_compose_schema / ComposeSchema / compose_introspect
 
@@ -176,7 +176,7 @@ compose_introspect(schema, "{ __schema { types { name } } }")
 # → {"data": {"__schema": {...}}, "errors": None}
 ```
 
-完整 FastAPI `/graphql` 示例见 [`demo/use_case/graphql_server.py`](https://github.com/allmonday/nexusx/blob/master/demo/use_case/graphql_server.py)。
+完整 FastAPI `/graphql` 示例见 [`demo/use_case/graphql_server.py`](https://github.com/KLR-Pattern/nexusx/blob/master/demo/use_case/graphql_server.py)。
 
 ## create_use_case_voyager
 

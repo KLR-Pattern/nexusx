@@ -555,4 +555,4 @@ nexusx 的真正卖点不是「又一个 GraphQL 库」或「又一个 MCP 框�
 > **相关文档**
 > - [Clean Architecture 对比](./clean-architecture-comparison.md) —— nexusx 与 Litestar / Django / Strawberry 等的横向对比
 > - [Cross-Layer Data Flow API](./api/api_cross_layer.md) —— `ExposeAs`/`SendTo`/`Collector` 的 API 参考
-> - [How it works](https://github.com/allmonday/nexusx/blob/master/how_it_works.md) —— 完整的转换逻辑和模块详解（仓库内）
+> - [How it works](https://github.com/KLR-Pattern/nexusx/blob/master/how_it_works.md) —— 完整的转换逻辑和模块详解（仓库内）
