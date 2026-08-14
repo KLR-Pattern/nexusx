@@ -10,15 +10,29 @@ The new GraphQL MCP lives in ``tests/test_compose_*.py``. The orthogonal
 from __future__ import annotations
 
 import datetime
+import typing
 import uuid
 from decimal import Decimal
+from typing import Annotated
 
 from pydantic import BaseModel
+from sqlmodel import Field as SQLField
+from sqlmodel import SQLModel
 
 from nexusx.decorator import mutation, query
+from nexusx.subset import DefineSubset
 from nexusx.use_case.business import UseCaseService
 from nexusx.use_case.introspector import (
     ServiceIntrospector,
+    _auto_summary,
+    _build_selection_example,
+    _collect_core_types,
+    _collect_dto_types,
+    _generate_dto_sdl,
+    _get_selection_model,
+    _is_fk_field,
+    _type_to_legacy_name,
+    _type_to_param_schema,
     _type_to_sdl_name,
 )
 
@@ -479,3 +493,269 @@ class TestServiceIntrospectorSelection:
 
 
 # ──────────────────────────────────────────────────
+
+# ──────────────────────────────────────────────────
+# Tests: introspector type-machinery branches
+# ──────────────────────────────────────────────────
+
+
+class TestTypeToParamSchema:
+    """_type_to_param_schema — JSON-Schema-lite for method parameters."""
+
+    def test_unresolved_string_annotation(self):
+        assert _type_to_param_schema("UserDTO") == {
+            "type": "string",
+            "description": "<unresolved: UserDTO>",
+        }
+
+    def test_dict_maps_to_object(self):
+        assert _type_to_param_schema(dict) == {"type": "object"}
+
+    def test_dto_maps_to_object_with_title(self):
+        assert _type_to_param_schema(UserDTO) == {
+            "type": "object",
+            "title": "UserDTO",
+        }
+
+    def test_list_of_scalar(self):
+        assert _type_to_param_schema(list[int]) == {
+            "type": "array",
+            "items": {"type": "integer"},
+        }
+
+    def test_bare_typing_list(self):
+        # Bare (unparameterized) typing.List: origin is list, no args.
+        assert _type_to_param_schema(typing.List) == {"type": "array"}  # noqa: UP006
+
+    def test_optional_scalar(self):
+        assert _type_to_param_schema(int | None) == {
+            "anyOf": [{"type": "integer"}, {"type": "null"}],
+        }
+
+    def test_optional_list(self):
+        schema = _type_to_param_schema(list[int] | None)
+        assert schema == {
+            "anyOf": [
+                {"type": "array", "items": {"type": "integer"}},
+                {"type": "null"},
+            ],
+        }
+
+    def test_multi_arm_union_without_none(self):
+        schema = _type_to_param_schema(int | str)
+        assert schema == {"anyOf": [{"type": "integer"}, {"type": "string"}]}
+
+    def test_annotated_unwraps_to_inner(self):
+        assert _type_to_param_schema(Annotated[int, "docs"]) == {"type": "integer"}
+
+    def test_unresolvable_returns_empty(self):
+        # Union of two non-None types that BOTH fail to map → empty schema.
+        assert _type_to_param_schema(typing.Union[object, bytes]) == {}  # noqa: UP007
+
+
+class TestTypeNames:
+    def test_sdl_bare_typing_list(self):
+        assert _type_to_sdl_name(typing.List) == "[String!]!"  # noqa: UP006
+
+    def test_sdl_union_without_none_uses_first_arm(self):
+        assert _type_to_sdl_name(int | str) == "Int"
+
+    def test_sdl_dict_is_json(self):
+        assert _type_to_sdl_name(dict) == "JSON"
+
+    def test_sdl_plain_class_falls_back_to_name(self):
+        import datetime
+
+        assert _type_to_sdl_name(datetime.date) == "date"
+
+    def test_sdl_non_type_annotation_is_string(self):
+        assert _type_to_sdl_name(object()) == "String"
+
+    def test_legacy_string_annotation(self):
+        assert _type_to_legacy_name("UserDTO") == "string"
+
+    def test_legacy_bare_typing_list(self):
+        assert _type_to_legacy_name(typing.List) == "list[any]"  # noqa: UP006
+
+    def test_legacy_optional_scalar(self):
+        assert _type_to_legacy_name(int | None) == "int"
+
+    def test_legacy_union_without_none(self):
+        assert _type_to_legacy_name(int | str) == "int"
+
+    def test_legacy_dict(self):
+        assert _type_to_legacy_name(dict) == "dict"
+
+    def test_legacy_plain_class(self):
+        import datetime
+
+        assert _type_to_legacy_name(datetime.date) == "date"
+
+
+class TestCollectDtoTypes:
+    def test_bare_list_is_empty(self):
+        # Intentional VALUE (bare typing.List), not an annotation.
+        assert _collect_dto_types(typing.List) == []  # noqa: UP006
+
+    def test_annotated_unwraps(self):
+        assert _collect_dto_types(Annotated[UserDTO, "meta"]) == [UserDTO]
+
+    def test_union_collects_all_arms(self):
+        result = _collect_dto_types(list[UserDTO] | TaskDTO)
+        assert UserDTO in result and TaskDTO in result
+
+
+class TestSelectionHelpers:
+    def test_get_selection_model_rejects_string(self):
+        assert _get_selection_model("UserDTO") is None
+
+    def test_get_selection_model_rejects_multi_dto_union(self):
+        assert _get_selection_model(UserDTO | TaskDTO) is None
+
+    def test_collect_core_types_list_and_union(self):
+        assert _collect_core_types(list[int]) == [int]
+        assert _collect_core_types(int | str) == [int, str]
+        assert _collect_core_types(Annotated[int, "m"]) == [int]
+        assert _collect_core_types("UserDTO") == []
+
+    def test_example_two_scalars_picks_first_two(self):
+        class TwoScalars(BaseModel):
+            a: int
+            b: str
+
+        assert _build_selection_example(TwoScalars) == "{ a b }"
+
+    def test_example_self_referencing_guard(self):
+        class NodeDTO(BaseModel):
+            name: str
+            child: NodeDTO | None = None
+
+        NodeDTO.model_rebuild()
+        # Cycle guard returns a scalar-only example instead of looping.
+        example = _build_selection_example(NodeDTO)
+        assert example is not None
+        assert "name" in example
+
+
+class _FkBase(SQLModel):
+    pass
+
+
+class FkOwner(_FkBase, table=True):
+    __tablename__ = "intros_fk_owner"
+    id: int | None = SQLField(default=None, primary_key=True)
+    name: str
+
+
+class FkItem(_FkBase, table=True):
+    __tablename__ = "intros_fk_item"
+    id: int | None = SQLField(default=None, primary_key=True)
+    owner_id: int = SQLField(foreign_key="intros_fk_owner.id")
+    title: str
+
+
+class FkItemDTO(DefineSubset):
+    """An item DTO."""
+
+    __subset__ = (FkItem, ("id", "owner_id", "title"))
+
+
+class TestDtoSdlGeneration:
+    def test_fk_field_hidden_from_sdl(self):
+        assert _is_fk_field("owner_id", FkItemDTO) is True
+        assert _is_fk_field("title", FkItemDTO) is False
+
+        sdl = _generate_dto_sdl(FkItemDTO)
+        assert "owner_id" not in sdl
+        assert "title" in sdl
+
+    def test_docstring_rendered_as_type_description(self):
+        class DocDTO(BaseModel):
+            """Documented DTO."""
+
+            id: int
+
+        sdl = _generate_dto_sdl(DocDTO)
+        assert '"""Documented DTO."""' in sdl
+
+
+class DoclessService(UseCaseService):
+    # No class docstring — auto summary must come from method docstrings.
+
+    @query
+    async def first(cls) -> int:
+        """First method docstring."""
+        return 1
+
+    @query
+    async def second(cls) -> int:
+        """Second method docstring."""
+        return 2
+
+
+class BareService(UseCaseService):
+    # No docstrings anywhere — auto summary falls back to name + count.
+
+    @query
+    async def only(cls) -> int:
+        return 1
+
+
+class ComplexParamsService(UseCaseService):
+    """Service exercising composite parameter annotations end-to-end."""
+
+    @query
+    async def by_ids(cls, ids: list[int]) -> int:
+        """List param."""
+        return len(ids)
+
+    @query
+    async def maybe(cls, hint: str | None = None) -> str:
+        """Optional param."""
+        return hint or "none"
+
+    @query
+    async def either(cls, key: Annotated[int, "the key"]) -> int:
+        """Annotated param."""
+        return key
+
+    @query
+    async def raw(cls) -> int | str:
+        """Union return — selection unsupported."""
+        return 0
+
+
+class TestAutoSummaryAndComplexParams:
+    def test_summary_from_method_docstrings(self):
+        assert _auto_summary(DoclessService) == (
+            "First method docstring.; Second method docstring."
+        )
+
+    def test_summary_fallback_name_and_count(self):
+        assert _auto_summary(BareService) == "BareService — 1 methods"
+
+    def test_list_services_uses_auto_summary(self):
+        introspector = ServiceIntrospector([DoclessService])
+        listing = introspector.list_services()
+        assert listing[0]["description"] == (
+            "First method docstring.; Second method docstring."
+        )
+
+    def test_composite_params_in_describe_service(self):
+        introspector = ServiceIntrospector([ComplexParamsService])
+        info = introspector.describe_service("ComplexParamsService")
+        assert info is not None
+        methods = {m["name"]: m for m in info["methods"]}
+
+        assert methods["by_ids"]["parameters"]["ids"] == {
+            "type": "array",
+            "items": {"type": "integer"},
+        }
+        assert methods["maybe"]["parameters"]["hint"] == {
+            "anyOf": [{"type": "string"}, {"type": "null"}],
+        }
+        assert methods["either"]["parameters"]["key"] == {"type": "integer"}
+
+        # Union return type → selection unsupported, but SDL signature renders.
+        assert methods["raw"]["selection_supported"] is False
+        assert ": Int" in methods["raw"]["signature_sdl"]
