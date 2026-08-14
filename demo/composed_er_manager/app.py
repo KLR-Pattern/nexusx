@@ -31,10 +31,41 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 from sqlmodel import select
 
-from nexusx import ComposedErManager, ErManager, GraphQLHandler, Relationship
+from nexusx import (
+    ComposedErManager,
+    DefineSubset,
+    ErManager,
+    GraphQLHandler,
+    Relationship,
+    UseCaseService,
+    build_dto_select,
+    query,
+)
 
 from .database import blog_async_session, init_databases, shop_async_session
 from .models import CmOrder, CmOrderItem, CmPost, CmUser
+
+
+# ── Cross-engine DTO tree (UseCase layer) ─────────────────────────────
+#
+# One read model spanning BOTH engines: user (blog) + posts (blog, local
+# relationship) + orders (shop, cross-engine edge). Resolved by the composed
+# Resolver — the same tree the UseCase voyager page visualizes.
+
+
+class CmPostSummary(DefineSubset):
+    __subset__ = (CmPost, ("id", "title"))
+
+
+class CmOrderSummary(DefineSubset):
+    __subset__ = (CmOrder, ("id", "total"))
+
+
+class CmUserSummary(DefineSubset):
+    __subset__ = (CmUser, ("id", "name"))
+
+    posts: list[CmPostSummary] = []
+    orders: list[CmOrderSummary] = []
 
 
 async def orders_by_user(user_ids: list[int]) -> list[list[CmOrder]]:
@@ -57,17 +88,20 @@ async def orders_by_user(user_ids: list[int]) -> list[list[CmOrder]]:
 # service_name + color (specs/022): voyager clusters each member's entities
 # under its name with a light background fill — open /voyager to see the two
 # engines as separate colored clusters, cross-engine edge spanning both.
+# dto_classes: which member owns which DTO (UseCase-page clustering, US3).
 blog_er = ErManager(
     session_factory=blog_async_session,
     entities=[CmUser, CmPost],
     service_name="blog",
     color="#E3F2FD",
+    dto_classes=[CmUserSummary, CmPostSummary],
 )
 shop_er = ErManager(
     session_factory=shop_async_session,
     entities=[CmOrder, CmOrderItem],
     service_name="shop",
     color="#FFF3E0",
+    dto_classes=[CmOrderSummary],
 )
 
 # Compose: delegate-by-entity + the cross-engine edge declared here (DD-02).
@@ -93,6 +127,23 @@ handler = GraphQLHandler(
     er_manager=composed,
     entities=[CmUser, CmPost, CmOrder, CmOrderItem],
 )
+
+# One proxy Resolver for the composed world — cross-engine resolve is
+# transparent (blog `posts` via the blog member, `orders` via the shop one).
+Resolver = composed.create_resolver()
+
+
+class ComposedQueryService(UseCaseService):
+    """Cross-engine read model: users with blog posts AND shop orders."""
+
+    @query
+    async def list_user_summaries(cls) -> list[CmUserSummary]:
+        """Users with posts (blog engine) + orders (shop engine) in one tree."""
+        statement = build_dto_select(CmUserSummary)
+        async with blog_async_session() as s:
+            rows = (await s.exec(statement)).all()
+        dtos = [CmUserSummary(**dict(r._mapping)) for r in rows]
+        return await Resolver().resolve(dtos)
 
 
 class GraphQLRequest(BaseModel):
@@ -134,14 +185,16 @@ async def schema_endpoint() -> str:
     return handler.get_sdl()
 
 
-# Voyager (specs/022): ER diagram with per-member clusters & colors —
-# blog (light blue) and shop (light orange) each cluster by service_name.
+# Voyager (specs/022): both pages in one mount —
+#   UseCase graph: service methods + the cross-engine DTO tree, clustered by
+#     member (registered DTOs take their member's color);
+#   ER diagram: entities clustered by member, cross-engine edge spanning both.
 from nexusx.voyager import create_use_case_voyager  # noqa: E402
 
 app.mount(
     "/voyager",
     create_use_case_voyager(
-        services=[],
+        services=[ComposedQueryService],
         er_manager=composed,
         name="Composed ER (blog + shop)",
     ),

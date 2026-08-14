@@ -209,6 +209,53 @@ class TestErDiagramMemberClusters:
         assert by_name["CvOrder"].module == "tests.test_composed_voyager"
 
 
+# ── Text color adapts to fill luminance (follow-up fix) ────────────────
+
+from nexusx.voyager.render_style import text_color_for  # noqa: E402
+
+
+class TestTextColorFor:
+    def test_light_fills_get_black_text(self):
+        # Pastel member colors (docs recommend light #RRGGBB)
+        assert text_color_for("#E3F2FD") == "#000"
+        assert text_color_for("#FFF3E0") == "#000"
+        assert text_color_for("#FFF9C4") == "#000"  # virtual yellow
+
+    def test_dark_fills_keep_white_text(self):
+        assert text_color_for("#009485") == "white"  # theme teal
+        assert text_color_for("#3b82f6") == "white"  # federation blue
+
+    def test_unparseable_falls_back_to_default(self):
+        assert text_color_for("tomato") == "white"
+        assert text_color_for("#12") == "white"
+        assert text_color_for("") == "white"
+
+    def test_short_hex_expands(self):
+        assert text_color_for("#fff") == "#000"
+        assert text_color_for("#000") == "white"
+
+
+class TestHeaderTextColorInDot:
+    def test_pastel_member_headers_render_black_text(self):
+        composed = _composed(blog_color="#E3F2FD")  # blog colored, shop not
+        builder = ErDiagramDotBuilder(composed, show_module=True)
+        builder.analysis()
+        dot = builder.render_dot()
+        # blog entities: header font flips to dark on the pastel fill
+        assert '<font color="#000">CvPost</font>' in dot
+        assert '<font color="#000">CvUser</font>' in dot
+        # shop entities: no color declared → theme_color (#009485) stays white
+        assert '<font color="white">CvOrder</font>' in dot
+
+    def test_untouched_theme_stays_white(self):
+        # No member color: headers use theme_color (#009485) → white text
+        composed = _composed()
+        builder = ErDiagramDotBuilder(composed, show_module=True)
+        builder.analysis()
+        dot = builder.render_dot()
+        assert '<font color="white">' in dot
+
+
 # ── US2 — cluster color & background fill (FR-004, opt-in) ─────────────
 
 

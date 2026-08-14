@@ -8,6 +8,30 @@ from dataclasses import dataclass, field
 DEFAULT_PRIMARY = '#009485'
 
 
+def text_color_for(background: str, default: str = 'white') -> str:
+    """Pick black or white text for a background color by luminance (W3C).
+
+    Light fills (e.g. the pastel member colors recommended for
+    ``ErManager(color=...)``) get dark text; dark fills keep white. Hex colors
+    only (#RGB / #RRGGBB, case-insensitive) — named colors and anything
+    unparseable fall back to ``default`` (the pre-existing behavior for
+    theme colors like ``tomato``).
+    """
+    hex_part = background.strip().lstrip('#')
+    if not hex_part or not background.strip().startswith('#'):
+        return default
+    if len(hex_part) == 3:
+        hex_part = ''.join(c * 2 for c in hex_part)
+    if len(hex_part) != 6:
+        return default
+    try:
+        r, g, b = (int(hex_part[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return default
+    luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+    return '#000' if luminance > 0.6 else default
+
+
 @dataclass
 class ColorScheme:
     """Color scheme for graph visualization."""
