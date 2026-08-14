@@ -256,7 +256,9 @@ class ComposedErManager:
         local = dict(member.get_relationships(entity)) if member else {}
         cross = self._cross_rels.get(entity, {})
         if cross:
-            local.update(cross)  # merge cross-boundary rels (construction guarantees no local name clash)
+            # Merge cross-boundary rels (construction guarantees no clash
+            # with local names).
+            local.update(cross)
         return local
 
     def get_relationship(
