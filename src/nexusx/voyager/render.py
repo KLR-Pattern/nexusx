@@ -247,10 +247,6 @@ class Renderer:
         default_color = self.theme_color if color is None else color
         header_color = self.colors.highlight if node.id == self.schema else default_color
         header_text = node.name
-        # Black on light fills, white on dark ones (specs/022 follow-up: pastel
-        # member colors made the hardcoded white illegible). Virtual's yellow
-        # fill lands on the light side automatically.
-        text_color = text_color_for(header_color)
 
         # Contract 3 visual distinction for non-SQLModel (virtual) roots:
         # yellow fill, «virtual» UML stereotype prefix, dark text (yellow is
@@ -258,6 +254,11 @@ class Renderer:
         if getattr(node, 'is_virtual', False):
             header_color = self.colors.virtual_fill
             header_text = f'«virtual»\\n{node.name}'
+
+        # Text color follows the FINAL fill (computed after the virtual
+        # override): black on light fills (pastel member colors, virtual
+        # yellow), white on dark ones.
+        text_color = text_color_for(header_color)
 
         header = self.template_renderer.render_template(
             'html/schema_header.j2',
