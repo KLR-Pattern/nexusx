@@ -18,25 +18,32 @@ protocols update in sync.
 
 **For AI** — MCP is a first-class protocol with **strong typing** and
 **GraphQL under the hood** — the biggest win is **context efficiency**.
-Traditional RESTful APIs return large, fixed-shape objects; AI agents have no way
-to shrink the response, so context windows fill up with irrelevant data. nexusx's
-MCP runs GraphQL queries under the hood: AI agents **select exactly the fields
-they need** (field-level selection, not whole-object dump), keeping responses
-lean and context-efficient. Every operation carries full typed input/output
-schemas. Combined with progressive disclosure (app discovery → method overview →
-schema → execution) and DataLoader batch-loading (one MCP call → fully-nested,
-N+1-proof data tree), AI gets rich, typed, on-demand data — and only what it
-asked for.
+Instead of dumping large, fixed-shape objects into the context window, AI agents
+**select exactly the fields they need**, with progressive disclosure on the
+schema side and DataLoader batch-loading on the data side: one MCP call returns
+a fully-nested, N+1-proof data tree — and only what was asked for. See
+[MCP & context efficiency](docs/mcp-context-efficiency.md) for the details.
+
+## Installation
+
+```bash
+pip install nexusx
+```
+
+Optional integrations:
+
+```bash
+pip install "nexusx[demo]"        # Quick start: FastAPI, uvicorn, aiosqlite
+pip install "nexusx[fastmcp]"     # MCP servers
+pip install "nexusx[federation]"  # Cross-service composition
+pip install "nexusx[cli]"         # Typer CLI generation
+```
+
+nexusx requires Python 3.10 or newer.
 
 ## Quick start
 
-Install the runtime dependencies:
-
-```bash
-pip install "nexusx[demo]"
-```
-
-Create `app.py`:
+Create `app.py` (with `nexusx[demo]` installed):
 
 ```python
 from contextlib import asynccontextmanager
@@ -153,6 +160,7 @@ hand-written GraphQL type or resolver. The same runnable source is available at
 | SQLModel entity + relationships | GraphQL schema + DataLoader batching (N+1-proof) + ER diagrams |
 | `DefineSubset` DTO | Minimal-column queries + nested relationship loading + computed fields |
 | `UseCaseService` method | REST route + GraphQL field + MCP operation + CLI command |
+| A non-ORM async batch function | A relationship that joins the same loaders, DTOs, and ER diagrams |
 | Entity `__federation_keys__` | Cross-service federation (auto-detected + batch-fetched) |
 
 ```mermaid
@@ -182,28 +190,17 @@ A SQLModel application usually grows through the same stages:
 4. Repeat the same business operation for REST, GraphQL, and AI tools.
 5. Rebuild the relationship map again for documentation and service boundaries.
 
-nexusx keeps those stages connected:
-
-| You define | nexusx derives |
-|---|---|
-| SQLModel entities and relationships | GraphQL schema, DataLoaders, ER diagrams |
-| A `DefineSubset` DTO | Minimal SQL columns, nested relationship loading, derived fields |
-| A `UseCaseService` method | REST route, GraphQL field, MCP operation, CLI command |
-| A non-ORM batch function | A relationship that works with the same loaders, DTOs, and diagrams |
-
+nexusx keeps those stages connected: each artifact you declare feeds the next
+one and every delivery protocol at once, instead of being re-declared per layer.
 The result is less translation code between your database, application layer,
 web API, and AI interface.
 
 ## Explore the data graph
 
-For a larger model, define entities as normal SQLModel classes:
+For a larger model, add more entities under the same `BaseEntity`:
 
 ```python
 from sqlmodel import Field, Relationship, SQLModel
-
-
-class BaseEntity(SQLModel):
-    pass
 
 
 class User(BaseEntity, table=True):
@@ -231,22 +228,8 @@ class Task(BaseEntity, table=True):
     owner: User | None = Relationship(back_populates="tasks")
 ```
 
-Create a query interface:
-
-```python
-from nexusx import AutoQueryConfig, GraphQLHandler
-
-from .database import async_session
-
-
-handler = GraphQLHandler(
-    base=BaseEntity,
-    session_factory=async_session,
-    auto_query_config=AutoQueryConfig(),
-)
-```
-
-The entities now have `by_id` and `by_filter` query roots:
+The Quick start's `GraphQLHandler` picks them up — nothing else to wire. Every
+entity now has `by_id` and `by_filter` query roots:
 
 ```graphql
 {
@@ -281,30 +264,7 @@ The number of relationship queries grows with the depth of the graph, not with
 the number of returned rows. Selected fields are also propagated down to SQL,
 so unrequested columns do not need to be loaded.
 
-Add a small FastAPI endpoint when you want GraphiQL or HTTP access:
-
-```python
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
-
-
-class GraphQLRequest(BaseModel):
-    query: str
-
-
-app = FastAPI()
-
-
-@app.get("/graphql", response_class=HTMLResponse)
-async def graphiql():
-    return handler.get_graphiql_html()
-
-
-@app.post("/graphql")
-async def graphql(request: GraphQLRequest):
-    return await handler.execute(request.query)
-```
+The Quick start's `/graphql` endpoint serves this graph as-is.
 
 This is the **data graph**: a convenient, selection-driven interface for
 exploring and reading your entity relationships.
@@ -349,7 +309,8 @@ automatically and converts the result to `UserSummary`. The same applies to
 `SprintSummary.tasks`.
 
 Load only the root columns required by the DTO, then resolve its relationship
-tree:
+tree (`async_session` is the application's session factory from the Quick
+start):
 
 ```python
 from nexusx import ErManager, build_dto_select
@@ -589,22 +550,6 @@ nexusx is probably not the best fit when:
 
 Plain FastAPI is simpler for the first case. Strawberry provides more direct
 control for a GraphQL-first application.
-
-## Installation
-
-```bash
-pip install nexusx
-```
-
-Optional integrations:
-
-```bash
-pip install "nexusx[fastmcp]"     # MCP servers
-pip install "nexusx[federation]"  # Cross-service composition
-pip install "nexusx[cli]"         # Typer CLI generation
-```
-
-nexusx requires Python 3.10 or newer.
 
 ## Learn in layers
 
