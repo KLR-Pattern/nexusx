@@ -12,6 +12,27 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 
 ## 6.1
 
+### 6.1.1 (2026-8-14)
+
+- feat:
+  - **Voyager member clusters & colors for ComposedErManager (#137)**: A
+    composed manager's entities all landed in a single Python-module cluster
+    on the voyager pages, making multi-engine deployments indistinguishable
+    at a glance. Members that declare `service_name` now cluster under their
+    own name on both the ER diagram and the UseCase page (DTOs registered
+    via `dto_classes` follow their member), and the opt-in
+    `ErManager(color=...)` fills the cluster background. Ownership priority
+    is federation service > member `service_name` > Python `__module__`, so
+    federation stacking stays orthogonal. Apps that declare nothing render
+    byte-identically to before (locked by a golden-file test).
+
+- fix:
+  - **Header text color follows fill luminance (#137)**: Node headers kept
+    hardcoded white text, illegible on the pastel cluster fills this feature
+    recommends. `text_color_for()` now picks black or white by relative
+    luminance, and the check runs after the virtual-entity fill override so
+    the light yellow `«virtual»` header keeps dark text.
+
 ### 6.1.0 (2026-8-13)
 
 - feat:
