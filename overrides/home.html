@@ -1,46 +1,158 @@
 {% extends "main.html" %}
 
+{#-
+  Home page renderer — content/presentation split.
+
+  ALL copy lives in the page frontmatter (docs/index.md / docs/index.zh.md,
+  key `home:`), one block per locale; this template is a pure rendering
+  engine. Section schema:
+
+    hero:      {badge, title(html), subtitle, install,
+                primary:{label,ref}, secondary:{label,url}}
+    sections:  list of
+      cards:       {title, subtitle?, lead(html)?, muted?, two?,
+                    cards:[{icon, title, text(html), bullets?:[{text(html)}|{label,ref}],
+                            link?:{label,ref}, chip?}]}
+      comparison:  {title, subtitle?, muted?, stack?,
+                    bad:{title, code}, good:{title, code},
+                    deliveries?:[{icon, title, text, code}]}
+      integrations:{title, subtitle?, badges:[{icon, label, ref}]}
+      cta:         {title, subtitle, primary:{label,ref}, secondary:{label,url}}
+
+  `ref` values are docs page refs passed through the `url` filter; `url`
+  values are absolute links. HTML is allowed in text/lead/title fields.
+-#}
+
+{% macro feature_card(c) %}
+<div class="sn-feature-card">
+  <div class="sn-feature-icon">{{ c.icon }}</div>
+  <h3>{{ c.title }}</h3>
+  <p>{{ c.text }}{% if c.link %} <a href="{{ c.link.ref | url }}">{{ c.link.label }}</a>{% endif %}</p>
+  {% if c.bullets %}
+  <ul>
+    {% for b in c.bullets %}
+    {% if b.ref %}<li><a href="{{ b.ref | url }}">{{ b.label }}</a></li>
+    {%- else %}<li>{{ b.text }}</li>{% endif %}
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if c.chip %}<span class="sn-chip">{{ c.chip }}</span>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro section_header(s) %}
+<div class="sn-section-header">
+  <h2>{{ s.title }}</h2>
+  {% if s.subtitle %}<p>{{ s.subtitle }}</p>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro cards_section(s) %}
+<section class="sn-features{% if s.muted %} sn-features--muted{% endif %}">
+  {{ section_header(s) }}
+  {% if s.lead %}<p class="sn-lead">{{ s.lead }}</p>{% endif %}
+  <div class="sn-features__grid{% if s.two %} sn-features__grid--two{% endif %}">
+    {% for c in s.cards %}{{ feature_card(c) }}{% endfor %}
+  </div>
+</section>
+{% endmacro %}
+
+{% macro code_panel(kind, p) %}
+<div class="sn-code-panel sn-code-panel--{{ kind }}">
+  <div class="sn-code-panel__header">
+    <span class="sn-code-panel__title">{{ p.title }}</span>
+  </div>
+  <div class="sn-code-panel__body">
+<pre><code class="language-python">{{ p.code }}</code></pre>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro comparison_section(s) %}
+<section class="sn-comparison{% if s.muted %} sn-features--muted{% endif %}">
+  {{ section_header(s) }}
+  <div class="sn-comparison__panels{% if s.stack %} sn-comparison__panels--stack{% endif %}">
+    {{ code_panel("bad", s.bad) }}
+    {{ code_panel("good", s.good) }}
+  </div>
+  {% if s.deliveries %}
+  <div class="sn-deliveries">
+    {% for d in s.deliveries %}
+    <div class="sn-delivery">
+      <div class="sn-delivery__icon">{{ d.icon }}</div>
+      <h4>{{ d.title }}</h4>
+      <p>{{ d.text }}</p>
+      <code>{{ d.code }}</code>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endmacro %}
+
+{% macro integrations_section(s) %}
+<section class="sn-integrations">
+  {{ section_header(s) }}
+  <div class="sn-integrations__grid">
+    {% for b in s.badges %}
+    <a href="{{ b.ref | url }}" class="sn-integration-badge">
+      <span class="sn-integration-icon">{{ b.icon }}</span> {{ b.label }}
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endmacro %}
+
+{% macro cta_section(s) %}
+<section class="sn-cta">
+  <div class="sn-container">
+    <h2>{{ s.title }}</h2>
+    <p>{{ s.subtitle }}</p>
+    <div class="sn-cta__actions">
+      <a href="{{ s.primary.ref | url }}" class="sn-btn sn-btn--primary">{{ s.primary.label }}</a>
+      <a href="{{ s.secondary.url }}" class="sn-btn sn-btn--secondary" target="_blank" rel="noopener">{{ s.secondary.label }}</a>
+    </div>
+  </div>
+</section>
+{% endmacro %}
+
 {% block tabs %}
 {{ super() }}
 
-{#- Language detection -#}
-{% set is_zh = (i18n_page_locale | default('en')) == 'zh' %}
-
-{#- Translation macro -#}
-{% macro t(en, zh) %}{% if is_zh %}{{ zh }}{% else %}{{ en }}{% endif %}{% endmacro %}
+{% set home = page.meta.home if page.meta else none %}
 
 <style>
-  /* ========== CSS Variables ========== */
+  /* ========== CSS Variables (Notion-like flat palette) ========== */
   :root {
-    --sn-primary: #334155;
-    --sn-primary-dark: #1e293b;
-    --sn-accent: #3b82f6;
-    --sn-accent-light: #93c5fd;
-    --sn-success: #10b981;
-    --sn-danger: #ef4444;
     --sn-surface: #ffffff;
-    --sn-text: #1e293b;
-    --sn-text-secondary: #64748b;
-    --sn-code-bg: #f8fafc;
-    --sn-border: #e2e8f0;
-    --sn-shadow: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
-    --sn-shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -4px rgba(0,0,0,0.04);
+    --sn-surface-muted: #f7f7f5;
+    --sn-surface-hover: #fbfbfa;
+    --sn-text: #37352f;
+    --sn-text-secondary: #787774;
+    --sn-border: #e9e9e7;
+    --sn-border-strong: #d9d9d6;
+    --sn-accent: #2383e2;
+    --sn-ink: #191918;
+    --sn-ink-hover: #2f2f2d;
+    --sn-code-bg: #f7f7f5;
+    --sn-danger: #eb5757;
+    --sn-success: #0f9960;
   }
 
   [data-md-color-scheme="slate"] {
-    --sn-primary: #94a3b8;
-    --sn-primary-dark: #cbd5e1;
-    --sn-accent: #60a5fa;
-    --sn-accent-light: #93c5fd;
-    --sn-success: #34d399;
-    --sn-danger: #f87171;
-    --sn-surface: #1e293b;
-    --sn-text: #e2e8f0;
-    --sn-text-secondary: #94a3b8;
-    --sn-code-bg: #0f172a;
-    --sn-border: #334155;
-    --sn-shadow: 0 4px 6px -1px rgba(0,0,0,0.3), 0 2px 4px -2px rgba(0,0,0,0.3);
-    --sn-shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.3), 0 4px 6px -4px rgba(0,0,0,0.3);
+    --sn-surface: #191919;
+    --sn-surface-muted: #252525;
+    --sn-surface-hover: #1f1f1f;
+    --sn-text: #e6e6e4;
+    --sn-text-secondary: #9b9b98;
+    --sn-border: #2f2f2f;
+    --sn-border-strong: #3d3d3d;
+    --sn-accent: #4a9ee8;
+    --sn-ink: #e8e8e6;
+    --sn-ink-hover: #d4d4d2;
+    --sn-code-bg: #252525;
+    --sn-danger: #ff7369;
+    --sn-success: #4dab9a;
   }
 
   /* ========== Base Layout ========== */
@@ -48,6 +160,7 @@
     background: var(--sn-surface);
     color: var(--sn-text);
     overflow-x: hidden;
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif;
   }
 
   .sn-container {
@@ -58,127 +171,98 @@
 
   /* ========== Hero Section ========== */
   .sn-hero {
-    position: relative;
-    padding: 100px 24px 80px;
+    padding: 96px 24px 72px;
     text-align: center;
-    background: var(--sn-primary-dark);
-    overflow: hidden;
-  }
-
-  .sn-hero::before {
-    content: '';
-    position: absolute;
-    top: -50%;
-    left: -50%;
-    width: 200%;
-    height: 200%;
-    background: radial-gradient(circle at 30% 50%, rgba(59,130,246,0.08) 0%, transparent 50%);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .sn-hero::before { animation: none; }
-    .sn-feature-card { transition: none !important; }
-    .sn-step { transition: none !important; }
+    background: var(--sn-surface);
   }
 
   .sn-hero__inner {
-    position: relative;
-    z-index: 1;
     max-width: 800px;
     margin: 0 auto;
   }
 
   .sn-hero__badge {
     display: inline-block;
-    padding: 6px 16px;
+    padding: 4px 12px;
     border-radius: 100px;
-    background: rgba(255,255,255,0.15);
-    backdrop-filter: blur(8px);
-    color: rgba(255,255,255,0.9);
-    font-size: 0.85rem;
+    border: 1px solid var(--sn-border);
+    color: var(--sn-text-secondary);
+    font-size: 0.82rem;
     font-weight: 500;
-    margin-bottom: 24px;
-    border: 1px solid rgba(255,255,255,0.2);
+    margin-bottom: 28px;
   }
 
   .sn-hero__title {
-    font-size: 3.2rem;
-    font-weight: 800;
-    color: #ffffff;
+    font-size: 3rem;
+    font-weight: 700;
+    color: var(--sn-text);
     margin: 0 0 20px;
     line-height: 1.15;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
   }
 
   .sn-hero__subtitle {
-    font-size: 1.25rem;
-    color: rgba(255,255,255,0.85);
-    margin: 0 0 40px;
-    line-height: 1.6;
-    max-width: 600px;
+    font-size: 1.18rem;
+    color: var(--sn-text-secondary);
+    margin: 0 0 36px;
+    line-height: 1.65;
+    max-width: 620px;
     margin-left: auto;
     margin-right: auto;
   }
 
   .sn-hero__actions {
     display: flex;
-    gap: 16px;
+    gap: 12px;
     justify-content: center;
     flex-wrap: wrap;
-    margin-bottom: 40px;
+    margin-bottom: 32px;
   }
 
   .sn-btn {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 28px;
-    border-radius: 10px;
-    font-size: 1rem;
-    font-weight: 600;
+    padding: 10px 22px;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-weight: 500;
     text-decoration: none;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.15s;
     cursor: pointer;
-    border: none;
-  }
-
-  .sn-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    border: 1px solid transparent;
   }
 
   .sn-btn--primary {
-    background: #ffffff;
-    color: var(--sn-primary-dark);
+    background: var(--sn-ink);
+    color: var(--sn-surface);
   }
 
   .sn-btn--primary:hover {
-    color: var(--sn-accent);
+    background: var(--sn-ink-hover);
   }
 
   .sn-btn--secondary {
-    background: rgba(255,255,255,0.15);
-    color: #ffffff;
-    border: 1px solid rgba(255,255,255,0.3);
-    backdrop-filter: blur(8px);
+    background: transparent;
+    color: var(--sn-text);
+    border-color: var(--sn-border-strong);
   }
 
   .sn-btn--secondary:hover {
-    background: rgba(255,255,255,0.25);
+    background: var(--sn-surface-muted);
   }
 
   .sn-hero__install {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    background: rgba(0,0,0,0.2);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 10px;
-    padding: 10px 20px;
-    font-family: 'Roboto Mono', monospace;
-    font-size: 0.95rem;
-    color: rgba(255,255,255,0.9);
+    background: var(--sn-code-bg);
+    border: 1px solid var(--sn-border);
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-family: ui-monospace, "Roboto Mono", SFMono-Regular, Menlo, monospace;
+    font-size: 0.9rem;
+    color: var(--sn-text);
   }
 
   .sn-hero__install code {
@@ -189,221 +273,266 @@
   }
 
   .sn-copy-btn {
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.2);
-    color: rgba(255,255,255,0.8);
-    border-radius: 6px;
-    padding: 4px 8px;
+    background: transparent;
+    border: none;
+    color: var(--sn-text-secondary);
+    border-radius: 4px;
+    padding: 4px 6px;
     cursor: pointer;
     font-size: 0.8rem;
-    transition: background 0.2s;
+    transition: background 0.15s;
   }
 
   .sn-copy-btn:hover {
-    background: rgba(255,255,255,0.2);
+    background: var(--sn-surface-muted);
+    color: var(--sn-text);
   }
 
   .sn-copy-btn svg {
-    width: 16px;
-    height: 16px;
+    width: 15px;
+    height: 15px;
     vertical-align: middle;
   }
 
-  /* ========== Features Section ========== */
-  .sn-features {
-    padding: 80px 24px;
+  /* ========== Sections ========== */
+  .sn-features,
+  .sn-comparison,
+  .sn-integrations {
+    padding: 72px 24px;
     background: var(--sn-surface);
+  }
+
+  .sn-features--muted {
+    background: var(--sn-surface-muted);
   }
 
   .sn-section-header {
     text-align: center;
-    margin-bottom: 56px;
+    margin-bottom: 48px;
   }
 
   .sn-section-header h2 {
-    font-size: 2rem;
-    font-weight: 700;
+    font-size: 1.7rem;
+    font-weight: 650;
     color: var(--sn-text);
     margin: 0 0 12px;
+    line-height: 1.3;
+    letter-spacing: -0.02em;
   }
 
   .sn-section-header p {
-    font-size: 1.1rem;
+    font-size: 1rem;
     color: var(--sn-text-secondary);
     margin: 0;
-    max-width: 560px;
+    max-width: 620px;
     margin-left: auto;
     margin-right: auto;
+    line-height: 1.65;
   }
 
   .sn-features__grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 24px;
+    gap: 16px;
     max-width: 1000px;
     margin: 0 auto;
+  }
+
+  /* Two-card variant (For AI/Human, two graphs) */
+  .sn-features__grid--two {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 780px;
   }
 
   .sn-feature-card {
     background: var(--sn-surface);
     border: 1px solid var(--sn-border);
-    border-radius: 14px;
-    padding: 32px 28px;
-    transition: transform 0.25s, box-shadow 0.25s, border-color 0.25s;
+    border-radius: 8px;
+    padding: 24px 22px;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .sn-features--muted .sn-feature-card {
+    background: var(--sn-surface);
   }
 
   .sn-feature-card:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--sn-shadow-lg);
-    border-color: var(--sn-accent);
+    background: var(--sn-surface-hover);
+    border-color: var(--sn-border-strong);
   }
 
   .sn-feature-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 18px;
-    font-size: 24px;
+    font-size: 26px;
+    line-height: 1;
+    margin-bottom: 14px;
   }
 
-  .sn-feature-icon--blue { background: rgba(59,130,246,0.1); color: #3b82f6; }
-  .sn-feature-icon--cyan { background: rgba(14,165,233,0.1); color: #0ea5e9; }
-  .sn-feature-icon--green { background: rgba(16,185,129,0.1); color: #10b981; }
-  .sn-feature-icon--indigo { background: rgba(99,102,241,0.1); color: #6366f1; }
-  .sn-feature-icon--purple { background: rgba(139,92,246,0.1); color: #8b5cf6; }
-  .sn-feature-icon--rose { background: rgba(244,63,94,0.1); color: #f43f5e; }
-
   .sn-feature-card h3 {
-    font-size: 1.1rem;
-    font-weight: 650;
+    font-size: 1.02rem;
+    font-weight: 600;
     margin: 0 0 8px;
     color: var(--sn-text);
+    letter-spacing: -0.01em;
   }
 
   .sn-feature-card p {
-    font-size: 0.92rem;
+    font-size: 0.9rem;
     color: var(--sn-text-secondary);
     margin: 0;
-    line-height: 1.55;
+    line-height: 1.6;
   }
 
-  /* ========== Architecture / Steps Section ========== */
-  .sn-architecture {
-    padding: 80px 24px;
-    background: var(--sn-surface);
+  .sn-feature-card p a,
+  .sn-feature-card li a {
+    color: var(--sn-accent);
+    text-decoration: none;
   }
 
-  .sn-steps {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    max-width: 900px;
-    margin: 0 auto;
+  .sn-feature-card p a:hover,
+  .sn-feature-card li a:hover {
+    text-decoration: underline;
   }
 
-  .sn-step {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--sn-surface);
+  .sn-feature-card ul {
+    margin: 10px 0 0;
+    padding-left: 18px;
+  }
+
+  .sn-feature-card li {
+    font-size: 0.9rem;
+    color: var(--sn-text-secondary);
+    line-height: 1.65;
+  }
+
+  .sn-feature-card li strong {
+    color: var(--sn-text);
+    font-weight: 600;
+  }
+
+  /* Inline-code chip (graph entry points) */
+  .sn-chip {
+    display: inline-block;
+    margin-top: 14px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(135,131,120,0.15);
+    color: var(--sn-text);
+    font-family: ui-monospace, "Roboto Mono", SFMono-Regular, Menlo, monospace;
+    font-size: 0.78rem;
+  }
+
+  /* Delivery mini-cards (five-deliveries section) */
+  .sn-deliveries {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    max-width: 1500px;
+    margin: 24px auto 0;
+  }
+
+  .sn-delivery {
     border: 1px solid var(--sn-border);
-    border-radius: 10px;
-    padding: 12px 18px;
-    transition: border-color 0.25s, box-shadow 0.25s;
+    border-radius: 8px;
+    padding: 14px 16px;
+    background: var(--sn-surface);
+    transition: background 0.15s, border-color 0.15s;
   }
 
-  .sn-step:hover {
-    border-color: var(--sn-accent);
-    box-shadow: var(--sn-shadow);
+  .sn-delivery:hover {
+    background: var(--sn-surface-hover);
+    border-color: var(--sn-border-strong);
   }
 
-  .sn-step__number {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: var(--sn-primary-dark);
-    color: #fff;
-    font-size: 0.8rem;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+  .sn-delivery__icon {
+    font-size: 20px;
+    line-height: 1;
+    margin-bottom: 8px;
   }
 
-  .sn-step__label {
+  .sn-delivery h4 {
     font-size: 0.88rem;
     font-weight: 600;
+    margin: 0 0 4px;
     color: var(--sn-text);
-    white-space: nowrap;
   }
 
-  .sn-arrow {
+  .sn-delivery p {
+    font-size: 0.78rem;
     color: var(--sn-text-secondary);
-    font-size: 1.2rem;
-    flex-shrink: 0;
+    margin: 0 0 8px;
+    line-height: 1.5;
+  }
+
+  .sn-delivery code {
+    display: block;
+    font-family: ui-monospace, "Roboto Mono", SFMono-Regular, Menlo, monospace;
+    font-size: 0.72rem;
+    color: var(--sn-text);
+    background: rgba(135,131,120,0.15);
+    border-radius: 4px;
+    padding: 3px 7px;
+    overflow-wrap: anywhere;
+  }
+
+  /* Lead answer paragraph (pain-point section) */
+  .sn-lead {
+    font-size: 1.08rem;
+    line-height: 1.7;
+    color: var(--sn-text-secondary);
+    max-width: 720px;
+    margin: 0 auto 48px;
+    text-align: center;
+  }
+
+  .sn-lead strong {
+    color: var(--sn-text);
+    font-weight: 600;
   }
 
   /* ========== Code Comparison Section ========== */
-  .sn-comparison {
-    padding: 80px 24px;
-    background: var(--sn-surface);
-  }
-
   .sn-comparison__panels {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 24px;
+    gap: 16px;
     max-width: 1500px;
     margin: 0 auto;
   }
 
-  .sn-code-panel {
-    border-radius: 14px;
-    overflow: hidden;
-    border: none;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06);
-    transition: box-shadow 0.25s;
+  /* Stacked variant: panels flow top→bottom, tied to the content below */
+  .sn-comparison__panels--stack {
+    grid-template-columns: 1fr;
+    max-width: 920px;
   }
 
-  .sn-code-panel:hover {
-    box-shadow: 0 8px 24px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08);
+  .sn-code-panel {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--sn-border);
+    display: flex;
+    flex-direction: column;
+    background: var(--sn-surface);
   }
 
   .sn-code-panel__header {
-    padding: 14px 20px;
+    padding: 10px 16px;
     background: var(--sn-surface);
-    border-bottom: none;
+    border-bottom: 1px solid var(--sn-border);
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
   }
-
-  .sn-code-panel__dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
-  .sn-code-panel--bad .sn-code-panel__dot { background: var(--sn-danger); }
-  .sn-code-panel--good .sn-code-panel__dot { background: var(--sn-success); }
 
   .sn-code-panel__title {
-    font-size: 0.9rem;
-    font-weight: 650;
-    color: var(--sn-text);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--sn-text-secondary);
   }
 
+  .sn-code-panel--bad .sn-code-panel__title::before { content: "✕  "; color: var(--sn-danger); }
+  .sn-code-panel--good .sn-code-panel__title::before { content: "✓  "; color: var(--sn-success); }
+
   .sn-code-panel__body {
-    padding: 20px;
+    padding: 18px;
     background: var(--sn-code-bg);
     flex: 1;
   }
@@ -412,7 +541,7 @@
     margin: 0;
     padding: 0;
     background: none !important;
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     line-height: 1.7;
     overflow-x: auto;
   }
@@ -423,33 +552,37 @@
     padding: 0;
   }
 
-  /* Syntax highlighting */
-  .sn-kw { color: #c678dd; font-weight: 600; }
-  .sn-fn { color: #61afef; }
-  .sn-st { color: #98c379; }
-  .sn-cm { color: #5c6370; font-style: italic; }
-  .sn-cm strong { color: var(--sn-danger); font-style: normal; }
-  .sn-cm em { color: var(--sn-success); font-style: normal; }
-  .sn-op { color: #56b6c2; }
-  .sn-nr { color: #d19a66; }
-  .sn-var { color: #e06c75; }
-  .sn-cls { color: #e5c07b; }
-  .sn-pr { color: #c678dd; }
+  /* Syntax highlighting — client-side highlight.js, bridged to the
+     page's Notion-ish token palette (code itself stays plain text) */
+  .sn-code-panel__body pre code.hljs {
+    background: transparent;
+    padding: 0;
+  }
+  .sn-code-panel__body .hljs-keyword,
+  .sn-code-panel__body .hljs-meta { color: #8f5c3f; font-weight: 600; }
+  .sn-code-panel__body .hljs-string { color: #0f9960; }
+  .sn-code-panel__body .hljs-comment { color: #9b9b98; font-style: italic; }
+  .sn-code-panel__body .hljs-number { color: #a05c16; }
+  .sn-code-panel__body .hljs-title.function_ { color: #2383e2; }
+  .sn-code-panel__body .hljs-title.class_,
+  .sn-code-panel__body .hljs-built_in,
+  .sn-code-panel__body .hljs-literal { color: #6f6c66; }
 
-  [data-md-color-scheme="slate"] .sn-cm { color: #6b7280; }
-  [data-md-color-scheme="slate"] .sn-cm strong { color: #f87171; }
-  [data-md-color-scheme="slate"] .sn-cm em { color: #34d399; }
+  [data-md-color-scheme="slate"] .sn-code-panel__body .hljs-keyword,
+  [data-md-color-scheme="slate"] .sn-code-panel__body .hljs-meta { color: #d0845f; }
+  [data-md-color-scheme="slate"] .sn-code-panel__body .hljs-string { color: #4dab9a; }
+  [data-md-color-scheme="slate"] .sn-code-panel__body .hljs-comment { color: #737273; }
+  [data-md-color-scheme="slate"] .sn-code-panel__body .hljs-number { color: #d19a66; }
+  [data-md-color-scheme="slate"] .sn-code-panel__body .hljs-title.function_ { color: #4a9ee8; }
+  [data-md-color-scheme="slate"] .sn-code-panel__body .hljs-title.class_,
+  [data-md-color-scheme="slate"] .sn-code-panel__body .hljs-built_in,
+  [data-md-color-scheme="slate"] .sn-code-panel__body .hljs-literal { color: #a5a29c; }
 
   /* ========== Integrations Section ========== */
-  .sn-integrations {
-    padding: 80px 24px;
-    background: var(--sn-surface);
-  }
-
   .sn-integrations__grid {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
+    gap: 10px;
     justify-content: center;
     max-width: 700px;
     margin: 0 auto;
@@ -459,105 +592,106 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 20px;
+    padding: 8px 16px;
     background: var(--sn-surface);
     border: 1px solid var(--sn-border);
-    border-radius: 10px;
-    font-size: 0.92rem;
-    font-weight: 600;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 500;
     color: var(--sn-text);
     text-decoration: none;
-    transition: border-color 0.2s, transform 0.2s;
+    transition: border-color 0.15s, background 0.15s;
   }
 
   .sn-integration-badge:hover {
-    border-color: var(--sn-accent);
-    transform: translateY(-2px);
+    border-color: var(--sn-border-strong);
+    background: var(--sn-surface-hover);
   }
 
   .sn-integration-icon {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
   }
 
   /* ========== CTA Section ========== */
   .sn-cta {
-    padding: 80px 24px;
+    padding: 72px 24px;
     text-align: center;
-    background: var(--sn-primary-dark);
+    background: var(--sn-surface-muted);
   }
 
   .sn-cta h2 {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #ffffff;
-    margin: 0 0 16px;
+    font-size: 1.7rem;
+    font-weight: 650;
+    color: var(--sn-text);
+    margin: 0 0 12px;
+    letter-spacing: -0.02em;
   }
 
   .sn-cta p {
-    font-size: 1.1rem;
-    color: rgba(255,255,255,0.85);
-    margin: 0 0 32px;
-    max-width: 500px;
+    font-size: 1rem;
+    color: var(--sn-text-secondary);
+    margin: 0 0 28px;
+    max-width: 520px;
     margin-left: auto;
     margin-right: auto;
+    line-height: 1.65;
   }
 
   .sn-cta .sn-cta__actions {
     display: flex;
-    gap: 16px;
+    gap: 12px;
     justify-content: center;
     flex-wrap: wrap;
   }
 
   /* ========== Footer ========== */
   .sn-footer {
-    padding: 32px 24px;
+    padding: 28px 24px;
     text-align: center;
     border-top: 1px solid var(--sn-border);
     background: var(--sn-surface);
   }
 
   .sn-footer p {
-    font-size: 0.85rem;
+    font-size: 0.83rem;
     color: var(--sn-text-secondary);
     margin: 0;
   }
 
   .sn-footer a {
-    color: var(--sn-primary);
+    color: var(--sn-text-secondary);
     text-decoration: none;
+    border-bottom: 1px solid var(--sn-border-strong);
   }
 
   .sn-footer a:hover {
-    text-decoration: underline;
+    color: var(--sn-text);
   }
 
   /* ========== Responsive ========== */
   @media (max-width: 768px) {
     .sn-hero {
-      padding: 72px 20px 60px;
+      padding: 64px 20px 48px;
     }
 
     .sn-hero__title {
-      font-size: 2.2rem;
+      font-size: 2.1rem;
     }
 
     .sn-hero__subtitle {
-      font-size: 1.05rem;
+      font-size: 1.02rem;
     }
 
-    .sn-features__grid {
+    .sn-features,
+    .sn-comparison,
+    .sn-integrations {
+      padding: 56px 20px;
+    }
+
+    .sn-features__grid,
+    .sn-features__grid--two {
       grid-template-columns: 1fr;
-      gap: 16px;
-    }
-
-    .sn-steps {
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .sn-arrow {
-      transform: rotate(90deg);
+      gap: 12px;
     }
 
     .sn-comparison__panels {
@@ -565,7 +699,7 @@
     }
 
     .sn-section-header h2 {
-      font-size: 1.6rem;
+      font-size: 1.4rem;
     }
   }
 
@@ -576,288 +710,71 @@
   }
 </style>
 
+{% if home %}
 <div class="sn-page">
 
   <!-- ==================== Hero ==================== -->
   <section class="sn-hero">
     <div class="sn-hero__inner">
-      <div class="sn-hero__badge">
-        {{ t("Open Source", "开源项目") }} &middot; SQLModel &middot; Python 3.10+
-      </div>
-      <h1 class="sn-hero__title">
-        {{ t("From SQLModel to API, Progressively", "从 SQLModel 到 API，渐进式开发") }}
-      </h1>
-      <p class="sn-hero__subtitle">
-        {{ t(
-          "SQLModel entities drive GraphQL API, REST DTOs, and MCP services — one model, many presentations.",
-          "SQLModel 实体驱动 GraphQL API、REST DTO 和 MCP 服务——一套模型，多种呈现。"
-        )}}
-      </p>
+      <div class="sn-hero__badge">{{ home.hero.badge }}</div>
+      <h1 class="sn-hero__title">{{ home.hero.title }}</h1>
+      <p class="sn-hero__subtitle">{{ home.hero.subtitle }}</p>
       <div class="sn-hero__actions">
-        <a href="{{ 'guide/quick_start' | url }}" class="sn-btn sn-btn--primary">
-          {{ t("Get Started", "快速开始") }} &rarr;
+        <a href="{{ home.hero.primary.ref | url }}" class="sn-btn sn-btn--primary">
+          {{ home.hero.primary.label }}
         </a>
-        <a href="https://github.com/allmonday/nexusx" class="sn-btn sn-btn--secondary" target="_blank" rel="noopener">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-          GitHub
+        <a href="{{ home.hero.secondary.url }}" class="sn-btn sn-btn--secondary" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          {{ home.hero.secondary.label }}
         </a>
       </div>
       <div class="sn-hero__install">
-        <code>pip install nexusx</code>
-        <button class="sn-copy-btn" onclick="navigator.clipboard.writeText('pip install nexusx').then(function(btn){btn.innerHTML='✓';setTimeout(function(){btn.innerHTML='<svg width=\\'16\\' height=\\'16\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'2\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'><rect x=\\'9\\' y=\\'9\\' width=\\'13\\' height=\\'13\\' rx=\\'2\\' ry=\\'2\\'/><path d=\\'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1\\'/></svg>'},1500)}.bind(this,this))">
+        <code>{{ home.hero.install }}</code>
+        <button class="sn-copy-btn" onclick="navigator.clipboard.writeText('{{ home.hero.install }}').then(function(btn){btn.innerHTML='✓';setTimeout(function(){btn.innerHTML='<svg width=\\'16\\' height=\\'16\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'2\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'><rect x=\\'9\\' y=\\'9\\' width=\\'13\\' height=\\'13\\' rx=\\'2\\' ry=\\'2\\'/><path d=\\'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1\\'/></svg>'},1500)}.bind(this,this))">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         </button>
       </div>
     </div>
   </section>
 
-  <!-- ==================== Code Comparison ==================== -->
-  <section class="sn-comparison">
-    <div class="sn-section-header">
-      <h2>{{ t("Rapid GraphQL API Generation", "快速构建 GraphQL API") }}</h2>
-      <p>{{ t("For development exploration — rapidly validate entity relationships and data shapes.", "面向开发验证 —— 快速验证实体关系和数据结构。") }}</p>
-    </div>
-    <div class="sn-comparison__panels">
-      <!-- Before panel -->
-      <div class="sn-code-panel sn-code-panel--bad">
-        <div class="sn-code-panel__header">
-          <div class="sn-code-panel__dot"></div>
-          <span class="sn-code-panel__title">{{ t("Without nexusx", "手写 GraphQL schema + resolver") }}</span>
-        </div>
-        <div class="sn-code-panel__body">
-<pre><code><span class="sn-cm"># Model already exists — but you redeclare it as SDL, field by field</span>
-<span class="sn-pr">@strawberry.type</span>
-<span class="sn-kw">class</span> <span class="sn-cls">PostType</span>:
-    <span class="sn-var">id</span>: <span class="sn-cls">strawberry.ID</span>
-    <span class="sn-var">title</span>: <span class="sn-cls">str</span>
-    <span class="sn-pr">@strawberry.field</span>
-    <span class="sn-kw">async def</span> <span class="sn-fn">author</span>(<span class="sn-var">self</span>, <span class="sn-var">info</span>) -> <span class="sn-cls">UserType</span> | <span class="sn-cls">None</span>:
-        <span class="sn-kw">return await</span> <span class="sn-var">info</span>.<span class="sn-var">context</span>[<span class="sn-st">"author_loader"</span>].<span class="sn-fn">load</span>(<span class="sn-var">self</span>.<span class="sn-var">author_id</span>)
-
-<span class="sn-cm"># + a custom DataLoader per relationship, or N+1 kills you</span>
-<span class="sn-kw">class</span> <span class="sn-cls">AuthorLoader</span>(<span class="sn-cls">DataLoader</span>):
-    <span class="sn-kw">async def</span> <span class="sn-fn">batch_load_fn</span>(<span class="sn-var">self</span>, <span class="sn-var">keys</span>): ...
-<span class="sn-cm"> <strong># ↑ repeat for every entity × relationship</strong></span></code></pre>
-        </div>
-      </div>
-      <!-- After panel -->
-      <div class="sn-code-panel sn-code-panel--good">
-        <div class="sn-code-panel__header">
-          <div class="sn-code-panel__dot"></div>
-          <span class="sn-code-panel__title">{{ t("With nexusx", "使用 nexusx") }}</span>
-        </div>
-        <div class="sn-code-panel__body">
-<pre><code><span class="sn-kw">class</span> <span class="sn-cls">Post</span>(<span class="sn-cls">SQLModel</span>, table=<span class="sn-kw">True</span>):
-    <span class="sn-var">id</span>: <span class="sn-cls">int</span> | <span class="sn-cls">None</span> = <span class="sn-fn">Field</span>(primary_key=<span class="sn-kw">True</span>)
-    <span class="sn-var">title</span>: <span class="sn-cls">str</span>
-    <span class="sn-var">author_id</span>: <span class="sn-cls">int</span> = <span class="sn-fn">Field</span>(foreign_key=<span class="sn-st">"user.id"</span>)
-    <span class="sn-var">author</span>: <span class="sn-cls">User</span> | <span class="sn-cls">None</span> = <span class="sn-fn">Relationship</span>()
-
-    <span class="sn-pr">@query</span>
-    <span class="sn-kw">async def</span> <span class="sn-fn">get_all</span>(<span class="sn-var">cls</span>, <span class="sn-var">limit</span>: <span class="sn-cls">int</span> = <span class="sn-nr">10</span>) -> <span class="sn-cls">list</span>[<span class="sn-st">'Post'</span>]: ...
-<span class="sn-cm"> <em># SDL + resolvers + DataLoader — all derived from this one class</em></span></code></pre>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ==================== Core API DTO Comparison ==================== -->
-  <section class="sn-features">
-    <div class="sn-section-header">
-      <h2>{{ t("Declarative REST Endpoint Construction", "声明式构建固定接口数据") }}</h2>
-      <p>{{ t("For production data delivery — build stable REST endpoints with typed DTOs.", "面向生产数据对接 —— 用类型化 DTO 构建稳定的 REST 端点。") }}</p>
-    </div>
-    <div class="sn-comparison__panels">
-      <!-- Before panel -->
-      <div class="sn-code-panel sn-code-panel--bad">
-        <div class="sn-code-panel__header">
-          <div class="sn-code-panel__dot"></div>
-          <span class="sn-code-panel__title">{{ t("Manual query + assembly", "手写查询 + 手动拼装") }}</span>
-        </div>
-        <div class="sn-code-panel__body">
-<pre><code><span class="sn-cm"># Per-endpoint: manual SQL, N+1, dict munging</span>
-<span class="sn-kw">async def</span> <span class="sn-fn">get_sprints</span>():
-    <span class="sn-var">sprints</span> = <span class="sn-kw">await</span> <span class="sn-fn">session</span>.<span class="sn-fn">exec</span>(<span class="sn-fn">select</span>(<span class="sn-cls">Sprint</span>))
-    <span class="sn-var">result</span> = []
-    <span class="sn-kw">for</span> <span class="sn-var">s</span> <span class="sn-kw">in</span> <span class="sn-var">sprints</span>:
-        <span class="sn-var">tasks</span> = <span class="sn-kw">await</span> <span class="sn-fn">session</span>.<span class="sn-fn">exec</span>(
-            <span class="sn-fn">select</span>(<span class="sn-cls">Task</span>).<span class="sn-fn">where</span>(<span class="sn-cls">Task</span>.<span class="sn-var">sprint_id</span> == <span class="sn-var">s</span>.<span class="sn-var">id</span>))
-        <span class="sn-kw">for</span> <span class="sn-var">t</span> <span class="sn-kw">in</span> <span class="sn-var">tasks</span>:
-            <span class="sn-var">t</span>.<span class="sn-var">owner</span> = <span class="sn-kw">await</span> <span class="sn-fn">session</span>.<span class="sn-fn">get</span>(<span class="sn-cls">User</span>, <span class="sn-var">t</span>.<span class="sn-var">owner_id</span>)
-<span class="sn-cm"> <strong># N+1 queries, fragile dict construction</strong></span></code></pre>
-        </div>
-      </div>
-      <!-- After panel -->
-      <div class="sn-code-panel sn-code-panel--good">
-        <div class="sn-code-panel__header">
-          <div class="sn-code-panel__dot"></div>
-          <span class="sn-code-panel__title">{{ t("Declarative DTO + auto-loading", "声明式 DTO + 自动加载") }}</span>
-        </div>
-        <div class="sn-code-panel__body">
-<pre><code><span class="sn-kw">class</span> <span class="sn-cls">UserDTO</span>(<span class="sn-cls">DefineSubset</span>):
-    <span class="sn-var">__subset__</span> = (<span class="sn-cls">User</span>, (<span class="sn-st">"id"</span>, <span class="sn-st">"name"</span>))
-
-<span class="sn-kw">class</span> <span class="sn-cls">TaskDTO</span>(<span class="sn-cls">DefineSubset</span>):
-    <span class="sn-var">__subset__</span> = (<span class="sn-cls">Task</span>, (<span class="sn-st">"id"</span>, <span class="sn-st">"title"</span>, <span class="sn-st">"owner_id"</span>))
-    <span class="sn-var">owner</span>: <span class="sn-cls">UserDTO</span> | <span class="sn-cls">None</span> = <span class="sn-kw">None</span>   <span class="sn-cm"># auto-loaded</span>
-
-<span class="sn-kw">class</span> <span class="sn-cls">SprintDTO</span>(<span class="sn-cls">DefineSubset</span>):
-    <span class="sn-var">__subset__</span> = (<span class="sn-cls">Sprint</span>, (<span class="sn-st">"id"</span>, <span class="sn-st">"name"</span>))
-    <span class="sn-var">tasks</span>: <span class="sn-cls">list</span>[<span class="sn-cls">TaskDTO</span>] = []      <span class="sn-cm"># auto-loaded</span>
-
-<span class="sn-cm"> <em># 1 query per relationship, zero N+1</em></span></code></pre>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ==================== Features ==================== -->
-  <section class="sn-features">
-    <div class="sn-section-header">
-      <h2>{{ t("Everything you need, from model to production", "从模型到生产，一站式工具") }}</h2>
-      <p>{{ t("ER diagrams, GraphQL, REST DTOs, and MCP — all driven by SQLModel entities.", "ER 图、GraphQL、REST DTO 和 MCP，全部由 SQLModel 实体驱动。") }}</p>
-    </div>
-    <div class="sn-features__grid">
-      <!-- Feature 1 -->
-      <div class="sn-feature-card">
-        <div class="sn-feature-icon sn-feature-icon--blue">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-        </div>
-        <h3>{{ t("ER Diagram", "ER 图") }}</h3>
-        <p>{{ t("SQLModel entities + non-ORM relationships, visualized as Mermaid ER diagrams.", "SQLModel 实体 + 非 ORM 关系，一键生成 Mermaid ER 图。") }}</p>
-      </div>
-      <!-- Feature 2 -->
-      <div class="sn-feature-card">
-        <div class="sn-feature-icon sn-feature-icon--cyan">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-        </div>
-        <h3>{{ t("GraphQL Auto-Generation", "GraphQL 自动生成") }}</h3>
-        <p>{{ t("@query / @mutation decorators auto-generate SDL with DataLoader batch loading.", "@query / @mutation 装饰器自动生成 SDL，内置 DataLoader 批量加载。") }}</p>
-      </div>
-      <!-- Feature 3 -->
-      <div class="sn-feature-card">
-        <div class="sn-feature-icon sn-feature-icon--green">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-        </div>
-        <h3>{{ t("Core API DTOs", "Core API DTO") }}</h3>
-        <p>{{ t("DefineSubset + implicit auto-loading — declarative REST response construction.", "DefineSubset + 隐式自动加载，声明式构建 REST 响应。") }}</p>
-      </div>
-      <!-- Feature 4 -->
-      <div class="sn-feature-card">
-        <div class="sn-feature-icon sn-feature-icon--indigo">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        </div>
-        <h3>{{ t("Derived Fields & Cross-Layer", "派生字段与跨层") }}</h3>
-        <p>{{ t("post_* for aggregations, ExposeAs / SendTo for cross-layer data flow.", "post_* 计算派生字段，ExposeAs / SendTo 实现跨层数据流。") }}</p>
-      </div>
-      <!-- Feature 5 -->
-      <div class="sn-feature-card">
-        <div class="sn-feature-icon sn-feature-icon--purple">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-        </div>
-        <h3>{{ t("MCP Integration", "MCP 集成") }}</h3>
-        <p>{{ t("Expose your SQLModel APIs to AI agents via Model Context Protocol.", "通过 MCP 协议将 SQLModel API 暴露给 AI 代理。") }}</p>
-      </div>
-      <!-- Feature 6 -->
-      <div class="sn-feature-card">
-        <div class="sn-feature-icon sn-feature-icon--rose">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        </div>
-        <h3>{{ t("RPC Services", "RPC 服务") }}</h3>
-        <p>{{ t("Business logic as RpcService — serve via MCP and FastAPI from one definition.", "业务逻辑定义为 RpcService，同时服务于 MCP 和 FastAPI。") }}</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ==================== Architecture / Steps ==================== -->
-  <section class="sn-architecture">
-    <div class="sn-section-header">
-      <h2>{{ t("Progressive development path", "渐进式开发路径") }}</h2>
-      <p>{{ t("Start from entities, extend as needed. Each stage builds on the last.", "从实体开始，按需扩展。每个阶段都建立在前一个之上。") }}</p>
-    </div>
-    <div class="sn-steps">
-      <div class="sn-step">
-        <span class="sn-step__number">1</span>
-        <span class="sn-step__label">{{ t("SQLModel Entities", "SQLModel 实体") }}</span>
-      </div>
-      <span class="sn-arrow">&rarr;</span>
-      <div class="sn-step">
-        <span class="sn-step__number">2</span>
-        <span class="sn-step__label">{{ t("ER Diagram", "ER 图") }}</span>
-      </div>
-      <span class="sn-arrow">&rarr;</span>
-      <div class="sn-step">
-        <span class="sn-step__number">3</span>
-        <span class="sn-step__label">{{ t("GraphQL API", "GraphQL API") }}</span>
-      </div>
-      <span class="sn-arrow">&rarr;</span>
-      <div class="sn-step">
-        <span class="sn-step__number">4</span>
-        <span class="sn-step__label">{{ t("Core API DTOs", "Core API DTO") }}</span>
-      </div>
-      <span class="sn-arrow">&rarr;</span>
-      <div class="sn-step">
-        <span class="sn-step__number">5</span>
-        <span class="sn-step__label">{{ t("MCP / RPC", "MCP / RPC") }}</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- ==================== Integrations ==================== -->
-  <section class="sn-integrations">
-    <div class="sn-section-header">
-      <h2>{{ t("Built for your stack", "为你的技术栈而建") }}</h2>
-      <p>{{ t("Works with your existing frameworks and tools.", "与你现有的框架和工具无缝集成。") }}</p>
-    </div>
-    <div class="sn-integrations__grid">
-      <a href="{{ 'guide/graphql_mode' | url }}" class="sn-integration-badge">
-        <span class="sn-integration-icon">&#127760;</span> GraphQL
-      </a>
-      <a href="{{ 'guide/core_api' | url }}" class="sn-integration-badge">
-        <span class="sn-integration-icon">&#9889;</span> FastAPI
-      </a>
-      <a href="{{ 'advanced/mcp_service' | url }}" class="sn-integration-badge">
-        <span class="sn-integration-icon">&#129302;</span> MCP
-      </a>
-      <a href="{{ 'guide/er_diagram' | url }}" class="sn-integration-badge">
-        <span class="sn-integration-icon">&#128451;</span> SQLAlchemy
-      </a>
-      <a href="{{ 'advanced/voyager' | url }}" class="sn-integration-badge">
-        <span class="sn-integration-icon">&#128065;</span> Voyager
-      </a>
-      <a href="{{ 'guide/graphql_mode' | url }}" class="sn-integration-badge">
-        <span class="sn-integration-icon">&#128196;</span> TypeScript SDK
-      </a>
-    </div>
-  </section>
-
-  <!-- ==================== CTA ==================== -->
-  <section class="sn-cta">
-    <div class="sn-container">
-      <h2>{{ t("Ready to go from model to API?", "准备好了吗？") }}</h2>
-      <p>{{ t("Start with a single @query decorator. Scale to full-stack when you're ready.", "从一个 @query 装饰器开始，准备好了再扩展到全栈。") }}</p>
-      <div class="sn-cta__actions">
-        <a href="{{ 'guide/quick_start' | url }}" class="sn-btn sn-btn--primary">
-          {{ t("Read the Guide", "阅读指南") }} &rarr;
-        </a>
-        <a href="https://github.com/allmonday/nexusx" class="sn-btn sn-btn--secondary" target="_blank" rel="noopener">
-          {{ t("View on GitHub", "查看 GitHub") }}
-        </a>
-      </div>
-    </div>
-  </section>
+  {% for s in home.sections %}
+    {% if s.type == "cards" %}{{ cards_section(s) }}
+    {% elif s.type == "comparison" %}{{ comparison_section(s) }}
+    {% elif s.type == "integrations" %}{{ integrations_section(s) }}
+    {% elif s.type == "cta" %}{{ cta_section(s) }}
+    {% endif %}
+  {% endfor %}
 
   <!-- ==================== Footer ==================== -->
   <footer class="sn-footer">
     <div class="sn-container">
       <p>
-        nexusx &middot; MIT License &middot; {{ t("Made by", "作者") }} <a href="https://github.com/allmonday" target="_blank" rel="noopener">tangkikodo</a>
+        nexusx &middot; MIT License &middot; <a href="https://github.com/allmonday" target="_blank" rel="noopener">tangkikodo</a>
         &middot; <a href="https://github.com/allmonday/nexusx" target="_blank" rel="noopener">GitHub</a>
       </p>
     </div>
   </footer>
 
 </div>
+
+<!-- Code highlighting: plain code blocks above are colored client-side.
+     Token palette is bridged via CSS above; if the CDN is unreachable the
+     code still renders as readable plain monospace. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer></script>
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    if (!window.hljs) return
+    document.querySelectorAll(".sn-code-panel__body pre code").forEach(function (el) {
+      window.hljs.highlightElement(el)
+    })
+  })
+</script>
+
+{% else %}
+<div style="padding: 40px; text-align: center; color: #787774;">
+  Home content missing: add a <code>home:</code> block to this page's frontmatter.
+</div>
+{% endif %}
 
 {% endblock %}
 

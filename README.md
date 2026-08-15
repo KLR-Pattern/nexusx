@@ -3,14 +3,14 @@
 [![pypi](https://img.shields.io/pypi/v/nexusx.svg)](https://pypi.python.org/pypi/nexusx)
 [![PyPI Downloads](https://static.pepy.tech/badge/nexusx/month)](https://pepy.tech/projects/nexusx)
 
-> **Tools are fixed functions; data is a graph.**
+> **Model your business once — for humans and AI alike.**
 
-**Build applications for Human and AI — from the same source, not by wrapping.**
-
-nexusx generates GraphQL, REST, MCP, CLI, and TS SDK from the **same typed
-business methods**. Every protocol shares one batch-loaded query graph
-(DataLoader, N+1-proof) and one set of typed DTOs (`DefineSubset`). This is
-**semantic-level isomorphism** — not transport-level wrapping.
+nexusx is a next-generation business modeling tool with deep AI integration.
+Model your business entities, relationships, and use cases once — GraphQL,
+REST, MCP, CLI, and TS SDK all derive from that single model, sharing one
+DataLoader-backed query graph (N+1-proof) and one set of typed DTOs
+(`DefineSubset`). This is **semantic-level isomorphism** — not
+transport-level wrapping. Data is a graph; tools are just its projections.
 
 **For Human** — write SQLModel entities + typed DTOs; get REST routes, GraphQL
 schema, CLI, and TS SDK without boilerplate. Change business logic once → all

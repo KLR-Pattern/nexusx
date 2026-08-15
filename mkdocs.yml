@@ -1,5 +1,5 @@
 site_name: nexusx
-site_description: "Progressive SQLModel extension — from ER diagrams to GraphQL API and beyond."
+site_description: "Next-generation business modeling with deep AI integration — GraphQL, REST, MCP, CLI, and TS SDK derived from one typed model."
 site_url: https://allmonday.github.io/nexusx
 site_author: tangkikodo
 theme:
