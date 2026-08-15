@@ -151,17 +151,23 @@ Open `http://127.0.0.1:8000/graphql` and run:
 }
 ```
 
-This creates the schema, query roots, and batched relationship loader without a
-hand-written GraphQL type or resolver. The same runnable source is available at
+The same runnable source is available at
 [`examples/quickstart.py`](examples/quickstart.py).
 
-| You declare | nexusx generates |
-|---|---|
-| SQLModel entity + relationships | GraphQL schema + DataLoader batching (N+1-proof) + ER diagrams |
-| `DefineSubset` DTO | Minimal-column queries + nested relationship loading + computed fields |
-| `UseCaseService` method | REST route + GraphQL field + MCP operation + CLI command |
-| A non-ORM async batch function | A relationship that joins the same loaders, DTOs, and ER diagrams |
-| Entity `__federation_keys__` | Cross-service federation (auto-detected + batch-fetched) |
+## Why nexusx
+
+A SQLModel application usually grows through the same stages:
+
+1. Define entities and relationships.
+2. Write resolvers or joins to read nested data.
+3. Create response DTOs that do not expose every database column.
+4. Repeat the same business operation for REST, GraphQL, and AI tools.
+5. Rebuild the relationship map again for documentation and service boundaries.
+
+nexusx keeps those stages connected: each artifact you declare feeds the next
+one and every delivery protocol at once, instead of being re-declared per layer.
+The result is less translation code between your database, application layer,
+web API, and AI interface.
 
 ```mermaid
 flowchart LR
@@ -180,20 +186,17 @@ flowchart LR
     usecase --> cli["CLI"]
 ```
 
-## Why nexusx
+The Quick start already worked this way: two entity declarations became a
+GraphQL schema, query roots, and a batched relationship loader without a
+hand-written GraphQL type or resolver. The same pattern extends to every layer:
 
-A SQLModel application usually grows through the same stages:
-
-1. Define entities and relationships.
-2. Write resolvers or joins to read nested data.
-3. Create response DTOs that do not expose every database column.
-4. Repeat the same business operation for REST, GraphQL, and AI tools.
-5. Rebuild the relationship map again for documentation and service boundaries.
-
-nexusx keeps those stages connected: each artifact you declare feeds the next
-one and every delivery protocol at once, instead of being re-declared per layer.
-The result is less translation code between your database, application layer,
-web API, and AI interface.
+| You declare | nexusx generates |
+|---|---|
+| SQLModel entity + relationships | GraphQL schema + DataLoader batching (N+1-proof) + ER diagrams |
+| `DefineSubset` DTO | Minimal-column queries + nested relationship loading + computed fields |
+| `UseCaseService` method | REST route + GraphQL field + MCP operation + CLI command |
+| A non-ORM async batch function | A relationship that joins the same loaders, DTOs, and ER diagrams |
+| Entity `__federation_keys__` | Cross-service federation (auto-detected + batch-fetched) |
 
 ## Explore the data graph
 
@@ -309,8 +312,7 @@ automatically and converts the result to `UserSummary`. The same applies to
 `SprintSummary.tasks`.
 
 Load only the root columns required by the DTO, then resolve its relationship
-tree (`async_session` is the application's session factory from the Quick
-start):
+tree (reusing the Quick start's `session_factory`):
 
 ```python
 from nexusx import ErManager, build_dto_select
@@ -318,7 +320,7 @@ from nexusx import ErManager, build_dto_select
 
 er = ErManager(
     entities=[User, Sprint, Task],
-    session_factory=async_session,
+    session_factory=session_factory,
 )
 Resolver = er.create_resolver()
 
@@ -326,7 +328,7 @@ Resolver = er.create_resolver()
 async def load_sprints() -> list[SprintSummary]:
     statement = build_dto_select(SprintSummary)
 
-    async with async_session() as session:
+    async with session_factory() as session:
         rows = (await session.exec(statement)).all()
 
     dtos = [SprintSummary(**dict(row._mapping)) for row in rows]
