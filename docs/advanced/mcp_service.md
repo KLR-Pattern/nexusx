@@ -2,6 +2,11 @@
 
 Expose your SQLModel entity graph to AI agents via the Model Context Protocol. An AI agent can query your data through GraphQL — with schema discovery, query execution, and relationship traversal all handled automatically.
 
+> This is the **entity-first** layer (data graph). If your agents should invoke
+> `UseCaseService` business methods instead — with progressive disclosure and
+> field selection — see [Compose MCP for AI](compose_mcp.md). The two layers
+> can run side by side.
+
 ## Step 1: Create an MCP Server
 
 Install the MCP dependency first:

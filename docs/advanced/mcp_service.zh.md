@@ -2,6 +2,10 @@
 
 将 SQLModel API 暴露给 AI 代理。一行代码创建 MCP 服务。
 
+> 本页是 **entity-first** 层（数据图）。如果你的 agent 应该调用
+> `UseCaseService` 业务方法——带渐进披露与字段选择——请看
+> [Compose MCP](compose_mcp.md)。两层可以并行运行。
+
 ## 安装
 
 ```bash

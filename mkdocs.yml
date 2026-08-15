@@ -54,25 +54,34 @@ exclude_docs: |
 
 nav:
   - Guide:
-    - Overview: ./index.md
+    - Home: ./index.md
+    - Overview — One Model, Two Graphs: ./guide/overview.md
     - Quick Start: ./guide/quick_start.md
-    - ER Diagram & Non-ORM Relationships: ./guide/er_diagram.md
-    - GraphQL Mode: ./guide/graphql_mode.md
-    - GraphQL Pagination: ./guide/graphql_pagination.md
-    - Auto-Generated Queries: ./guide/graphql_auto_query.md
-    - Core API Mode: ./guide/core_api.md
-    - Core API Advanced: ./guide/core_api_advanced.md
-    - Virtual Entities: ./guide/virtual_entities.md
-    - Custom Relationships: ./guide/custom_relationship.md
-    - ER Diagram Visualization: ./guide/er_diagram_visual.md
-    - Troubleshooting: ./guide/troubleshooting.md
-  - Advanced:
-    - MCP Service: ./advanced/mcp_service.md
-    - UseCase Service: ./advanced/use_case_service.md
-    - UseCase + FastAPI: ./advanced/use_case_fastapi.md
-    - Voyager Visualization: ./advanced/voyager.md
-    - Federation: ./advanced/federation.md
-    - ComposedErManager: ./advanced/composed_er_manager.md
+    - Data Graph:
+      - GraphQL Mode: ./guide/graphql_mode.md
+      - Auto-Generated Queries: ./guide/graphql_auto_query.md
+      - GraphQL Pagination: ./guide/graphql_pagination.md
+    - Response DTOs:
+      - Core API Mode: ./guide/core_api.md
+      - Core API Advanced: ./guide/core_api_advanced.md
+    - Relationships beyond the ORM:
+      - ER Diagram & Non-ORM Relationships: ./guide/er_diagram.md
+      - Custom Relationships: ./guide/custom_relationship.md
+      - Virtual Entities: ./guide/virtual_entities.md
+    - Operation Graph:
+      - UseCase Service: ./advanced/use_case_service.md
+      - UseCase + FastAPI: ./advanced/use_case_fastapi.md
+    - AI Delivery:
+      - Compose MCP for AI: ./advanced/compose_mcp.md
+      - MCP Service (entity-first): ./advanced/mcp_service.md
+      - MCP & Context Efficiency: ./mcp-context-efficiency.md
+    - Beyond One Database:
+      - Federation: ./advanced/federation.md
+      - ComposedErManager: ./advanced/composed_er_manager.md
+    - Tooling:
+      - Voyager Visualization: ./advanced/voyager.md
+      - ER Diagram Visualization: ./guide/er_diagram_visual.md
+      - Troubleshooting: ./guide/troubleshooting.md
   - Articles:
     - Design Highlights: ./feature-highlights.md
     - Clean Architecture Comparison: ./clean-architecture-comparison.md
