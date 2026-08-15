@@ -175,6 +175,16 @@ home:
         - {icon: "🌉", title: "Relationships beyond the ORM", text: "Redis, search engines, other databases, external APIs — declare a Relationship with an async batch function and they join the same loader, DTO, GraphQL, and ER-diagram infrastructure."}
         - {icon: "📦", title: "Delivery is layered on later", text: "Business methods depend on no protocol object — builders inspect the typed signature and attach REST / MCP / CLI / SDK adapters. FromContext injects trusted values (user, tenant) without exposing them as client arguments."}
 
+    # ── Build with an agent ──
+    - type: cards
+      title: "Skip the API manual — build with an agent"
+      subtitle: "Install the 4-phase skill into your coding agent — Claude Code, Codex, Cursor, and more — then describe your app in plain words. The agent drives the workflow; you review the model."
+      command: "npx skills add KLR-Pattern/nexusx -s nexusx-4phase -a claude-code"
+      cards:
+        - {icon: "🗺️", title: "Phase 0 — model the domain", text: "Confirm the domain model and persistence strategy with you before any code is written."}
+        - {icon: "🏗️", title: "Phase 1–3 — build the layers", text: "Entities and relationships, GraphQL helper surface, then UseCase REST / MCP / CLI deliveries."}
+        - {icon: "🚀", title: "Phase 4 — generate the SDK", text: "Optionally emit a typed TypeScript SDK from the compose schema."}
+
     # ── Integrations ──
     - type: integrations
       title: "Built for your stack"

@@ -175,6 +175,16 @@ home:
         - {icon: "🌉", title: "关系不限于 ORM", text: "Redis、搜索引擎、其他数据库、外部 API —— 声明一个带异步批量函数的 Relationship，即可加入同一套 loader、DTO、GraphQL 与 ER 图基础设施。"}
         - {icon: "📦", title: "交付后置分层", text: "业务方法不依赖任何协议对象 —— 构建器检查类型化签名后挂上 REST / MCP / CLI / SDK 适配器。FromContext 注入可信值（用户、租户），不暴露为客户端参数。"}
 
+    # ── Agent 陪建 ──
+    - type: cards
+      title: "不用啃 API 文档 —— 让 Agent 陪你建模"
+      subtitle: "把 4-phase skill 装进你的编码 Agent（Claude Code、Codex、Cursor 等），用自然语言描述你的应用。Agent 驱动流程，你只需审视模型。"
+      command: "npx skills add KLR-Pattern/nexusx -s nexusx-4phase -a claude-code"
+      cards:
+        - {icon: "🗺️", title: "Phase 0 —— 领域建模", text: "先和你确认领域模型与持久化策略，再动代码。"}
+        - {icon: "🏗️", title: "Phase 1–3 —— 逐层实现", text: "实体与关系、GraphQL 辅助接口、UseCase 的 REST / MCP / CLI 交付。"}
+        - {icon: "🚀", title: "Phase 4 —— 生成 SDK", text: "可选从 compose schema 生成类型化 TypeScript SDK。"}
+
     # ── 技术栈 ──
     - type: integrations
       title: "为你的技术栈而建"

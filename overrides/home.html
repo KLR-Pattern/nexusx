@@ -10,7 +10,7 @@
     hero:      {badge, title(html), subtitle, install,
                 primary:{label,ref}, secondary:{label,url}}
     sections:  list of
-      cards:       {title, subtitle?, lead(html)?, muted?, two?,
+      cards:       {title, subtitle?, lead(html)?, command?, muted?, two?,
                     cards:[{icon, title, text(html), bullets?:[{text(html)}|{label,ref}],
                             link?:{label,ref}, chip?}]}
       comparison:  {title, subtitle?, muted?, stack?,
@@ -51,6 +51,16 @@
 <section class="sn-features{% if s.muted %} sn-features--muted{% endif %}">
   {{ section_header(s) }}
   {% if s.lead %}<p class="sn-lead">{{ s.lead }}</p>{% endif %}
+  {% if s.command %}
+  <div class="sn-command">
+    <div class="sn-hero__install">
+      <code>{{ s.command }}</code>
+      <button class="sn-copy-btn" onclick="navigator.clipboard.writeText('{{ s.command }}').then(function(btn){btn.innerHTML='✓';setTimeout(function(){btn.innerHTML='<svg width=\\'16\\' height=\\'16\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'2\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'><rect x=\\'9\\' y=\\'9\\' width=\\'13\\' height=\\'13\\' rx=\\'2\\' ry=\\'2\\'/><path d=\\'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1\\'/></svg>'},1500)}.bind(this,this))">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+    </div>
+  </div>
+  {% endif %}
   <div class="sn-features__grid{% if s.two %} sn-features__grid--two{% endif %}">
     {% for c in s.cards %}{{ feature_card(c) }}{% endfor %}
   </div>
@@ -472,6 +482,13 @@
     border-radius: 4px;
     padding: 3px 7px;
     overflow-wrap: anywhere;
+  }
+
+  /* Centered install-command row (cards sections with a `command`) */
+  .sn-command {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 40px;
   }
 
   /* Lead answer paragraph (pain-point section) */
