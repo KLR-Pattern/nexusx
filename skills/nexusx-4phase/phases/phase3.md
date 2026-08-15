@@ -120,30 +120,14 @@
   app.mount("/voyager", voyager)
   ```
 
-**V 降 — 定义验收标准:**
-进入 Phase 3 编码之前，根据启用的接口选择验收项并写入当前需求目录的 `phase3.md`。未启用的接口不得保留为必验项：
-
-| # | 验收项 | 验证方式 |
-|---|--------|----------|
-| 1 | 每个 REST 端点返回的响应字段符合 DTO 定义（FK 字段隐藏、关系字段包含） | curl POST endpoint |
-| 2 | Voyager 中 service 树展示完整（每个服务的方法可见） | 浏览器打开 Voyager |
-| 3 | MCP 4 层工具可用：list_apps → describe_compose_schema → describe_compose_method → compose_query | MCP 客户端调用 |
-| 4 | POST body 参数校验生效（参数缺少返回 422） | curl 发送非法请求 |
-
 **实现：**
 编写 `dtos.py` → `service.py` → `main.py` 挂载
 
-**V 升 — 逐条回查验收:**
+**自检（按启用的接口选择，未启用项跳过）：**
 
-- [ ] 1. REST 响应：`curl /api/sprint_service/list_sprints -X POST` 返回字段符合 DTO
-- [ ] 2. FK 隐藏：返回数据中不包含 FK 字段（如 `owner_id`）
-- [ ] 3. Voyager：service 节点和 method 方法都可见
-- [ ] 4. MCP 4 层工具：
-  - `list_apps` 返回应用列表
-  - `describe_compose_schema(app_name=...)` 返回 services + methods 紧凑列表
-  - `describe_compose_method(app_name=..., service_name=..., method_name=...)` 返回参数表 + 返回类型 + SDL 片段
-  - `compose_query(app_name=..., query="{ ServiceName { method_name { fields } } }")` 返回 `{data, errors}`，含字段投影
-- [ ] 5. 参数校验：缺少必填参数返回 422
+- REST：`curl /api/<service>/<method> -X POST` 返回字段符合 DTO（FK 隐藏、关系字段包含）；缺少必填参数返回 422
+- Voyager：service 节点和 method 方法都可见
+- MCP 四层工具逐层可用：`list_apps` 返回应用列表 → `describe_compose_schema(app_name=...)` 返回 services + methods 紧凑列表 → `describe_compose_method(...)` 返回参数表 + 返回类型 + SDL 片段 → `compose_query(query="{ ServiceName { method_name { fields } } }")` 返回 `{data, errors}`，含字段投影
 
 ## 踩坑经验
 

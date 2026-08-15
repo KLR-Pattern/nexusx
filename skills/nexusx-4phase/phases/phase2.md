@@ -36,33 +36,15 @@
 - GraphQL 作为辅助测试接口，`@query`/`@mutation` 装饰器在挂载时应用
 - `mount_method()` 定义放在 Entity class 之后、ErManager 之前
 
-**V 降 — 定义验收标准:**
-进入 Phase 2 编码之前，定义测试验收集并写入当前需求目录的 `phase2.md`；新项目由用户确认，增量需求可沿用已明确的验收条件直接执行：
-
-| # | 方法 | 测试场景 | 预期结果 | 验证方式 |
-|---|------|----------|----------|----------|
-| 1 | create_user | 正常创建 | 返回新用户对象，含关联关系 | GraphiQL mutation |
-| 2 | create_user | 重复邮箱 | 返回错误提示 | GraphiQL mutation |
-| 3 | list_users | 分页查询 | 返回正确分页数据 | GraphiQL query |
-| ... | ... | ... | ... | ... |
-
-验收标准要求：
-- 每个 `@query`/`@mutation` 至少覆盖：**一个正常场景 + 一个边界/异常场景**
-- 异常场景的预期结果必须是可观察的（不写"不出错"，写"返回 status: error, message: xx"）
-- 验证方式统一通过 GraphQL query/mutation 在 GraphiQL 中执行
-
 **实现：**
 编写 `service/<domain>/methods.py` → `models.py` 挂载
 
-**V 升 — 逐条回查验收:**
-启动服务，在 GraphiQL 中逐一执行验收表，同时运行自动化测试：
+**测试设计与自检：**
 
-- [ ] 1. create_user（正常）→ 返回新用户数据，关系字段正确
-- [ ] 2. create_user（重复）→ 返回预期错误信息
-- [ ] 3. list_users（分页）→ 分页参数生效
-- [ ] ...（每条对标验收表）
-- [ ] 确认 seed 数据仍可查询，Loader 行为符合预期
-- [ ] 自动化测试全部通过：`pytest tests/`
+- 每个 `@query`/`@mutation` 至少覆盖**一个正常场景 + 一个边界/异常场景**；异常预期必须可观察（不写"不出错"，写"返回 status: error, message: xx"）
+- 启动服务，在 GraphiQL 中按场景逐条执行（正常创建 / 重复邮箱等边界 / 分页查询），确认返回与预期一致
+- 确认 seed 数据仍可查询，Loader 行为符合预期
+- 自动化测试全部通过：`pytest tests/`
 
 ## 踩坑经验
 

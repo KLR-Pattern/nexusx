@@ -18,16 +18,6 @@
 - Phase 1 无 GraphiQL（无方法可查询），GraphQL 在 Phase 2 方法挂载后可用
 - **如果 Phase 0 Step 0-3 选了虚拟实体根**（普通 `pydantic.BaseModel`，不落表）：在 `ErManager(entities=[...])` 创建后、`create_resolver()` 调用**之前**，调用 `er.add_virtual_entities([CurrentUser, Page, ...])` 注册。虚拟实体通过类属性 `__relationships__` 声明关系（不是 SQLAlchemy `Relationship`）。注册后再调 `er.create_resolver()`，否则注册表已冻结会抛 `RuntimeError`。详见 `docs/guide/virtual_entities.md`
 
-**V 降 — 定义验收标准:**
-进入 Phase 1 实现之前，在当前需求目录的 `phase1.md` 中记录以下验收标准：
-
-| # | 验收项 | 验证方式 |
-|---|--------|----------|
-| 1 | 每个 Entity 在 Voyager ER 图中正确显示，关系线方向正确 | 浏览器打开 Voyager |
-| 2 | `models.py` 中每个 Entity 只包含字段 + Relationship，无任何业务方法 | 检查代码结构 |
-| 3 | mock seed 数据样本展示合理的数量、关联关系和边界值 | 编写简单查询验证记录数 |
-| 4 | （持久化场景）alembic baseline 迁移生成并 upgrade 成功，DB 中表结构与 models 一致 | `alembic upgrade head` + 查 `alembic_version` 表 |
-
 **实现：**
 编写 `db.py` → `models.py`(纯实体，无方法) → `database.py` → `main.py`
 
@@ -55,13 +45,12 @@
 - ❌ `alembic upgrade` 报 `NameError: name 'sqlmodel' is not defined`：`script.py.mako` 漏了 `import sqlmodel`
 - ❌ uvicorn `--reload` 模式下，改 `db.py` URL 后会立即 reload，老的 `init_db()` 可能跑了一次 create_all 把表建到新文件里 → 后续 autogenerate 看到表已存在生成空迁移。**解决**：先 dump 数据 → 删 DB 文件 → 改代码 → autogenerate → upgrade → load_seed
 
-**V 升 — 逐条回查验收:**
-按验收标准逐条验证，并将结果写入当前需求目录的 `phase1.md`：
+**自检：**
 
-- [ ] 1. Voyager ER 图：实体节点、关系线、聚合根高亮
-- [ ] 2. Entity 纯字段：无 @query/@mutation 方法，无 `nexusx` 导入
-- [ ] 3. mock seed：数据量合理、关联关系正确、包含边界用例
-- [ ] 4. （持久化场景）alembic baseline 已 upgrade，`alembic_version` 表记录了 revision id
+- Voyager ER 图：实体节点、关系线、聚合根高亮
+- Entity 纯字段：无 @query/@mutation 方法，无 `nexusx` 导入
+- mock seed：数据量合理、关联关系正确、包含边界用例
+- （持久化场景）alembic baseline 已 upgrade，`alembic_version` 表记录了 revision id
 
 ## 踩坑经验
 

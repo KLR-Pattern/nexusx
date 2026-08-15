@@ -27,7 +27,7 @@ specs/<编号>-<需求简述>/
 
 ## 文件内容格式
 
-每个 phase 文件分三个部分：
+每个 phase 文件分两个部分：
 
 ```markdown
 # Phase N: <阶段标题>
@@ -36,13 +36,9 @@ specs/<编号>-<需求简述>/
 
 （记录用户在对话中提出的原始需求、约束条件和确认结论）
 
-## 验收标准
-
-（V 降阶段定义的验收标准表格，每项标注验证方式）
-
 ## 实现描述
 
-（记录该阶段的具体技术实现方案、产出文件和关键决策，以及 V 升的逐条回查结果）
+（记录该阶段的具体技术实现方案、产出文件、关键决策与验证结果）
 ```
 
 ## 写入时机
@@ -51,12 +47,12 @@ specs/<编号>-<需求简述>/
 |------|----------|
 | story.md | 用户首次描述需求时记录原始表述；Phase 0 确认后补充 Overview Design（见下方说明） |
 | phase0.md | Phase 0 全部确认后，进入 Phase 1 之前 |
-| phase1.md | V 降写入验收标准 → 实现 → V 升回查全部通过后写入完整内容 |
-| phase2.md | V 降写入验收标准 → 实现 → V 升回查全部通过后写入完整内容 |
-| phase3.md | V 降写入验收标准 → 实现 → V 升回查全部通过后写入完整内容 |
-| phase4.md | V 降写入验收标准 → 实现 → V 升回查全部通过后写入完整内容 |
+| phase1.md | 实现完成后一次性写入完整内容 |
+| phase2.md | 实现完成后一次性写入完整内容 |
+| phase3.md | 实现完成后一次性写入完整内容 |
+| phase4.md | 实现完成后一次性写入完整内容 |
 
-> 如果同时使用 speckit（`.specify/`），speckit 自己的 `spec.md`/`plan.md`/`tasks.md` 与本工作流的 `phaseN.md` 共存于同一 `specs/<编号>-<需求简述>/` 目录：speckit 描述实现计划，`phaseN.md` 记录每阶段验收与产出。
+> 如果同时使用 speckit（`.specify/`），speckit 自己的 `spec.md`/`plan.md`/`tasks.md` 与本工作流的 `phaseN.md` 共存于同一 `specs/<编号>-<需求简述>/` 目录：speckit 描述实现计划，`phaseN.md` 记录每阶段产出。
 
 ## story.md 的 Overview Design 部分
 
@@ -77,7 +73,7 @@ Phase 0 全部确认后、进入 Phase 1 之前，在 `story.md` 中补充 `## O
 1. **创建 spec 目录**: 用户首次描述需求时，在项目根目录创建 `specs/<编号>-<需求简述>/`，将用户原始需求写入 `story.md`；phase 文件在对应阶段开始时创建，不预建无意义的空文件
 2. **Phase 0**: 按 Step 0-1 ~ 0-8 完成预检。新项目确认关键决策；现有项目先从代码和配置提取结论。Step 0-7 的 DB/迁移策略必须明确。完成后写入 `phase0.md` 并补充 Overview Design
 3. **创建项目结构**: 目录 + pyproject.toml（依赖 `nexusx>=6,<7`；启用 MCP/CLI 时使用 `nexusx[fastmcp,cli]>=6,<7`）。nexusx 默认不包含 ASGI server 和 DB driver，需额外添加 `uvicorn` 与对应 async driver。持久化场景还需加 `alembic>=1.13`
-4. **Phase 1~4**: 依次读取对应 phase 文件，按 V 型模型执行。新项目在关键阶段等待确认；用户要求端到端执行或增量迭代时可连续完成并集中汇报
+4. **Phase 1~4**: 依次读取对应 phase 文件执行。新项目在关键阶段等待确认；用户要求端到端执行或增量迭代时可连续完成并集中汇报
 
 ## 迭代功能的处理
 
