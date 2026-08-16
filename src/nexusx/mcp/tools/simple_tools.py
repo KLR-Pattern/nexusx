@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nexusx.er_diagram import ErDiagram
 from nexusx.mcp.types.errors import (
     MCPErrors,
     create_error_response,
@@ -46,9 +47,9 @@ def register_simple_tools(
         - All entity types and their fields
         - All input types for mutations
 
-        This is your starting point to understand the API structure.
-        Use this schema to discover available queries and mutations,
-        then use graphql_query or graphql_mutation to execute them.
+        Call get_er_diagram first for the entity map, then this tool for the
+        operations each entity supports, then graphql_query /
+        graphql_mutation to execute them.
 
         Returns:
             Dictionary containing:
@@ -70,6 +71,53 @@ def register_simple_tools(
             return create_error_response(str(e), MCPErrors.INTERNAL_ERROR)
 
     @mcp.tool()
+    def get_er_diagram() -> dict[str, Any]:
+        """Get the entity-relationship (ER) diagram as Mermaid text.
+
+        Shows every entity with its fields and every relationship between
+        entities (one-to-many, many-to-one, many-to-many). The diagram is
+        built from the same SQLModel metadata that drives the GraphQL
+        schema, so it is the map of the data this server can query.
+
+        Recommended discovery order for agents:
+        1. get_er_diagram — learn which entities exist and how they connect
+        2. get_schema — learn the available operations per entity
+        3. graphql_query — execute queries
+
+        Inside graphql_query, every call is processed as:
+        - The query is validated against the generated GraphQL schema.
+        - Root fields resolve to entity queries (e.g. by_filter) with the
+          given arguments.
+        - Relationship fields are batch-loaded per nesting level via
+          DataLoaders — one query per relationship level, not per row.
+        - Only selected fields are returned.
+
+        Returns:
+            Dictionary containing:
+            - success: True
+            - data: {"format": "mermaid", "mermaid": "erDiagram\\n    Team { ... }"}
+
+        Example response:
+            {
+                "success": true,
+                "data": {
+                    "format": "mermaid",
+                    "mermaid": "erDiagram\\n    Team {\\n id\\n name\\n }\\n..."
+                }
+            }
+        """
+        try:
+            diagram = ErDiagram.from_sqlmodel(manager.handler.entities)
+            return create_success_response(
+                {
+                    "format": "mermaid",
+                    "mermaid": diagram.to_mermaid(),
+                }
+            )
+        except Exception as e:
+            return create_error_response(str(e), MCPErrors.INTERNAL_ERROR)
+
+    @mcp.tool()
     async def graphql_query(query: str) -> dict[str, Any]:
         """Execute a GraphQL query.
 
@@ -86,21 +134,16 @@ def register_simple_tools(
             - error: Error message (if failed)
             - error_type: Type of error (if failed)
 
-        Examples:
-            # Simple query
-            { users(limit: 10) { id name email } }
+        Examples (queries are entity-rooted — the entity name comes first,
+        then its operations):
+            # List entities: entity -> by_filter / by_id
+            { Team { by_filter(limit: 10) { id name } } }
 
-            # Query with relationships
-            { user(id: 1) { name posts { title } } }
+            # Traverse a relationship
+            { Hero { by_id(id: 1) { name team { name } } } }
 
-            # Query with nested relationships
-            {
-                posts(limit: 5) {
-                    title
-                    author { name }
-                    comments { content }
-                }
-            }
+            # Custom @query methods appear under their entity
+            { User { get_users(limit: 5) { id name } } }
         """
         if not query or not query.strip():
             return create_error_response(

@@ -169,11 +169,12 @@ def create_single_app_mcp_server(
 ) -> FastMCP:
     """Create a simplified MCP server for single-app scenarios.
 
-    This function creates a FastMCP server with only 2-3 tools, eliminating
+    This function creates a FastMCP server with only 3-4 tools, eliminating
     the complexity of multi-app management and progressive disclosure.
     Perfect for simple GraphQL APIs with a single database.
 
     **Tools provided (when allow_mutation=False, default):**
+    - get_er_diagram: Get the entity-relationship diagram as Mermaid text
     - get_schema: Get the complete GraphQL schema in SDL format
     - graphql_query: Execute GraphQL queries
 
@@ -198,7 +199,7 @@ def create_single_app_mcp_server(
             by_id/by_filter queries. Default None.
 
     Returns:
-        A configured FastMCP server instance with 2-3 simplified tools.
+        A configured FastMCP server instance with 3-4 simplified tools.
 
     Raises:
         ValueError: If the schema has no operations (no @query/@mutation
@@ -240,6 +241,7 @@ def create_single_app_mcp_server(
         instead, which provides app discovery and routing capabilities.
 
     Tools provided (when allow_mutation=False, default):
+        - get_er_diagram(): Get the entity-relationship diagram (Mermaid)
         - get_schema(): Get the complete GraphQL schema
         - graphql_query(query): Execute a GraphQL query
 

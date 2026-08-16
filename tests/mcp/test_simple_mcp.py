@@ -10,6 +10,7 @@ from sqlmodel import Field, SQLModel
 from nexusx import mutation, query
 from nexusx.mcp import create_single_app_mcp_server
 from nexusx.mcp.managers.single_app_manager import SingleAppManager
+from tests.mcp.er_entities import SimpleMCPErBaseEntity
 
 
 def _get_tools_dict(mcp):
@@ -137,6 +138,35 @@ class TestGetSchema:
         assert result["success"] is True
         assert "type Query" in result["data"]["sdl"]
         assert "type Mutation" not in result["data"]["sdl"]
+
+
+class TestGetErDiagram:
+    """Test cases for get_er_diagram tool."""
+
+    def test_get_er_diagram_returns_mermaid(self) -> None:
+        """Test get_er_diagram returns Mermaid with entities and relationships."""
+        mcp = create_single_app_mcp_server(base=SimpleMCPErBaseEntity)
+        tools = _get_tools_dict(mcp)
+        get_er_diagram_tool = tools.get("get_er_diagram")
+
+        result = get_er_diagram_tool.fn()
+
+        assert result["success"] is True
+        assert result["data"]["format"] == "mermaid"
+        mermaid = result["data"]["mermaid"]
+        assert mermaid.startswith("erDiagram")
+        # Entity blocks for both entities
+        assert "SimpleMCPErTeam {" in mermaid
+        assert "SimpleMCPErHero {" in mermaid
+        # One-to-many relationship line: Team ||--o{ Hero
+        assert "SimpleMCPErTeam ||--o{ SimpleMCPErHero : heroes" in mermaid
+
+    def test_get_er_diagram_registered_by_default(self) -> None:
+        """Test get_er_diagram is registered without any opt-in flag."""
+        mcp = create_single_app_mcp_server(base=SimpleMCPMockBaseEntity)
+        tools = _get_tools_dict(mcp)
+
+        assert "get_er_diagram" in tools
 
 
 class TestGraphQLQuery:
@@ -293,12 +323,13 @@ class TestConfigSimpleMCPServer:
         assert mcp.name == "nexusx API"
 
     def test_config_simple_mcp_server_tools_registered(self) -> None:
-        """Test that only 2 tools are registered by default (allow_mutation=False)."""
+        """Test that only 3 tools are registered by default (allow_mutation=False)."""
         mcp = create_single_app_mcp_server(base=SimpleMCPMockBaseEntity)
         tools = _get_tools_dict(mcp)
 
-        # Should only have 2 tools by default
-        assert len(tools) == 2
+        # Should only have 3 tools by default
+        assert len(tools) == 3
+        assert "get_er_diagram" in tools
         assert "get_schema" in tools
         assert "graphql_query" in tools
 
@@ -313,12 +344,13 @@ class TestConfigSimpleMCPServer:
         assert "get_mutation_schema" not in tools
 
     def test_config_simple_mcp_server_tools_with_mutation(self) -> None:
-        """Test that 3 tools are registered when allow_mutation=True."""
+        """Test that 4 tools are registered when allow_mutation=True."""
         mcp = create_single_app_mcp_server(base=SimpleMCPMockBaseEntity, allow_mutation=True)
         tools = _get_tools_dict(mcp)
 
-        # Should have 3 tools
-        assert len(tools) == 3
+        # Should have 4 tools
+        assert len(tools) == 4
+        assert "get_er_diagram" in tools
         assert "get_schema" in tools
         assert "graphql_query" in tools
         assert "graphql_mutation" in tools

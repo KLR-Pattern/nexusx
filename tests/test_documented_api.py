@@ -116,8 +116,13 @@ def test_simple_mcp_is_read_only_by_default() -> None:
         allow_mutation=True,
     )
 
-    assert _tool_names(read_only) == {"get_schema", "graphql_query"}
+    assert _tool_names(read_only) == {
+        "get_er_diagram",
+        "get_schema",
+        "graphql_query",
+    }
     assert _tool_names(writable) == {
+        "get_er_diagram",
         "get_schema",
         "graphql_query",
         "graphql_mutation",

@@ -1,7 +1,7 @@
 """Simple MCP server demo using create_single_app_mcp_server.
 
 This demo shows how to create a simplified MCP server for single-app scenarios
-with only 3 tools: get_schema, graphql_query, graphql_mutation.
+with only 4 tools: get_er_diagram, get_schema, graphql_query, graphql_mutation.
 """
 
 import asyncio
@@ -92,15 +92,19 @@ mcp = create_single_app_mcp_server(
 
 # Tool usage examples (for documentation purposes):
 """
-# 1. Get Schema
+# 1. Get ER Diagram — the data map (entities, fields, relationship edges)
+result = get_er_diagram()
+# Returns: {"success": true, "data": {"format": "mermaid", "mermaid": "erDiagram ..."}}
+
+# 2. Get Schema — the operations
 result = get_schema()
 # Returns: {"success": true, "data": {"sdl": "type Query { ... }"}}
 
-# 2. Execute Query
+# 3. Execute Query
 result = graphql_query(query="{ users(limit: 5) { id name email } }")
 # Returns: {"success": true, "data": {"users": [...]}}
 
-# 3. Execute Mutation
+# 4. Execute Mutation
 result = graphql_mutation(
     mutation='mutation { createUser(name: "Dave", email: "dave@example.com") { id name } }'
 )

@@ -36,6 +36,7 @@ mcp = create_single_app_mcp_server(
 
 | 工具 | 说明 |
 |------|------|
+| `get_er_diagram()` | 获取实体关系图（Mermaid 文本） |
 | `get_schema()` | 获取 GraphQL schema |
 | `graphql_query(query)` | 执行 GraphQL 查询 |
 

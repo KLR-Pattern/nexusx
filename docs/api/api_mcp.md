@@ -36,6 +36,7 @@ mcp = create_single_app_mcp_server(
 
 | Tool | Description |
 |------|-------------|
+| `get_er_diagram()` | Get the entity-relationship diagram as Mermaid text |
 | `get_schema()` | Get GraphQL schema |
 | `graphql_query(query)` | Execute GraphQL query |
 
