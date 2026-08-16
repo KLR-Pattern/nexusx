@@ -307,6 +307,11 @@ def _create_by_keys_in_query(
             return list(result.all())
 
     func = by_field_in.__func__ if hasattr(by_field_in, "__func__") else by_field_in
+    # Machine-facing root: selections arrive from mounters' remote loaders and
+    # may include DTO-side computed fields the entity never serves (dropped by
+    # design, recomputed mounter-side). The executor exempts these roots from
+    # strict selection validation — see QueryExecutor._execute_entity_group.
+    func._nexusx_federation_batch_root = True  # type: ignore[attr-defined]
     func.__annotations__[arg_name] = list[field_type]
     by_field_in.__annotations__["return"] = list[entity]
     func.__signature__ = inspect.Signature(
