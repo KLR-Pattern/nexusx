@@ -36,8 +36,7 @@ mcp = create_single_app_mcp_server(
 
 | 工具 | 说明 |
 |------|------|
-| `get_er_diagram()` | 获取实体关系图（Mermaid 文本） |
-| `get_schema()` | 获取 GraphQL schema |
+| `get_schema()` | 获取完整 GraphQL schema（SDL）——唯一发现入口：实体类型、关系字段、`Result { items, pagination }` 包装、全部操作 |
 | `graphql_query(query)` | 执行 GraphQL 查询 |
 
 传入 `allow_mutation=True` 后，才会额外注册

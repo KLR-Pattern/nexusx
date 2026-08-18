@@ -174,25 +174,26 @@ if __name__ == "__main__":
     mcp.run()  # stdio transport, ready for any MCP client
 ```
 
-The server exposes three tools, and an agent walks them in order:
+The server exposes two tools, and an agent walks them in order:
 
 ```text
-get_er_diagram   the data map — a Mermaid ER diagram of entities,
-      ↓          fields, and relationship edges
-get_schema       the operations — GraphQL SDL (by_id, by_filter, ...)
-      ↓
+get_schema       the map and the operations in one read — GraphQL SDL:
+      ↓          entity types, relationship fields (with their exact
+                 wrapping, e.g. Result { items, pagination }), by_id,
+                 by_filter, and every custom method
 graphql_query    execution — send a query, get JSON
 ```
 
-The ER diagram is generated from the same SQLModel metadata that drives the
-GraphQL schema, so the agent's map of the data always matches what can
-actually be queried. Inside `graphql_query`, relationship fields are
+The SDL is generated from the same SQLModel metadata that drives the
+queries, so the agent's map of the data always matches what can actually
+be queried — down to the wrapping of each relationship field. Inside
+`graphql_query`, relationship fields are
 batch-loaded per nesting level — one SQL query per relationship level, not
 per row.
 
 The runnable source is at
 [`examples/quickstart_mcp.py`](examples/quickstart_mcp.py) — run it with
-`--check` to watch the three-tool walkthrough execute against a seeded
+`--check` to watch the two-tool walkthrough execute against a seeded
 database.
 
 ## Why nexusx

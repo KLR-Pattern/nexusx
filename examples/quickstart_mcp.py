@@ -64,7 +64,7 @@ session_factory = async_sessionmaker(
 )
 
 # One call replaces the Quick start's FastAPI wiring. The server exposes
-# three tools (see the walkthrough below) instead of a /graphql endpoint.
+# two tools (see the walkthrough below) instead of a /graphql endpoint.
 mcp = create_single_app_mcp_server(
     base=BaseEntity,
     session_factory=session_factory,
@@ -76,21 +76,21 @@ mcp = create_single_app_mcp_server(
 # ─────────────────────────────────────────────────────────────────────────────
 # How an AI agent uses this server
 # ─────────────────────────────────────────────────────────────────────────────
-# The agent sees three tools and walks them in order:
+# The agent sees two tools and walks them in order:
 #
-#   1. get_er_diagram()      → the data map: a Mermaid ER diagram showing
-#                              Team/Hero, their fields, and the relationship
-#                              edge between them. No operations yet — just
-#                              "what exists and how it connects".
+#   1. get_schema()          → the map and the operations in one read:
+#                              GraphQL SDL listing every entity type with
+#                              its fields and relationships in their exact
+#                              query shape (a plain `[Hero!]!` list vs a
+#                              wrapped `Result { items, pagination }`),
+#                              plus what can be queried. AutoQueryConfig()
+#                              gave every entity `by_id` and `by_filter`
+#                              roots.
 #
-#   2. get_schema()          → the operations: GraphQL SDL listing what can
-#                              be queried. AutoQueryConfig() gave every
-#                              entity `by_id` and `by_filter` roots.
+#   2. graphql_query(query)  → execution: send a GraphQL query, get JSON.
 #
-#   3. graphql_query(query)  → execution: send a GraphQL query, get JSON.
-#
-# This keeps the agent's context small: it learns the entity map first,
-# pulls the SDL once, and then only pays tokens for data.
+# The SDL is the single source of truth for writing queries — the agent
+# pulls it once and then only pays tokens for data.
 #
 # What happens inside graphql_query("{ Team { by_filter { name heroes { name } } } }"):
 #
@@ -124,16 +124,12 @@ async def check() -> None:
     from fastmcp import Client
 
     async with Client(mcp) as client:
-        print("── tool 1: get_er_diagram ──────────────────────────────")
-        er = await client.call_tool("get_er_diagram", {})
-        print(er.data["data"]["mermaid"])
-
-        print("── tool 2: get_schema (SDL excerpt) ────────────────────")
+        print("── tool 1: get_schema (SDL excerpt) ────────────────────")
         schema = await client.call_tool("get_schema", {})
         sdl: str = schema.data["data"]["sdl"]
         print("\n".join(sdl.splitlines()[:8]) + "\n...")
 
-        print("── tool 3: graphql_query ───────────────────────────────")
+        print("── tool 2: graphql_query ───────────────────────────────")
         query = "{ Team { by_filter { name heroes { name } } } }"
         result = await client.call_tool("graphql_query", {"query": query})
         print(f"query: {query}")

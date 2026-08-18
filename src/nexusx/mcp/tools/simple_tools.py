@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nexusx.er_diagram import ErDiagram
 from nexusx.mcp.types.errors import (
     MCPErrors,
     create_error_response,
@@ -41,15 +40,25 @@ def register_simple_tools(
     def get_schema() -> dict[str, Any]:
         """Get the complete GraphQL schema in SDL format.
 
-        Returns the full GraphQL Schema Definition Language (SDL) including:
-        - All Query operations with descriptions
-        - All Mutation operations with descriptions
-        - All entity types and their fields
-        - All input types for mutations
+        Single discovery entry point. Returns the full SDL: entity types
+        with their fields and relationships, Result wrapper types, and
+        every Query/Mutation operation. Read this before writing any
+        query — the field signatures here are authoritative.
 
-        Call get_er_diagram first for the entity map, then this tool for the
-        operations each entity supports, then graphql_query /
-        graphql_mutation to execute them.
+        List relationship fields come in two shapes:
+        - ``field: [Entity!]!`` — plain list, select fields directly
+        - ``field(...): EntityResult!`` — wrapped, select
+          ``field { items { ... } pagination { has_more total_count } }``
+
+        Example: ``{ User { posts(limit: 10) { items { id } } } }``
+
+        Inside graphql_query, every call is processed as:
+        - The query is validated against this schema.
+        - Root fields resolve to entity queries (e.g. by_filter) with the
+          given arguments.
+        - Relationship fields are batch-loaded per nesting level via
+          DataLoaders — one query per relationship level, not per row.
+        - Only selected fields are returned.
 
         Returns:
             Dictionary containing:
@@ -67,53 +76,6 @@ def register_simple_tools(
         try:
             sdl = manager.handler.get_sdl(include_mutations=allow_mutation)
             return create_success_response({"sdl": sdl})
-        except Exception as e:
-            return create_error_response(str(e), MCPErrors.INTERNAL_ERROR)
-
-    @mcp.tool()
-    def get_er_diagram() -> dict[str, Any]:
-        """Get the entity-relationship (ER) diagram as Mermaid text.
-
-        Shows every entity with its fields and every relationship between
-        entities (one-to-many, many-to-one, many-to-many). The diagram is
-        built from the same SQLModel metadata that drives the GraphQL
-        schema, so it is the map of the data this server can query.
-
-        Recommended discovery order for agents:
-        1. get_er_diagram — learn which entities exist and how they connect
-        2. get_schema — learn the available operations per entity
-        3. graphql_query — execute queries
-
-        Inside graphql_query, every call is processed as:
-        - The query is validated against the generated GraphQL schema.
-        - Root fields resolve to entity queries (e.g. by_filter) with the
-          given arguments.
-        - Relationship fields are batch-loaded per nesting level via
-          DataLoaders — one query per relationship level, not per row.
-        - Only selected fields are returned.
-
-        Returns:
-            Dictionary containing:
-            - success: True
-            - data: {"format": "mermaid", "mermaid": "erDiagram\\n    Team { ... }"}
-
-        Example response:
-            {
-                "success": true,
-                "data": {
-                    "format": "mermaid",
-                    "mermaid": "erDiagram\\n    Team {\\n id\\n name\\n }\\n..."
-                }
-            }
-        """
-        try:
-            diagram = ErDiagram.from_sqlmodel(manager.handler.entities)
-            return create_success_response(
-                {
-                    "format": "mermaid",
-                    "mermaid": diagram.to_mermaid(),
-                }
-            )
         except Exception as e:
             return create_error_response(str(e), MCPErrors.INTERNAL_ERROR)
 
