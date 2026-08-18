@@ -19,7 +19,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Field, Relationship, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from nexusx import AutoQueryConfig, GraphQLHandler
+from nexusx import AutoQueryConfig, BatchPageConfig, GraphQLHandler, OrderTerm, PageOrder
 
 
 class SelectionValBase(SQLModel):
@@ -35,8 +35,13 @@ class SelectionValTeam(SelectionValBase, table=True):
     name: str
 
     # Expose a federation batch root (by_id_in) to guard its validation
-    # exemption.
+    # exemption, plus a pagination root (page_by_id_in) to guard package
+    # validation: {id, items, pagination} on SelectionValTeamIdPagePackage.
     __federation_keys__ = ("id",)
+    __pagination_orders__ = BatchPageConfig(
+        default_order="PRIMARY",
+        orders={"PRIMARY": PageOrder([OrderTerm("id")])},
+    )
 
     heroes: list["SelectionValHero"] = Relationship(back_populates="team")
 
@@ -176,3 +181,31 @@ async def test_federation_batch_root_is_exempt():
     )
 
     assert not result.get("errors"), result
+
+
+@pytest.mark.asyncio
+async def test_pagination_root_package_selection_is_valid():
+    """The full three-key package {fk, items, pagination} validates and runs."""
+    result = await handler.execute(
+        "{ SelectionValTeam { page_by_id_in(id_list: [1], order: PRIMARY) { "
+        "id items { name } pagination { has_more } } } }"
+    )
+
+    assert not result.get("errors"), result
+    packages = result["data"]["SelectionValTeam"]["page_by_id_in"]
+    assert packages[0]["items"][0]["name"] == "Avengers"
+
+
+@pytest.mark.asyncio
+async def test_pagination_root_unknown_key_names_package_type():
+    """An unknown key on a pagination root errors naming the PagePackage
+    wrapper type — not the entity type (which would point the agent at the
+    wrong place)."""
+    result = await handler.execute(
+        "{ SelectionValTeam { page_by_id_in(id_list: [1]) { itemz { id } } } }"
+    )
+
+    assert (
+        "Cannot query field 'itemz' on type 'SelectionValTeamIdPagePackage'"
+        in _messages(result)
+    )

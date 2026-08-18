@@ -210,7 +210,8 @@ class QueryExecutor:
                 )
 
                 func = method.__func__ if hasattr(method, "__func__") else method
-                is_pagination_root = bool(getattr(func, "_pagination_root", None))
+                pag_root = getattr(func, "_pagination_root", None)
+                is_pagination_root = pag_root is not None
                 # ``by_<key>_in`` batch roots are federation machine-facing:
                 # mounters' remote loaders select DTO-side computed fields the
                 # member never serves (dropped by design, recomputed
@@ -226,7 +227,7 @@ class QueryExecutor:
                     entity,
                     field_sel,
                     [entity_name, method_name],
-                    is_pagination_root=is_pagination_root,
+                    pag_root=pag_root,
                     errors=errors,
                 ):
                     continue
@@ -328,7 +329,7 @@ class QueryExecutor:
         field_sel: FieldSelection | None,
         path: list[str],
         *,
-        is_pagination_root: bool,
+        pag_root: Any | None,
         errors: list[dict[str, Any]],
     ) -> bool:
         """Validate a method's field selection against its entity.
@@ -337,40 +338,71 @@ class QueryExecutor:
         one error per unknown field and returns False (the caller skips
         executing the method, mirroring the unknown-method handling).
 
-        Pagination roots (``page_by_*``) are excluded from entity-level
-        validation: their selection is a package
-        ``{ items {...} pagination {...} }`` whose ``items`` subtree holds
-        the entity fields.
+        Pagination roots (``page_by_*``) validate as a package selection
+        (``_validate_paginated_package``): only ``fk``, ``items`` and
+        ``pagination`` are legal keys; the ``items`` subtree holds the
+        entity fields.
         """
         if field_sel is None or not field_sel.sub_fields:
             return True
 
-        if not is_pagination_root:
+        if pag_root is None:
             return self._validate_entity_fields(entity, field_sel, path, errors)
 
+        return self._validate_paginated_package(
+            entity,
+            field_sel,
+            path,
+            errors,
+            type_label=pag_root.package_name,
+            extra_keys=frozenset({pag_root.fk_field}),
+        )
+
+    def _validate_paginated_package(
+        self,
+        entity: type,
+        sel: FieldSelection,
+        path: list[str],
+        errors: list[dict[str, Any]],
+        *,
+        type_label: str,
+        extra_keys: frozenset[str] = frozenset(),
+    ) -> bool:
+        """Validate a paginated package selection at one level.
+
+        Shared by both paginated shapes, which differ only in wrapper name
+        and key set: relationship fields (``{Target}Result`` — items +
+        pagination) and federation pagination roots
+        (``{Entity}{Field}PagePackage`` — fk + items + pagination, the fk
+        passed via ``extra_keys``). ``pagination`` is a metadata subtree
+        (its keys are filtered per request at serialization, not entity
+        fields); ``items`` recurses into entity fields; any other key is
+        rejected naming the wrapper type.
+        """
         ok = True
-        for fname, sub in field_sel.sub_fields.items():
-            if fname == "pagination":
-                # Metadata subtree — keys are filtered per request at
-                # serialization, not entity fields.
+        for key, child in sel.sub_fields.items():
+            if key == "pagination":
                 continue
-            if fname == "items":
-                ok = (
-                    self._validate_entity_fields(
-                        entity, sub, [*path, "items"], errors
+            if key == "items":
+                if child and child.sub_fields:
+                    ok = (
+                        self._validate_entity_fields(
+                            entity, child, [*path, "items"], errors
+                        )
+                        and ok
                     )
-                    and ok
-                )
                 continue
-            ok = (
-                self._validate_entity_fields(
-                    entity,
-                    FieldSelection(sub_fields={fname: sub}),
-                    path,
-                    errors,
-                )
-                and ok
+            if key in extra_keys:
+                continue
+            errors.append(
+                {
+                    "message": (
+                        f"Cannot query field '{key}' on type '{type_label}'"
+                    ),
+                    "path": [*path, key],
+                }
             )
+            ok = False
         return ok
 
     def _validate_entity_fields(
@@ -421,30 +453,16 @@ class QueryExecutor:
             ):
                 # Paginated relationships render as ``{Target}Result`` — the
                 # selection is a package ``{ items {...} pagination {...} }``.
-                for key, child in sub.sub_fields.items():
-                    if key == "pagination":
-                        # Metadata subtree — keys are filtered per request at
-                        # serialization, not entity fields.
-                        continue
-                    if key == "items":
-                        if child and child.sub_fields:
-                            ok = (
-                                self._validate_entity_fields(
-                                    target, child, [*path, fname, "items"], errors
-                                )
-                                and ok
-                            )
-                        continue
-                    errors.append(
-                        {
-                            "message": (
-                                f"Cannot query field '{key}' on type "
-                                f"'{target.__name__}Result'"
-                            ),
-                            "path": [*path, fname, key],
-                        }
+                ok = (
+                    self._validate_paginated_package(
+                        target,
+                        sub,
+                        [*path, fname],
+                        errors,
+                        type_label=f"{target.__name__}Result",
                     )
-                    ok = False
+                    and ok
+                )
             else:
                 ok = (
                     self._validate_entity_fields(
