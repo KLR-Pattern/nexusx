@@ -166,13 +166,18 @@ class QueryExecutor:
         entity_names: set[str],
         group_suffix: str,
         errors: list[dict[str, Any]],
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """Execute every method field selected inside one entity group.
 
         Methods run sequentially (v1) to preserve the BFS DataLoader's
         store-then-read deduplication invariants across sibling fields.
+
+        Returns ``None`` when any method raises: method return types are
+        non-null, so GraphQL null propagation nulls the group instead of
+        leaving a misleading empty-object ``Entity: {}`` partial result.
         """
         entity_data: dict[str, Any] = {}
+        group_failed = False
         group_sel = parsed_selections.get(entity_name)
 
         for method_node in group_selection.selection_set.selections:
@@ -264,15 +269,25 @@ class QueryExecutor:
             except Exception as e:
                 # Per-field exceptions are common (user input bugs, DB
                 # constraint violations, resolver programming errors); the
-                # response stays GraphQL-spec compliant ({message, path}) but
-                # the server log retains the exception type and stack.
+                # response stays GraphQL-spec compliant ({message, path,
+                # extensions}) while the server log retains the exception
+                # type and stack. The failed method nulls the whole group —
+                # sibling results are discarded, matching non-null GraphQL
+                # propagation at group granularity.
                 logger.exception(
                     "Resolver error in field %s.%s", entity_name, method_name
                 )
                 errors.append(
-                    {"message": str(e), "path": [entity_name, method_name]}
+                    {
+                        "message": str(e),
+                        "path": [entity_name, method_name],
+                        "extensions": {"code": "RESOLVER_ERROR"},
+                    }
                 )
+                group_failed = True
 
+        if group_failed:
+            return None
         return entity_data
 
     @staticmethod
