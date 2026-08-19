@@ -3,14 +3,25 @@
 [![pypi](https://img.shields.io/pypi/v/nexusx.svg)](https://pypi.python.org/pypi/nexusx)
 [![PyPI Downloads](https://static.pepy.tech/badge/nexusx/month)](https://pepy.tech/projects/nexusx)
 
-> **Model your business once — for humans and AI alike.**
+> **Declare your SQLModel entities once — GraphQL, REST, MCP, CLI, and a
+> TypeScript SDK all derive from that single model.**
 
-nexusx is a next-generation business modeling tool with deep AI integration.
-Model your business entities, relationships, and use cases once — GraphQL,
-REST, MCP, CLI, and TS SDK all derive from that single model, sharing one
-DataLoader-backed query graph (N+1-proof) and one set of typed DTOs
-(`DefineSubset`). This is **semantic-level isomorphism** — not
-transport-level wrapping. Data is a graph; tools are just its projections.
+nexusx is a Python library for SQLModel applications. You declare entities +
+relationships, `DefineSubset` DTOs, and use-case methods; nexusx derives every
+delivery protocol from that one model — sharing one DataLoader-backed query
+graph (N+1-proof) and the same typed DTOs everywhere.
+
+What it removes: in a typical FastAPI + SQLModel app you re-declare the same
+data shape for each transport — response models, GraphQL types, MCP tool
+schemas, CLI arguments. nexusx collapses those re-declarations into one.
+
+| You declare | nexusx generates |
+|---|---|
+| SQLModel entity + relationships | GraphQL schema + DataLoader batching (N+1-proof) + ER diagrams |
+| `DefineSubset` DTO | Minimal-column queries + nested relationship loading + computed fields |
+| `UseCaseService` method | REST route + GraphQL field + MCP operation + CLI command |
+| A non-ORM async batch function | A relationship that joins the same loaders, DTOs, and ER diagrams |
+| Entity `__federation_keys__` | Cross-service federation (auto-detected + batch-fetched) |
 
 **For Human** — write SQLModel entities + typed DTOs; get REST routes, GraphQL
 schema, CLI, and TS SDK without boilerplate. Change business logic once → all
@@ -41,9 +52,81 @@ pip install "nexusx[cli]"         # Typer CLI generation
 
 nexusx requires Python 3.10 or newer.
 
+## Why nexusx
+
+A SQLModel application usually grows through the same stages:
+
+1. Define entities and relationships.
+2. Write resolvers or joins to read nested data.
+3. Create response DTOs that do not expose every database column.
+4. Repeat the same business operation for REST, GraphQL, and AI tools.
+5. Rebuild the relationship map again for documentation and service boundaries.
+
+nexusx keeps those stages connected: each artifact you declare feeds the next
+one and every delivery protocol at once, instead of being re-declared per layer.
+The result is less translation code between your database, application layer,
+web API, and AI interface.
+
+```mermaid
+flowchart LR
+    models["SQLModel entities"]
+    data_graph["Data graph<br/>relationships + loaders"]
+    dto["Typed DTOs<br/>DefineSubset + Resolver"]
+    usecase["Business use cases"]
+
+    models --> data_graph --> dto --> usecase
+    data_graph --> data_gql["GraphQL"]
+    data_graph --> data_mcp["MCP"]
+    data_graph --> er["ER / Voyager"]
+    usecase --> rest["REST / OpenAPI"]
+    usecase --> operation_gql["GraphQL"]
+    usecase --> operation_mcp["MCP"]
+    usecase --> cli["CLI"]
+```
+
+The Quick start below works this way: two entity declarations become a GraphQL
+schema, query roots, and a batched relationship loader — without a
+hand-written GraphQL type or resolver. The same pattern extends to every layer,
+from the data graph up to use cases and federation.
+
 ## Quick start
 
-Create `app.py` (with `nexusx[demo]` installed):
+Install `nexusx[demo]` (see [Installation](#installation)) and create `app.py`.
+The model is two entity declarations plus one handler — no GraphQL types, no
+resolvers:
+
+```python
+from sqlmodel import Field, Relationship, SQLModel
+
+from nexusx import AutoQueryConfig, GraphQLHandler
+
+
+class BaseEntity(SQLModel):
+    pass
+
+
+class Team(BaseEntity, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    heroes: list["Hero"] = Relationship(back_populates="team")
+
+
+class Hero(BaseEntity, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    team_id: int | None = Field(default=None, foreign_key="team.id")
+    team: Team | None = Relationship(back_populates="heroes")
+
+
+handler = GraphQLHandler(
+    base=BaseEntity,
+    session_factory=session_factory,  # async SQLAlchemy sessions — full file below
+    auto_query_config=AutoQueryConfig(),
+)
+```
+
+<details>
+<summary>Complete <code>app.py</code> — SQLite engine, FastAPI wiring, seed data</summary>
 
 ```python
 from contextlib import asynccontextmanager
@@ -128,6 +211,8 @@ async def graphql(request: GraphQLRequest):
     return await handler.execute(request.query)
 ```
 
+</details>
+
 Run it:
 
 ```bash
@@ -195,50 +280,6 @@ The runnable source is at
 [`examples/quickstart_mcp.py`](examples/quickstart_mcp.py) — run it with
 `--check` to watch the two-tool walkthrough execute against a seeded
 database.
-
-## Why nexusx
-
-A SQLModel application usually grows through the same stages:
-
-1. Define entities and relationships.
-2. Write resolvers or joins to read nested data.
-3. Create response DTOs that do not expose every database column.
-4. Repeat the same business operation for REST, GraphQL, and AI tools.
-5. Rebuild the relationship map again for documentation and service boundaries.
-
-nexusx keeps those stages connected: each artifact you declare feeds the next
-one and every delivery protocol at once, instead of being re-declared per layer.
-The result is less translation code between your database, application layer,
-web API, and AI interface.
-
-```mermaid
-flowchart LR
-    models["SQLModel entities"]
-    data_graph["Data graph<br/>relationships + loaders"]
-    dto["Typed DTOs<br/>DefineSubset + Resolver"]
-    usecase["Business use cases"]
-
-    models --> data_graph --> dto --> usecase
-    data_graph --> data_gql["GraphQL"]
-    data_graph --> data_mcp["MCP"]
-    data_graph --> er["ER / Voyager"]
-    usecase --> rest["REST / OpenAPI"]
-    usecase --> operation_gql["GraphQL"]
-    usecase --> operation_mcp["MCP"]
-    usecase --> cli["CLI"]
-```
-
-The Quick start already worked this way: two entity declarations became a
-GraphQL schema, query roots, and a batched relationship loader without a
-hand-written GraphQL type or resolver. The same pattern extends to every layer:
-
-| You declare | nexusx generates |
-|---|---|
-| SQLModel entity + relationships | GraphQL schema + DataLoader batching (N+1-proof) + ER diagrams |
-| `DefineSubset` DTO | Minimal-column queries + nested relationship loading + computed fields |
-| `UseCaseService` method | REST route + GraphQL field + MCP operation + CLI command |
-| A non-ORM async batch function | A relationship that joins the same loaders, DTOs, and ER diagrams |
-| Entity `__federation_keys__` | Cross-service federation (auto-detected + batch-fetched) |
 
 ## Explore the data graph
 
@@ -520,6 +561,11 @@ the operation graph when the caller should invoke a stable business capability.
 Applications can use either one or both.
 
 ## Three ideas behind nexusx
+
+Model your business once — for humans and AI alike. Data is a graph; delivery
+protocols are just its projections. The deliverables above are therefore not
+wrappers around each other — this is **semantic-level isomorphism**, not
+transport-level wrapping. Three design decisions follow from that:
 
 ### Selection is a first-class concept
 
