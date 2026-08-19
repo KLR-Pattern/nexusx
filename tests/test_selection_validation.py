@@ -197,6 +197,25 @@ async def test_pagination_root_package_selection_is_valid():
 
 
 @pytest.mark.asyncio
+async def test_pagination_root_omitted_order_uses_default():
+    """Omitting ``order`` — legal per the SDL, which shows it without ``!`` —
+    falls back to the member's default_order instead of raising KeyError.
+
+    This is the SDL-direct caller path (e.g. an MCP agent writing queries
+    from get_schema output): every federation e2e test goes through the
+    mounter, which always sends ``order`` explicitly and masked this gap.
+    """
+    result = await handler.execute(
+        "{ SelectionValTeam { page_by_id_in(id_list: [1]) { "
+        "id items { name } pagination { has_more } } } }"
+    )
+
+    assert not result.get("errors"), result
+    packages = result["data"]["SelectionValTeam"]["page_by_id_in"]
+    assert packages[0]["items"][0]["name"] == "Avengers"
+
+
+@pytest.mark.asyncio
 async def test_pagination_root_unknown_key_names_package_type():
     """An unknown key on a pagination root errors naming the PagePackage
     wrapper type — not the entity type (which would point the agent at the

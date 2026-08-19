@@ -380,7 +380,13 @@ def _create_page_by_keys_in_query(
             limit=kwargs.get("limit"),
             offset=kwargs.get("offset", 0),
         )
-        raw_order = kwargs["order"]
+        # ``order`` is optional per the SDL (default_order lives in the
+        # capability); SDL-direct callers (e.g. MCP agents) may omit it, and
+        # GraphQL ``null`` lands here as None too. Guard on ``is None`` —
+        # not truthiness — so invalid strings still reach the profile check.
+        raw_order = kwargs.get("order")
+        if raw_order is None:
+            raw_order = page_config.default_order
         order_name = raw_order.value if isinstance(raw_order, Enum) else raw_order
         if order_name not in resolved_orders:
             msg = (
@@ -509,7 +515,7 @@ def _create_page_by_keys_in_query(
             ),
             inspect.Parameter(
                 "order", inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                annotation=order_enum,
+                default=page_config.default_order, annotation=order_enum,
             ),
             inspect.Parameter(
                 "direction", inspect.Parameter.POSITIONAL_OR_KEYWORD,
