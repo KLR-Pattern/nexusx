@@ -121,7 +121,34 @@
   ```
 
 **实现：**
-编写 `dtos.py` → `service.py` → `main.py` 挂载
+
+**Step 1: DTO 返回结构确认（写代码前，必须完成）**
+
+编写 `dtos.py` 之前，按 Phase 0 确认过的用例方法（Step 0-4b），用 ASCII tree 逐个展示 method 的返回结构，与用户确认后再编码。**树根就是该 method 的返回类型注解**——确认树的同时就锁定了 service.py 的签名（如 `-> list[ConversationSummary]`），避免写完 DTO 才发现返回结构不对。
+
+每个 UseCaseService method 一棵树：
+
+```
+ChatService.list_messages → list[MessageSummary]
+MessageSummary
+├── id, content, created_at         ← entity 标量字段
+├── sender: UserSummary             ← Message.sender 关系（auto-load）
+│   ├── id, nickname
+│   └── display_name                ← post_* 计算字段
+└── reply_count                     ← post_* 聚合
+```
+
+规则：
+
+- **树根 = 返回类型**：`list[X]`（列表）/ `X`（单条）/ `X | None`（可空单条），直接对应 service.py 返回注解
+- **同层标量字段合并一行**（`id, content, created_at`），只有"关联"和"计算字段"展开子树——保持树最小可确认
+- **每行标注来源**：entity 字段 / 关系（auto-load 或 Loader）/ `post_*` 计算 / `Paged(limit=N)` 分页
+- **FK 内部字段不出现**（DefineSubset 会隐藏）——用户看到的树 = API 消费者看到的响应
+- 确认后的树逐行映射为代码：`__subset__` 字段列表、关系 DTO 字段、`post_*` 方法、service.py 返回注解
+
+新项目/新方法必须等用户确认后编码；迭代现有服务时只展示新增或变更的 DTO 子树，沿用的部分标注"沿用"。用户要求端到端连续执行时，树仍不可省略——在交付汇报中集中列出确认。
+
+**Step 2: 编写 `dtos.py` → `service.py` → `main.py` 挂载**
 
 **自检（按启用的接口选择，未启用项跳过）：**
 

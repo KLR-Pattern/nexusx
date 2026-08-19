@@ -7,14 +7,19 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from graphql import DocumentNode, FieldNode, OperationDefinitionNode
-from pydantic import TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 from sqlmodel import SQLModel
 
 from nexusx.execution.argument_builder import ArgumentBuilder
 from nexusx.loader.pagination import KeyedPaginatedPackage, PaginatedPackage
 from nexusx.loader.registry import RelationshipKind
 from nexusx.query_parser import FieldSelection
-from nexusx.response_builder import get_relationship_names, serialize_with_model
+from nexusx.response_builder import (
+    get_relation_entity,
+    get_relationship_names,
+    serialize_with_model,
+)
+from nexusx.utils.pagination_schema import is_active_paginated_relationship
 from nexusx.utils.type_utils import get_fk_fields
 
 if TYPE_CHECKING:
@@ -161,13 +166,18 @@ class QueryExecutor:
         entity_names: set[str],
         group_suffix: str,
         errors: list[dict[str, Any]],
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """Execute every method field selected inside one entity group.
 
         Methods run sequentially (v1) to preserve the BFS DataLoader's
         store-then-read deduplication invariants across sibling fields.
+
+        Returns ``None`` when any method raises: method return types are
+        non-null, so GraphQL null propagation nulls the group instead of
+        leaving a misleading empty-object ``Entity: {}`` partial result.
         """
         entity_data: dict[str, Any] = {}
+        group_failed = False
         group_sel = parsed_selections.get(entity_name)
 
         for method_node in group_selection.selection_set.selections:
@@ -199,12 +209,33 @@ class QueryExecutor:
                     else None
                 )
 
+                func = method.__func__ if hasattr(method, "__func__") else method
+                pag_root = getattr(func, "_pagination_root", None)
+                is_pagination_root = pag_root is not None
+                # ``by_<key>_in`` batch roots are federation machine-facing:
+                # mounters' remote loaders select DTO-side computed fields the
+                # member never serves (dropped by design, recomputed
+                # mounter-side) — exempt them from strict selection validation.
+                is_federation_batch_root = bool(
+                    getattr(func, "_nexusx_federation_batch_root", None)
+                )
+
+                # Validate the selection against the entity BEFORE executing:
+                # an unknown field must surface as a GraphQL-style error here,
+                # not be silently dropped at serialization (empty-object rows).
+                if not is_federation_batch_root and not self._validate_method_selection(
+                    entity,
+                    field_sel,
+                    [entity_name, method_name],
+                    pag_root=pag_root,
+                    errors=errors,
+                ):
+                    continue
+
                 # Build arguments from the METHOD field node (second level).
                 args = self._argument_builder.build_arguments(
                     method_node, variables, method, entity, entity_names
                 )
-                func = method.__func__ if hasattr(method, "__func__") else method
-                is_pagination_root = bool(getattr(func, "_pagination_root", None))
                 if is_pagination_root:
                     pagination_field = (
                         field_sel.sub_fields.get("pagination")
@@ -239,15 +270,25 @@ class QueryExecutor:
             except Exception as e:
                 # Per-field exceptions are common (user input bugs, DB
                 # constraint violations, resolver programming errors); the
-                # response stays GraphQL-spec compliant ({message, path}) but
-                # the server log retains the exception type and stack.
+                # response stays GraphQL-spec compliant ({message, path,
+                # extensions}) while the server log retains the exception
+                # type and stack. The failed method nulls the whole group —
+                # sibling results are discarded, matching non-null GraphQL
+                # propagation at group granularity.
                 logger.exception(
                     "Resolver error in field %s.%s", entity_name, method_name
                 )
                 errors.append(
-                    {"message": str(e), "path": [entity_name, method_name]}
+                    {
+                        "message": str(e),
+                        "path": [entity_name, method_name],
+                        "extensions": {"code": "RESOLVER_ERROR"},
+                    }
                 )
+                group_failed = True
 
+        if group_failed:
+            return None
         return entity_data
 
     @staticmethod
@@ -277,6 +318,191 @@ class QueryExecutor:
                 "available_methods": method_names,
             },
         }
+
+    # ──────────────────────────────────────────────────────────
+    # Selection validation (pre-execution)
+    # ──────────────────────────────────────────────────────────
+
+    def _validate_method_selection(
+        self,
+        entity: type,
+        field_sel: FieldSelection | None,
+        path: list[str],
+        *,
+        pag_root: Any | None,
+        errors: list[dict[str, Any]],
+    ) -> bool:
+        """Validate a method's field selection against its entity.
+
+        Returns True when the whole selection is valid; otherwise appends
+        one error per unknown field and returns False (the caller skips
+        executing the method, mirroring the unknown-method handling).
+
+        Pagination roots (``page_by_*``) validate as a package selection
+        (``_validate_paginated_package``): only ``fk``, ``items`` and
+        ``pagination`` are legal keys; the ``items`` subtree holds the
+        entity fields.
+        """
+        if field_sel is None or not field_sel.sub_fields:
+            return True
+
+        if pag_root is None:
+            return self._validate_entity_fields(entity, field_sel, path, errors)
+
+        return self._validate_paginated_package(
+            entity,
+            field_sel,
+            path,
+            errors,
+            type_label=pag_root.package_name,
+            extra_keys=frozenset({pag_root.fk_field}),
+        )
+
+    def _validate_paginated_package(
+        self,
+        entity: type,
+        sel: FieldSelection,
+        path: list[str],
+        errors: list[dict[str, Any]],
+        *,
+        type_label: str,
+        extra_keys: frozenset[str] = frozenset(),
+    ) -> bool:
+        """Validate a paginated package selection at one level.
+
+        Shared by both paginated shapes, which differ only in wrapper name
+        and key set: relationship fields (``{Target}Result`` — items +
+        pagination) and federation pagination roots
+        (``{Entity}{Field}PagePackage`` — fk + items + pagination, the fk
+        passed via ``extra_keys``). ``pagination`` is a metadata subtree
+        (its keys are filtered per request at serialization, not entity
+        fields); ``items`` recurses into entity fields; any other key is
+        rejected naming the wrapper type.
+        """
+        ok = True
+        for key, child in sel.sub_fields.items():
+            if key == "pagination":
+                continue
+            if key == "items":
+                if child and child.sub_fields:
+                    ok = (
+                        self._validate_entity_fields(
+                            entity, child, [*path, "items"], errors
+                        )
+                        and ok
+                    )
+                continue
+            if key in extra_keys:
+                continue
+            errors.append(
+                {
+                    "message": (
+                        f"Cannot query field '{key}' on type '{type_label}'"
+                    ),
+                    "path": [*path, key],
+                }
+            )
+            ok = False
+        return ok
+
+    def _validate_entity_fields(
+        self,
+        entity: type,
+        sel: FieldSelection,
+        path: list[str],
+        errors: list[dict[str, Any]],
+    ) -> bool:
+        """Validate field names at one entity level; recurse into relationships.
+
+        A field is valid when it is an entity column (``model_fields`` — FK
+        columns are queryable even though the SDL omits them) or a
+        relationship, resolved through the same sources the serializer uses
+        (loader registry first, then SQLAlchemy / SQLModel / annotations via
+        ``get_relation_entity``). Unknown fields append a GraphQL-style
+        validation error instead of being silently dropped later.
+        """
+        model_fields = getattr(entity, "model_fields", None) or {}
+        fed_ns = self._get_federation_namespace()
+        ok = True
+
+        for fname, sub in sel.sub_fields.items():
+            if fname == "__typename":
+                continue
+            if fname in model_fields:
+                continue
+
+            target, rel_info = self._relation_target(entity, fname, fed_ns)
+            if target is None:
+                errors.append(
+                    {
+                        "message": (
+                            f"Cannot query field '{fname}' on type "
+                            f"'{entity.__name__}'"
+                        ),
+                        "path": [*path, fname],
+                    }
+                )
+                ok = False
+                continue
+
+            if sub is None or not sub.sub_fields:
+                continue
+
+            if is_active_paginated_relationship(
+                rel_info, self._enable_pagination
+            ):
+                # Paginated relationships render as ``{Target}Result`` — the
+                # selection is a package ``{ items {...} pagination {...} }``.
+                ok = (
+                    self._validate_paginated_package(
+                        target,
+                        sub,
+                        [*path, fname],
+                        errors,
+                        type_label=f"{target.__name__}Result",
+                    )
+                    and ok
+                )
+            else:
+                ok = (
+                    self._validate_entity_fields(
+                        target, sub, [*path, fname], errors
+                    )
+                    and ok
+                )
+        return ok
+
+    def _relation_target(
+        self,
+        entity: type,
+        fname: str,
+        fed_ns: dict[str, type] | None,
+    ) -> tuple[type | None, Any]:
+        """Target entity class + RelationshipInfo for a relationship field.
+
+        Returns ``(None, None)`` when ``fname`` is not a relationship.
+        Resolution order mirrors serialization: loader registry (custom
+        ``__relationships__`` + federation remotes; may also hold local ORM
+        rels) before ``get_relation_entity`` (SQLAlchemy mapper →
+        SQLModel → annotations). Only BaseModel-ish targets count as
+        relationships — the annotations fallback also returns scalar types.
+        """
+        rel_info = self._registry.get_relationship(entity, fname)
+        if rel_info is not None:
+            target = getattr(rel_info, "target_entity", None)
+            if isinstance(target, type) and hasattr(target, "model_fields"):
+                return target, rel_info
+            return None, None
+
+        rel = get_relation_entity(
+            entity,
+            fname,
+            federation_namespace=fed_ns,
+            relation_entity_resolver=self._registry.get_relationship,
+        )
+        if isinstance(rel, type) and issubclass(rel, BaseModel):
+            return rel, None
+        return None, None
 
     # ──────────────────────────────────────────────────────────
     # Relationship resolution (delegated to Resolver — specs/018 US3)

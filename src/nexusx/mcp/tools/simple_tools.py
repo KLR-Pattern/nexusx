@@ -40,15 +40,25 @@ def register_simple_tools(
     def get_schema() -> dict[str, Any]:
         """Get the complete GraphQL schema in SDL format.
 
-        Returns the full GraphQL Schema Definition Language (SDL) including:
-        - All Query operations with descriptions
-        - All Mutation operations with descriptions
-        - All entity types and their fields
-        - All input types for mutations
+        Single discovery entry point. Returns the full SDL: entity types
+        with their fields and relationships, Result wrapper types, and
+        every Query/Mutation operation. Read this before writing any
+        query — the field signatures here are authoritative.
 
-        This is your starting point to understand the API structure.
-        Use this schema to discover available queries and mutations,
-        then use graphql_query or graphql_mutation to execute them.
+        List relationship fields come in two shapes:
+        - ``field: [Entity!]!`` — plain list, select fields directly
+        - ``field(...): EntityResult!`` — wrapped, select
+          ``field { items { ... } pagination { has_more total_count } }``
+
+        Example: ``{ User { posts(limit: 10) { items { id } } } }``
+
+        Inside graphql_query, every call is processed as:
+        - The query is validated against this schema.
+        - Root fields resolve to entity queries (e.g. by_filter) with the
+          given arguments.
+        - Relationship fields are batch-loaded per nesting level via
+          DataLoaders — one query per relationship level, not per row.
+        - Only selected fields are returned.
 
         Returns:
             Dictionary containing:
@@ -86,21 +96,16 @@ def register_simple_tools(
             - error: Error message (if failed)
             - error_type: Type of error (if failed)
 
-        Examples:
-            # Simple query
-            { users(limit: 10) { id name email } }
+        Examples (queries are entity-rooted — the entity name comes first,
+        then its operations):
+            # List entities: entity -> by_filter / by_id
+            { Team { by_filter(limit: 10) { id name } } }
 
-            # Query with relationships
-            { user(id: 1) { name posts { title } } }
+            # Traverse a relationship
+            { Hero { by_id(id: 1) { name team { name } } } }
 
-            # Query with nested relationships
-            {
-                posts(limit: 5) {
-                    title
-                    author { name }
-                    comments { content }
-                }
-            }
+            # Custom @query methods appear under their entity
+            { User { get_users(limit: 5) { id name } } }
         """
         if not query or not query.strip():
             return create_error_response(

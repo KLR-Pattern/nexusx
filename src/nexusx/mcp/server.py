@@ -174,7 +174,8 @@ def create_single_app_mcp_server(
     Perfect for simple GraphQL APIs with a single database.
 
     **Tools provided (when allow_mutation=False, default):**
-    - get_schema: Get the complete GraphQL schema in SDL format
+    - get_schema: Get the complete GraphQL schema in SDL format (single
+      discovery entry point — entity types, relationships, and operations)
     - graphql_query: Execute GraphQL queries
 
     **Additional tool (when allow_mutation=True):**
@@ -198,7 +199,7 @@ def create_single_app_mcp_server(
             by_id/by_filter queries. Default None.
 
     Returns:
-        A configured FastMCP server instance with 2-3 simplified tools.
+        A configured FastMCP server instance with 3-4 simplified tools.
 
     Raises:
         ValueError: If the schema has no operations (no @query/@mutation
@@ -240,7 +241,8 @@ def create_single_app_mcp_server(
         instead, which provides app discovery and routing capabilities.
 
     Tools provided (when allow_mutation=False, default):
-        - get_schema(): Get the complete GraphQL schema
+        - get_schema(): Get the complete GraphQL schema (SDL) — the single
+          discovery entry point
         - graphql_query(query): Execute a GraphQL query
 
     Additional tool (when allow_mutation=True):

@@ -154,6 +154,48 @@ Open `http://127.0.0.1:8000/graphql` and run:
 The same runnable source is available at
 [`examples/quickstart.py`](examples/quickstart.py).
 
+### For AI agents
+
+The same entities can be served to AI agents over MCP instead of GraphQL
+HTTP (requires `pip install "nexusx[fastmcp]"`):
+
+```python
+from nexusx.mcp import create_single_app_mcp_server
+
+mcp = create_single_app_mcp_server(
+    base=BaseEntity,
+    session_factory=session_factory,
+    auto_query_config=AutoQueryConfig(),
+    name="Quickstart API",
+)
+
+if __name__ == "__main__":
+    # seed the database first — see quickstart_mcp.py for the full version
+    mcp.run()  # stdio transport, ready for any MCP client
+```
+
+The server exposes two tools, and an agent walks them in order:
+
+```text
+get_schema       the map and the operations in one read — GraphQL SDL:
+      ↓          entity types, relationship fields (with their exact
+                 wrapping, e.g. Result { items, pagination }), by_id,
+                 by_filter, and every custom method
+graphql_query    execution — send a query, get JSON
+```
+
+The SDL is generated from the same SQLModel metadata that drives the
+queries, so the agent's map of the data always matches what can actually
+be queried — down to the wrapping of each relationship field. Inside
+`graphql_query`, relationship fields are
+batch-loaded per nesting level — one SQL query per relationship level, not
+per row.
+
+The runnable source is at
+[`examples/quickstart_mcp.py`](examples/quickstart_mcp.py) — run it with
+`--check` to watch the two-tool walkthrough execute against a seeded
+database.
+
 ## Why nexusx
 
 A SQLModel application usually grows through the same stages:

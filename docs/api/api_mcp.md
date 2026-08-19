@@ -36,7 +36,7 @@ mcp = create_single_app_mcp_server(
 
 | Tool | Description |
 |------|-------------|
-| `get_schema()` | Get GraphQL schema |
+| `get_schema()` | Get the complete GraphQL schema (SDL) — the single discovery entry point: entity types, relationship fields, `Result { items, pagination }` wrappers, and all operations |
 | `graphql_query(query)` | Execute GraphQL query |
 
 With `allow_mutation=True`, the server additionally registers

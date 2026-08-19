@@ -237,6 +237,81 @@ class TestQueryExecutorBasic:
         assert "errors" in result
         assert any("kaboom" in e["message"] for e in result["errors"])
 
+    async def test_execute_resolver_error_nulls_group_with_code(self):
+        """Resolver failure nulls the entity group and tags RESOLVER_ERROR.
+
+        Contract: a failed method must not leave a misleading ``Entity: {}``
+        in data (GraphQL null propagation, group granularity), and the error
+        carries ``extensions.code`` for machine-side classification.
+        """
+        executor = _make_executor()
+
+        class FailQuery(SQLModel, table=False):
+            @query
+            async def boom(cls):
+                raise RuntimeError("kaboom")
+
+        method = _get_bound_method(FailQuery, "boom")
+        query_methods = {"FixtureUser": {"boom": (FixtureUser, method)}}
+        document, parsed = _parse("{ FixtureUser { boom { id } } }")
+
+        result = await executor.execute_query(
+            document,
+            None,
+            None,
+            parsed,
+            query_methods,
+            {},
+            [FixtureUser],
+        )
+
+        assert result["data"] == {"FixtureUser": None}
+        err = result["errors"][0]
+        assert err["message"] == "kaboom"
+        assert err["path"] == ["FixtureUser", "boom"]
+        assert err["extensions"] == {"code": "RESOLVER_ERROR"}
+
+    async def test_execute_resolver_error_nulls_group_despite_healthy_sibling(
+        self,
+    ):
+        """A failed method nulls the whole group even when a sibling ran fine.
+
+        Method return types are non-null, so per GraphQL null propagation
+        the error spreads past the group rather than returning partial
+        sibling data.
+        """
+        executor = _make_executor()
+
+        class MixedQuery(SQLModel, table=False):
+            @query
+            async def ok(cls) -> list[FixtureUser]:
+                return []
+
+            @query
+            async def boom(cls):
+                raise RuntimeError("kaboom")
+
+        query_methods = {
+            "FixtureUser": {
+                "ok": (FixtureUser, _get_bound_method(MixedQuery, "ok")),
+                "boom": (FixtureUser, _get_bound_method(MixedQuery, "boom")),
+            }
+        }
+        document, parsed = _parse("{ FixtureUser { boom { id } ok { id } } }")
+
+        result = await executor.execute_query(
+            document,
+            None,
+            None,
+            parsed,
+            query_methods,
+            {},
+            [FixtureUser],
+        )
+
+        assert result["data"] == {"FixtureUser": None}
+        assert result["errors"][0]["extensions"] == {"code": "RESOLVER_ERROR"}
+
     async def test_execute_handles_exception_in_method_logs_traceback(self, caplog):
         """When a resolver raises, the full traceback must reach the logger.
 

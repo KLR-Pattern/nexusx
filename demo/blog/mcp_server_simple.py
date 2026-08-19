@@ -92,7 +92,8 @@ mcp = create_single_app_mcp_server(
 
 # Tool usage examples (for documentation purposes):
 """
-# 1. Get Schema
+# 1. Get Schema — the single discovery entry point (entities, relationships,
+#    Result wrappers, and operations — all in SDL form)
 result = get_schema()
 # Returns: {"success": true, "data": {"sdl": "type Query { ... }"}}
 
