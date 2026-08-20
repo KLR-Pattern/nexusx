@@ -12,6 +12,48 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 
 ## 6.1
 
+### 6.1.2 (2026-8-20)
+
+- fix:
+  - **Unknown selection fields error instead of silently dropping (#138)**:
+    A misspelled field (`{ Team { by_filter { nmae } } }`) passed through
+    unvalidated and was dropped at serialization — `success: true` with
+    empty-object rows, zero signal for an AI agent to self-correct (found
+    by an MCP blind test). Pre-execution selection validation now appends
+    a GraphQL-style error ("Cannot query field 'nmae' on type 'Team'") and
+    skips only the offending method; sibling methods still execute.
+    Paginated packages (`{items, pagination}`) are validated through one
+    shared path, so unknown keys name the actual wrapper type
+    (`{Entity}{Field}PagePackage` / `{Target}Result`) instead of pointing
+    at the entity type.
+
+  - **Resolver errors null the entity group, add RESOLVER_ERROR (#138)**:
+    A failed method used to leave an empty-object `Entity: {}` in `data` —
+    a misleading "empty success" for clients that read `data` and ignore
+    `errors`. Method return types are non-null, so the failure now nulls
+    the whole group (GraphQL null propagation at group granularity) and
+    the error entry carries `extensions.code = RESOLVER_ERROR` for
+    machine-side classification.
+
+  - **`page_by_*_in` order falls back to default_order (#139)**: The
+    synthesized federation batch root rendered `order` as optional in SDL,
+    but the function body hard-read `kwargs["order"]` — `KeyError` for any
+    SDL-direct caller (e.g. an MCP agent) that omitted it. The mounter
+    always sent `order` explicitly, so federation e2e tests never exercised
+    the omission path. The body now falls back to `page_config.default_order`
+    on `None` (invalid strings still fail with Unknown-order-profile), and
+    the `__signature__` Parameter carries `default=` so introspection sees
+    the real contract.
+
+- breaking change:
+  - **Removed superseded per-operation MCP tool modules (#138)**:
+    `nexusx.mcp.tools.register_get_operation_schema_tools` /
+    `register_list_operations_tools` / `register_graphql_query_tool` /
+    `register_graphql_mutation_tool` are removed. These were internal
+    wiring helpers with no documented usage; the FastMCP servers themselves
+    are unaffected. Use `create_single_app_mcp_server` or the multi-app
+    builders instead.
+
 ### 6.1.1 (2026-8-14)
 
 - feat:
