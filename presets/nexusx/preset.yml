@@ -1,0 +1,54 @@
+schema_version: "1.0"
+
+preset:
+  id: "nexusx"
+  name: "nexusx 4-Phase Workflow"
+  version: "0.2.0"
+  description: "nexusx 4-phase methodology (Schema → Methods → Service → optional SDK) layered on spec-kit SDD via prepend hooks (插拔不影响主流程)"
+  author: "tangkikodo"
+  repository: "https://github.com/KLR-Pattern/nexusx"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.6.0"
+
+# 插拔安全设计（v0.2.0+）：
+# - 只 replace template（4 个），不 replace command
+# - spec-kit 原生命令 speckit.specify / plan / tasks 始终可见、可独立调用
+# - nexusx 增强逻辑（Phase 0 访谈、DB 选型决策、phase 标签）通过 .specify/extensions.yml
+#   的 before_specify / before_plan / before_tasks hooks 自动 prepend
+# - hooks optional: true，禁用或失败时不阻塞 spec-kit 主流程
+# - 用户禁用 preset → spec-kit 默认 template 接管，nexusx 增强完全不可见
+provides:
+  templates:
+    - type: "template"
+      name: "constitution-template"
+      file: "templates/constitution-template.md"
+      description: "nexusx 8 条硬规则 + V 型验收治理"
+      replaces: "constitution-template"
+
+    - type: "template"
+      name: "spec-template"
+      file: "templates/spec-template.md"
+      description: "spec-kit 用户故事结构 + nexusx Phase 0 需求确认纪要（可由 /nexusx-phase0 自动填充，也可手动填写）"
+      replaces: "spec-template"
+
+    - type: "template"
+      name: "plan-template"
+      file: "templates/plan-template.md"
+      description: "nexusx Technical Context（DB 选型 / service 切分 / TS SDK 决策，可由 /nexusx-plan-decisions 自动填充）"
+      replaces: "plan-template"
+
+    - type: "template"
+      name: "tasks-template"
+      file: "templates/tasks-template.md"
+      description: "phase-first 混合：Schema → Methods → Service → 可选 SDK（phase 标签规则可由 /nexusx-tasks-phase-tags 提示）"
+      replaces: "tasks-template"
+
+tags:
+  - "nexusx"
+  - "sqlmodel"
+  - "fastapi"
+  - "mcp"
+  - "4phase"
+  - "prepend-hooks"
