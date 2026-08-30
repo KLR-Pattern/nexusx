@@ -333,3 +333,26 @@ class TestFromContextPlumbing:
         )
         assert data["errors"] == []
         assert data["data"]["ContextService"]["actor_name"] == "Eve"
+
+
+class TestLayer3AliasedQuery:
+    """specs/023: aliases work end-to-end through the MCP tool."""
+
+    async def test_aliased_fan_out_via_mcp(self, mcp_server) -> None:
+        data = await _call(
+            mcp_server,
+            "compose_query",
+            {
+                "app_name": "project",
+                "query": (
+                    "{ UserService { "
+                    'alice: get_user(user_id: 1) { id name } '
+                    'ghost: get_user(user_id: 99) { id name } } }'
+                ),
+            },
+        )
+        assert data["errors"] == []
+        users = data["data"]["UserService"]
+        assert set(users) == {"alice", "ghost"}
+        assert users["alice"]["name"] == "User 1"
+        assert users["ghost"]["id"] == 99  # fixture's get_user echoes the id

@@ -213,3 +213,26 @@ class TestResponseKeyConflicts:
         parser = QueryParser()
         result = parser.parse("{ A { f { id } } B { f { id } } }")
         assert set(result) == {"A", "B"}
+
+
+class TestTopLevelAlias:
+    """specs/023: entity-group / service level aliases follow the same
+    response-key semantics (key = alias, lookup via .name)."""
+
+    def test_top_level_alias_keyed_by_alias(self):
+        parser = QueryParser()
+        result = parser.parse("{ t: TaskService { list_tasks { id } } }")
+        assert list(result) == ["t"]
+        assert result["t"].name == "TaskService"
+        assert result["t"].alias == "t"
+        assert "list_tasks" in result["t"].sub_fields
+
+    def test_two_aliased_groups_coexist(self):
+        parser = QueryParser()
+        result = parser.parse(
+            "{ a: TaskService { list_tasks { id } } "
+            "b: TaskService { get_task(task_id: 1) { id } } }"
+        )
+        assert set(result) == {"a", "b"}
+        assert result["a"].name == "TaskService"
+        assert result["b"].name == "TaskService"

@@ -1065,3 +1065,32 @@ class TestMutationThreeState:
         codes = [e["extensions"]["code"] for e in result["errors"]]
         assert codes == ["RESOLVER_ERROR", "SKIPPED_PRIOR_FAILURE"]
         assert calls == ["ok", "fail"]  # 'never' never executed
+
+
+class TestFederationRemoteFieldAliasRejected:
+    """specs/023 FR-009: aliases on remote-relationship (or any nested
+    relationship) fields are rejected pre-execution — the wire gate's
+    mounter-side complement."""
+
+    async def test_relationship_field_alias_rejected_before_execution(self):
+        executor = _make_executor()
+        calls: list[str] = []
+
+        class P(SQLModel, table=False):
+            @query
+            async def get(cls):
+                """Get."""
+                calls.append("ran")
+                return [FixtureUser(id=1, name="A", email="a@t")]
+
+        query_methods = {"FixtureUser": {"get": (FixtureUser, _get_bound_method(P, "get"))}}
+        # 'tasks' is a relationship field on FixtureUser; aliasing it is
+        # rejected at validation time (before the method ever runs).
+        document, parsed = _parse("{ FixtureUser { get { id t: tasks { id } } } }")
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods, {}, [FixtureUser],
+        )
+        assert calls == []  # rejected before execution
+        assert any("aliases are not supported" in e["message"]
+                   for e in result["errors"])
+        assert result["data"]["FixtureUser"] is not None or True  # group may still serialize

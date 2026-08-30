@@ -109,3 +109,28 @@ class TestInferRuntimeAnnotation:
 
         result = _infer_runtime_annotation([MyDTO(x=1), None])
         assert result == list[MyDTO | None]
+
+
+# ──────────────────────────────────────────────────────────────────────
+# specs/023 FR-009: field aliases in a --select projection are rejected
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestSelectionAliasRejection:
+    def test_top_level_alias_rejected(self):
+        from nexusx.use_case.selection import parse_selection
+
+        with pytest.raises(Exception, match="aliases are not supported"):
+            parse_selection("t1: title")
+
+    def test_nested_alias_rejected(self):
+        from nexusx.use_case.selection import parse_selection
+
+        with pytest.raises(Exception, match="aliases are not supported"):
+            parse_selection("id owner { n: name }")
+
+    def test_plain_selection_still_works(self):
+        from nexusx.use_case.selection import parse_selection
+
+        root = parse_selection("id title")
+        assert set(root.sub_fields) == {"id", "title"}

@@ -684,3 +684,22 @@ class TestAliasMutationThreeState:
         assert result["data"] is None
         assert "enable_mutation=False" in result["errors"][0]["message"]
         assert _AliasGuardService.calls == []
+
+
+class TestTopLevelAlias:
+    """specs/023: service-level aliases — lookup by original name, response
+    keyed by the alias."""
+
+    async def test_two_aliased_service_groups_fan_out(self) -> None:
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema,
+            '{ g1: _AliasGuardService { fetch(tag: "a") { id } } '
+            'g2: _AliasGuardService { fetch(tag: "b") { id } } }',
+        )
+        assert result["errors"] == []
+        data = result["data"]
+        assert set(data) == {"g1", "g2"}
+        assert data["g1"]["fetch"][0].id == 1
+        assert sorted(_AliasGuardService.calls) == ["fetch:a", "fetch:b"]
