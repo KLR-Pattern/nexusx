@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from graphql import DocumentNode, parse
-from sqlmodel import SQLModel, select
+from sqlmodel import Field, SQLModel, select
 
 from nexusx.decorator import mutation, query
 from nexusx.execution.query_executor import QueryExecutor
@@ -888,3 +888,117 @@ class TestQueryExecutorSerializationExtras:
         rel_names = get_relationship_names(FixtureTask)
         assert "sprint" in rel_names
         assert "owner" in rel_names
+
+
+# ──────────────────────────────────────────────────────────
+# specs/023 US2: aliased query methods (entity-first path)
+# ──────────────────────────────────────────────────────────
+
+
+class _AliasStats:
+    calls: list[str] = []
+
+
+class AliasProbe(SQLModel, table=False):
+    """Static @query with call recording — no DB roundtrip needed."""
+
+    @query
+    async def probe(cls, tag: str = "x"):
+        """Probe."""
+        _AliasStats.calls.append(f"probe:{tag}")
+        return [
+            FixtureUser(id=1, name=tag, email=f"{tag}@t"),
+            FixtureUser(id=2, name=f"{tag}2", email=f"{tag}2@t"),
+        ]
+
+
+class TestAliasQuerySemantics:
+    @pytest.mark.usefixtures("test_db")
+    async def test_two_aliases_both_execute_and_keyed_by_alias(self):
+        """a/b aliases of one method → 2 executions, 2 response keys."""
+        _AliasStats.calls.clear()
+        executor = _make_executor()
+        method = _get_bound_method(AliasProbe, "probe")
+        query_methods = {"AliasProbe": {"probe": (FixtureUser, method)}}
+        document, parsed = _parse(
+            '{ AliasProbe { a: probe(tag: "hi") { id name } '
+            'b: probe(tag: "lo") { id name } } }'
+        )
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods,
+            {}, [FixtureUser],
+        )
+        assert result.get("errors") is None or result["errors"] == []
+        data = result["data"]["AliasProbe"]
+        assert set(data) == {"a", "b"}
+        assert {row["name"] for row in data["a"]} == {"hi", "hi2"}
+        assert {row["name"] for row in data["b"]} == {"lo", "lo2"}
+        assert sorted(_AliasStats.calls) == ["probe:hi", "probe:lo"]
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_projection_isolated_per_alias(self):
+        """Each alias serializes only the sub-fields it declared."""
+        _AliasStats.calls.clear()
+        executor = _make_executor()
+        method = _get_bound_method(AliasProbe, "probe")
+        query_methods = {"AliasProbe": {"probe": (FixtureUser, method)}}
+        document, parsed = _parse(
+            '{ AliasProbe { a: probe(tag: "p") { id } '
+            'b: probe(tag: "p") { id name } } }'
+        )
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods,
+            {}, [FixtureUser],
+        )
+        data = result["data"]["AliasProbe"]
+        assert set(data["a"][0]) == {"id"}
+        assert set(data["b"][0]) == {"id", "name"}
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_same_method_same_args_runs_twice(self):
+        """FR-011 query half: no method-level dedup on the entity-first path."""
+        _AliasStats.calls.clear()
+        executor = _make_executor()
+        method = _get_bound_method(AliasProbe, "probe")
+        query_methods = {"AliasProbe": {"probe": (FixtureUser, method)}}
+        document, parsed = _parse(
+            '{ AliasProbe { a: probe(tag: "s") { id } b: probe(tag: "s") { id } } }'
+        )
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods,
+            {}, [FixtureUser],
+        )
+        assert _AliasStats.calls == ["probe:s", "probe:s"]
+
+    @pytest.mark.asyncio
+    async def test_handler_level_alias_allowed(self):
+        """T012: GraphQLHandler must stop rejecting aliases (query level)."""
+        from nexusx.handler import GraphQLHandler
+
+        _AliasStats.calls.clear()
+
+        class AliasEntity(SQLModel, table=True):
+            __tablename__ = "alias_entity_probe"
+            id: int | None = Field(default=None, primary_key=True)
+            name: str
+
+            @query
+            async def probe(cls, tag: str = "x"):
+                """Probe."""
+                _AliasStats.calls.append(f"probe:{tag}")
+                return [cls(id=1, name=tag)]
+
+        handler = GraphQLHandler(
+            er_manager=ErManager(
+                session_factory=get_test_session_factory(),
+                entities=[AliasEntity],
+            )
+        )
+        result = await handler.execute(
+            '{ AliasEntity { a: probe(tag: "h") { id name } '
+            'b: probe(tag: "l") { id name } } }'
+        )
+        assert result.get("errors") is None or result["errors"] == []
+        assert set(result["data"]["AliasEntity"]) == {"a", "b"}
+        assert result["data"]["AliasEntity"]["a"][0]["name"] == "h"
+        assert result["data"]["AliasEntity"]["b"][0]["name"] == "l"

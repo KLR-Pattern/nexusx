@@ -310,7 +310,7 @@ class TestFromContextPlumbing:
             "compose_query",
             {"app_name": "admin", "query": "{ ContextService { actor_name } }"},
         )
-        assert data["data"] is None
+        assert data["data"] == {"ContextService": {"actor_name": None}}
         assert "Required FromContext parameter 'actor'" in data["errors"][0]["message"]
 
     async def test_context_extractor_supplies_value(self) -> None:

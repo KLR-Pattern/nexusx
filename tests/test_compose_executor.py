@@ -255,7 +255,8 @@ class TestFromContextInjection:
             "{ ContextService { echo_actor } }",
             context={},  # no "actor" key
         )
-        assert result["data"] is None
+        # specs/023: per-field — the failing key nulls, siblings unaffected.
+        assert result["data"] == {"ContextService": {"echo_actor": None}}
         assert len(result["errors"]) == 1
         assert "Required FromContext parameter 'actor'" in result["errors"][0]["message"]
 
@@ -327,6 +328,8 @@ class TestErrorHandling:
     async def test_method_exception_becomes_error(self, app, schema) -> None:
         # get_user returns None for user_id != 1, no exception. Use a service
         # that explicitly raises to verify the exception path.
+        # specs/023: execution failures are per-field — the key nulls with an
+        # errors entry (QUERY_FAILED) instead of nulling the whole response.
         class RaisingService(UseCaseService):
             @query
             async def boom(cls) -> int:
@@ -337,8 +340,9 @@ class TestErrorHandling:
         result = await execute_compose_query(
             app2, schema2, "{ RaisingService { boom } }"
         )
-        assert result["data"] is None
+        assert result["data"] == {"RaisingService": {"boom": None}}
         assert "RaisingService.boom raised RuntimeError" in result["errors"][0]["message"]
+        assert result["errors"][0]["extensions"]["code"] == "QUERY_FAILED"
 
     async def test_malformed_query_returns_parse_error(self, app, schema) -> None:
         result = await execute_compose_query(
@@ -437,6 +441,11 @@ class _AliasGuardService(UseCaseService):
         _AliasGuardService.calls.append(f"fetch:{tag}")
         return [_AliasGuardDTO(id=1, label=tag)]
 
+    @query
+    async def boom(cls, tag: str = "x") -> list[_AliasGuardDTO]:
+        _AliasGuardService.calls.append(f"boom:{tag}")
+        raise RuntimeError(f"boom {tag}")
+
     @mutation
     async def write(cls, tag: str = "x") -> _AliasGuardDTO:
         _AliasGuardService.calls.append(f"write:{tag}")
@@ -451,17 +460,19 @@ def _guard_app() -> UseCaseAppConfig:
 class TestAliasRejection:
     """US1: any alias in a compose query → explicit error, zero execution."""
 
-    async def test_aliased_query_field_is_rejected(self) -> None:
+    async def test_aliased_query_field_is_supported(self) -> None:
+        """specs/023 B1a: aliased @query methods are now supported (US2).
+
+        Superseded the US1-phase rejection; see TestAliasQueryFanout for the
+        full matrix (different args, dedup-free, projection isolation)."""
         app = _guard_app()
         schema = build_compose_schema(app)
         result = await execute_compose_query(
             app, schema, "{ _AliasGuardService { a: fetch(tag: \"q\") { id } } }"
         )
-        assert result["data"] is None
-        assert result["errors"], "aliased query must produce an error"
-        assert "alias" in result["errors"][0]["message"].lower()
-        assert result["errors"][0]["extensions"]["code"] == "ALIAS_CONFLICT"
-        assert _AliasGuardService.calls == []
+        assert result["errors"] == []
+        assert result["data"]["_AliasGuardService"]["a"][0].id == 1
+        assert _AliasGuardService.calls == ["fetch:q"]
 
     async def test_aliased_mutation_field_is_rejected(self) -> None:
         app = _guard_app()
@@ -496,3 +507,78 @@ class TestAliasRejection:
         assert result["errors"] == []
         assert result["data"]["_AliasGuardService"]["fetch"][0].label == "ok"
         assert _AliasGuardService.calls == ["fetch:ok"]
+
+
+class TestAliasQueryFanout:
+    """US2 (specs/023): aliased query methods execute independently."""
+
+    async def test_two_aliases_different_args_both_execute(self) -> None:
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema,
+            '{ _AliasGuardService { '
+            'a: fetch(tag: "hi") { id label } '
+            'b: fetch(tag: "lo") { id label } } }',
+        )
+        assert result["errors"] == []
+        data = result["data"]["_AliasGuardService"]
+        assert set(data) == {"a", "b"}
+        assert data["a"][0].label == "hi"
+        assert data["b"][0].label == "lo"
+        assert sorted(_AliasGuardService.calls) == ["fetch:hi", "fetch:lo"]
+
+    async def test_same_method_same_args_not_deduplicated(self) -> None:
+        """FR-011 (query half): identical aliased calls still run N times."""
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema,
+            '{ _AliasGuardService { '
+            'a: fetch(tag: "same") { id } '
+            'b: fetch(tag: "same") { id } } }',
+        )
+        assert result["errors"] == []
+        assert _AliasGuardService.calls == ["fetch:same", "fetch:same"]
+
+    async def test_projection_isolated_per_alias(self) -> None:
+        """Each alias projects only the sub-fields it declared."""
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema,
+            '{ _AliasGuardService { '
+            'a: fetch(tag: "p") { id } '
+            'b: fetch(tag: "p") { id label } } }',
+        )
+        assert result["errors"] == []
+        data = result["data"]["_AliasGuardService"]
+        assert set(data["a"][0].model_dump()) == {"id"}
+        assert set(data["b"][0].model_dump()) == {"id", "label"}
+
+    async def test_failed_alias_does_not_kill_sibling(self) -> None:
+        """Queries have no fail-stop: a failing alias nulls only itself."""
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema,
+            '{ _AliasGuardService { '
+            'good: fetch(tag: "ok") { id } '
+            'bad: boom(tag: "nope") { id } } }',
+        )
+        assert result["data"]["_AliasGuardService"]["good"][0].id == 1
+        assert result["data"]["_AliasGuardService"]["bad"] is None
+        assert any(
+            "boom nope" in e["message"] for e in result["errors"]
+        )
+
+    async def test_response_key_conflict_reports_error(self) -> None:
+        """FR-007: duplicate response keys are rejected, not deduplicated."""
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema, "{ _AliasGuardService { a: fetch { id } a: fetch { id } } }"
+        )
+        assert result["data"] is None
+        assert "conflict" in result["errors"][0]["message"].lower()
+        assert _AliasGuardService.calls == []

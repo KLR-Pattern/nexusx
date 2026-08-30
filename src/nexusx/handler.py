@@ -321,9 +321,10 @@ class GraphQLHandler:
             Dictionary with 'data' and/or 'errors' keys.
         """
         try:
-            self._query_parser.validate_no_aliases(query)
-
-            # Parse once; share the AST between parser and executor
+            # Parse once; share the AST between parser and executor.
+            # (specs/023: aliases are supported at method level — the old
+            # blanket `validate_no_aliases` guard is retired from this call
+            # path; the parser now rejects duplicate response keys instead.)
             document = parse(query)
             parsed_selections = self._query_parser.parse_document(
                 document, variables=variables

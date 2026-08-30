@@ -102,33 +102,39 @@ async def execute_compose_query(
     if _document_uses_introspection(document):
         return _error_response(_INTROSPECTION_REJECTION_HINT)
 
-    # 2.5 Reject aliases (specs/023 US1) — silently collapsing same-name
-    # fields to the last one is data loss (Issue #140); fail loudly instead.
-    alias_path = _document_first_alias_path(document)
-    if alias_path is not None:
-        return _error_response(
-            "GraphQL aliases are not supported by compose_query in this "
-            "version (found an alias at "
-            f"{'.'.join(alias_path)}); same-name fields would be silently "
-            "collapsed. Send one field per invocation instead.",
-            code="ALIAS_CONFLICT",
-        )
-
     # 3. Convert AST → FieldSelection tree (reuses existing QueryParser).
+    #    specs/023: keys are response keys; duplicate-key conflicts from the
+    #    parser surface as ALIAS_CONFLICT errors (FR-007).
     parser = QueryParser()
-    selections = parser.parse_document(document)
+    try:
+        selections = parser.parse_document(document)
+    except ValueError as exc:
+        return _error_response(str(exc), code="ALIAS_CONFLICT")
     if not selections:
         return _error_response("Query has no operations.")
 
+    # 3.5 specs/023 US2: method-level aliases are supported on @query
+    #     methods; nested-field aliases are out of scope and rejected
+    #     loudly (FR-009) — never silently dropped.
+    nested_alias = _find_nested_alias(selections)
+    if nested_alias is not None:
+        return _error_response(
+            "Nested-field aliases are not supported by compose_query "
+            f"(found at {nested_alias}); only method-level aliases are.",
+            code="ALIAS_CONFLICT",
+        )
+
     # 4. For each operation, plan + execute.
     try:
-        data = await _execute_operations(app, schema, selections, context or {})
+        data, field_errors = await _execute_operations(
+            app, schema, selections, context or {}
+        )
     except _ComposeExecutionError as exc:
-        return _error_response(str(exc), exc.service_method)
+        return _error_response(str(exc), exc.service_method, code=exc.code)
     except Exception as exc:  # noqa: BLE001 — surface as graphql error, not 500
         return _error_response(f"{type(exc).__name__}: {exc}")
 
-    return {"data": data, "errors": []}
+    return {"data": data, "errors": field_errors}
 
 
 # ---------------------------------------------------------------------------
@@ -139,9 +145,15 @@ async def execute_compose_query(
 class _ComposeExecutionError(Exception):
     """Internal control-flow exception carrying service/method context."""
 
-    def __init__(self, message: str, service_method: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        service_method: str | None = None,
+        code: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.service_method = service_method
+        self.code = code
 
 
 async def _execute_operations(
@@ -149,20 +161,29 @@ async def _execute_operations(
     schema: ComposeSchema,
     selections: dict[str, FieldSelection],
     context: dict[str, Any],
-) -> dict[str, Any]:
-    """Run every operation in ``selections`` and return the nested data dict.
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Run every operation in ``selections``; return ``(data, field_errors)``.
 
     For v1 simplicity: operations are executed sequentially. Within an
     operation, ``@query`` methods run concurrently via ``asyncio.gather`` and
     ``@mutation`` methods run serially in query-declaration order. This mirrors
     pydantic-resolve's compose executor.
+
+    specs/023: execution-time failures are collected per field (the failing
+    response key becomes ``null`` with an ``errors`` entry) instead of
+    nulling the whole response; planning errors (unknown service/method,
+    capability gates) still fail fast.
     """
     services_by_name: dict[str, type[UseCaseService]] = {
         cls.__name__: cls for cls in app.services
     }
 
     data: dict[str, Any] = {}
-    for service_name, service_sel in selections.items():
+    errors: list[dict[str, Any]] = []
+    for service_key, service_sel in selections.items():
+        # specs/023: lookup identity is the original name, the response key
+        # (which may be an alias) is what the caller sees.
+        service_name = service_sel.name or service_key
         service_cls = services_by_name.get(service_name)
         if service_cls is None:
             raise _ComposeExecutionError(
@@ -170,15 +191,16 @@ async def _execute_operations(
                 f"Available: {sorted(services_by_name)}.",
                 service_method=service_name,
             )
-        method_results = await _execute_service_methods(
+        method_results, method_errors = await _execute_service_methods(
             app=app,
             schema=schema,
             service_cls=service_cls,
             service_sel=service_sel,
             context=context,
         )
-        data[service_name] = method_results
-    return data
+        data[service_key] = method_results
+        errors.extend(method_errors)
+    return data, errors
 
 
 async def _execute_service_methods(
@@ -187,14 +209,17 @@ async def _execute_service_methods(
     service_cls: type[UseCaseService],
     service_sel: FieldSelection,
     context: dict[str, Any],
-) -> dict[str, Any]:
-    """Run each method selection under one service and return {method: result}."""
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Run each method selection under one service; return (results, errors)."""
     methods = getattr(service_cls, "__use_case_methods__", {})
 
     # Bucket methods by kind so we can run queries concurrently and mutations serially.
     query_tasks: list[tuple[str, Awaitable[Any]]] = []
     mutation_specs: list[tuple[str, FieldSelection]] = []
-    for method_name, method_sel in service_sel.sub_fields.items():
+    for method_key, method_sel in service_sel.sub_fields.items():
+        # specs/023: resolve the method by its original name; the response
+        # key (dict key, alias when present) is preserved for the caller.
+        method_name = method_sel.name or method_key
         meta = methods.get(method_name)
         if meta is None:
             raise _ComposeExecutionError(
@@ -209,10 +234,10 @@ async def _execute_service_methods(
                 service_method=f"{service_cls.__name__}.{method_name}",
             )
         if kind == "mutation":
-            mutation_specs.append((method_name, method_sel))
+            mutation_specs.append((method_key, method_sel))
         else:
             query_tasks.append(
-                (method_name, _invoke_and_project(
+                (method_key, _invoke_and_project(
                     app=app,
                     schema=schema,
                     service_cls=service_cls,
@@ -223,27 +248,53 @@ async def _execute_service_methods(
             )
 
     results: dict[str, Any] = {}
+    errors: list[dict[str, Any]] = []
 
-    # Queries: concurrent.
+    # Queries: concurrent. (specs/023 US2: aliased queries fan out — each
+    # alias invocation is an independent call; no method-level dedup. A
+    # failing invocation nulls only its own response key.)
     if query_tasks:
-        names = [n for n, _ in query_tasks]
+        keys = [k for k, _ in query_tasks]
         awaitables = [a for _, a in query_tasks]
-        values = await asyncio.gather(*awaitables)
-        for name, value in zip(names, values, strict=True):
-            results[name] = value
+        values = await asyncio.gather(*awaitables, return_exceptions=True)
+        for (key, sel), value in zip(query_tasks, values, strict=True):
+            if isinstance(value, BaseException):
+                results[key] = None
+                message = (
+                    str(value)
+                    if isinstance(value, _ComposeExecutionError)
+                    else f"{type(value).__name__}: {value}"
+                )
+                errors.append({
+                    "message": message,
+                    "path": [service_cls.__name__, key],
+                    "extensions": {"code": "QUERY_FAILED"},
+                })
+            else:
+                results[key] = value
 
-    # Mutations: serial in declaration order.
-    for method_name, method_sel in mutation_specs:
-        results[method_name] = await _invoke_and_project(
+    # Mutations: serial in declaration order. (specs/023 US1→US3 phase gate:
+    # aliased mutations are still rejected until US3 lands three-state
+    # feedback; rejecting loudly beats silently collapsing N writes to 1.)
+    for method_key, method_sel in mutation_specs:
+        if method_sel.alias is not None:
+            raise _ComposeExecutionError(
+                f"Aliased mutation '{method_key}: {method_sel.name}' is not "
+                "supported yet; aliased mutations would silently collapse "
+                "to a single execution.",
+                service_method=f"{service_cls.__name__}.{method_sel.name}",
+                code="ALIAS_CONFLICT",
+            )
+        results[method_key] = await _invoke_and_project(
             app=app,
             schema=schema,
             service_cls=service_cls,
-            method_name=method_name,
+            method_name=method_sel.name,
             method_sel=method_sel,
             context=context,
         )
 
-    return results
+    return results, errors
 
 
 async def _invoke_and_project(
@@ -458,37 +509,29 @@ def _selection_set_uses_introspection(selection_set: Any) -> bool:
     return False
 
 
-def _document_first_alias_path(document: DocumentNode) -> list[str] | None:
-    """Walk every selection; return the dotted path of the first aliased field.
+def _find_nested_alias(selections: dict[str, FieldSelection]) -> str | None:
+    """Find an alias BELOW method level (specs/023 FR-009: unsupported).
 
-    AST-level (post ``graphql.parse``) so detection survives any nesting
-    depth. ``None`` means the document contains no aliases.
+    Method-level aliases (``a: method(args)``) are supported on @query
+    methods; any alias one level deeper — DTO field renames inside a
+    method's selection — is out of scope and must be rejected loudly
+    instead of silently mis-projecting. Returns the dotted path or None.
     """
-    for definition in document.definitions:
-        if isinstance(definition, OperationDefinitionNode):
-            found = _selection_set_first_alias_path(definition.selection_set, [])
+    for service_key, service_sel in selections.items():
+        for method_key, method_sel in service_sel.sub_fields.items():
+            found = _nested_alias_in(method_sel)
             if found is not None:
-                return found
+                return f"{service_key}.{method_key}.{found}"
     return None
 
 
-def _selection_set_first_alias_path(
-    selection_set: Any, prefix: list[str]
-) -> list[str] | None:
-    for selection in selection_set.selections:
-        if not isinstance(selection, FieldNode):
-            continue
-        key = (
-            selection.alias.value if selection.alias else selection.name.value
-        )
-        if selection.alias is not None:
-            return [*prefix, key]
-        if selection.selection_set is not None:
-            found = _selection_set_first_alias_path(
-                selection.selection_set, [*prefix, key]
-            )
-            if found is not None:
-                return found
+def _nested_alias_in(sel: FieldSelection) -> str | None:
+    for key, child in sel.sub_fields.items():
+        if child.alias is not None:
+            return key
+        deeper = _nested_alias_in(child)
+        if deeper is not None:
+            return f"{key}.{deeper}"
     return None
 
 

@@ -234,25 +234,48 @@ def _render_arguments(selection: Any) -> str:
     return f"({rendered})"
 
 
+def _wire_render_name(fname: str, child: Any) -> str:
+    """Field name to put on the member-bound wire for one selection node.
+
+    specs/023 US4: aliased nodes render their ORIGINAL field name
+    (``child.name``, captured by the parser) — dict keys are response keys
+    (``alias or name``) since 023 and aliases must not leak onto the wire.
+    Un-aliased nodes render the key: hand-built trees (e.g.
+    ``Resolver._build_nested_selection``) reuse ``name`` to carry the target
+    TYPE name, so only alias presence gates the substitution.
+    """
+    if getattr(child, "alias", None) is not None and getattr(child, "name", None):
+        return child.name
+    return fname
+
+
 def _render_selection(sel: Any, indent: int = 6) -> str:
     """Render a FieldSelection subtree as a GraphQL selection set.
 
     Recurses into nested selections so the mounted service resolves its own
     subgraph (multi-hop). Dotted-name targets are never used here — only bare
     field names appear, matching the mounted service's (un-prefixed) schema.
+
+    specs/023 US4: aliased nodes render from ``child.name`` (the original
+    field name the parser captured), never from the dict key — since 023 the
+    sub_fields keys are response keys (``alias or name``) and aliases must
+    not leak onto the member-bound wire. Nodes WITHOUT an alias always render
+    the key: hand-built trees (e.g. ``Resolver._build_nested_selection``)
+    reuse ``name`` to carry the target TYPE name, not the field name.
     """
     pad = " " * indent
     lines: list[str] = []
     sub_fields = getattr(sel, "sub_fields", None) or {}
     for fname, child in sub_fields.items():
+        render_name = _wire_render_name(fname, child)
         child_sub = getattr(child, "sub_fields", None) or {}
         arg_str = _render_arguments(child)
         if child_sub:
-            lines.append(f"{pad}{fname}{arg_str} {{")
+            lines.append(f"{pad}{render_name}{arg_str} {{")
             lines.append(_render_selection(child, indent + 2))
             lines.append(f"{pad}}}")
         else:
-            lines.append(f"{pad}{fname}{arg_str}")
+            lines.append(f"{pad}{render_name}{arg_str}")
     return "\n".join(lines)
 
 
@@ -267,25 +290,31 @@ def build_gql_query(
 ) -> str:
     """Construct the nested GraphQL query document."""
     # Field set: client selection (if any) plus the join key (needed for align).
-    wanted: list[str] = []
+    # specs/023 US4: aliased nodes render their ORIGINAL field name
+    # (``child.name``, captured by the parser) — dict keys are response keys
+    # (``alias or name``) since 023 and aliases must not leak onto the wire.
+    # Un-aliased nodes render the key: hand-built trees (Resolver) reuse
+    # ``name`` for the target TYPE name, so only alias presence gates this.
     sub_fields = getattr(selection, "sub_fields", None) or {}
-    for fname in sub_fields:
-        wanted.append(fname)
-    if join_remote not in wanted:
-        wanted.append(join_remote)
+    entries: list[tuple[str, Any]] = [
+        (_wire_render_name(fname, child), child)
+        for fname, child in sub_fields.items()
+    ]
+    rendered = [name for name, _ in entries]
+    if join_remote not in rendered:
+        entries.append((join_remote, None))
 
     pad = "  "
     body_lines: list[str] = []
-    for fname in wanted:
-        child = sub_fields.get(fname)
+    for render_name, child in entries:
         child_sub = getattr(child, "sub_fields", None) if child else None
         arg_str = _render_arguments(child) if child is not None else ""
         if child_sub:
-            body_lines.append(f"{pad*2}{fname}{arg_str} {{")
+            body_lines.append(f"{pad*2}{render_name}{arg_str} {{")
             body_lines.append(_render_selection(child, 6))
             body_lines.append(f"{pad*2}}}")
         else:
-            body_lines.append(f"{pad*2}{fname}{arg_str}")
+            body_lines.append(f"{pad*2}{render_name}{arg_str}")
 
     keys_lit = _render_keys(keys)
     return (

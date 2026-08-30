@@ -30,6 +30,35 @@ logger = logging.getLogger(__name__)
 _CACHE_MISS = object()
 
 
+def _node_key(node: FieldNode) -> str:
+    """Response key of a field node: alias when present, else field name.
+
+    specs/023: mirrors ``QueryParser`` key semantics so executor lookups
+    into ``parsed_selections`` and ``sub_fields`` stay aligned when the
+    query carries aliases.
+    """
+    return node.alias.value if node.alias else node.name.value
+
+
+def _find_nested_alias(sel: FieldSelection) -> str | None:
+    """First alias BELOW the top level of a method's selection, or None.
+
+    specs/023 FR-009: entity-first serialization is lenient (unknown fields
+    fall back to ``Any``), so a nested alias would silently mis-project —
+    detect it before execution and reject loudly.
+    """
+    def _walk(selection: FieldSelection) -> str | None:
+        for key, child in (selection.sub_fields or {}).items():
+            if child.alias is not None:
+                return key
+            deeper = _walk(child)
+            if deeper is not None:
+                return f"{key}.{deeper}"
+        return None
+
+    return _walk(sel)
+
+
 class QueryExecutor:
     """Executes GraphQL queries using DataLoader for relationship resolution.
 
@@ -138,7 +167,7 @@ class QueryExecutor:
                     continue
 
                 # Two-level: dispatch each method field inside the entity group.
-                data[entity_name] = await self._execute_entity_group(
+                data[_node_key(selection)] = await self._execute_entity_group(
                     entity_name,
                     method_group,
                     selection,
@@ -178,12 +207,15 @@ class QueryExecutor:
         """
         entity_data: dict[str, Any] = {}
         group_failed = False
-        group_sel = parsed_selections.get(entity_name)
+        group_sel = parsed_selections.get(
+            _node_key(group_selection)
+        )
 
         for method_node in group_selection.selection_set.selections:
             if not isinstance(method_node, FieldNode):
                 continue
             method_name = method_node.name.value
+            response_key = _node_key(method_node)
 
             try:
                 method_info = method_group.get(method_name)
@@ -204,7 +236,7 @@ class QueryExecutor:
                 # The method's selection tree is nested one level deeper than
                 # the entity-group selection.
                 field_sel = (
-                    group_sel.sub_fields.get(method_name)
+                    group_sel.sub_fields.get(response_key)
                     if group_sel and group_sel.sub_fields
                     else None
                 )
@@ -265,7 +297,9 @@ class QueryExecutor:
                     )
 
                 # Serialize
-                entity_data[method_name] = self._serialize(result, entity, field_sel)
+                entity_data[response_key] = self._serialize(
+                    result, entity, field_sel
+                )
 
             except Exception as e:
                 # Per-field exceptions are common (user input bugs, DB
@@ -345,6 +379,19 @@ class QueryExecutor:
         """
         if field_sel is None or not field_sel.sub_fields:
             return True
+
+        # specs/023 FR-009: aliases below method level are out of scope —
+        # reject loudly (before execution) instead of silently mis-projecting.
+        nested_alias = _find_nested_alias(field_sel)
+        if nested_alias is not None:
+            errors.append({
+                "message": (
+                    "Field aliases are not supported at nested level "
+                    f"({nested_alias}); only method-level aliases are supported"
+                ),
+                "path": [*path, nested_alias],
+            })
+            return False
 
         if pag_root is None:
             return self._validate_entity_fields(entity, field_sel, path, errors)

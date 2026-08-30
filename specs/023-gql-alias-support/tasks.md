@@ -54,20 +54,20 @@
 
 ### Tests for User Story 2 & 4（先写、确认失败）
 
-- [ ] T004 [P] [US2] 在 tests/test_query_parser.py 增加：key=`alias or name` 语义用例（别名保留、参数/子字段隔离）+ 冲突三形态（别名重复、别名撞字段名、无别名同名字段重复）+ 顶层分组重复，均断言明确报错
-- [ ] T005 [P] [US2] 在 tests/test_compose_executor.py 增加：query 扇出（两别名不同参数各自执行、结果分组正确）、同方法同参数不去重（FR-011 query 半边）、单别名失败不影响兄弟别名
-- [ ] T006 [P] [US2] 在 tests/test_query_executor.py 增加：entity-first query 别名（执行次数=N、参数各自正确、响应键=别名、各别名按自己声明的子字段投影）
-- [ ] T007 [P] [US4] 在联邦测试矩阵（tests/test_federation_remote_loader.py 等）增加 wire 断言：FakeTransport/HTTP 捕获层断言发往 member 的查询字段区零别名（覆盖 β 物化、γ DTO、分页三路径）
+- [x] T004 [P] [US2] 在 tests/test_query_parser.py 增加：key=`alias or name` 语义用例（别名保留、参数/子字段隔离）+ 冲突三形态（别名重复、别名撞字段名、无别名同名字段重复）+ 顶层分组重复，均断言明确报错
+- [x] T005 [P] [US2] 在 tests/test_compose_executor.py 增加：query 扇出（两别名不同参数各自执行、结果分组正确）、同方法同参数不去重（FR-011 query 半边）、单别名失败不影响兄弟别名
+- [x] T006 [P] [US2] 在 tests/test_query_executor.py 增加：entity-first query 别名（执行次数=N、参数各自正确、响应键=别名、各别名按自己声明的子字段投影）
+- [x] T007 [P] [US4] 在联邦测试矩阵（tests/test_federation_remote_loader.py 等）增加 wire 断言：FakeTransport/HTTP 捕获层断言发往 member 的查询字段区零别名（覆盖 β 物化、γ DTO、分页三路径）
 
 ### Implementation for User Story 2 & 4
 
-- [ ] T008 [US2] 在 src/nexusx/query_parser.py 修改 `_parse_selection_set`：dict key 改为 `alias or field_name`；插入同层响应键冲突检测（重复 key 抛带位置错误）；`parse_document` 顶层 operation 级同族检测
-- [ ] T009 [US2] 在 src/nexusx/use_case/compose_executor.py 适配：`_execute_service_methods` 方法查找改用 `method_sel.name`（约 :185/:189），响应键沿用 dict key（约 :221/:225）；mutation 别名保留 US1 的拒绝闸门（本阶段仅放行 query，见 contracts 阶段交付语义表）
-- [ ] T010 [P] [US2] 在 src/nexusx/execution/query_executor.py 适配：`field_sel` 查找改为 `alias or method_name`（约 :207），响应键 `entity_data` 改用别名（约 :268）
-- [ ] T011 [P] [US4] 在 src/nexusx/federation/remote_loader.py 修改 `_render_selection`（约 :247）：渲染字段名一律用 `child.name`（原始字段名），不透传 dict key（联邦边界闸门，member 零改动）
-- [ ] T012 [P] [US2] 移除 src/nexusx/handler.py:324 的 `validate_no_aliases` 内部调用；更新 src/nexusx/query_parser.py:83 docstring（函数保留原语义，用途改为外部可选校验工具，见 research D5）
-- [ ] T013 [US2] 嵌套层与 CLI 显式报错：entity-first lenient 路径（src/nexusx/core_builder.py `build_model` 或其调用上层）检测嵌套别名并明确报错（替代静默 `Any`）；src/nexusx/use_case/selection.py `parse_selection` 显式拒绝别名（CLI `--select`，给清晰错误而非"未知字段"）
-- [ ] T014 [US2] 阶段检查点：全量 `uv run pytest tests/ -q` 零回归 + `ruff check src/`；quickstart 场景 2/4/5 通过
+- [x] T008 [US2] 在 src/nexusx/query_parser.py 修改 `_parse_selection_set`：dict key 改为 `alias or field_name`；插入同层响应键冲突检测（重复 key 抛带位置错误）；`parse_document` 顶层 operation 级同族检测
+- [x] T009 [US2] 在 src/nexusx/use_case/compose_executor.py 适配：`_execute_service_methods` 方法查找改用 `method_sel.name`（约 :185/:189），响应键沿用 dict key（约 :221/:225）；mutation 别名保留 US1 的拒绝闸门（本阶段仅放行 query，见 contracts 阶段交付语义表）
+- [x] T010 [P] [US2] 在 src/nexusx/execution/query_executor.py 适配：`field_sel` 查找改为 `alias or method_name`（约 :207），响应键 `entity_data` 改用别名（约 :268）
+- [x] T011 [P] [US4] 在 src/nexusx/federation/remote_loader.py 修改 `_render_selection`（约 :247）：渲染字段名一律用 `child.name`（原始字段名），不透传 dict key（联邦边界闸门，member 零改动）
+- [x] T012 [P] [US2] 移除 src/nexusx/handler.py:324 的 `validate_no_aliases` 内部调用；更新 src/nexusx/query_parser.py:83 docstring（函数保留原语义，用途改为外部可选校验工具，见 research D5）
+- [x] T013 [US2] 嵌套层与 CLI 显式报错：entity-first lenient 路径（src/nexusx/core_builder.py `build_model` 或其调用上层）检测嵌套别名并明确报错（替代静默 `Any`）；src/nexusx/use_case/selection.py `parse_selection` 显式拒绝别名（CLI `--select`，给清晰错误而非"未知字段"）
+- [x] T014 [US2] 阶段检查点：全量 `uv run pytest tests/ -q` 零回归 + `ruff check src/`；quickstart 场景 2/4/5 通过
 
 **Checkpoint**: query 侧 + 联邦边界完成；mutation 别名仍按 US1 报错（阶段语义正确）
 

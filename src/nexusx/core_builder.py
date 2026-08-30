@@ -149,6 +149,14 @@ def build_model(
     """
     fields: dict[str, tuple[Any, Any]] = {}
     for field_name, child_sel in (selection.sub_fields or {}).items():
+        # specs/023 FR-009: nested-field aliases (DTO/entity field renames)
+        # are out of scope — reject loudly instead of mis-projecting.
+        if getattr(child_sel, "alias", None) is not None:
+            raise SelectionError(
+                f"Field aliases are not supported at nested level "
+                f"('{child_sel.name}' aliased to '{field_name}'); only "
+                "method-level aliases are supported"
+            )
         resolution = resolver.resolve_field(owner_type, field_name)
         field_path = f"{path}.{field_name}" if path else field_name
 

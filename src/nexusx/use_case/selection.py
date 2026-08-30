@@ -73,7 +73,23 @@ def parse_selection(selection: str) -> FieldSelection:
         raise SelectionError("selection must include at least one field")
 
     _reject_arguments(root)
+    _reject_aliases(root)
     return root
+
+
+def _reject_aliases(selection: FieldSelection, path: str = "") -> None:
+    """specs/023 FR-009: field aliases in a ``--select`` projection are
+    unsupported — reject with a clear message instead of treating the alias
+    as an unknown field name."""
+    for name, child in selection.sub_fields.items():
+        if child.alias is not None:
+            location = path or _RESULT_FIELD
+            raise SelectionError(
+                f"field aliases are not supported in selection at "
+                f"'{location}' ('{child.name}' aliased to '{name}')"
+            )
+        child_path = f"{path}.{name}" if path else name
+        _reject_aliases(child, child_path)
 
 
 class DTOFieldResolver:
