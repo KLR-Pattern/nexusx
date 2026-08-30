@@ -10,7 +10,7 @@ These tests exercise ``execute_compose_query`` directly (no MCP layer).
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 import pytest
 from pydantic import BaseModel
@@ -415,3 +415,84 @@ class TestNoOuterResolverWrap:
         # Sanity check that the DTO + Resolver would otherwise do the right thing.
         processed = await Resolver().resolve(_ResolverAwareDTO(id=5))
         assert processed.derived == 500
+
+
+# ──────────────────────────────────────────────────────────────────────
+# US1 (specs/023): aliases must fail loudly — never silently dropped
+# ──────────────────────────────────────────────────────────────────────
+
+
+class _AliasGuardDTO(BaseModel):
+    id: int
+    label: str
+
+
+class _AliasGuardService(UseCaseService):
+    """Counts invocations so tests can assert zero execution on rejection."""
+
+    calls: ClassVar[list[str]] = []
+
+    @query
+    async def fetch(cls, tag: str = "x") -> list[_AliasGuardDTO]:
+        _AliasGuardService.calls.append(f"fetch:{tag}")
+        return [_AliasGuardDTO(id=1, label=tag)]
+
+    @mutation
+    async def write(cls, tag: str = "x") -> _AliasGuardDTO:
+        _AliasGuardService.calls.append(f"write:{tag}")
+        return _AliasGuardDTO(id=2, label=tag)
+
+
+def _guard_app() -> UseCaseAppConfig:
+    _AliasGuardService.calls = []
+    return UseCaseAppConfig(name="guard", services=[_AliasGuardService])
+
+
+class TestAliasRejection:
+    """US1: any alias in a compose query → explicit error, zero execution."""
+
+    async def test_aliased_query_field_is_rejected(self) -> None:
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema, "{ _AliasGuardService { a: fetch(tag: \"q\") { id } } }"
+        )
+        assert result["data"] is None
+        assert result["errors"], "aliased query must produce an error"
+        assert "alias" in result["errors"][0]["message"].lower()
+        assert result["errors"][0]["extensions"]["code"] == "ALIAS_CONFLICT"
+        assert _AliasGuardService.calls == []
+
+    async def test_aliased_mutation_field_is_rejected(self) -> None:
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema,
+            'mutation { _AliasGuardService { a: write(tag: "m") { id } } }',
+        )
+        assert result["data"] is None
+        assert result["errors"], "aliased mutation must produce an error"
+        assert result["errors"][0]["extensions"]["code"] == "ALIAS_CONFLICT"
+        assert _AliasGuardService.calls == []
+
+    async def test_nested_alias_is_rejected(self) -> None:
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema, "{ _AliasGuardService { fetch { l: label } } }"
+        )
+        assert result["data"] is None
+        assert result["errors"], "nested alias must produce an error"
+        assert result["errors"][0]["extensions"]["code"] == "ALIAS_CONFLICT"
+        assert _AliasGuardService.calls == []
+
+    async def test_unaliased_query_still_works(self) -> None:
+        """Guard against over-rejection: no alias → normal execution."""
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema, '{ _AliasGuardService { fetch(tag: "ok") { id label } } }'
+        )
+        assert result["errors"] == []
+        assert result["data"]["_AliasGuardService"]["fetch"][0].label == "ok"
+        assert _AliasGuardService.calls == ["fetch:ok"]

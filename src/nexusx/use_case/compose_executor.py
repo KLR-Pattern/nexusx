@@ -102,6 +102,18 @@ async def execute_compose_query(
     if _document_uses_introspection(document):
         return _error_response(_INTROSPECTION_REJECTION_HINT)
 
+    # 2.5 Reject aliases (specs/023 US1) — silently collapsing same-name
+    # fields to the last one is data loss (Issue #140); fail loudly instead.
+    alias_path = _document_first_alias_path(document)
+    if alias_path is not None:
+        return _error_response(
+            "GraphQL aliases are not supported by compose_query in this "
+            "version (found an alias at "
+            f"{'.'.join(alias_path)}); same-name fields would be silently "
+            "collapsed. Send one field per invocation instead.",
+            code="ALIAS_CONFLICT",
+        )
+
     # 3. Convert AST → FieldSelection tree (reuses existing QueryParser).
     parser = QueryParser()
     selections = parser.parse_document(document)
@@ -446,10 +458,53 @@ def _selection_set_uses_introspection(selection_set: Any) -> bool:
     return False
 
 
-def _error_response(message: str, service_method: str | None = None) -> dict[str, Any]:
+def _document_first_alias_path(document: DocumentNode) -> list[str] | None:
+    """Walk every selection; return the dotted path of the first aliased field.
+
+    AST-level (post ``graphql.parse``) so detection survives any nesting
+    depth. ``None`` means the document contains no aliases.
+    """
+    for definition in document.definitions:
+        if isinstance(definition, OperationDefinitionNode):
+            found = _selection_set_first_alias_path(definition.selection_set, [])
+            if found is not None:
+                return found
+    return None
+
+
+def _selection_set_first_alias_path(
+    selection_set: Any, prefix: list[str]
+) -> list[str] | None:
+    for selection in selection_set.selections:
+        if not isinstance(selection, FieldNode):
+            continue
+        key = (
+            selection.alias.value if selection.alias else selection.name.value
+        )
+        if selection.alias is not None:
+            return [*prefix, key]
+        if selection.selection_set is not None:
+            found = _selection_set_first_alias_path(
+                selection.selection_set, [*prefix, key]
+            )
+            if found is not None:
+                return found
+    return None
+
+
+def _error_response(
+    message: str,
+    service_method: str | None = None,
+    code: str | None = None,
+) -> dict[str, Any]:
     error: dict[str, Any] = {"message": message}
+    extensions: dict[str, Any] = {}
     if service_method is not None:
-        error["extensions"] = {"service_method": service_method}
+        extensions["service_method"] = service_method
+    if code is not None:
+        extensions["code"] = code
+    if extensions:
+        error["extensions"] = extensions
     return {"data": None, "errors": [error]}
 
 
