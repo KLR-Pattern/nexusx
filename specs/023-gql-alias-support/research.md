@@ -63,3 +63,9 @@ Phase 0 产出。Spec 无遗留 NEEDS CLARIFICATION（4 项决策已在 clarify 
 | federation loader 按 selection/params 拆实例 | `remote_loader.py:100-111`（type_key + force_split）、`registry.py:728-766`（params_key） | 静态阅读，注释明言防并发竞争 |
 | wire 纯读无 mutation | `remote_loader.py` 全文 grep | 零命中 |
 | compose 无 alias 校验 | `compose_executor.py:107` | 静态阅读 + Issue 报告 |
+
+## 实现期新增发现（D6 修正）
+
+- **`FieldSelection.name` 在手工构建树上语义不统一**：`Resolver._build_nested_selection`（resolver.py:1352）把 `name` 用作**目标类型名**（如 `MTComment`），而 parser 生成的树上 `name` 是原始字段名。联邦渲染闸门最初无条件用 `child.name` 渲染，导致机造查询输出类型名、member 报 unknown field（deep_chain/materialized 两测试抓出）。**修正规则**（`_wire_render_name`）：仅 `alias is not None` 的节点用 `name` 渲染（parser 树保证其为原始字段名），无 alias 节点一律渲染 key——兼容手工树。
+- **entity-first 的序列化走 `response_builder` 而非 `core_builder.build_model`**（评估阶段"response_builder dormant"的判断有误——它在 entity-first `_serialize` 路径上活跃）。嵌套别名检测因此落在 `_validate_method_selection`（执行前、有 path），`core_builder` 的检测作为 compose 投影路径的兜底。
+- **query 失败隔离语义**：执行期异常（方法体抛错、参数 coerce 失败、FromContext 缺失）统一 per-field（键 null + `QUERY_FAILED`）；规划期错误（unknown service/method、enable_mutation、parse、键冲突）保持 fail-fast——贴 GraphQL 的 field error 语义，也是 5 个存量断言更新的依据。

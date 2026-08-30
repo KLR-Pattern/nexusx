@@ -96,8 +96,8 @@
 
 ## Phase 5: Polish & Cross-Cutting Concerns
 
-- [ ] T020 [P] 文档：在 docs/ 增加 alias 行为说明（引用 specs/023-gql-alias-support/contracts/graphql-alias-behavior.md 的行为矩阵与阶段交付语义；docs-only 不计版本）
-- [ ] T021 最终验证：按 specs/023-gql-alias-support/quickstart.md 逐场景执行（6/6 通过）；全量回归 + ruff；对照 spec.md SC-001~006 逐条勾验
+- [x] T020 [P] 文档：在 docs/ 增加 alias 行为说明（引用 specs/023-gql-alias-support/contracts/graphql-alias-behavior.md 的行为矩阵与阶段交付语义；docs-only 不计版本）
+- [x] T021 最终验证：按 specs/023-gql-alias-support/quickstart.md 逐场景执行（6/6 通过）；全量回归 + ruff；对照 spec.md SC-001~006 逐条勾验
 
 ---
 

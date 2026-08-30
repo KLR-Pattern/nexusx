@@ -254,10 +254,9 @@ async def _execute_service_methods(
     # alias invocation is an independent call; no method-level dedup. A
     # failing invocation nulls only its own response key.)
     if query_tasks:
-        keys = [k for k, _ in query_tasks]
         awaitables = [a for _, a in query_tasks]
         values = await asyncio.gather(*awaitables, return_exceptions=True)
-        for (key, sel), value in zip(query_tasks, values, strict=True):
+        for (key, _sel), value in zip(query_tasks, values, strict=True):
             if isinstance(value, BaseException):
                 results[key] = None
                 message = (
