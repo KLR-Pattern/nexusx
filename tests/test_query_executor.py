@@ -265,20 +265,21 @@ class TestQueryExecutorBasic:
             [FixtureUser],
         )
 
-        assert result["data"] == {"FixtureUser": None}
+        # specs/023 D4: the failed method nulls only its own key.
+        assert result["data"] == {"FixtureUser": {"boom": None}}
         err = result["errors"][0]
         assert err["message"] == "kaboom"
         assert err["path"] == ["FixtureUser", "boom"]
         assert err["extensions"] == {"code": "RESOLVER_ERROR"}
 
-    async def test_execute_resolver_error_nulls_group_despite_healthy_sibling(
+    async def test_execute_resolver_error_keeps_healthy_sibling(
         self,
     ):
-        """A failed method nulls the whole group even when a sibling ran fine.
+        """specs/023 D4: a failed method nulls only its own response key.
 
-        Method return types are non-null, so per GraphQL null propagation
-        the error spreads past the group rather than returning partial
-        sibling data.
+        Query groups keep executing siblings past a failure — already
+        computed results are never erased (replaces pre-023 whole-group
+        nulling).
         """
         executor = _make_executor()
 
@@ -309,7 +310,7 @@ class TestQueryExecutorBasic:
             [FixtureUser],
         )
 
-        assert result["data"] == {"FixtureUser": None}
+        assert result["data"] == {"FixtureUser": {"boom": None, "ok": []}}
         assert result["errors"][0]["extensions"] == {"code": "RESOLVER_ERROR"}
 
     async def test_execute_handles_exception_in_method_logs_traceback(self, caplog):
@@ -1002,3 +1003,65 @@ class TestAliasQuerySemantics:
         assert set(result["data"]["AliasEntity"]) == {"a", "b"}
         assert result["data"]["AliasEntity"]["a"][0]["name"] == "h"
         assert result["data"]["AliasEntity"]["b"][0]["name"] == "l"
+
+
+class TestMutationThreeState:
+    """specs/023 US3: entity-first mutation aliases + three-state feedback,
+    aligned with the compose path (clarify Q1: both paths unified)."""
+
+    async def test_aliased_mutations_all_execute_and_keyed_by_alias(self):
+        executor = _make_executor()
+        calls: list[str] = []
+
+        class M(SQLModel, table=False):
+            @mutation
+            async def write(cls, tag: str = "x"):
+                """Write."""
+                calls.append(tag)
+                return FixtureUser(id=len(calls), name=tag, email=f"{tag}@t")
+
+        mutation_methods = {"FixtureUser": {"write": (FixtureUser, _get_bound_method(M, "write"))}}
+        document, parsed = _parse(
+            'mutation { FixtureUser { '
+            'a: write(tag: "1") { id } b: write(tag: "2") { id } '
+            'c: write(tag: "3") { id } } }'
+        )
+        result = await executor.execute_query(
+            document, None, None, parsed, {}, mutation_methods, [FixtureUser],
+        )
+        assert result.get("errors") is None or result["errors"] == []
+        data = result["data"]["FixtureUser"]
+        assert list(data) == ["a", "b", "c"]  # declaration order
+        assert [data[k]["id"] for k in "abc"] == [1, 2, 3]
+        assert calls == ["1", "2", "3"]
+
+    async def test_mutation_failure_keeps_prior_and_skips_rest(self):
+        executor = _make_executor()
+        calls: list[str] = []
+
+        class M(SQLModel, table=False):
+            @mutation
+            async def flaky(cls, tag: str = "x"):
+                """Flaky."""
+                calls.append(tag)
+                if tag == "fail":
+                    raise RuntimeError("exploded")
+                return FixtureUser(id=1, name=tag, email=f"{tag}@t")
+
+        mutation_methods = {"FixtureUser": {"flaky": (FixtureUser, _get_bound_method(M, "flaky"))}}
+        document, parsed = _parse(
+            'mutation { FixtureUser { '
+            'first: flaky(tag: "ok") { id } '
+            'bad: flaky(tag: "fail") { id } '
+            'last: flaky(tag: "never") { id } } }'
+        )
+        result = await executor.execute_query(
+            document, None, None, parsed, {}, mutation_methods, [FixtureUser],
+        )
+        data = result["data"]["FixtureUser"]
+        assert data["first"]["id"] == 1  # prior result survives
+        assert data["bad"] is None
+        assert data["last"] is None  # fail-stop
+        codes = [e["extensions"]["code"] for e in result["errors"]]
+        assert codes == ["RESOLVER_ERROR", "SKIPPED_PRIOR_FAILURE"]
+        assert calls == ["ok", "fail"]  # 'never' never executed

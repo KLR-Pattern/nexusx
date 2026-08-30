@@ -81,14 +81,14 @@
 
 ### Tests for User Story 3（先写、确认失败）
 
-- [ ] T015 [P] [US3] 在 tests/test_compose_executor.py 增加：Issue #140 端到端复现（N 个别名 add_node 全建全返回，SC-006）、部分失败三态（失败键 null + `MUTATION_FAILED`、后续 `SKIPPED_PRIOR_FAILURE`）、同方法同参数 N 次 = N 次副作用（FR-011 mutation 半边）、`enable_mutation=False` 拒绝与调用次数正交
-- [ ] T016 [P] [US3] 在 tests/test_query_executor.py 增加：entity-first 三态与 compose 一致用例；同步更新依赖"整组 null"的存量用例（D4 行为变更的回归面）
+- [x] T015 [P] [US3] 在 tests/test_compose_executor.py 增加：Issue #140 端到端复现（N 个别名 add_node 全建全返回，SC-006）、部分失败三态（失败键 null + `MUTATION_FAILED`、后续 `SKIPPED_PRIOR_FAILURE`）、同方法同参数 N 次 = N 次副作用（FR-011 mutation 半边）、`enable_mutation=False` 拒绝与调用次数正交
+- [x] T016 [P] [US3] 在 tests/test_query_executor.py 增加：entity-first 三态与 compose 一致用例；同步更新依赖"整组 null"的存量用例（D4 行为变更的回归面）
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] 在 src/nexusx/use_case/compose_executor.py 移除 T009 保留的 mutation 拒绝闸门；mutation 串行分支改为逐调用 try/except 三态收集（声明顺序不变，fail-stop：首个失败后跳过余下并标 `SKIPPED_PRIOR_FAILURE`）
-- [ ] T018 [P] [US3] 在 src/nexusx/execution/query_executor.py 移除 `group_failed` 整组作废（约 :290）：改为逐字段三态（失败字段 null + `extensions.code`，兄弟结果保留）；方法级 `enable_mutation` 校验逻辑不动
-- [ ] T019 [US3] 阶段检查点：全量回归零失败 + `ruff check src/`；quickstart 场景 1/3 通过
+- [x] T017 [US3] 在 src/nexusx/use_case/compose_executor.py 移除 T009 保留的 mutation 拒绝闸门；mutation 串行分支改为逐调用 try/except 三态收集（声明顺序不变，fail-stop：首个失败后跳过余下并标 `SKIPPED_PRIOR_FAILURE`）
+- [x] T018 [P] [US3] 在 src/nexusx/execution/query_executor.py 移除 `group_failed` 整组作废（约 :290）：改为逐字段三态（失败字段 null + `extensions.code`，兄弟结果保留）；方法级 `enable_mutation` 校验逻辑不动
+- [x] T019 [US3] 阶段检查点：全量回归零失败 + `ruff check src/`；quickstart 场景 1/3 通过
 
 **Checkpoint**: 全部用户故事完成；SC-001~006 可对照验收
 

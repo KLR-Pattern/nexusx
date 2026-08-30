@@ -273,26 +273,48 @@ async def _execute_service_methods(
             else:
                 results[key] = value
 
-    # Mutations: serial in declaration order. (specs/023 US1→US3 phase gate:
-    # aliased mutations are still rejected until US3 lands three-state
-    # feedback; rejecting loudly beats silently collapsing N writes to 1.)
+    # Mutations: serial in declaration order with per-call three-state
+    # feedback (specs/023 US3, FR-005/FR-006): a succeeded call keeps its
+    # result, a failed call nulls only its own key with MUTATION_FAILED,
+    # and fail-stop skips every later call as SKIPPED_PRIOR_FAILURE —
+    # already-executed writes are never erased from the response (D4).
+    mutation_failed = False
     for method_key, method_sel in mutation_specs:
-        if method_sel.alias is not None:
-            raise _ComposeExecutionError(
-                f"Aliased mutation '{method_key}: {method_sel.name}' is not "
-                "supported yet; aliased mutations would silently collapse "
-                "to a single execution.",
-                service_method=f"{service_cls.__name__}.{method_sel.name}",
-                code="ALIAS_CONFLICT",
+        if mutation_failed:
+            results[method_key] = None
+            errors.append({
+                "message": (
+                    f"Skipped '{method_key}' because a prior mutation failed"
+                ),
+                "path": [service_cls.__name__, method_key],
+                "extensions": {"code": "SKIPPED_PRIOR_FAILURE"},
+            })
+            continue
+        try:
+            results[method_key] = await _invoke_and_project(
+                app=app,
+                schema=schema,
+                service_cls=service_cls,
+                method_name=method_sel.name,
+                method_sel=method_sel,
+                context=context,
             )
-        results[method_key] = await _invoke_and_project(
-            app=app,
-            schema=schema,
-            service_cls=service_cls,
-            method_name=method_sel.name,
-            method_sel=method_sel,
-            context=context,
-        )
+        except _ComposeExecutionError as exc:
+            results[method_key] = None
+            errors.append({
+                "message": str(exc),
+                "path": [service_cls.__name__, method_key],
+                "extensions": {"code": "MUTATION_FAILED"},
+            })
+            mutation_failed = True
+        except Exception as exc:  # noqa: BLE001 — defensive: keep three-state shape
+            results[method_key] = None
+            errors.append({
+                "message": f"{type(exc).__name__}: {exc}",
+                "path": [service_cls.__name__, method_key],
+                "extensions": {"code": "MUTATION_FAILED"},
+            })
+            mutation_failed = True
 
     return results, errors
 

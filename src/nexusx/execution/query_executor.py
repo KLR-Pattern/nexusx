@@ -167,6 +167,8 @@ class QueryExecutor:
                     continue
 
                 # Two-level: dispatch each method field inside the entity group.
+                # specs/023: mutation groups fail-stop (serial semantics);
+                # query groups keep executing siblings past a failure.
                 data[_node_key(selection)] = await self._execute_entity_group(
                     entity_name,
                     method_group,
@@ -176,6 +178,7 @@ class QueryExecutor:
                     entity_names,
                     group_suffix,
                     errors,
+                    fail_stop=(op_type == "mutation"),
                 )
 
         response: dict[str, Any] = {}
@@ -195,15 +198,19 @@ class QueryExecutor:
         entity_names: set[str],
         group_suffix: str,
         errors: list[dict[str, Any]],
-    ) -> dict[str, Any] | None:
+        *,
+        fail_stop: bool = False,
+    ) -> dict[str, Any]:
         """Execute every method field selected inside one entity group.
 
         Methods run sequentially (v1) to preserve the BFS DataLoader's
         store-then-read deduplication invariants across sibling fields.
 
-        Returns ``None`` when any method raises: method return types are
-        non-null, so GraphQL null propagation nulls the group instead of
-        leaving a misleading empty-object ``Entity: {}`` partial result.
+        specs/023 (D4): failures are per-field — a failing method nulls its
+        own response key with an errors entry; sibling results are kept
+        (replaces the pre-023 whole-group nulling). With ``fail_stop``
+        (mutation groups), every method after the first failure is skipped
+        and marked SKIPPED_PRIOR_FAILURE.
         """
         entity_data: dict[str, Any] = {}
         group_failed = False
@@ -216,6 +223,21 @@ class QueryExecutor:
                 continue
             method_name = method_node.name.value
             response_key = _node_key(method_node)
+
+            if group_failed:
+                # fail-stop (mutations): skipped keys stay null + flagged.
+                entity_data[response_key] = None
+                errors.append(
+                    {
+                        "message": (
+                            f"Skipped '{response_key}' because a prior "
+                            "mutation failed"
+                        ),
+                        "path": [entity_name, response_key],
+                        "extensions": {"code": "SKIPPED_PRIOR_FAILURE"},
+                    }
+                )
+                continue
 
             try:
                 method_info = method_group.get(method_name)
@@ -306,23 +328,22 @@ class QueryExecutor:
                 # constraint violations, resolver programming errors); the
                 # response stays GraphQL-spec compliant ({message, path,
                 # extensions}) while the server log retains the exception
-                # type and stack. The failed method nulls the whole group —
-                # sibling results are discarded, matching non-null GraphQL
-                # propagation at group granularity.
+                # type and stack. specs/023 (D4): the failed method nulls
+                # only its own response key — sibling results survive.
+                # fail_stop (mutation groups) skips the remainder.
                 logger.exception(
                     "Resolver error in field %s.%s", entity_name, method_name
                 )
+                entity_data[response_key] = None
                 errors.append(
                     {
                         "message": str(e),
-                        "path": [entity_name, method_name],
+                        "path": [entity_name, response_key],
                         "extensions": {"code": "RESOLVER_ERROR"},
                     }
                 )
-                group_failed = True
+                group_failed = fail_stop
 
-        if group_failed:
-            return None
         return entity_data
 
     @staticmethod

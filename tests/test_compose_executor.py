@@ -451,6 +451,13 @@ class _AliasGuardService(UseCaseService):
         _AliasGuardService.calls.append(f"write:{tag}")
         return _AliasGuardDTO(id=2, label=tag)
 
+    @mutation
+    async def flaky_write(cls, tag: str = "x") -> _AliasGuardDTO:
+        _AliasGuardService.calls.append(f"flaky_write:{tag}")
+        if tag == "fail":
+            raise RuntimeError("flaky exploded")
+        return _AliasGuardDTO(id=3, label=tag)
+
 
 def _guard_app() -> UseCaseAppConfig:
     _AliasGuardService.calls = []
@@ -474,17 +481,20 @@ class TestAliasRejection:
         assert result["data"]["_AliasGuardService"]["a"][0].id == 1
         assert _AliasGuardService.calls == ["fetch:q"]
 
-    async def test_aliased_mutation_field_is_rejected(self) -> None:
+    async def test_aliased_mutation_field_is_supported(self) -> None:
+        """specs/023 B1b: aliased mutations execute serially (US3).
+
+        Superseded the US1/US2-phase rejection; TestAliasMutationThreeState
+        covers the full three-state matrix (fail-stop, dedup-free)."""
         app = _guard_app()
         schema = build_compose_schema(app)
         result = await execute_compose_query(
             app, schema,
             'mutation { _AliasGuardService { a: write(tag: "m") { id } } }',
         )
-        assert result["data"] is None
-        assert result["errors"], "aliased mutation must produce an error"
-        assert result["errors"][0]["extensions"]["code"] == "ALIAS_CONFLICT"
-        assert _AliasGuardService.calls == []
+        assert result["errors"] == []
+        assert result["data"]["_AliasGuardService"]["a"].id == 2
+        assert _AliasGuardService.calls == ["write:m"]
 
     async def test_nested_alias_is_rejected(self) -> None:
         app = _guard_app()
@@ -581,4 +591,96 @@ class TestAliasQueryFanout:
         )
         assert result["data"] is None
         assert "conflict" in result["errors"][0]["message"].lower()
+        assert _AliasGuardService.calls == []
+
+
+class TestAliasMutationThreeState:
+    """US3 (specs/023): aliased mutations run serially with per-call feedback.
+
+    Three states per response key: succeeded (value), failed (null +
+    MUTATION_FAILED), skipped (null + SKIPPED_PRIOR_FAILURE, fail-stop).
+    """
+
+    async def test_issue140_end_to_end_all_invocations_execute(self) -> None:
+        """The original report: 6 aliased add_node created 1 node."""
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        q = (
+            "mutation { _AliasGuardService { "
+            + " ".join(f'n{i}: write(tag: "n{i}") {{ id label }}' for i in range(1, 7))
+            + " } }"
+        )
+        result = await execute_compose_query(app, schema, q)
+        assert result["errors"] == []
+        data = result["data"]["_AliasGuardService"]
+        assert set(data) == {f"n{i}" for i in range(1, 7)}
+        assert all(data[k].label == k for k in data)
+        assert len(_AliasGuardService.calls) == 6
+
+    async def test_partial_failure_three_states(self) -> None:
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema,
+            "mutation { _AliasGuardService { "
+            'first: flaky_write(tag: "ok") { id label } '
+            'bad: flaky_write(tag: "fail") { id } '
+            'last: flaky_write(tag: "also-ok") { id } } }',
+        )
+        data = result["data"]["_AliasGuardService"]
+        # Succeeded results survive (D4: no whole-group nulling).
+        assert data["first"].id == 3
+        assert data["first"].label == "ok"
+        # The failing call nulls its own key with MUTATION_FAILED.
+        assert data["bad"] is None
+        bad = [e for e in result["errors"]
+               if e.get("extensions", {}).get("code") == "MUTATION_FAILED"]
+        assert len(bad) == 1
+        assert bad[0]["path"] == ["_AliasGuardService", "bad"]
+        # Fail-stop: everything after the failure is SKIPPED, not executed.
+        assert data["last"] is None
+        skipped = [e for e in result["errors"]
+                   if e.get("extensions", {}).get("code") == "SKIPPED_PRIOR_FAILURE"]
+        assert len(skipped) == 1
+        assert skipped[0]["path"] == ["_AliasGuardService", "last"]
+        assert _AliasGuardService.calls == ["flaky_write:ok", "flaky_write:fail"]
+
+    async def test_serial_declaration_order(self) -> None:
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema,
+            "mutation { _AliasGuardService { "
+            'c: write(tag: "3") { id } '
+            'a: write(tag: "1") { id } '
+            'b: write(tag: "2") { id } } }',
+        )
+        assert result["errors"] == []
+        # Execution follows DECLARATION order (c, a, b), not alias sort.
+        assert _AliasGuardService.calls == ["write:3", "write:1", "write:2"]
+        assert list(result["data"]["_AliasGuardService"]) == ["c", "a", "b"]
+
+    async def test_same_method_same_args_n_side_effects(self) -> None:
+        """FR-011 mutation half: identical aliased mutations must ALL run."""
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema,
+            'mutation { _AliasGuardService { '
+            'a: write(tag: "dup") { id } b: write(tag: "dup") { id } } }',
+        )
+        assert result["errors"] == []
+        assert _AliasGuardService.calls == ["write:dup", "write:dup"]
+
+    async def test_enable_mutation_false_orthogonal_to_aliases(self) -> None:
+        app = UseCaseAppConfig(
+            name="guard", services=[_AliasGuardService], enable_mutation=False
+        )
+        _AliasGuardService.calls = []
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema, 'mutation { _AliasGuardService { a: write { id } } }'
+        )
+        assert result["data"] is None
+        assert "enable_mutation=False" in result["errors"][0]["message"]
         assert _AliasGuardService.calls == []
