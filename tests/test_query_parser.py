@@ -128,3 +128,131 @@ class TestFieldSelectionDataclass:
         assert sel.name == "users"
         assert sel.alias == "allUsers"
         assert sel.arguments == {"limit": 10}
+
+
+# ──────────────────────────────────────────────────────────────────────
+# specs/023 US2: alias key semantics + response-key conflict detection
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestAliasKeySemantics:
+    """sub_fields keys are RESPONSE keys (alias or name); lookups use .name."""
+
+    def test_aliased_fields_are_kept_separately(self):
+        """Two aliased invocations of the same field must both survive."""
+        parser = QueryParser()
+        result = parser.parse(
+            '{ S { a: f(x: 1) { id } b: f(x: 2) { id title } } }'
+        )
+        svc = result["S"]
+        # Both response keys survive (6.1.2 kept only the last one).
+        assert list(svc.sub_fields) == ["a", "b"]
+        # Lookup identity stays the original field name.
+        assert svc.sub_fields["a"].name == "f"
+        assert svc.sub_fields["b"].name == "f"
+        # Arguments stay per-alias.
+        assert svc.sub_fields["a"].arguments == {"x": 1}
+        assert svc.sub_fields["b"].arguments == {"x": 2}
+        # Projections stay per-alias.
+        assert list(svc.sub_fields["a"].sub_fields) == ["id"]
+        assert list(svc.sub_fields["b"].sub_fields) == ["id", "title"]
+
+    def test_alias_metadata_is_populated(self):
+        parser = QueryParser()
+        result = parser.parse("{ S { a: f { id } } }")
+        sel = result["S"].sub_fields["a"]
+        assert sel.alias == "a"
+        assert sel.name == "f"
+
+    def test_unaliased_key_unchanged(self):
+        """No alias → key stays the field name (backward compatible)."""
+        parser = QueryParser()
+        result = parser.parse("{ S { f { id } } }")
+        assert list(result["S"].sub_fields) == ["f"]
+        assert result["S"].sub_fields["f"].alias is None
+
+    def test_mixed_alias_and_plain_coexist(self):
+        parser = QueryParser()
+        result = parser.parse("{ S { f { id } a: g { id } } }")
+        assert set(result["S"].sub_fields) == {"f", "a"}
+
+
+class TestResponseKeyConflicts:
+    """Duplicate response keys at one level raise (no silent dedup, no merging)."""
+
+    def test_duplicate_alias_rejected(self):
+        parser = QueryParser()
+        with pytest.raises(ValueError, match="conflict"):
+            parser.parse("{ S { a: f(x: 1) { id } a: g { id } } }")
+
+    def test_alias_collides_with_field_name_rejected(self):
+        parser = QueryParser()
+        with pytest.raises(ValueError, match="conflict"):
+            parser.parse("{ S { a: f { id } a { id } } }")
+
+    def test_plain_duplicate_field_rejected_no_merging(self):
+        """`f { x } f { y }` is legal field-merging per spec — we reject it
+        (specs/023 clarify: response keys must be unique; no merging)."""
+        parser = QueryParser()
+        with pytest.raises(ValueError, match="conflict"):
+            parser.parse("{ S { f { x } f { y } } }")
+
+    def test_nested_level_conflict_rejected(self):
+        parser = QueryParser()
+        with pytest.raises(ValueError, match="conflict"):
+            parser.parse("{ S { f { t: id t: name } } }")
+
+    def test_top_level_group_duplicate_rejected(self):
+        """`{ A {...} A {...} }` — same family of bug at operation level."""
+        parser = QueryParser()
+        with pytest.raises(ValueError, match="conflict"):
+            parser.parse("{ S { f { id } } S { g { id } } }")
+
+    def test_same_name_in_different_groups_ok(self):
+        """Conflicts are per-level: same field name under different parents is fine."""
+        parser = QueryParser()
+        result = parser.parse("{ A { f { id } } B { f { id } } }")
+        assert set(result) == {"A", "B"}
+
+
+class TestTopLevelAlias:
+    """specs/023: entity-group / service level aliases follow the same
+    response-key semantics (key = alias, lookup via .name)."""
+
+    def test_top_level_alias_keyed_by_alias(self):
+        parser = QueryParser()
+        result = parser.parse("{ t: TaskService { list_tasks { id } } }")
+        assert list(result) == ["t"]
+        assert result["t"].name == "TaskService"
+        assert result["t"].alias == "t"
+        assert "list_tasks" in result["t"].sub_fields
+
+    def test_two_aliased_groups_coexist(self):
+        parser = QueryParser()
+        result = parser.parse(
+            "{ a: TaskService { list_tasks { id } } "
+            "b: TaskService { get_task(task_id: 1) { id } } }"
+        )
+        assert set(result) == {"a", "b"}
+        assert result["a"].name == "TaskService"
+        assert result["b"].name == "TaskService"
+
+
+class TestValidateNoAliasesGuard:
+    """specs/023: ``validate_no_aliases`` is no longer called internally
+    (the executors support method-level aliases) but stays public as an
+    optional user-side guard — smoke-test it so it cannot rot silently."""
+
+    def test_rejects_aliased_query(self):
+        parser = QueryParser()
+        with pytest.raises(ValueError, match="aliases are not supported"):
+            parser.validate_no_aliases("{ S { a: f { id } } }")
+
+    def test_rejects_nested_alias(self):
+        parser = QueryParser()
+        with pytest.raises(ValueError, match="aliases are not supported"):
+            parser.validate_no_aliases("{ S { f { a: id } } }")
+
+    def test_accepts_plain_query(self):
+        parser = QueryParser()
+        parser.validate_no_aliases("{ S { f { id } } }")  # must not raise

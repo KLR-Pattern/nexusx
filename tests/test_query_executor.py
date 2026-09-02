@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from graphql import DocumentNode, parse
-from sqlmodel import SQLModel, select
+from sqlmodel import Field, SQLModel, select
 
 from nexusx.decorator import mutation, query
 from nexusx.execution.query_executor import QueryExecutor
@@ -265,20 +265,21 @@ class TestQueryExecutorBasic:
             [FixtureUser],
         )
 
-        assert result["data"] == {"FixtureUser": None}
+        # specs/023 D4: the failed method nulls only its own key.
+        assert result["data"] == {"FixtureUser": {"boom": None}}
         err = result["errors"][0]
         assert err["message"] == "kaboom"
         assert err["path"] == ["FixtureUser", "boom"]
         assert err["extensions"] == {"code": "RESOLVER_ERROR"}
 
-    async def test_execute_resolver_error_nulls_group_despite_healthy_sibling(
+    async def test_execute_resolver_error_keeps_healthy_sibling(
         self,
     ):
-        """A failed method nulls the whole group even when a sibling ran fine.
+        """specs/023 D4: a failed method nulls only its own response key.
 
-        Method return types are non-null, so per GraphQL null propagation
-        the error spreads past the group rather than returning partial
-        sibling data.
+        Query groups keep executing siblings past a failure — already
+        computed results are never erased (replaces pre-023 whole-group
+        nulling).
         """
         executor = _make_executor()
 
@@ -309,7 +310,7 @@ class TestQueryExecutorBasic:
             [FixtureUser],
         )
 
-        assert result["data"] == {"FixtureUser": None}
+        assert result["data"] == {"FixtureUser": {"boom": None, "ok": []}}
         assert result["errors"][0]["extensions"] == {"code": "RESOLVER_ERROR"}
 
     async def test_execute_handles_exception_in_method_logs_traceback(self, caplog):
@@ -888,3 +889,355 @@ class TestQueryExecutorSerializationExtras:
         rel_names = get_relationship_names(FixtureTask)
         assert "sprint" in rel_names
         assert "owner" in rel_names
+
+
+# ──────────────────────────────────────────────────────────
+# specs/023 US2: aliased query methods (entity-first path)
+# ──────────────────────────────────────────────────────────
+
+
+class _AliasStats:
+    calls: list[str] = []
+
+
+class AliasProbe(SQLModel, table=False):
+    """Static @query with call recording — no DB roundtrip needed."""
+
+    @query
+    async def probe(cls, tag: str = "x"):
+        """Probe."""
+        _AliasStats.calls.append(f"probe:{tag}")
+        return [
+            FixtureUser(id=1, name=tag, email=f"{tag}@t"),
+            FixtureUser(id=2, name=f"{tag}2", email=f"{tag}2@t"),
+        ]
+
+
+class TestAliasQuerySemantics:
+    @pytest.mark.usefixtures("test_db")
+    async def test_two_aliases_both_execute_and_keyed_by_alias(self):
+        """a/b aliases of one method → 2 executions, 2 response keys."""
+        _AliasStats.calls.clear()
+        executor = _make_executor()
+        method = _get_bound_method(AliasProbe, "probe")
+        query_methods = {"AliasProbe": {"probe": (FixtureUser, method)}}
+        document, parsed = _parse(
+            '{ AliasProbe { a: probe(tag: "hi") { id name } '
+            'b: probe(tag: "lo") { id name } } }'
+        )
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods,
+            {}, [FixtureUser],
+        )
+        assert result.get("errors") is None or result["errors"] == []
+        data = result["data"]["AliasProbe"]
+        assert set(data) == {"a", "b"}
+        assert {row["name"] for row in data["a"]} == {"hi", "hi2"}
+        assert {row["name"] for row in data["b"]} == {"lo", "lo2"}
+        assert sorted(_AliasStats.calls) == ["probe:hi", "probe:lo"]
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_projection_isolated_per_alias(self):
+        """Each alias serializes only the sub-fields it declared."""
+        _AliasStats.calls.clear()
+        executor = _make_executor()
+        method = _get_bound_method(AliasProbe, "probe")
+        query_methods = {"AliasProbe": {"probe": (FixtureUser, method)}}
+        document, parsed = _parse(
+            '{ AliasProbe { a: probe(tag: "p") { id } '
+            'b: probe(tag: "p") { id name } } }'
+        )
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods,
+            {}, [FixtureUser],
+        )
+        data = result["data"]["AliasProbe"]
+        assert set(data["a"][0]) == {"id"}
+        assert set(data["b"][0]) == {"id", "name"}
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_same_method_same_args_runs_twice(self):
+        """FR-011 query half: no method-level dedup on the entity-first path."""
+        _AliasStats.calls.clear()
+        executor = _make_executor()
+        method = _get_bound_method(AliasProbe, "probe")
+        query_methods = {"AliasProbe": {"probe": (FixtureUser, method)}}
+        document, parsed = _parse(
+            '{ AliasProbe { a: probe(tag: "s") { id } b: probe(tag: "s") { id } } }'
+        )
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods,
+            {}, [FixtureUser],
+        )
+        assert _AliasStats.calls == ["probe:s", "probe:s"]
+
+    @pytest.mark.asyncio
+    async def test_handler_level_alias_allowed(self):
+        """T012: GraphQLHandler must stop rejecting aliases (query level)."""
+        from nexusx.handler import GraphQLHandler
+
+        _AliasStats.calls.clear()
+
+        class AliasEntity(SQLModel, table=True):
+            __tablename__ = "alias_entity_probe"
+            id: int | None = Field(default=None, primary_key=True)
+            name: str
+
+            @query
+            async def probe(cls, tag: str = "x"):
+                """Probe."""
+                _AliasStats.calls.append(f"probe:{tag}")
+                return [cls(id=1, name=tag)]
+
+        handler = GraphQLHandler(
+            er_manager=ErManager(
+                session_factory=get_test_session_factory(),
+                entities=[AliasEntity],
+            )
+        )
+        result = await handler.execute(
+            '{ AliasEntity { a: probe(tag: "h") { id name } '
+            'b: probe(tag: "l") { id name } } }'
+        )
+        assert result.get("errors") is None or result["errors"] == []
+        assert set(result["data"]["AliasEntity"]) == {"a", "b"}
+        assert result["data"]["AliasEntity"]["a"][0]["name"] == "h"
+        assert result["data"]["AliasEntity"]["b"][0]["name"] == "l"
+
+
+class TestMutationThreeState:
+    """specs/023 US3: entity-first mutation aliases + three-state feedback,
+    aligned with the compose path (clarify Q1: both paths unified)."""
+
+    async def test_aliased_mutations_all_execute_and_keyed_by_alias(self):
+        executor = _make_executor()
+        calls: list[str] = []
+
+        class M(SQLModel, table=False):
+            @mutation
+            async def write(cls, tag: str = "x"):
+                """Write."""
+                calls.append(tag)
+                return FixtureUser(id=len(calls), name=tag, email=f"{tag}@t")
+
+        mutation_methods = {"FixtureUser": {"write": (FixtureUser, _get_bound_method(M, "write"))}}
+        document, parsed = _parse(
+            'mutation { FixtureUser { '
+            'a: write(tag: "1") { id } b: write(tag: "2") { id } '
+            'c: write(tag: "3") { id } } }'
+        )
+        result = await executor.execute_query(
+            document, None, None, parsed, {}, mutation_methods, [FixtureUser],
+        )
+        assert result.get("errors") is None or result["errors"] == []
+        data = result["data"]["FixtureUser"]
+        assert list(data) == ["a", "b", "c"]  # declaration order
+        assert [data[k]["id"] for k in "abc"] == [1, 2, 3]
+        assert calls == ["1", "2", "3"]
+
+    async def test_mutation_failure_keeps_prior_and_skips_rest(self):
+        executor = _make_executor()
+        calls: list[str] = []
+
+        class M(SQLModel, table=False):
+            @mutation
+            async def flaky(cls, tag: str = "x"):
+                """Flaky."""
+                calls.append(tag)
+                if tag == "fail":
+                    raise RuntimeError("exploded")
+                return FixtureUser(id=1, name=tag, email=f"{tag}@t")
+
+        mutation_methods = {"FixtureUser": {"flaky": (FixtureUser, _get_bound_method(M, "flaky"))}}
+        document, parsed = _parse(
+            'mutation { FixtureUser { '
+            'first: flaky(tag: "ok") { id } '
+            'bad: flaky(tag: "fail") { id } '
+            'last: flaky(tag: "never") { id } } }'
+        )
+        result = await executor.execute_query(
+            document, None, None, parsed, {}, mutation_methods, [FixtureUser],
+        )
+        data = result["data"]["FixtureUser"]
+        assert data["first"]["id"] == 1  # prior result survives
+        assert data["bad"] is None
+        assert data["last"] is None  # fail-stop
+        codes = [e["extensions"]["code"] for e in result["errors"]]
+        assert codes == ["RESOLVER_ERROR", "SKIPPED_PRIOR_FAILURE"]
+        assert calls == ["ok", "fail"]  # 'never' never executed
+
+
+class TestFederationRemoteFieldAliasRejected:
+    """specs/023 FR-009: aliases on remote-relationship (or any nested
+    relationship) fields are rejected pre-execution — the wire gate's
+    mounter-side complement."""
+
+    async def test_relationship_field_alias_rejected_before_execution(self):
+        executor = _make_executor()
+        calls: list[str] = []
+
+        class P(SQLModel, table=False):
+            @query
+            async def get(cls):
+                """Get."""
+                calls.append("ran")
+                return [FixtureUser(id=1, name="A", email="a@t")]
+
+        query_methods = {"FixtureUser": {"get": (FixtureUser, _get_bound_method(P, "get"))}}
+        # 'tasks' is a relationship field on FixtureUser; aliasing it is
+        # rejected at validation time (before the method ever runs).
+        document, parsed = _parse("{ FixtureUser { get { id t: tasks { id } } } }")
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods, {}, [FixtureUser],
+        )
+        assert calls == []  # rejected before execution
+        assert any("aliases are not supported" in e["message"]
+                   for e in result["errors"])
+        # The rejected method is skipped: the group serializes as an empty
+        # object (NOT null — group-level nulling was dropped in specs/023 D4).
+        assert result["data"] == {"FixtureUser": {}}
+
+
+class TestErrorPathResponseKeys:
+    """specs/023 P2: error paths use RESPONSE keys (alias or name), matching
+    the data dict keys, per the GraphQL spec — clients locate errors inside
+    the data they actually received. Messages keep ORIGINAL names (better for
+    humans looking up the schema); only ``path`` carries response keys."""
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_validation_error_path_uses_method_alias(self):
+        executor = _make_executor()
+
+        class P(SQLModel, table=False):
+            @query
+            async def get(cls):
+                """Get."""
+                return [FixtureUser(id=1, name="A", email="a@t")]
+
+        query_methods = {"FixtureUser": {"get": (FixtureUser, _get_bound_method(P, "get"))}}
+        document, parsed = _parse("{ FixtureUser { a: get { id bogus } } }")
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods, {}, [FixtureUser],
+        )
+        assert [e["path"] for e in result["errors"]] == [
+            ["FixtureUser", "a", "bogus"],
+        ]
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_resolver_error_path_uses_group_alias(self):
+        executor = _make_executor()
+
+        class P(SQLModel, table=False):
+            @query
+            async def boom(cls):
+                """Boom."""
+                raise RuntimeError("kaboom")
+
+        query_methods = {"FixtureUser": {"boom": (FixtureUser, _get_bound_method(P, "boom"))}}
+        document, parsed = _parse("{ t: FixtureUser { b: boom { id } } }")
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods, {}, [FixtureUser],
+        )
+        assert list(result["data"]) == ["t"]  # data keyed by response key
+        err = result["errors"][0]
+        assert err["path"] == ["t", "b"]
+        assert err["extensions"]["code"] == "RESOLVER_ERROR"
+
+    async def test_unknown_method_error_path_uses_aliases(self):
+        executor = _make_executor()
+        query_methods = {"FixtureUser": {}}
+        document, parsed = _parse("{ t: FixtureUser { a: nope { id } } }")
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods, {}, [FixtureUser],
+        )
+        assert "nope" in result["errors"][0]["message"]  # original name
+        assert result["errors"][0]["path"] == ["t", "a"]  # response keys
+class TestOperationScopeFailStop:
+    """specs/023 FR-006 (review follow-up): mutation fail-stop propagates
+    across entity-group boundaries (GraphQL mutations are serial at
+    operation level). Later groups' mutations are skipped and marked
+    SKIPPED_PRIOR_FAILURE; query groups are unaffected."""
+
+    async def test_later_group_mutations_skipped_after_earlier_failure(self):
+        executor = _make_executor()
+        calls: list[str] = []
+
+        class Bad(SQLModel, table=False):
+            @mutation
+            async def bad(cls):
+                """Bad."""
+                calls.append("bad")
+                raise RuntimeError("boom")
+
+        class Write(SQLModel, table=False):
+            @mutation
+            async def write(cls):
+                """Write."""
+                calls.append("write")
+                return FixtureUser(id=9, name="w", email="w@t")
+
+        mutation_methods = {
+            "FixtureUser": {
+                "bad": (FixtureUser, _get_bound_method(Bad, "bad")),
+                "write": (FixtureUser, _get_bound_method(Write, "write")),
+            }
+        }
+        document, parsed = _parse(
+            "mutation { a: FixtureUser { bad { id } } "
+            "b: FixtureUser { write { id } } }"
+        )
+        result = await executor.execute_query(
+            document, None, None, parsed, {}, mutation_methods, [FixtureUser],
+        )
+        assert result["data"] == {
+            "a": {"bad": None},
+            "b": {"write": None},
+        }
+        assert [
+            (e["extensions"]["code"], e["path"]) for e in result["errors"]
+        ] == [
+            ("RESOLVER_ERROR", ["a", "bad"]),
+            ("SKIPPED_PRIOR_FAILURE", ["b", "write"]),
+        ]
+        assert calls == ["bad"]  # 'write' never executed
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_query_groups_unaffected_by_abort_flag(self):
+        """The abort flag only gates mutations — a query group in the same
+        document still runs (FR-005: queries have no fail-stop)."""
+        executor = _make_executor()
+        calls: list[str] = []
+
+        class Bad(SQLModel, table=False):
+            @mutation
+            async def bad(cls):
+                """Bad."""
+                calls.append("bad")
+                raise RuntimeError("boom")
+
+        class Get(SQLModel, table=False):
+            @query
+            async def get(cls):
+                """Get."""
+                calls.append("get")
+                return [FixtureUser(id=1, name="A", email="a@t")]
+
+        query_methods = {
+            "FixtureUser": {"get": (FixtureUser, _get_bound_method(Get, "get"))}
+        }
+        mutation_methods = {
+            "FixtureUser": {"bad": (FixtureUser, _get_bound_method(Bad, "bad"))}
+        }
+        document, parsed = _parse(
+            "mutation { FixtureUser { bad { id } } } "
+            "query { q: FixtureUser { get { id } } }"
+        )
+        # (the alias keeps the two operations' top-level keys distinct —
+        # parse_document merges all operations into one response-key dict)
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods,
+            mutation_methods, [FixtureUser],
+        )
+        assert calls == ["bad", "get"]  # the query ran despite the abort
+        assert result["data"]["q"] == {"get": [{"id": 1}]}
+        assert result["errors"][0]["extensions"]["code"] == "RESOLVER_ERROR"

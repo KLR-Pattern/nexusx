@@ -206,3 +206,80 @@ def test_batch_roots_introspect_arg_contract():
     br = roots["by_product_id_in"]
     assert br.arg_name == "product_id_list"
     assert br.arg_type == "list[int]"
+
+
+# ──────────────────────────────────────────────────────────────────────
+# specs/023 US4: the wire never carries aliases (mounter-side boundary gate)
+# ──────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_wire_never_carries_aliases_flat():
+    """Aliased selection keys must not leak into the member-bound query.
+
+    Simulates the post-023 parser tree: sub_fields keyed by RESPONSE key
+    (alias when present) with FieldSelection.name carrying the real field
+    name. The renderer must emit original field names only.
+    """
+    target_cls = create_model(
+        "WireReview",
+        id=(int | None, None),
+        product_id=(int | None, None),
+        title=(str | None, None),
+    )
+    transport = FakeTransport(
+        {"WireReview": {"by_product_id_in": [{"product_id": 1, "title": "R1"}]}}
+    )
+    loader_cls = create_remote_loader(
+        typename="WireReview", join_remote="product_id", endpoint="http://reviews",
+        target_cls=target_cls, transport=transport, is_list=False,
+        arg_name="product_id_list",
+    )
+    # Response-keyed tree exactly as the new parser would build it.
+    aliased = FieldSelection(
+        name="WireReview",
+        sub_fields={
+            "t1": FieldSelection(name="title", alias="t1"),
+            "pid": FieldSelection(name="product_id", alias="pid"),
+        },
+    )
+    loader = loader_cls()
+    set_remote_selection(loader, aliased)
+    await loader.load_many([1])
+    q = transport.posts[0][1]["query"]
+    assert "title" in q and "product_id" in q
+    assert "t1:" not in q and "pid:" not in q
+
+
+@pytest.mark.asyncio
+async def test_wire_never_carries_aliases_nested():
+    """Nested aliased sub-selections also render with original field names."""
+    target_cls = create_model(
+        "WireUser",
+        id=(int | None, None),
+        name=(str | None, None),
+    )
+    transport = FakeTransport(
+        {"WireUser": {"by_id_in": [{"id": 1, "name": "A"}]}}
+    )
+    loader_cls = create_remote_loader(
+        typename="WireUser", join_remote="id", endpoint="http://users",
+        target_cls=target_cls, transport=transport, is_list=False,
+        arg_name="id_list",
+    )
+    aliased = FieldSelection(
+        name="WireUser",
+        sub_fields={
+            "name": FieldSelection(name="name"),
+            "friend": FieldSelection(
+                name="friend",
+                sub_fields={"n": FieldSelection(name="name", alias="n")},
+            ),
+        },
+    )
+    loader = loader_cls()
+    set_remote_selection(loader, aliased)
+    await loader.load_many([1])
+    q = transport.posts[0][1]["query"]
+    assert "friend" in q and "name" in q
+    assert "n:" not in q

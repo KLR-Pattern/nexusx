@@ -13,7 +13,7 @@ from sqlmodel import SQLModel
 from nexusx.execution.argument_builder import ArgumentBuilder
 from nexusx.loader.pagination import KeyedPaginatedPackage, PaginatedPackage
 from nexusx.loader.registry import RelationshipKind
-from nexusx.query_parser import FieldSelection
+from nexusx.query_parser import FieldSelection, find_nested_alias, nested_alias_message
 from nexusx.response_builder import (
     get_relation_entity,
     get_relationship_names,
@@ -28,6 +28,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _CACHE_MISS = object()
+
+
+def _node_key(node: FieldNode) -> str:
+    """Response key of a field node: alias when present, else field name.
+
+    specs/023: mirrors ``QueryParser`` key semantics so executor lookups
+    into ``parsed_selections`` and ``sub_fields`` stay aligned when the
+    query carries aliases.
+    """
+    return node.alias.value if node.alias else node.name.value
 
 
 class QueryExecutor:
@@ -87,6 +97,11 @@ class QueryExecutor:
         data: dict[str, Any] = {}
         errors: list[dict[str, Any]] = []
         entity_names = {e.__name__ for e in entities}
+        # specs/023 FR-006 (operation-scope fail-stop): once a mutation
+        # fails, every later mutation in the same operation is skipped —
+        # across entity-group boundaries, matching GraphQL's operation-level
+        # serial mutation semantics. Queries are unaffected.
+        mutation_aborted = False
 
         # Clear caches for this request
         self._registry.clear_cache()
@@ -104,6 +119,11 @@ class QueryExecutor:
                     continue
 
                 entity_name = selection.name.value
+                # specs/023 P2: data keys and error paths use RESPONSE keys
+                # (``alias or name``) per the GraphQL spec; ``entity_name``
+                # stays the lookup identity and powers human-facing logs /
+                # messages.
+                group_key = _node_key(selection)
 
                 # Introspection fields (query only) — not entity groups.
                 if (
@@ -111,7 +131,7 @@ class QueryExecutor:
                     and self._introspection_generator is not None
                     and entity_name in {"__schema", "__type"}
                 ):
-                    data[entity_name] = self._introspection_generator.execute_field(
+                    data[group_key] = self._introspection_generator.execute_field(
                         selection, variables
                     )
                     continue
@@ -121,7 +141,9 @@ class QueryExecutor:
                 # Selected an entity group without any method subselection.
                 if method_group is not None and selection.selection_set is None:
                     errors.append(
-                        self._bare_group_field_error(entity_name, method_group)
+                        self._bare_group_field_error(
+                            entity_name, method_group, group_key
+                        )
                     )
                     continue
 
@@ -132,13 +154,15 @@ class QueryExecutor:
                                 f"Cannot query field '{entity_name}' on type "
                                 f"'{group_suffix}'"
                             ),
-                            "path": [entity_name],
+                            "path": [group_key],
                         }
                     )
                     continue
 
                 # Two-level: dispatch each method field inside the entity group.
-                data[entity_name] = await self._execute_entity_group(
+                # specs/023: mutation groups fail-stop (serial semantics);
+                # query groups keep executing siblings past a failure.
+                entity_data, aborted = await self._execute_entity_group(
                     entity_name,
                     method_group,
                     selection,
@@ -147,7 +171,11 @@ class QueryExecutor:
                     entity_names,
                     group_suffix,
                     errors,
+                    fail_stop=(op_type == "mutation"),
+                    prior_aborted=mutation_aborted,
                 )
+                data[group_key] = entity_data
+                mutation_aborted = mutation_aborted or aborted
 
         response: dict[str, Any] = {}
         if data:
@@ -166,24 +194,57 @@ class QueryExecutor:
         entity_names: set[str],
         group_suffix: str,
         errors: list[dict[str, Any]],
-    ) -> dict[str, Any] | None:
+        *,
+        fail_stop: bool = False,
+        prior_aborted: bool = False,
+    ) -> tuple[dict[str, Any], bool]:
         """Execute every method field selected inside one entity group.
 
         Methods run sequentially (v1) to preserve the BFS DataLoader's
         store-then-read deduplication invariants across sibling fields.
 
-        Returns ``None`` when any method raises: method return types are
-        non-null, so GraphQL null propagation nulls the group instead of
-        leaving a misleading empty-object ``Entity: {}`` partial result.
+        specs/023 (D4): failures are per-field — a failing method nulls its
+        own response key with an errors entry; sibling results are kept
+        (replaces the pre-023 whole-group nulling). With ``fail_stop``
+        (mutation groups), every method after the first failure is skipped
+        and marked SKIPPED_PRIOR_FAILURE.
+
+        Returns ``(entity_data, aborted)``: the second value tells the
+        caller a mutation failed here (or the abort was inherited) so later
+        groups in the same operation can skip their mutations too — FR-006
+        operation-scope fail-stop. Only meaningful with ``fail_stop``;
+        query groups always report ``False``.
         """
         entity_data: dict[str, Any] = {}
-        group_failed = False
-        group_sel = parsed_selections.get(entity_name)
+        # An inherited abort (a mutation failed in a PRIOR group of this
+        # operation) starts the group already in fail-stop.
+        group_failed = fail_stop and prior_aborted
+        # specs/023 P2: response key of the group (alias when present) —
+        # error paths use it so clients can locate errors inside the data
+        # they actually received; ``entity_name`` remains the lookup/log name.
+        group_key = _node_key(group_selection)
+        group_sel = parsed_selections.get(group_key)
 
         for method_node in group_selection.selection_set.selections:
             if not isinstance(method_node, FieldNode):
                 continue
             method_name = method_node.name.value
+            response_key = _node_key(method_node)
+
+            if group_failed:
+                # fail-stop (mutations): skipped keys stay null + flagged.
+                entity_data[response_key] = None
+                errors.append(
+                    {
+                        "message": (
+                            f"Skipped '{response_key}' because a prior "
+                            "mutation failed"
+                        ),
+                        "path": [group_key, response_key],
+                        "extensions": {"code": "SKIPPED_PRIOR_FAILURE"},
+                    }
+                )
+                continue
 
             try:
                 method_info = method_group.get(method_name)
@@ -194,7 +255,7 @@ class QueryExecutor:
                                 f"Cannot query field '{method_name}' on type "
                                 f"'{entity_name}{group_suffix}'"
                             ),
-                            "path": [entity_name, method_name],
+                            "path": [group_key, response_key],
                         }
                     )
                     continue
@@ -204,7 +265,7 @@ class QueryExecutor:
                 # The method's selection tree is nested one level deeper than
                 # the entity-group selection.
                 field_sel = (
-                    group_sel.sub_fields.get(method_name)
+                    group_sel.sub_fields.get(response_key)
                     if group_sel and group_sel.sub_fields
                     else None
                 )
@@ -226,7 +287,7 @@ class QueryExecutor:
                 if not is_federation_batch_root and not self._validate_method_selection(
                     entity,
                     field_sel,
-                    [entity_name, method_name],
+                    [group_key, response_key],
                     pag_root=pag_root,
                     errors=errors,
                 ):
@@ -265,41 +326,46 @@ class QueryExecutor:
                     )
 
                 # Serialize
-                entity_data[method_name] = self._serialize(result, entity, field_sel)
+                entity_data[response_key] = self._serialize(
+                    result, entity, field_sel
+                )
 
             except Exception as e:
                 # Per-field exceptions are common (user input bugs, DB
                 # constraint violations, resolver programming errors); the
                 # response stays GraphQL-spec compliant ({message, path,
                 # extensions}) while the server log retains the exception
-                # type and stack. The failed method nulls the whole group —
-                # sibling results are discarded, matching non-null GraphQL
-                # propagation at group granularity.
+                # type and stack. specs/023 (D4): the failed method nulls
+                # only its own response key — sibling results survive.
+                # fail_stop (mutation groups) skips the remainder.
                 logger.exception(
                     "Resolver error in field %s.%s", entity_name, method_name
                 )
+                entity_data[response_key] = None
                 errors.append(
                     {
                         "message": str(e),
-                        "path": [entity_name, method_name],
+                        "path": [group_key, response_key],
                         "extensions": {"code": "RESOLVER_ERROR"},
                     }
                 )
-                group_failed = True
+                group_failed = fail_stop
 
-        if group_failed:
-            return None
-        return entity_data
+        return entity_data, group_failed
 
     @staticmethod
     def _bare_group_field_error(
-        entity_name: str, method_group: dict[str, tuple[type[SQLModel], Any]]
+        entity_name: str,
+        method_group: dict[str, tuple[type[SQLModel], Any]],
+        group_key: str | None = None,
     ) -> dict[str, Any]:
         """Build the friendly error for selecting a bare entity group field.
 
         Fires when a query selects ``{ Entity }`` with no method subselection.
         ``{ Entity {} }`` (empty braces) is rejected by graphql-core's parser
         before reaching the executor, so only the truly-bare case is caught.
+        ``group_key`` (specs/023 P2) is the response key for the error path
+        when the group is aliased; defaults to the entity name.
         """
         method_names = sorted(method_group)
         first = method_names[0] if method_names else "method_name"
@@ -311,7 +377,7 @@ class QueryExecutor:
                 f"{', '.join(method_names)}.\n"
                 f"Example: {example}"
             ),
-            "path": [entity_name],
+            "path": [group_key or entity_name],
             "extensions": {
                 "code": "BARE_GROUP_FIELD",
                 "entity": entity_name,
@@ -345,6 +411,17 @@ class QueryExecutor:
         """
         if field_sel is None or not field_sel.sub_fields:
             return True
+
+        # specs/023 FR-009: aliases below method level are out of scope —
+        # reject loudly (before execution) instead of silently mis-projecting.
+        nested = find_nested_alias(field_sel)
+        if nested is not None:
+            dotted, field_name = nested
+            errors.append({
+                "message": nested_alias_message(dotted, field_name),
+                "path": [*path, dotted],
+            })
+            return False
 
         if pag_root is None:
             return self._validate_entity_fields(entity, field_sel, path, errors)

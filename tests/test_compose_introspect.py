@@ -243,7 +243,8 @@ class TestCoerceStrictEndToEnd:
             schema,
             '{ Svc { m(n: "abc") } }',
         )
-        assert result["data"] is None
+        # specs/023: per-field — key nulls with an errors entry.
+        assert result["data"] == {"Svc": {"m": None}}
         assert len(result["errors"]) >= 1
 
 
@@ -281,5 +282,6 @@ class TestFromContextCoercion:
             "{ _ContextCoercionService { echo_uuid } }",
             context={"u": "not_a_uuid"},
         )
-        assert result["data"] is None
+        # specs/023: per-field — key nulls with an errors entry.
+        assert result["data"] == {"_ContextCoercionService": {"echo_uuid": None}}
         assert "Failed to coerce" in result["errors"][0]["message"]

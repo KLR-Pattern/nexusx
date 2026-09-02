@@ -29,7 +29,7 @@ from typing import Any
 from graphql import DocumentNode, FieldNode, OperationDefinitionNode, parse
 from pydantic import BaseModel, TypeAdapter
 
-from nexusx.query_parser import FieldSelection, QueryParser
+from nexusx.query_parser import FieldSelection, QueryParser, find_nested_alias
 from nexusx.use_case.business import UseCaseService
 from nexusx.use_case.compose_schema import ComposeSchema
 from nexusx.use_case.compose_type_mapper import is_from_context_annotation
@@ -103,20 +103,40 @@ async def execute_compose_query(
         return _error_response(_INTROSPECTION_REJECTION_HINT)
 
     # 3. Convert AST → FieldSelection tree (reuses existing QueryParser).
+    #    specs/023: keys are response keys; duplicate-key conflicts from the
+    #    parser surface as ALIAS_CONFLICT errors (FR-007).
     parser = QueryParser()
-    selections = parser.parse_document(document)
+    try:
+        selections = parser.parse_document(document)
+    except ValueError as exc:
+        return _error_response(str(exc), code="ALIAS_CONFLICT")
     if not selections:
         return _error_response("Query has no operations.")
 
+    # 3.5 specs/023 US2: method-level aliases are supported on @query
+    #     methods; nested-field aliases are out of scope and rejected
+    #     loudly (FR-009) — never silently dropped.
+    nested_alias = _find_nested_alias(selections)
+    if nested_alias is not None:
+        dotted, field_name = nested_alias
+        return _error_response(
+            "Nested-field aliases are not supported by compose_query "
+            f"('{field_name}' aliased to '{dotted.rsplit('.', 1)[-1]}' "
+            f"at '{dotted}'); only method-level aliases are.",
+            code="ALIAS_CONFLICT",
+        )
+
     # 4. For each operation, plan + execute.
     try:
-        data = await _execute_operations(app, schema, selections, context or {})
+        data, field_errors = await _execute_operations(
+            app, schema, selections, context or {}
+        )
     except _ComposeExecutionError as exc:
-        return _error_response(str(exc), exc.service_method)
+        return _error_response(str(exc), exc.service_method, code=exc.code)
     except Exception as exc:  # noqa: BLE001 — surface as graphql error, not 500
         return _error_response(f"{type(exc).__name__}: {exc}")
 
-    return {"data": data, "errors": []}
+    return {"data": data, "errors": field_errors}
 
 
 # ---------------------------------------------------------------------------
@@ -127,9 +147,15 @@ async def execute_compose_query(
 class _ComposeExecutionError(Exception):
     """Internal control-flow exception carrying service/method context."""
 
-    def __init__(self, message: str, service_method: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        service_method: str | None = None,
+        code: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.service_method = service_method
+        self.code = code
 
 
 async def _execute_operations(
@@ -137,20 +163,36 @@ async def _execute_operations(
     schema: ComposeSchema,
     selections: dict[str, FieldSelection],
     context: dict[str, Any],
-) -> dict[str, Any]:
-    """Run every operation in ``selections`` and return the nested data dict.
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Run every operation in ``selections``; return ``(data, field_errors)``.
 
     For v1 simplicity: operations are executed sequentially. Within an
     operation, ``@query`` methods run concurrently via ``asyncio.gather`` and
     ``@mutation`` methods run serially in query-declaration order. This mirrors
     pydantic-resolve's compose executor.
+
+    specs/023: execution-time failures are collected per field (the failing
+    response key becomes ``null`` with an ``errors`` entry) instead of
+    nulling the whole response; planning errors (unknown service/method,
+    capability gates) still fail fast.
+
+    specs/023 FR-006 (operation-scope fail-stop): once a mutation fails,
+    every LATER mutation in the same operation is skipped and marked
+    SKIPPED_PRIOR_FAILURE — across service-group boundaries, matching
+    GraphQL's operation-level serial mutation semantics. Queries are
+    unaffected by the abort flag.
     """
     services_by_name: dict[str, type[UseCaseService]] = {
         cls.__name__: cls for cls in app.services
     }
 
     data: dict[str, Any] = {}
-    for service_name, service_sel in selections.items():
+    errors: list[dict[str, Any]] = []
+    mutation_aborted = False
+    for service_key, service_sel in selections.items():
+        # specs/023: lookup identity is the original name, the response key
+        # (which may be an alias) is what the caller sees.
+        service_name = service_sel.name or service_key
         service_cls = services_by_name.get(service_name)
         if service_cls is None:
             raise _ComposeExecutionError(
@@ -158,15 +200,19 @@ async def _execute_operations(
                 f"Available: {sorted(services_by_name)}.",
                 service_method=service_name,
             )
-        method_results = await _execute_service_methods(
+        method_results, method_errors, aborted = await _execute_service_methods(
             app=app,
             schema=schema,
             service_cls=service_cls,
             service_sel=service_sel,
             context=context,
+            service_key=service_key,
+            mutation_aborted=mutation_aborted,
         )
-        data[service_name] = method_results
-    return data
+        mutation_aborted = mutation_aborted or aborted
+        data[service_key] = method_results
+        errors.extend(method_errors)
+    return data, errors
 
 
 async def _execute_service_methods(
@@ -175,14 +221,30 @@ async def _execute_service_methods(
     service_cls: type[UseCaseService],
     service_sel: FieldSelection,
     context: dict[str, Any],
-) -> dict[str, Any]:
-    """Run each method selection under one service and return {method: result}."""
+    service_key: str | None = None,
+    mutation_aborted: bool = False,
+) -> tuple[dict[str, Any], list[dict[str, Any]], bool]:
+    """Run each method selection under one service.
+
+    Returns ``(results, errors, mutation_aborted)``: the third value tells
+    the caller whether a mutation failed here (or the abort was inherited
+    from a prior group) so later groups can skip their mutations too
+    (specs/023 FR-006 operation-scope fail-stop).
+
+    ``service_key`` (specs/023 P2) is the response key of the service group
+    (alias when present) — error paths use it so clients can locate errors
+    inside the data they received; defaults to the class name.
+    """
+    path_key = service_key or service_cls.__name__
     methods = getattr(service_cls, "__use_case_methods__", {})
 
     # Bucket methods by kind so we can run queries concurrently and mutations serially.
     query_tasks: list[tuple[str, Awaitable[Any]]] = []
     mutation_specs: list[tuple[str, FieldSelection]] = []
-    for method_name, method_sel in service_sel.sub_fields.items():
+    for method_key, method_sel in service_sel.sub_fields.items():
+        # specs/023: resolve the method by its original name; the response
+        # key (dict key, alias when present) is preserved for the caller.
+        method_name = method_sel.name or method_key
         meta = methods.get(method_name)
         if meta is None:
             raise _ComposeExecutionError(
@@ -197,10 +259,10 @@ async def _execute_service_methods(
                 service_method=f"{service_cls.__name__}.{method_name}",
             )
         if kind == "mutation":
-            mutation_specs.append((method_name, method_sel))
+            mutation_specs.append((method_key, method_sel))
         else:
             query_tasks.append(
-                (method_name, _invoke_and_project(
+                (method_key, _invoke_and_project(
                     app=app,
                     schema=schema,
                     service_cls=service_cls,
@@ -211,27 +273,103 @@ async def _execute_service_methods(
             )
 
     results: dict[str, Any] = {}
+    errors: list[dict[str, Any]] = []
 
-    # Queries: concurrent.
+    # Queries: concurrent. (specs/023 US2: aliased queries fan out — each
+    # alias invocation is an independent call; no method-level dedup. A
+    # failing invocation nulls only its own response key.)
     if query_tasks:
-        names = [n for n, _ in query_tasks]
         awaitables = [a for _, a in query_tasks]
-        values = await asyncio.gather(*awaitables)
-        for name, value in zip(names, values, strict=True):
-            results[name] = value
+        values = await asyncio.gather(*awaitables, return_exceptions=True)
+        for (key, _sel), value in zip(query_tasks, values, strict=True):
+            if isinstance(value, Exception):
+                results[key] = None
+                message = (
+                    str(value)
+                    if isinstance(value, _ComposeExecutionError)
+                    else f"{type(value).__name__}: {value}"
+                )
+                extensions: dict[str, Any] = {"code": "QUERY_FAILED"}
+                # specs/023 polish: carry the qualified method on per-field
+                # errors too (the fail-fast path always has) — MCP consumers
+                # locate the failing method without parsing the message.
+                if (
+                    isinstance(value, _ComposeExecutionError)
+                    and value.service_method
+                ):
+                    extensions["service_method"] = value.service_method
+                errors.append({
+                    "message": message,
+                    "path": [path_key, key],
+                    "extensions": extensions,
+                })
+            elif isinstance(value, BaseException):
+                # Cancellation is not a field failure. gather(return_
+                # exceptions=True) delivers CancelledError (and
+                # KeyboardInterrupt / SystemExit) as VALUES — re-raise so a
+                # cancelled request actually stops instead of running its
+                # mutations and returning a normal response.
+                raise value
+            else:
+                results[key] = value
 
-    # Mutations: serial in declaration order.
-    for method_name, method_sel in mutation_specs:
-        results[method_name] = await _invoke_and_project(
-            app=app,
-            schema=schema,
-            service_cls=service_cls,
-            method_name=method_name,
-            method_sel=method_sel,
-            context=context,
-        )
+    # Mutations: serial in declaration order with per-call three-state
+    # feedback (specs/023 US3, FR-005/FR-006): a succeeded call keeps its
+    # result, a failed call nulls only its own key with MUTATION_FAILED,
+    # and fail-stop skips every later call as SKIPPED_PRIOR_FAILURE —
+    # already-executed writes are never erased from the response (D4).
+    # The flag may arrive pre-set from a prior service group (FR-006
+    # operation-scope fail-stop); queries above already ran unaffected.
+    mutation_failed = mutation_aborted
+    for method_key, method_sel in mutation_specs:
+        if mutation_failed:
+            results[method_key] = None
+            errors.append({
+                "message": (
+                    f"Skipped '{method_key}' because a prior mutation failed"
+                ),
+                "path": [path_key, method_key],
+                "extensions": {"code": "SKIPPED_PRIOR_FAILURE"},
+            })
+            continue
+        try:
+            results[method_key] = await _invoke_and_project(
+                app=app,
+                schema=schema,
+                service_cls=service_cls,
+                method_name=method_sel.name,
+                method_sel=method_sel,
+                context=context,
+            )
+        except _ComposeExecutionError as exc:
+            results[method_key] = None
+            errors.append({
+                "message": str(exc),
+                "path": [path_key, method_key],
+                "extensions": {
+                    "code": "MUTATION_FAILED",
+                    "service_method": (
+                        exc.service_method
+                        or f"{service_cls.__name__}.{method_sel.name}"
+                    ),
+                },
+            })
+            mutation_failed = True
+        except Exception as exc:  # noqa: BLE001 — defensive: keep three-state shape
+            results[method_key] = None
+            errors.append({
+                "message": f"{type(exc).__name__}: {exc}",
+                "path": [path_key, method_key],
+                "extensions": {
+                    "code": "MUTATION_FAILED",
+                    "service_method": (
+                        f"{service_cls.__name__}.{method_sel.name}"
+                    ),
+                },
+            })
+            mutation_failed = True
 
-    return results
+    return results, errors, mutation_failed
 
 
 async def _invoke_and_project(
@@ -446,10 +584,41 @@ def _selection_set_uses_introspection(selection_set: Any) -> bool:
     return False
 
 
-def _error_response(message: str, service_method: str | None = None) -> dict[str, Any]:
+def _find_nested_alias(
+    selections: dict[str, FieldSelection],
+) -> tuple[str, str] | None:
+    """Find an alias BELOW method level (specs/023 FR-009: unsupported).
+
+    Method-level aliases (``a: method(args)``) are supported on @query
+    methods; any alias one level deeper — DTO field renames inside a
+    method's selection — is out of scope and must be rejected loudly
+    instead of silently mis-projecting. Delegates the per-method walk to
+    ``query_parser.find_nested_alias`` (the shared FR-009 helper) and
+    prefixes the service/method response keys. Returns
+    ``(dotted_path, field_name)`` or None.
+    """
+    for service_key, service_sel in selections.items():
+        for method_key, method_sel in service_sel.sub_fields.items():
+            found = find_nested_alias(method_sel)
+            if found is not None:
+                dotted, field_name = found
+                return f"{service_key}.{method_key}.{dotted}", field_name
+    return None
+
+
+def _error_response(
+    message: str,
+    service_method: str | None = None,
+    code: str | None = None,
+) -> dict[str, Any]:
     error: dict[str, Any] = {"message": message}
+    extensions: dict[str, Any] = {}
     if service_method is not None:
-        error["extensions"] = {"service_method": service_method}
+        extensions["service_method"] = service_method
+    if code is not None:
+        extensions["code"] = code
+    if extensions:
+        error["extensions"] = extensions
     return {"data": None, "errors": [error]}
 
 

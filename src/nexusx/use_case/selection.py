@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_core import PydanticUndefined
 
 from nexusx.core_builder import FieldResolution, SelectionError, build_model
-from nexusx.query_parser import FieldSelection, QueryParser
+from nexusx.query_parser import FieldSelection, QueryParser, find_nested_alias
 from nexusx.utils.type_utils import map_annotation
 
 _UNION_ORIGINS = (typing.Union, _UnionType)
@@ -73,7 +73,23 @@ def parse_selection(selection: str) -> FieldSelection:
         raise SelectionError("selection must include at least one field")
 
     _reject_arguments(root)
+    _reject_aliases(root)
     return root
+
+
+def _reject_aliases(selection: FieldSelection) -> None:
+    """specs/023 FR-009: field aliases in a ``--select`` projection are
+    unsupported — reject with a clear message instead of treating the alias
+    as an unknown field name. Shares the tree walk with the GraphQL paths
+    (``query_parser.find_nested_alias``)."""
+    found = find_nested_alias(selection)
+    if found is not None:
+        dotted, field_name = found
+        raise SelectionError(
+            f"field aliases are not supported in selection "
+            f"('{field_name}' aliased to '{dotted.rsplit('.', 1)[-1]}' "
+            f"at '{dotted}')"
+        )
 
 
 class DTOFieldResolver:
