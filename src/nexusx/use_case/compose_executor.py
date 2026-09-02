@@ -29,7 +29,7 @@ from typing import Any
 from graphql import DocumentNode, FieldNode, OperationDefinitionNode, parse
 from pydantic import BaseModel, TypeAdapter
 
-from nexusx.query_parser import FieldSelection, QueryParser
+from nexusx.query_parser import FieldSelection, QueryParser, find_nested_alias
 from nexusx.use_case.business import UseCaseService
 from nexusx.use_case.compose_schema import ComposeSchema
 from nexusx.use_case.compose_type_mapper import is_from_context_annotation
@@ -118,9 +118,11 @@ async def execute_compose_query(
     #     loudly (FR-009) — never silently dropped.
     nested_alias = _find_nested_alias(selections)
     if nested_alias is not None:
+        dotted, field_name = nested_alias
         return _error_response(
             "Nested-field aliases are not supported by compose_query "
-            f"(found at {nested_alias}); only method-level aliases are.",
+            f"('{field_name}' aliased to '{dotted.rsplit('.', 1)[-1]}' "
+            f"at '{dotted}'); only method-level aliases are.",
             code="ALIAS_CONFLICT",
         )
 
@@ -197,6 +199,7 @@ async def _execute_operations(
             service_cls=service_cls,
             service_sel=service_sel,
             context=context,
+            service_key=service_key,
         )
         data[service_key] = method_results
         errors.extend(method_errors)
@@ -209,8 +212,15 @@ async def _execute_service_methods(
     service_cls: type[UseCaseService],
     service_sel: FieldSelection,
     context: dict[str, Any],
+    service_key: str | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Run each method selection under one service; return (results, errors)."""
+    """Run each method selection under one service; return (results, errors).
+
+    ``service_key`` (specs/023 P2) is the response key of the service group
+    (alias when present) — error paths use it so clients can locate errors
+    inside the data they received; defaults to the class name.
+    """
+    path_key = service_key or service_cls.__name__
     methods = getattr(service_cls, "__use_case_methods__", {})
 
     # Bucket methods by kind so we can run queries concurrently and mutations serially.
@@ -257,18 +267,34 @@ async def _execute_service_methods(
         awaitables = [a for _, a in query_tasks]
         values = await asyncio.gather(*awaitables, return_exceptions=True)
         for (key, _sel), value in zip(query_tasks, values, strict=True):
-            if isinstance(value, BaseException):
+            if isinstance(value, Exception):
                 results[key] = None
                 message = (
                     str(value)
                     if isinstance(value, _ComposeExecutionError)
                     else f"{type(value).__name__}: {value}"
                 )
+                extensions: dict[str, Any] = {"code": "QUERY_FAILED"}
+                # specs/023 polish: carry the qualified method on per-field
+                # errors too (the fail-fast path always has) — MCP consumers
+                # locate the failing method without parsing the message.
+                if (
+                    isinstance(value, _ComposeExecutionError)
+                    and value.service_method
+                ):
+                    extensions["service_method"] = value.service_method
                 errors.append({
                     "message": message,
-                    "path": [service_cls.__name__, key],
-                    "extensions": {"code": "QUERY_FAILED"},
+                    "path": [path_key, key],
+                    "extensions": extensions,
                 })
+            elif isinstance(value, BaseException):
+                # Cancellation is not a field failure. gather(return_
+                # exceptions=True) delivers CancelledError (and
+                # KeyboardInterrupt / SystemExit) as VALUES — re-raise so a
+                # cancelled request actually stops instead of running its
+                # mutations and returning a normal response.
+                raise value
             else:
                 results[key] = value
 
@@ -285,7 +311,7 @@ async def _execute_service_methods(
                 "message": (
                     f"Skipped '{method_key}' because a prior mutation failed"
                 ),
-                "path": [service_cls.__name__, method_key],
+                "path": [path_key, method_key],
                 "extensions": {"code": "SKIPPED_PRIOR_FAILURE"},
             })
             continue
@@ -302,16 +328,27 @@ async def _execute_service_methods(
             results[method_key] = None
             errors.append({
                 "message": str(exc),
-                "path": [service_cls.__name__, method_key],
-                "extensions": {"code": "MUTATION_FAILED"},
+                "path": [path_key, method_key],
+                "extensions": {
+                    "code": "MUTATION_FAILED",
+                    "service_method": (
+                        exc.service_method
+                        or f"{service_cls.__name__}.{method_sel.name}"
+                    ),
+                },
             })
             mutation_failed = True
         except Exception as exc:  # noqa: BLE001 — defensive: keep three-state shape
             results[method_key] = None
             errors.append({
                 "message": f"{type(exc).__name__}: {exc}",
-                "path": [service_cls.__name__, method_key],
-                "extensions": {"code": "MUTATION_FAILED"},
+                "path": [path_key, method_key],
+                "extensions": {
+                    "code": "MUTATION_FAILED",
+                    "service_method": (
+                        f"{service_cls.__name__}.{method_sel.name}"
+                    ),
+                },
             })
             mutation_failed = True
 
@@ -530,29 +567,25 @@ def _selection_set_uses_introspection(selection_set: Any) -> bool:
     return False
 
 
-def _find_nested_alias(selections: dict[str, FieldSelection]) -> str | None:
+def _find_nested_alias(
+    selections: dict[str, FieldSelection],
+) -> tuple[str, str] | None:
     """Find an alias BELOW method level (specs/023 FR-009: unsupported).
 
     Method-level aliases (``a: method(args)``) are supported on @query
     methods; any alias one level deeper — DTO field renames inside a
     method's selection — is out of scope and must be rejected loudly
-    instead of silently mis-projecting. Returns the dotted path or None.
+    instead of silently mis-projecting. Delegates the per-method walk to
+    ``query_parser.find_nested_alias`` (the shared FR-009 helper) and
+    prefixes the service/method response keys. Returns
+    ``(dotted_path, field_name)`` or None.
     """
     for service_key, service_sel in selections.items():
         for method_key, method_sel in service_sel.sub_fields.items():
-            found = _nested_alias_in(method_sel)
+            found = find_nested_alias(method_sel)
             if found is not None:
-                return f"{service_key}.{method_key}.{found}"
-    return None
-
-
-def _nested_alias_in(sel: FieldSelection) -> str | None:
-    for key, child in sel.sub_fields.items():
-        if child.alias is not None:
-            return key
-        deeper = _nested_alias_in(child)
-        if deeper is not None:
-            return f"{key}.{deeper}"
+                dotted, field_name = found
+                return f"{service_key}.{method_key}.{dotted}", field_name
     return None
 
 

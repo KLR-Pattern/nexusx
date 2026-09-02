@@ -10,6 +10,7 @@ These tests exercise ``execute_compose_query`` directly (no MCP layer).
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated, ClassVar
 
 import pytest
@@ -343,6 +344,13 @@ class TestErrorHandling:
         assert result["data"] == {"RaisingService": {"boom": None}}
         assert "RaisingService.boom raised RuntimeError" in result["errors"][0]["message"]
         assert result["errors"][0]["extensions"]["code"] == "QUERY_FAILED"
+        # specs/023 polish: per-field errors carry the qualified method too
+        # (aligned with the fail-fast path) — MCP consumers locate the
+        # failure without parsing the message.
+        assert (
+            result["errors"][0]["extensions"]["service_method"]
+            == "RaisingService.boom"
+        )
 
     async def test_malformed_query_returns_parse_error(self, app, schema) -> None:
         result = await execute_compose_query(
@@ -703,3 +711,114 @@ class TestTopLevelAlias:
         assert set(data) == {"g1", "g2"}
         assert data["g1"]["fetch"][0].id == 1
         assert sorted(_AliasGuardService.calls) == ["fetch:a", "fetch:b"]
+
+    async def test_aliased_group_error_path_uses_response_keys(self) -> None:
+        """specs/023 P2: error paths carry response keys — a failing method
+        under an aliased group reports path ['group_alias', 'method_alias'],
+        matching the data keys the client received."""
+
+        class BoomService(UseCaseService):
+            @query
+            async def boom(cls) -> int:
+                raise RuntimeError("kaboom")
+
+        app = UseCaseAppConfig(name="boomapp", services=[BoomService])
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema, "{ g: BoomService { b: boom } }"
+        )
+        assert result["data"] == {"g": {"b": None}}
+        assert result["errors"][0]["path"] == ["g", "b"]
+        assert result["errors"][0]["extensions"]["code"] == "QUERY_FAILED"
+
+
+class TestQueryCancellationPropagates:
+    """specs/023 review P1: gather(return_exceptions=True) delivers
+    CancelledError as a VALUE — it must be re-raised, not downgraded to a
+    QUERY_FAILED error entry. Otherwise a cancelled request (client
+    disconnect, asyncio.timeout) keeps executing its mutations and returns
+    a normal response."""
+
+    async def test_cancelled_query_method_propagates_and_skips_mutations(
+        self,
+    ) -> None:
+        calls: list[str] = []
+
+        class CancelService(UseCaseService):
+            @query
+            async def cancel_me(cls) -> int:
+                calls.append("cancel_me")
+                raise asyncio.CancelledError()
+
+            @mutation
+            async def write(cls) -> int:
+                calls.append("write")
+                return 1
+
+        app = UseCaseAppConfig(
+            name="cancel", services=[CancelService], enable_mutation=True
+        )
+        schema = build_compose_schema(app)
+        with pytest.raises(asyncio.CancelledError):
+            await execute_compose_query(
+                app, schema, "{ CancelService { cancel_me write { id } } }"
+            )
+        assert calls == ["cancel_me"]  # the mutation never ran
+
+    async def test_external_cancel_stops_execution(self) -> None:
+        started = asyncio.Event()
+        calls: list[str] = []
+
+        class SlowService(UseCaseService):
+            @query
+            async def slow(cls) -> int:
+                calls.append("slow")
+                started.set()
+                await asyncio.sleep(10)
+                return 1
+
+            @mutation
+            async def write(cls) -> int:
+                calls.append("write")
+                return 2
+
+        app = UseCaseAppConfig(
+            name="slow", services=[SlowService], enable_mutation=True
+        )
+        schema = build_compose_schema(app)
+
+        async def run() -> None:
+            task = asyncio.create_task(
+                execute_compose_query(
+                    app, schema, "{ SlowService { slow write { id } } }"
+                )
+            )
+            await started.wait()
+            task.cancel()
+            await task
+
+        with pytest.raises(asyncio.CancelledError):
+            await run()
+        assert calls == ["slow"]  # cancelled before the mutation ran
+
+    async def test_plain_exception_still_per_field(self) -> None:
+        """Regression guard: ordinary Exception stays a per-field
+        QUERY_FAILED (sibling results kept) — the fix only changes the
+        non-Exception BaseException path."""
+
+        class BoomService(UseCaseService):
+            @query
+            async def boom(cls) -> int:
+                raise RuntimeError("kaboom")
+
+            @query
+            async def ok(cls) -> int:
+                return 7
+
+        app = UseCaseAppConfig(name="boomsvc", services=[BoomService])
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema, "{ BoomService { boom ok } }"
+        )
+        assert result["data"] == {"BoomService": {"boom": None, "ok": 7}}
+        assert result["errors"][0]["extensions"]["code"] == "QUERY_FAILED"
