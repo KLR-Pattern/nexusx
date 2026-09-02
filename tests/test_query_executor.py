@@ -1152,3 +1152,92 @@ class TestErrorPathResponseKeys:
         )
         assert "nope" in result["errors"][0]["message"]  # original name
         assert result["errors"][0]["path"] == ["t", "a"]  # response keys
+class TestOperationScopeFailStop:
+    """specs/023 FR-006 (review follow-up): mutation fail-stop propagates
+    across entity-group boundaries (GraphQL mutations are serial at
+    operation level). Later groups' mutations are skipped and marked
+    SKIPPED_PRIOR_FAILURE; query groups are unaffected."""
+
+    async def test_later_group_mutations_skipped_after_earlier_failure(self):
+        executor = _make_executor()
+        calls: list[str] = []
+
+        class Bad(SQLModel, table=False):
+            @mutation
+            async def bad(cls):
+                """Bad."""
+                calls.append("bad")
+                raise RuntimeError("boom")
+
+        class Write(SQLModel, table=False):
+            @mutation
+            async def write(cls):
+                """Write."""
+                calls.append("write")
+                return FixtureUser(id=9, name="w", email="w@t")
+
+        mutation_methods = {
+            "FixtureUser": {
+                "bad": (FixtureUser, _get_bound_method(Bad, "bad")),
+                "write": (FixtureUser, _get_bound_method(Write, "write")),
+            }
+        }
+        document, parsed = _parse(
+            "mutation { a: FixtureUser { bad { id } } "
+            "b: FixtureUser { write { id } } }"
+        )
+        result = await executor.execute_query(
+            document, None, None, parsed, {}, mutation_methods, [FixtureUser],
+        )
+        assert result["data"] == {
+            "a": {"bad": None},
+            "b": {"write": None},
+        }
+        assert [
+            (e["extensions"]["code"], e["path"]) for e in result["errors"]
+        ] == [
+            ("RESOLVER_ERROR", ["a", "bad"]),
+            ("SKIPPED_PRIOR_FAILURE", ["b", "write"]),
+        ]
+        assert calls == ["bad"]  # 'write' never executed
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_query_groups_unaffected_by_abort_flag(self):
+        """The abort flag only gates mutations — a query group in the same
+        document still runs (FR-005: queries have no fail-stop)."""
+        executor = _make_executor()
+        calls: list[str] = []
+
+        class Bad(SQLModel, table=False):
+            @mutation
+            async def bad(cls):
+                """Bad."""
+                calls.append("bad")
+                raise RuntimeError("boom")
+
+        class Get(SQLModel, table=False):
+            @query
+            async def get(cls):
+                """Get."""
+                calls.append("get")
+                return [FixtureUser(id=1, name="A", email="a@t")]
+
+        query_methods = {
+            "FixtureUser": {"get": (FixtureUser, _get_bound_method(Get, "get"))}
+        }
+        mutation_methods = {
+            "FixtureUser": {"bad": (FixtureUser, _get_bound_method(Bad, "bad"))}
+        }
+        document, parsed = _parse(
+            "mutation { FixtureUser { bad { id } } } "
+            "query { q: FixtureUser { get { id } } }"
+        )
+        # (the alias keeps the two operations' top-level keys distinct —
+        # parse_document merges all operations into one response-key dict)
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods,
+            mutation_methods, [FixtureUser],
+        )
+        assert calls == ["bad", "get"]  # the query ran despite the abort
+        assert result["data"]["q"] == {"get": [{"id": 1}]}
+        assert result["errors"][0]["extensions"]["code"] == "RESOLVER_ERROR"

@@ -97,6 +97,11 @@ class QueryExecutor:
         data: dict[str, Any] = {}
         errors: list[dict[str, Any]] = []
         entity_names = {e.__name__ for e in entities}
+        # specs/023 FR-006 (operation-scope fail-stop): once a mutation
+        # fails, every later mutation in the same operation is skipped —
+        # across entity-group boundaries, matching GraphQL's operation-level
+        # serial mutation semantics. Queries are unaffected.
+        mutation_aborted = False
 
         # Clear caches for this request
         self._registry.clear_cache()
@@ -157,7 +162,7 @@ class QueryExecutor:
                 # Two-level: dispatch each method field inside the entity group.
                 # specs/023: mutation groups fail-stop (serial semantics);
                 # query groups keep executing siblings past a failure.
-                data[group_key] = await self._execute_entity_group(
+                entity_data, aborted = await self._execute_entity_group(
                     entity_name,
                     method_group,
                     selection,
@@ -167,7 +172,10 @@ class QueryExecutor:
                     group_suffix,
                     errors,
                     fail_stop=(op_type == "mutation"),
+                    prior_aborted=mutation_aborted,
                 )
+                data[group_key] = entity_data
+                mutation_aborted = mutation_aborted or aborted
 
         response: dict[str, Any] = {}
         if data:
@@ -188,7 +196,8 @@ class QueryExecutor:
         errors: list[dict[str, Any]],
         *,
         fail_stop: bool = False,
-    ) -> dict[str, Any]:
+        prior_aborted: bool = False,
+    ) -> tuple[dict[str, Any], bool]:
         """Execute every method field selected inside one entity group.
 
         Methods run sequentially (v1) to preserve the BFS DataLoader's
@@ -199,9 +208,17 @@ class QueryExecutor:
         (replaces the pre-023 whole-group nulling). With ``fail_stop``
         (mutation groups), every method after the first failure is skipped
         and marked SKIPPED_PRIOR_FAILURE.
+
+        Returns ``(entity_data, aborted)``: the second value tells the
+        caller a mutation failed here (or the abort was inherited) so later
+        groups in the same operation can skip their mutations too — FR-006
+        operation-scope fail-stop. Only meaningful with ``fail_stop``;
+        query groups always report ``False``.
         """
         entity_data: dict[str, Any] = {}
-        group_failed = False
+        # An inherited abort (a mutation failed in a PRIOR group of this
+        # operation) starts the group already in fail-stop.
+        group_failed = fail_stop and prior_aborted
         # specs/023 P2: response key of the group (alias when present) —
         # error paths use it so clients can locate errors inside the data
         # they actually received; ``entity_name`` remains the lookup/log name.
@@ -334,7 +351,7 @@ class QueryExecutor:
                 )
                 group_failed = fail_stop
 
-        return entity_data
+        return entity_data, group_failed
 
     @staticmethod
     def _bare_group_field_error(

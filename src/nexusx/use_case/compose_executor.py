@@ -175,6 +175,12 @@ async def _execute_operations(
     response key becomes ``null`` with an ``errors`` entry) instead of
     nulling the whole response; planning errors (unknown service/method,
     capability gates) still fail fast.
+
+    specs/023 FR-006 (operation-scope fail-stop): once a mutation fails,
+    every LATER mutation in the same operation is skipped and marked
+    SKIPPED_PRIOR_FAILURE — across service-group boundaries, matching
+    GraphQL's operation-level serial mutation semantics. Queries are
+    unaffected by the abort flag.
     """
     services_by_name: dict[str, type[UseCaseService]] = {
         cls.__name__: cls for cls in app.services
@@ -182,6 +188,7 @@ async def _execute_operations(
 
     data: dict[str, Any] = {}
     errors: list[dict[str, Any]] = []
+    mutation_aborted = False
     for service_key, service_sel in selections.items():
         # specs/023: lookup identity is the original name, the response key
         # (which may be an alias) is what the caller sees.
@@ -193,14 +200,16 @@ async def _execute_operations(
                 f"Available: {sorted(services_by_name)}.",
                 service_method=service_name,
             )
-        method_results, method_errors = await _execute_service_methods(
+        method_results, method_errors, aborted = await _execute_service_methods(
             app=app,
             schema=schema,
             service_cls=service_cls,
             service_sel=service_sel,
             context=context,
             service_key=service_key,
+            mutation_aborted=mutation_aborted,
         )
+        mutation_aborted = mutation_aborted or aborted
         data[service_key] = method_results
         errors.extend(method_errors)
     return data, errors
@@ -213,8 +222,14 @@ async def _execute_service_methods(
     service_sel: FieldSelection,
     context: dict[str, Any],
     service_key: str | None = None,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Run each method selection under one service; return (results, errors).
+    mutation_aborted: bool = False,
+) -> tuple[dict[str, Any], list[dict[str, Any]], bool]:
+    """Run each method selection under one service.
+
+    Returns ``(results, errors, mutation_aborted)``: the third value tells
+    the caller whether a mutation failed here (or the abort was inherited
+    from a prior group) so later groups can skip their mutations too
+    (specs/023 FR-006 operation-scope fail-stop).
 
     ``service_key`` (specs/023 P2) is the response key of the service group
     (alias when present) — error paths use it so clients can locate errors
@@ -303,7 +318,9 @@ async def _execute_service_methods(
     # result, a failed call nulls only its own key with MUTATION_FAILED,
     # and fail-stop skips every later call as SKIPPED_PRIOR_FAILURE —
     # already-executed writes are never erased from the response (D4).
-    mutation_failed = False
+    # The flag may arrive pre-set from a prior service group (FR-006
+    # operation-scope fail-stop); queries above already ran unaffected.
+    mutation_failed = mutation_aborted
     for method_key, method_sel in mutation_specs:
         if mutation_failed:
             results[method_key] = None
@@ -352,7 +369,7 @@ async def _execute_service_methods(
             })
             mutation_failed = True
 
-    return results, errors
+    return results, errors, mutation_failed
 
 
 async def _invoke_and_project(

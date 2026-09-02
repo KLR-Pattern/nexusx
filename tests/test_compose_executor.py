@@ -822,3 +822,74 @@ class TestQueryCancellationPropagates:
         )
         assert result["data"] == {"BoomService": {"boom": None, "ok": 7}}
         assert result["errors"][0]["extensions"]["code"] == "QUERY_FAILED"
+
+
+class TestOperationScopeFailStop:
+    """specs/023 FR-006 (review follow-up): mutation fail-stop propagates
+    across service-group boundaries — GraphQL mutations are serial at
+    OPERATION level. Later groups' mutations are skipped and marked
+    SKIPPED_PRIOR_FAILURE; queries are unaffected by the abort flag."""
+
+    async def test_later_service_mutations_skipped_after_earlier_failure(
+        self,
+    ) -> None:
+        calls: list[str] = []
+
+        class SvcA(UseCaseService):
+            @mutation
+            async def bad(cls) -> int:
+                calls.append("bad")
+                raise RuntimeError("A exploded")
+
+        class SvcB(UseCaseService):
+            @mutation
+            async def write(cls) -> int:
+                calls.append("write")
+                return 99
+
+        app = UseCaseAppConfig(
+            name="opstop", services=[SvcA, SvcB], enable_mutation=True
+        )
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema, "mutation { SvcA { bad } SvcB { write } }"
+        )
+        assert result["data"] == {
+            "SvcA": {"bad": None},
+            "SvcB": {"write": None},
+        }
+        assert [
+            (e["extensions"]["code"], e["path"]) for e in result["errors"]
+        ] == [
+            ("MUTATION_FAILED", ["SvcA", "bad"]),
+            ("SKIPPED_PRIOR_FAILURE", ["SvcB", "write"]),
+        ]
+        assert calls == ["bad"]  # SvcB.write never executed
+
+    async def test_queries_unaffected_by_abort_flag(self) -> None:
+        """The abort flag only gates mutations — a later group's queries
+        still run (FR-005: query failures have no fail-stop either way)."""
+        calls: list[str] = []
+
+        class SvcA(UseCaseService):
+            @mutation
+            async def bad(cls) -> int:
+                calls.append("bad")
+                raise RuntimeError("A exploded")
+
+        class SvcB(UseCaseService):
+            @query
+            async def fetch(cls) -> int:
+                calls.append("fetch")
+                return 7
+
+        app = UseCaseAppConfig(
+            name="opstopq", services=[SvcA, SvcB], enable_mutation=True
+        )
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema, "mutation { SvcA { bad } SvcB { fetch } }"
+        )
+        assert result["data"]["SvcB"]["fetch"] == 7
+        assert calls == ["bad", "fetch"]
+        assert len(result["errors"]) == 1  # only the MUTATION_FAILED entry
