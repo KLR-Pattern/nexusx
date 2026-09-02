@@ -17,6 +17,17 @@ def _conflict_message(key: str, where: str) -> str:
     )
 
 
+class ResponseKeyConflictError(ValueError):
+    """Duplicate response key at one selection level (specs/023 FR-007).
+
+    Raised by ``QueryParser`` for alias repeats, alias/field-name
+    collisions, and plain duplicate fields — field merging is not
+    supported. Subclasses ``ValueError`` so pre-023 ``except ValueError``
+    callers keep working; handlers that want a machine-readable code catch
+    this type specifically (compose maps it to ``ALIAS_CONFLICT``).
+    """
+
+
 @dataclass
 class FieldSelection:
     """Represents a selected field with its nested selections and arguments.
@@ -32,6 +43,46 @@ class FieldSelection:
     alias: str | None = None
     arguments: dict[str, Any] = field(default_factory=dict)
     sub_fields: dict[str, FieldSelection] = field(default_factory=dict)
+
+
+def find_nested_alias(sel: FieldSelection) -> tuple[str, str] | None:
+    """First alias strictly BELOW ``sel``, as ``(dotted_path, field_name)``.
+
+    specs/023 FR-009 shared helper: nested-field aliases are out of scope on
+    every execution path (entity-first serialization is lenient — unknown
+    fields fall back to ``Any`` — so a nested alias would silently
+    mis-project). All paths detect-and-reject through this single walk.
+
+    ``dotted_path`` is the response-key path from ``sel`` down to the aliased
+    node (e.g. ``"owner.reviews"``); ``field_name`` is the ORIGINAL field
+    name of the aliased node (``child.name``), so error messages can render
+    ``'reviews' aliased to 'r'`` instead of the bare alias key.
+    """
+    def _walk(selection: FieldSelection) -> tuple[str, str] | None:
+        for key, child in (selection.sub_fields or {}).items():
+            if child.alias is not None:
+                return key, child.name
+            deeper = _walk(child)
+            if deeper is not None:
+                return f"{key}.{deeper[0]}", deeper[1]
+        return None
+
+    return _walk(sel)
+
+
+def nested_alias_message(dotted: str, field_name: str) -> str:
+    """Error text for a nested-field alias (specs/023 FR-009).
+
+    Shared by every reject site so the wording stays identical:
+    ``Field aliases are not supported at nested level ('reviews' aliased
+    to 'r'); only method-level aliases are supported``.
+    """
+    alias_key = dotted.rsplit(".", 1)[-1]
+    return (
+        "Field aliases are not supported at nested level "
+        f"('{field_name}' aliased to '{alias_key}'); "
+        "only method-level aliases are supported"
+    )
 
 
 class QueryParser:
@@ -90,7 +141,7 @@ class QueryParser:
                         )
                         key = alias or operation_name
                         if key in result:
-                            raise ValueError(
+                            raise ResponseKeyConflictError(
                                 _conflict_message(key, "top level")
                             )
                         if selection.selection_set:
@@ -150,7 +201,9 @@ class QueryParser:
                 alias = selection.alias.value if selection.alias else None
                 key = alias or field_name
                 if key in sub_fields:
-                    raise ValueError(_conflict_message(key, path or "root"))
+                    raise ResponseKeyConflictError(
+                        _conflict_message(key, path or "root")
+                    )
                 arguments = self._extract_arguments(selection, variables)
 
                 if selection.selection_set:

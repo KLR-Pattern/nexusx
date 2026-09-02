@@ -236,3 +236,23 @@ class TestTopLevelAlias:
         assert set(result) == {"a", "b"}
         assert result["a"].name == "TaskService"
         assert result["b"].name == "TaskService"
+
+
+class TestValidateNoAliasesGuard:
+    """specs/023: ``validate_no_aliases`` is no longer called internally
+    (the executors support method-level aliases) but stays public as an
+    optional user-side guard — smoke-test it so it cannot rot silently."""
+
+    def test_rejects_aliased_query(self):
+        parser = QueryParser()
+        with pytest.raises(ValueError, match="aliases are not supported"):
+            parser.validate_no_aliases("{ S { a: f { id } } }")
+
+    def test_rejects_nested_alias(self):
+        parser = QueryParser()
+        with pytest.raises(ValueError, match="aliases are not supported"):
+            parser.validate_no_aliases("{ S { f { a: id } } }")
+
+    def test_accepts_plain_query(self):
+        parser = QueryParser()
+        parser.validate_no_aliases("{ S { f { id } } }")  # must not raise
