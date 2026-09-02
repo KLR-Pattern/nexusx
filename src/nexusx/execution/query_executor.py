@@ -13,7 +13,7 @@ from sqlmodel import SQLModel
 from nexusx.execution.argument_builder import ArgumentBuilder
 from nexusx.loader.pagination import KeyedPaginatedPackage, PaginatedPackage
 from nexusx.loader.registry import RelationshipKind
-from nexusx.query_parser import FieldSelection
+from nexusx.query_parser import FieldSelection, find_nested_alias, nested_alias_message
 from nexusx.response_builder import (
     get_relation_entity,
     get_relationship_names,
@@ -38,25 +38,6 @@ def _node_key(node: FieldNode) -> str:
     query carries aliases.
     """
     return node.alias.value if node.alias else node.name.value
-
-
-def _find_nested_alias(sel: FieldSelection) -> str | None:
-    """First alias BELOW the top level of a method's selection, or None.
-
-    specs/023 FR-009: entity-first serialization is lenient (unknown fields
-    fall back to ``Any``), so a nested alias would silently mis-project —
-    detect it before execution and reject loudly.
-    """
-    def _walk(selection: FieldSelection) -> str | None:
-        for key, child in (selection.sub_fields or {}).items():
-            if child.alias is not None:
-                return key
-            deeper = _walk(child)
-            if deeper is not None:
-                return f"{key}.{deeper}"
-        return None
-
-    return _walk(sel)
 
 
 class QueryExecutor:
@@ -133,6 +114,11 @@ class QueryExecutor:
                     continue
 
                 entity_name = selection.name.value
+                # specs/023 P2: data keys and error paths use RESPONSE keys
+                # (``alias or name``) per the GraphQL spec; ``entity_name``
+                # stays the lookup identity and powers human-facing logs /
+                # messages.
+                group_key = _node_key(selection)
 
                 # Introspection fields (query only) — not entity groups.
                 if (
@@ -140,7 +126,7 @@ class QueryExecutor:
                     and self._introspection_generator is not None
                     and entity_name in {"__schema", "__type"}
                 ):
-                    data[entity_name] = self._introspection_generator.execute_field(
+                    data[group_key] = self._introspection_generator.execute_field(
                         selection, variables
                     )
                     continue
@@ -150,7 +136,9 @@ class QueryExecutor:
                 # Selected an entity group without any method subselection.
                 if method_group is not None and selection.selection_set is None:
                     errors.append(
-                        self._bare_group_field_error(entity_name, method_group)
+                        self._bare_group_field_error(
+                            entity_name, method_group, group_key
+                        )
                     )
                     continue
 
@@ -161,7 +149,7 @@ class QueryExecutor:
                                 f"Cannot query field '{entity_name}' on type "
                                 f"'{group_suffix}'"
                             ),
-                            "path": [entity_name],
+                            "path": [group_key],
                         }
                     )
                     continue
@@ -169,7 +157,7 @@ class QueryExecutor:
                 # Two-level: dispatch each method field inside the entity group.
                 # specs/023: mutation groups fail-stop (serial semantics);
                 # query groups keep executing siblings past a failure.
-                data[_node_key(selection)] = await self._execute_entity_group(
+                data[group_key] = await self._execute_entity_group(
                     entity_name,
                     method_group,
                     selection,
@@ -214,9 +202,11 @@ class QueryExecutor:
         """
         entity_data: dict[str, Any] = {}
         group_failed = False
-        group_sel = parsed_selections.get(
-            _node_key(group_selection)
-        )
+        # specs/023 P2: response key of the group (alias when present) —
+        # error paths use it so clients can locate errors inside the data
+        # they actually received; ``entity_name`` remains the lookup/log name.
+        group_key = _node_key(group_selection)
+        group_sel = parsed_selections.get(group_key)
 
         for method_node in group_selection.selection_set.selections:
             if not isinstance(method_node, FieldNode):
@@ -233,7 +223,7 @@ class QueryExecutor:
                             f"Skipped '{response_key}' because a prior "
                             "mutation failed"
                         ),
-                        "path": [entity_name, response_key],
+                        "path": [group_key, response_key],
                         "extensions": {"code": "SKIPPED_PRIOR_FAILURE"},
                     }
                 )
@@ -248,7 +238,7 @@ class QueryExecutor:
                                 f"Cannot query field '{method_name}' on type "
                                 f"'{entity_name}{group_suffix}'"
                             ),
-                            "path": [entity_name, method_name],
+                            "path": [group_key, response_key],
                         }
                     )
                     continue
@@ -280,7 +270,7 @@ class QueryExecutor:
                 if not is_federation_batch_root and not self._validate_method_selection(
                     entity,
                     field_sel,
-                    [entity_name, method_name],
+                    [group_key, response_key],
                     pag_root=pag_root,
                     errors=errors,
                 ):
@@ -338,7 +328,7 @@ class QueryExecutor:
                 errors.append(
                     {
                         "message": str(e),
-                        "path": [entity_name, response_key],
+                        "path": [group_key, response_key],
                         "extensions": {"code": "RESOLVER_ERROR"},
                     }
                 )
@@ -348,13 +338,17 @@ class QueryExecutor:
 
     @staticmethod
     def _bare_group_field_error(
-        entity_name: str, method_group: dict[str, tuple[type[SQLModel], Any]]
+        entity_name: str,
+        method_group: dict[str, tuple[type[SQLModel], Any]],
+        group_key: str | None = None,
     ) -> dict[str, Any]:
         """Build the friendly error for selecting a bare entity group field.
 
         Fires when a query selects ``{ Entity }`` with no method subselection.
         ``{ Entity {} }`` (empty braces) is rejected by graphql-core's parser
         before reaching the executor, so only the truly-bare case is caught.
+        ``group_key`` (specs/023 P2) is the response key for the error path
+        when the group is aliased; defaults to the entity name.
         """
         method_names = sorted(method_group)
         first = method_names[0] if method_names else "method_name"
@@ -366,7 +360,7 @@ class QueryExecutor:
                 f"{', '.join(method_names)}.\n"
                 f"Example: {example}"
             ),
-            "path": [entity_name],
+            "path": [group_key or entity_name],
             "extensions": {
                 "code": "BARE_GROUP_FIELD",
                 "entity": entity_name,
@@ -403,14 +397,12 @@ class QueryExecutor:
 
         # specs/023 FR-009: aliases below method level are out of scope —
         # reject loudly (before execution) instead of silently mis-projecting.
-        nested_alias = _find_nested_alias(field_sel)
-        if nested_alias is not None:
+        nested = find_nested_alias(field_sel)
+        if nested is not None:
+            dotted, field_name = nested
             errors.append({
-                "message": (
-                    "Field aliases are not supported at nested level "
-                    f"({nested_alias}); only method-level aliases are supported"
-                ),
-                "path": [*path, nested_alias],
+                "message": nested_alias_message(dotted, field_name),
+                "path": [*path, dotted],
             })
             return False
 

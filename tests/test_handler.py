@@ -181,6 +181,21 @@ class TestGraphQLHandlerWithBase:
         assert "errors" in result
         assert any("aliases are not supported" in error["message"] for error in result["errors"])
 
+    @pytest.mark.asyncio
+    async def test_duplicate_response_key_gets_alias_conflict_code(
+        self, handler: GraphQLHandler
+    ) -> None:
+        """specs/023 FR-007: duplicate response keys carry a machine-readable
+        code on the entity-first path too (aligned with compose)."""
+        result = await handler.execute(
+            "{ HandlerTestUser { get_all { id } get_all { name } } }"
+        )
+
+        assert "errors" in result
+        error = result["errors"][0]
+        assert "Response key conflict" in error["message"]
+        assert error["extensions"]["code"] == "ALIAS_CONFLICT"
+
 
 # ============================================================================
 # Tests for Relationship-based entity discovery

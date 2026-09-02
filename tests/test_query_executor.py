@@ -1093,4 +1093,62 @@ class TestFederationRemoteFieldAliasRejected:
         assert calls == []  # rejected before execution
         assert any("aliases are not supported" in e["message"]
                    for e in result["errors"])
-        assert result["data"]["FixtureUser"] is not None or True  # group may still serialize
+        # The rejected method is skipped: the group serializes as an empty
+        # object (NOT null — group-level nulling was dropped in specs/023 D4).
+        assert result["data"] == {"FixtureUser": {}}
+
+
+class TestErrorPathResponseKeys:
+    """specs/023 P2: error paths use RESPONSE keys (alias or name), matching
+    the data dict keys, per the GraphQL spec — clients locate errors inside
+    the data they actually received. Messages keep ORIGINAL names (better for
+    humans looking up the schema); only ``path`` carries response keys."""
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_validation_error_path_uses_method_alias(self):
+        executor = _make_executor()
+
+        class P(SQLModel, table=False):
+            @query
+            async def get(cls):
+                """Get."""
+                return [FixtureUser(id=1, name="A", email="a@t")]
+
+        query_methods = {"FixtureUser": {"get": (FixtureUser, _get_bound_method(P, "get"))}}
+        document, parsed = _parse("{ FixtureUser { a: get { id bogus } } }")
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods, {}, [FixtureUser],
+        )
+        assert [e["path"] for e in result["errors"]] == [
+            ["FixtureUser", "a", "bogus"],
+        ]
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_resolver_error_path_uses_group_alias(self):
+        executor = _make_executor()
+
+        class P(SQLModel, table=False):
+            @query
+            async def boom(cls):
+                """Boom."""
+                raise RuntimeError("kaboom")
+
+        query_methods = {"FixtureUser": {"boom": (FixtureUser, _get_bound_method(P, "boom"))}}
+        document, parsed = _parse("{ t: FixtureUser { b: boom { id } } }")
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods, {}, [FixtureUser],
+        )
+        assert list(result["data"]) == ["t"]  # data keyed by response key
+        err = result["errors"][0]
+        assert err["path"] == ["t", "b"]
+        assert err["extensions"]["code"] == "RESOLVER_ERROR"
+
+    async def test_unknown_method_error_path_uses_aliases(self):
+        executor = _make_executor()
+        query_methods = {"FixtureUser": {}}
+        document, parsed = _parse("{ t: FixtureUser { a: nope { id } } }")
+        result = await executor.execute_query(
+            document, None, None, parsed, query_methods, {}, [FixtureUser],
+        )
+        assert "nope" in result["errors"][0]["message"]  # original name
+        assert result["errors"][0]["path"] == ["t", "a"]  # response keys

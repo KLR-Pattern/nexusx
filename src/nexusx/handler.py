@@ -13,7 +13,7 @@ from nexusx.execution.query_executor import QueryExecutor
 from nexusx.graphiql import GRAPHIQL_HTML
 from nexusx.introspection import IntrospectionGenerator
 from nexusx.loader.registry import ErManager
-from nexusx.query_parser import QueryParser
+from nexusx.query_parser import QueryParser, ResponseKeyConflictError
 from nexusx.sdl_generator import SDLGenerator
 from nexusx.standard_queries import AutoQueryConfig, add_standard_queries
 
@@ -341,6 +341,17 @@ class GraphQLHandler:
                 entities=self.entities,
             )
 
+        except ResponseKeyConflictError as e:
+            # specs/023 FR-007: carry the machine-readable code on the
+            # entity-first path too (aligned with compose's ALIAS_CONFLICT).
+            return {
+                "errors": [
+                    {
+                        "message": str(e),
+                        "extensions": {"code": "ALIAS_CONFLICT"},
+                    }
+                ]
+            }
         except Exception as e:
             logger.exception("GraphQL execution error")
             return {"errors": [{"message": str(e)}]}
