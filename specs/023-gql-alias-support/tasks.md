@@ -175,3 +175,27 @@ Task: "T012 移除 handler 内部校验调用 in src/nexusx/handler.py"
 - 关键回归面：T016（存量"整组 null"用例）与 T007（federation 矩阵）是两处最大风险点，安排在检查点前
 - `core_builder.py` 的查找名/输出名分离（B2）与 `response_builder.py` 均不在本任务清单（spec FR-009 设计排除/范围外）
 - commit 粒度建议：每阶段一组合（US1 一个、US2+US4 一个、US3 一个），检查点绿后提交
+
+---
+
+## Review 修复与增强（2026-09-01/02，超出原任务清单的记录）
+
+分支 review（全文存 note-tool id 46）发现的问题与增强，3+2 个 commit：
+
+### 修复（9f5c341 / 9d9f49f / b58f9f7）
+- **P1 取消吞没**：compose 查询并发路径 `gather(return_exceptions=True)` 把 `CancelledError` 当业务失败转成 `QUERY_FAILED`——实测外部 `task.cancel()` 后返回正常响应且后续 mutation 照跑（master 回归）。修复 = `Exception` 走 per-field、其余 `BaseException` re-raise
+- **P2 error path 合规**：别名存在时 `errors[].path` 用原始名而非 response key（GraphQL 规范要求 response key）；两路径统一（`group_key` / `path_key`），message/日志保留原始名（便于人查 schema）
+- **P3 恒真断言**：`assert ... or True` 换成精确形态断言（校验失败方法被 skip → 组序列化为 `{}` 非 null）
+- polish：per-field 错误补 `extensions.service_method`；`validate_no_aliases` 补冒烟测试
+
+### 新增公共 API（query_parser 模块级，非 breaking）
+- `find_nested_alias(sel) -> (dotted_path, 原字段名) | None`——FR-009 检测的唯一实现（原先 query_executor / compose_executor / selection.py 三处等价重复，全部收敛复用）
+- `nested_alias_message(path, name)`——统一报错措辞（`'reviews' aliased to 'r'`）
+- `ResponseKeyConflictError(ValueError)`——duplicate response key 的类型化异常；`GraphQLHandler` 单独 catch 以输出 `ALIAS_CONFLICT` code（与 compose 对齐）
+
+### 行为增强（最终评估拍板，方案 A）
+- **operation 级 mutation fail-stop**：原实现 fail-stop 只在单个 service/entity 组内生效，跨组不传播（实测 `SvcA` 失败后 `SvcB.write` 照常执行）——与 FR-006"失败之后的调用停止执行"字面不符、偏离 GraphQL operation 级串行语义。修复后 abort 标志跨组传播，后续组 mutation 一律 `SKIPPED_PRIOR_FAILURE`，query 不受影响。契约场景 4 已更新
+- 已知边界（未改，记录在案）：`parse_document` 按 document 合并顶层键，同 document 多 operation 选同名组会触发 duplicate-key 报错（master 上为静默覆盖）；单 operation-per-request 的现实下影响极小，如需支持须让 parser 按 operation 分组（牵动全部调用方，另立任务）
+
+### 验证
+- 全量 1660 passed / 6 skipped / 0 failed；中间 commit 快照已验证可 bisect

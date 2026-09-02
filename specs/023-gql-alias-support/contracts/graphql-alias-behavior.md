@@ -9,8 +9,8 @@
 | 1 | query 方法级别名，同方法不同参数（`high: list(p: 高)` + `low: list(p: 低)`） | 两次独立执行（参数各自正确），响应键 = 别名，各别名按自己声明的子字段投影 | FR-002/003 |
 | 2 | query 方法级别名，同方法同参数 | 仍逐个独立调用（**不做方法级结果去重**）；联邦场景同 selection 同参数命中同一加载器 key 缓存，同一节点对 member 只发一次请求 | FR-011 |
 | 3 | mutation 方法级别名 ×N | 按声明顺序串行**全部执行**（N 个别名 = N 次副作用，禁止执行级去重），响应键 = 别名 | FR-004/011 |
-| 4 | mutation 第 k 个失败 | 前 k-1 个已成功结果保留；第 k 个键为 null + `MUTATION_FAILED`；其后全部 null + `SKIPPED_PRIOR_FAILURE`（fail-stop） | FR-005/006 |
-| 5 | query 某别名失败 | 该别名 null + 错误条目，其余别名不受影响（无 fail-stop） | US2 场景 3 |
+| 4 | mutation 第 k 个失败 | 前 k-1 个已成功结果保留；第 k 个键为 null + `MUTATION_FAILED`；其后全部 null + `SKIPPED_PRIOR_FAILURE`（fail-stop 为 **operation 级**：跨 entity group / service 组传播，后续组的 mutation 一律跳过；query 不受 abort 标志影响——review 后敲定，对齐 GraphQL operation 级串行语义） | FR-005/006 |
+| 5 | query 某别名失败 | 该别名 null + 错误条目（compose 错误码 `QUERY_FAILED`，携带 `extensions.service_method`），其余别名不受影响（无 fail-stop） | US2 场景 3 |
 | 6 | 同层响应键重复（别名重复 / 别名撞字段名 / 无别名同名字段重复） | 报错 `ALIAS_CONFLICT`，不执行任何方法；**不做字段合并** | FR-007 |
 | 7 | 顶层 entity group / service 名重复 | 同 #6，报错 | FR-007 |
 | 8 | 嵌套字段级别名（返回值内部字段改名，如 `t1: title`） | 报错"不支持"（本期范围外，明确报错非静默） | FR-009 |
