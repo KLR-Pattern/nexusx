@@ -1,6 +1,6 @@
 [project]
 name = "nexusx"
-version = "6.1.2"
+version = "6.2.0"
 description = "Build SQLModel applications for people and AI — turn relationships into a batch-loaded query graph and typed methods into REST, GraphQL, MCP, and CLI interfaces"
 authors = [{ name = "tangkikodo", email = "allmonday@126.com" }]
 readme = "README.md"

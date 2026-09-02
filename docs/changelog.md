@@ -10,6 +10,66 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
 
+## 6.2
+
+### 6.2.0 (2026-9-2)
+
+- feat:
+  - **Method-level GraphQL aliases on queries and mutations (#141)**:
+    Aliased fields were silently collapsed — the same method invoked N
+    times via aliases executed only once (compose) or executed N times
+    while overwriting each other down to the last response key
+    (entity-first); either way the caller got one result and no signal
+    (issue #140). Both paths now support method-level aliases: each alias
+    is an independent invocation with its own arguments and sub-field
+    projection, and response keys are the aliases. Mutations run serially
+    in declaration order — N aliases means N side effects, with no
+    execution-level dedup. Nested-field aliases (DTO field renames inside
+    a method selection) stay out of scope and now fail loudly instead of
+    mis-projecting.
+
+  - **Three-state mutation feedback, operation-scope fail-stop (#141)**:
+    A failed mutation no longer voids its whole group: succeeded calls
+    keep their results, the failing key becomes `null` with
+    `MUTATION_FAILED` (entity-first: `RESOLVER_ERROR`), and every later
+    mutation in the same operation is skipped and marked
+    `SKIPPED_PRIOR_FAILURE` — across group/service boundaries, matching
+    GraphQL's operation-level serial semantics. Queries are unaffected by
+    the abort flag and never fail-stop.
+
+  - **Federation wire never carries aliases (#141)**: The mounter-side
+    wire renderer emits original field names for aliased nodes — aliases
+    terminate at the mounter, members see zero changes and zero alias
+    burden.
+
+- behavior change:
+  - **Duplicate response keys rejected (#141)**: Alias repeats, an alias
+    colliding with a field name, and plain duplicate fields
+    (`f { x } f { y }`) used to silently keep only the last selection.
+    They now raise an `ALIAS_CONFLICT` error before anything executes;
+    field merging is intentionally not supported.
+
+  - **Query failures are per-field (#141)**: A failing query method nulls
+    only its own response key with a `QUERY_FAILED` error entry
+    (carrying `extensions.service_method`) — on compose the whole
+    response used to become `data: null`; on entity-first the whole
+    entity group used to be voided. Sibling results now survive on both
+    paths.
+
+  - **Error paths use response keys (#141)**: `errors[].path` now uses
+    response keys (the alias when present), consistent with the `data`
+    keys clients actually received, per the GraphQL spec; messages and
+    server logs keep original field names for schema lookups.
+
+- fix:
+  - **Cancelled compose queries stop instead of returning 200 (#141)**:
+    The concurrent query path (`asyncio.gather(..., return_exceptions=
+    True)`) downgraded `CancelledError` to a `QUERY_FAILED` error entry —
+    a cancelled request (client disconnect, `asyncio.timeout`) would keep
+    executing its serial mutations and return a normal response.
+    Cancellation now propagates: `Exception` becomes a per-field error,
+    any other `BaseException` is re-raised.
+
 ## 6.1
 
 ### 6.1.2 (2026-8-20)
