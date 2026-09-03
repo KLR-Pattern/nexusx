@@ -325,8 +325,11 @@ class GraphQLHandler:
             # (specs/023: aliases are supported at method level — the old
             # blanket `validate_no_aliases` guard is retired from this call
             # path; the parser now rejects duplicate response keys instead.)
+            # Issue #142: parse PER OPERATION and let the executor select one
+            # by operationName — the flat merged view cross-contaminated
+            # same-name groups across operations (field leakage).
             document = parse(query)
-            parsed_selections = self._query_parser.parse_document(
+            parsed_operations = self._query_parser.parse_operations(
                 document, variables=variables
             )
 
@@ -335,10 +338,11 @@ class GraphQLHandler:
                 document=document,
                 variables=variables,
                 operation_name=operation_name,
-                parsed_selections=parsed_selections,
+                parsed_selections=None,
                 query_methods=self._query_methods,
                 mutation_methods=self._mutation_methods,
                 entities=self.entities,
+                parsed_operations=parsed_operations,
             )
 
         except ResponseKeyConflictError as e:
