@@ -1241,3 +1241,111 @@ class TestOperationScopeFailStop:
         assert calls == ["bad", "get"]  # the query ran despite the abort
         assert result["data"]["q"] == {"get": [{"id": 1}]}
         assert result["errors"][0]["extensions"]["code"] == "RESOLVER_ERROR"
+
+
+class TestOperationSelection:
+    """issue #142: exactly ONE operation executes per request, selected per
+    the GraphQL spec. Same-name groups in different operations keep their
+    own projections — on ≤6.1.2 the later operation's tree silently
+    overwrote the earlier one's and the executor serialized with the WRONG
+    projection (field leakage)."""
+
+    def _setup(self):
+        executor = _make_executor()
+        calls: list[str] = []
+
+        class P(SQLModel, table=False):
+            @query
+            async def get(cls):
+                """Get."""
+                calls.append("get")
+                return [FixtureUser(id=1, name="A", email="secret@t")]
+
+            @mutation
+            async def get_m(cls):
+                """Mutation flavor (the M operation's method)."""
+                calls.append("get_m")
+                return [FixtureUser(id=1, name="A", email="secret@t")]
+
+        query_methods = {
+            "FixtureUser": {"get": (FixtureUser, _get_bound_method(P, "get"))}
+        }
+        mutation_methods = {
+            "FixtureUser": {"get_m": (FixtureUser, _get_bound_method(P, "get_m"))}
+        }
+        return executor, calls, query_methods, mutation_methods
+
+    def _parse_ops(self, query: str):
+        from nexusx.query_parser import QueryParser
+
+        return parse(query), QueryParser().parse_operations(parse(query))
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_named_operation_keeps_projection_isolated(self):
+        """The exact issue #142 scenario: two operations select the same
+        group with different projections; selecting the mutation must not
+        leak the query's email field into its response."""
+        executor, calls, qm, mm = self._setup()
+        document, ops = self._parse_ops(
+            "mutation M { FixtureUser { get_m { id } } } "
+            "query Q { FixtureUser { get { id email } } }"
+        )
+        result = await executor.execute_query(
+            document, None, "M", None, qm, mm, [FixtureUser],
+            parsed_operations=ops,
+        )
+        assert result.get("errors", []) == []
+        assert result["data"] == {"FixtureUser": {"get_m": [{"id": 1}]}}
+        assert calls == ["get_m"]  # only M ran — Q's get never executed
+
+    async def test_multiple_operations_without_name_is_an_error(self):
+        executor, calls, qm, mm = self._setup()
+        document, ops = self._parse_ops(
+            "{ FixtureUser { get { id } } } { FixtureUser { get { id } } }"
+        )
+        result = await executor.execute_query(
+            document, None, None, None, qm, {}, [FixtureUser],
+            parsed_operations=ops,
+        )
+        assert "Must provide operation name" in result["errors"][0]["message"]
+        assert calls == []  # nothing executed
+
+    async def test_unknown_operation_name_is_an_error(self):
+        executor, calls, qm, mm = self._setup()
+        document, ops = self._parse_ops("query Q { FixtureUser { get { id } } }")
+        result = await executor.execute_query(
+            document, None, "Nope", None, qm, {}, [FixtureUser],
+            parsed_operations=ops,
+        )
+        assert "Unknown operation named 'Nope'" in result["errors"][0]["message"]
+        assert calls == []
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_single_anonymous_operation_runs_as_before(self):
+        """The overwhelmingly common case — zero behavior change."""
+        executor, calls, qm, mm = self._setup()
+        document, ops = self._parse_ops("{ FixtureUser { get { id name } } }")
+        result = await executor.execute_query(
+            document, None, None, None, qm, {}, [FixtureUser],
+            parsed_operations=ops,
+        )
+        assert result.get("errors", []) == []
+        assert result["data"]["FixtureUser"]["get"] == [
+            {"id": 1, "name": "A"}
+        ]
+        assert calls == ["get"]
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_legacy_path_still_executes_all_definitions(self):
+        """parsed_selections without parsed_operations keeps the legacy
+        all-definitions behavior (direct callers / existing tests)."""
+        executor, calls, qm, mm = self._setup()
+        document = parse("{ FixtureUser { get { id } } }")
+        from nexusx.query_parser import QueryParser
+
+        parsed = QueryParser().parse_document(document)
+        result = await executor.execute_query(
+            document, None, None, parsed, qm, {}, [FixtureUser],
+        )
+        assert result.get("errors", []) == []
+        assert calls == ["get"]

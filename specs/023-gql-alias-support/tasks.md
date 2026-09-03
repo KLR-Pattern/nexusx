@@ -195,7 +195,7 @@ Task: "T012 移除 handler 内部校验调用 in src/nexusx/handler.py"
 
 ### 行为增强（最终评估拍板，方案 A）
 - **operation 级 mutation fail-stop**：原实现 fail-stop 只在单个 service/entity 组内生效，跨组不传播（实测 `SvcA` 失败后 `SvcB.write` 照常执行）——与 FR-006"失败之后的调用停止执行"字面不符、偏离 GraphQL operation 级串行语义。修复后 abort 标志跨组传播，后续组 mutation 一律 `SKIPPED_PRIOR_FAILURE`，query 不受影响。契约场景 4 已更新
-- 已知边界（未改，记录在案）：`parse_document` 按 document 合并顶层键，同 document 多 operation 选同名组会触发 duplicate-key 报错（master 上为静默覆盖）；单 operation-per-request 的现实下影响极小，如需支持须让 parser 按 operation 分组（牵动全部调用方，另立任务）
+- 已知边界（✅2026-09-03 已修复，issue #142，分支 fix/multi-operation-selection）：`parse_document` 按 document 合并顶层键，同 document 多 operation 选同名组会触发 duplicate-key 报错（master ≤6.1.2 上更糟——静默投影错配导致字段泄漏）。修复=`parse_operations` 按 operation 分组 + executor 按 operationName 选择（规范单执行），compose 侧限单 operation
 
 ### 验证
 - 全量 1660 passed / 6 skipped / 0 failed；中间 commit 快照已验证可 bisect

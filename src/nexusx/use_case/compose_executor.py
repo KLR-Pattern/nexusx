@@ -105,13 +105,25 @@ async def execute_compose_query(
     # 3. Convert AST → FieldSelection tree (reuses existing QueryParser).
     #    specs/023: keys are response keys; duplicate-key conflicts from the
     #    parser surface as ALIAS_CONFLICT errors (FR-007).
+    #    Issue #142: parse PER OPERATION (the flat merged view cross-
+    #    contaminated same-name groups across operations). compose_query
+    #    takes a bare query string with no operationName channel, so the
+    #    document must contain exactly one operation.
     parser = QueryParser()
     try:
-        selections = parser.parse_document(document)
+        operations = parser.parse_operations(document)
     except ValueError as exc:
         return _error_response(str(exc), code="ALIAS_CONFLICT")
-    if not selections:
+    if not operations:
         return _error_response("Query has no operations.")
+    if len(operations) > 1:
+        return _error_response(
+            "compose_query requires a document with exactly one operation; "
+            f"got {len(operations)}. GraphQL executes one operation per "
+            "request — split the document (or use the entity-first "
+            "GraphQLHandler, which honors operationName)."
+        )
+    selections = operations[0].selections
 
     # 3.5 specs/023 US2: method-level aliases are supported on @query
     #     methods; nested-field aliases are out of scope and rejected

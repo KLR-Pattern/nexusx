@@ -85,6 +85,34 @@ def nested_alias_message(dotted: str, field_name: str) -> str:
     )
 
 
+@dataclass
+class ParsedOperation:
+    """One operation's parse result, carrying its identity (issue #142).
+
+    ``parse_document`` merges every operation's top-level selections into
+    one dict, discarding operation ownership — with multiple operations
+    selecting the same group, the later tree silently overwrote the
+    earlier one and the executor serialized with the WRONG projection
+    (field leakage). ``parse_operations`` returns one ``ParsedOperation``
+    per operation so callers that execute per operation can never
+    cross-contaminate.
+
+    Attributes:
+        definition: The AST node — the executor still walks it to build
+            method arguments and serve introspection fields.
+        operation: Operation kind, ``"query"`` / ``"mutation"``.
+        name: Named operation (``query Foo {...}`` → ``"Foo"``); anonymous
+            operations carry ``None``.
+        selections: This operation's top-level groups only, keyed by
+            RESPONSE key (``alias or field_name``, specs/023).
+    """
+
+    definition: OperationDefinitionNode
+    operation: str
+    name: str | None
+    selections: dict[str, FieldSelection]
+
+
 class QueryParser:
     """Parses GraphQL queries to extract field selections and arguments."""
 
@@ -114,6 +142,57 @@ class QueryParser:
         """
         return self.parse_document(parse(query), variables)
 
+    def parse_operations(
+        self, document: DocumentNode, variables: dict[str, Any] | None = None
+    ) -> list[ParsedOperation]:
+        """Parse a document into one ``ParsedOperation`` per operation.
+
+        Issue #142: selections are scoped to their own operation — same-name
+        top-level groups in DIFFERENT operations coexist instead of
+        overwriting each other. Duplicate response keys WITHIN one
+        operation still raise ``ResponseKeyConflictError`` (specs/023
+        FR-007). Fragment definitions are skipped (pre-existing behavior).
+
+        ``variables`` resolves query variables in arguments (specs/021
+        hardening — see ``parse_document``).
+        """
+        operations: list[ParsedOperation] = []
+
+        for definition in document.definitions:
+            if not isinstance(definition, OperationDefinitionNode):
+                continue
+            # Per-operation dict: the ownership this method exists to keep.
+            selections: dict[str, FieldSelection] = {}
+            for selection in definition.selection_set.selections:
+                if isinstance(selection, FieldNode):
+                    field_name = selection.name.value
+                    alias = (
+                        selection.alias.value if selection.alias else None
+                    )
+                    key = alias or field_name
+                    if key in selections:
+                        raise ResponseKeyConflictError(
+                            _conflict_message(key, "top level")
+                        )
+                    if selection.selection_set:
+                        meta = self._parse_selection_set(
+                            selection.selection_set, variables, path=key
+                        )
+                        meta.name = field_name
+                        meta.alias = alias
+                        selections[key] = meta
+
+            operations.append(
+                ParsedOperation(
+                    definition=definition,
+                    operation=definition.operation.value,
+                    name=definition.name.value if definition.name else None,
+                    selections=selections,
+                )
+            )
+
+        return operations
+
     def parse_document(
         self, document: DocumentNode, variables: dict[str, Any] | None = None
     ) -> dict[str, FieldSelection]:
@@ -128,30 +207,20 @@ class QueryParser:
         specs/023: dict keys are RESPONSE keys (``alias or field_name``);
         ``FieldSelection.name`` keeps the original field name for lookups.
         Duplicate response keys at any level raise ``ValueError``.
+
+        CAUTION (issue #142): this flat view merges ALL operations' groups
+        into one dict, so same-name groups across operations conflict
+        (raise) rather than coexist. Callers that execute per operation
+        (the built-in executors) use ``parse_operations`` instead.
         """
         result: dict[str, FieldSelection] = {}
-
-        for definition in document.definitions:
-            if isinstance(definition, OperationDefinitionNode):
-                for selection in definition.selection_set.selections:
-                    if isinstance(selection, FieldNode):
-                        operation_name = selection.name.value
-                        alias = (
-                            selection.alias.value if selection.alias else None
-                        )
-                        key = alias or operation_name
-                        if key in result:
-                            raise ResponseKeyConflictError(
-                                _conflict_message(key, "top level")
-                            )
-                        if selection.selection_set:
-                            meta = self._parse_selection_set(
-                                selection.selection_set, variables, path=key
-                            )
-                            meta.name = operation_name
-                            meta.alias = alias
-                            result[key] = meta
-
+        for op in self.parse_operations(document, variables):
+            for key, meta in op.selections.items():
+                if key in result:
+                    raise ResponseKeyConflictError(
+                        _conflict_message(key, "top level")
+                    )
+                result[key] = meta
         return result
 
     def validate_no_aliases(self, query: str) -> None:

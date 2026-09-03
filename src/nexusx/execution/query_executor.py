@@ -13,7 +13,12 @@ from sqlmodel import SQLModel
 from nexusx.execution.argument_builder import ArgumentBuilder
 from nexusx.loader.pagination import KeyedPaginatedPackage, PaginatedPackage
 from nexusx.loader.registry import RelationshipKind
-from nexusx.query_parser import FieldSelection, find_nested_alias, nested_alias_message
+from nexusx.query_parser import (
+    FieldSelection,
+    ParsedOperation,
+    find_nested_alias,
+    nested_alias_message,
+)
 from nexusx.response_builder import (
     get_relation_entity,
     get_relationship_names,
@@ -81,10 +86,12 @@ class QueryExecutor:
         document: DocumentNode,
         variables: dict[str, Any] | None,
         operation_name: str | None,
-        parsed_selections: dict[str, FieldSelection],
+        parsed_selections: dict[str, FieldSelection] | None,
         query_methods: dict[str, dict[str, tuple[type[SQLModel], Any]]],
         mutation_methods: dict[str, dict[str, tuple[type[SQLModel], Any]]],
         entities: list[type[SQLModel]],
+        *,
+        parsed_operations: list[ParsedOperation] | None = None,
     ) -> dict[str, Any]:
         """Execute a GraphQL query or mutation.
 
@@ -93,6 +100,16 @@ class QueryExecutor:
         fields live one level deeper on the ``{Entity}Query`` /
         ``{Entity}Mutation`` group type. ``query_methods`` / ``mutation_methods``
         are grouped as ``{entity_name: {method_name: (entity, method)}}``.
+
+        Operation selection (issue #142): pass ``parsed_operations`` (from
+        ``QueryParser.parse_operations``) and exactly ONE operation is
+        selected and executed per GraphQL spec — ``operation_name`` matches
+        a named operation; a single anonymous operation runs as-is; several
+        operations without a name is an error. Same-name groups in
+        different operations can no longer cross-contaminate their
+        projections. The legacy path (``parsed_selections`` only, no
+        ``parsed_operations``) keeps executing every definition for
+        backward compatibility with direct callers.
         """
         data: dict[str, Any] = {}
         errors: list[dict[str, Any]] = []
@@ -107,7 +124,23 @@ class QueryExecutor:
         self._registry.clear_cache()
         self._results.clear()
 
-        for definition in document.definitions:
+        if parsed_operations is not None:
+            selected = self._select_operation(parsed_operations, operation_name)
+            if isinstance(selected, dict):
+                return selected  # selection error response
+            definitions: list[Any] = [selected.definition]
+            active_selections = selected.selections
+        else:
+            if parsed_selections is None:
+                raise ValueError(
+                    "execute_query requires either parsed_selections "
+                    "(legacy all-definitions path) or parsed_operations "
+                    "(spec-compliant single-operation path)"
+                )
+            definitions = list(document.definitions)
+            active_selections = parsed_selections
+
+        for definition in definitions:
             if not isinstance(definition, OperationDefinitionNode):
                 continue
             op_type = definition.operation.value
@@ -166,7 +199,7 @@ class QueryExecutor:
                     entity_name,
                     method_group,
                     selection,
-                    parsed_selections,
+                    active_selections,
                     variables,
                     entity_names,
                     group_suffix,
@@ -352,6 +385,43 @@ class QueryExecutor:
                 group_failed = fail_stop
 
         return entity_data, group_failed
+
+    @staticmethod
+    def _select_operation(
+        operations: list[ParsedOperation],
+        operation_name: str | None,
+    ) -> ParsedOperation | dict[str, Any]:
+        """Pick the one operation to execute, per the GraphQL spec.
+
+        ``operation_name`` matches a named operation; a single operation
+        runs as-is; several operations without a name is an error (issue
+        #142: the pre-fix behavior executed ALL of them with
+        cross-contaminated selections). Error wording mirrors graphql-core.
+        Returns the selected ``ParsedOperation``, or an error-response dict.
+        """
+        if operation_name is not None:
+            for op in operations:
+                if op.name == operation_name:
+                    return op
+            return {
+                "errors": [
+                    {"message": f"Unknown operation named '{operation_name}'."}
+                ]
+            }
+        if len(operations) == 1:
+            return operations[0]
+        if not operations:
+            return {"errors": [{"message": "Must provide an operation."}]}
+        return {
+            "errors": [
+                {
+                    "message": (
+                        "Must provide operation name if query contains "
+                        "multiple operations."
+                    )
+                }
+            ]
+        }
 
     @staticmethod
     def _bare_group_field_error(

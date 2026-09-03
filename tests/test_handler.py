@@ -196,6 +196,36 @@ class TestGraphQLHandlerWithBase:
         assert "Response key conflict" in error["message"]
         assert error["extensions"]["code"] == "ALIAS_CONFLICT"
 
+    @pytest.mark.asyncio
+    async def test_operation_name_selects_one_operation(
+        self, handler: GraphQLHandler
+    ) -> None:
+        """issue #142: operationName flows through the handler to the
+        executor (the federation transport already passes it). Selecting M
+        keeps M's projection — the query operation's fields must not leak
+        into the response, and Q must not execute at all."""
+        result = await handler.execute(
+            "query Q1 { HandlerTestUser { get_all { id } } } "
+            "query Q2 { HandlerTestUser { get_all { id email } } }",
+            operation_name="Q1",
+        )
+
+        assert "errors" not in result
+        rows = result["data"]["HandlerTestUser"]["get_all"]
+        # Q1's projection only — Q2's email must not leak (pre-#142 the
+        # flat merged view raised ALIAS_CONFLICT on this legal document).
+        assert rows and all(set(r) == {"id"} for r in rows)
+
+    @pytest.mark.asyncio
+    async def test_multiple_operations_without_name_rejected(
+        self, handler: GraphQLHandler
+    ) -> None:
+        result = await handler.execute(
+            "{ HandlerTestUser { get_all { id } } } "
+            "{ HandlerTestUser { get_all { id } } }"
+        )
+        assert "Must provide operation name" in result["errors"][0]["message"]
+
 
 # ============================================================================
 # Tests for Relationship-based entity discovery

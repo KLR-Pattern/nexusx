@@ -256,3 +256,43 @@ class TestValidateNoAliasesGuard:
     def test_accepts_plain_query(self):
         parser = QueryParser()
         parser.validate_no_aliases("{ S { f { id } } }")  # must not raise
+
+
+class TestParseOperations:
+    """issue #142: parse per operation — same-name groups in different
+    operations coexist instead of cross-contaminating; in-operation
+    duplicate response keys still conflict (specs/023 FR-007)."""
+
+    def test_same_name_group_in_different_operations_coexist(self):
+        from graphql import parse
+        from nexusx.query_parser import ResponseKeyConflictError
+
+        ops = QueryParser().parse_operations(
+            parse("mutation M { S { f { id } } } query Q { S { g { id } } }")
+        )
+        assert len(ops) == 2
+        assert [o.name for o in ops] == ["M", "Q"]
+        assert [o.operation for o in ops] == ["mutation", "query"]
+        # Each operation's tree holds only its own methods.
+        assert list(ops[0].selections) == ["S"]
+        assert list(ops[0].selections["S"].sub_fields) == ["f"]
+        assert list(ops[1].selections["S"].sub_fields) == ["g"]
+        # The definition reference lets the executor walk the AST.
+        assert ops[0].definition.operation.value == "mutation"
+
+    def test_duplicate_within_one_operation_still_conflicts(self):
+        from graphql import parse
+        from nexusx.query_parser import ResponseKeyConflictError
+
+        with pytest.raises(ResponseKeyConflictError, match="conflict"):
+            QueryParser().parse_operations(
+                parse("{ S { f { id } } S { g { id } } }")
+            )
+
+    def test_anonymous_operation(self):
+        from graphql import parse
+
+        ops = QueryParser().parse_operations(parse("{ S { f { id } } }"))
+        assert len(ops) == 1
+        assert ops[0].name is None
+        assert ops[0].operation == "query"

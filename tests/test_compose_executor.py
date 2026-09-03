@@ -893,3 +893,31 @@ class TestOperationScopeFailStop:
         assert result["data"]["SvcB"]["fetch"] == 7
         assert calls == ["bad", "fetch"]
         assert len(result["errors"]) == 1  # only the MUTATION_FAILED entry
+
+
+class TestSingleOperationConstraint:
+    """issue #142: compose_query takes a bare query string with no
+    operationName channel — the document must contain exactly one
+    operation. Same-name groups across operations can no longer
+    cross-contaminate (silent field leakage on ≤6.1.2)."""
+
+    async def test_multi_operation_document_rejected(self) -> None:
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema,
+            "{ _AliasGuardService { fetch { id } } } "
+            "query Q { _AliasGuardService { fetch { id label } } }",
+        )
+        assert result["data"] is None
+        assert "exactly one operation" in result["errors"][0]["message"]
+        assert _AliasGuardService.calls == []  # nothing executed
+
+    async def test_single_operation_unchanged(self) -> None:
+        app = _guard_app()
+        schema = build_compose_schema(app)
+        result = await execute_compose_query(
+            app, schema, "{ _AliasGuardService { fetch { id label } } }"
+        )
+        assert result["errors"] == []
+        assert _AliasGuardService.calls == ["fetch:x"]
