@@ -12,6 +12,25 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 
 ## 6.2
 
+### 6.2.1 (2026-9-3)
+
+- fix:
+  - **One operation per request, selected per spec (#143)**: A document
+    with multiple operations selecting the same top-level group
+    cross-contaminated the two selections: on ≤6.1.2 the later
+    operation's projection tree silently overwrote the earlier one's —
+    a mutation declaring `{ id }` could leak fields only another
+    operation asked for (issue #142); since 6.2.0 the same legal
+    document raised `ALIAS_CONFLICT` instead. `QueryParser.parse_
+    operations()` now keeps per-operation trees, the entity-first
+    executor executes exactly ONE operation per request (`operationName`
+    matches a named operation, a single anonymous operation runs as-is,
+    several without a name errors per spec), and the `operation_name`
+    the handler always accepted (the federation transport always passed
+    it) finally takes effect. `compose_query` requires exactly one
+    operation per document. Single-operation requests — the
+    overwhelmingly common case — are unaffected.
+
 ### 6.2.0 (2026-9-2)
 
 - feat:
