@@ -33,7 +33,11 @@ from nexusx.mcp.types.errors import (
     create_success_response,
 )
 from nexusx.use_case.compose_executor import execute_compose_query
-from nexusx.use_case.compose_schema import ComposeSchema, build_compose_schema
+from nexusx.use_case.compose_schema import (
+    ComposeSchema,
+    build_compose_schema,
+    type_ref_to_sdl,
+)
 from nexusx.use_case.types import UseCaseAppConfig
 
 if TYPE_CHECKING:
@@ -257,7 +261,7 @@ def _register_describe_compose_method(
                 "kind": kind,
                 "description": method_field.description,
                 "args": [_arg_to_dict(a) for a in method_field.args],
-                "return_type": _type_ref_to_str(method_field.type_ref),
+                "return_type": type_ref_to_sdl(method_field.type_ref),
             },
             "sdl": sdl,
         })
@@ -266,20 +270,11 @@ def _register_describe_compose_method(
 def _arg_to_dict(a: Any) -> dict[str, Any]:
     return {
         "name": a.name,
-        "type": _type_ref_to_str(a.type_ref),
+        "type": type_ref_to_sdl(a.type_ref),
         "has_default": a.has_default,
         "default_value": a.default_value if a.has_default else None,
         "description": a.description,
     }
-
-
-def _type_ref_to_str(ref: Any) -> str:
-    """Render a TypeRef as an SDL type expression (e.g. ``[Int!]!``)."""
-    if ref.kind == "NON_NULL":
-        return f"{_type_ref_to_str(ref.of_type)}!"
-    if ref.kind == "LIST":
-        return f"[{_type_ref_to_str(ref.of_type)}]"
-    return str(ref.name)
 
 
 # ---------------------------------------------------------------------------

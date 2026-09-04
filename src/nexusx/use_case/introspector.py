@@ -7,6 +7,7 @@ SDL-style type descriptions for compact, AI-friendly output.
 from __future__ import annotations
 
 import inspect
+import types
 import typing
 from typing import Any, get_args, get_origin
 
@@ -18,22 +19,33 @@ from nexusx.use_case.business import (
     UseCaseService,
     get_return_type,
 )
+from nexusx.use_case.compose_schema import type_ref_to_sdl
+from nexusx.use_case.compose_type_mapper import ComposeTypeMapper
 
 # ──────────────────────────────────────────────────
 # SDL type name conversion
 # ──────────────────────────────────────────────────
 
+# Shared mapping — the single source of truth for Python → GraphQL type
+# names (the former private 4-entry _SCALAR_MAP fell back to class names,
+# so `datetime` described as "datetime" instead of "DateTime" and `dict`
+# invented a "JSON" scalar no schema ever registered). A FRESH mapper per
+# call: ComposeTypeMapper accumulates a by-id registry by design, and a
+# shared instance would leak registrations across describes (test-isolation
+# proven — id reuse after GC made behavior order-dependent).
+
 
 def _type_to_sdl_name(anno: Any) -> str:
-    """Convert a type annotation to an SDL type name string.
+    """Convert a type annotation to an SDL type expression string.
 
-    Examples::
+    Thin shell over the shared ``ComposeTypeMapper`` + ``type_ref_to_sdl``
+    renderer — same type names the compose MCP schema exposes. Examples::
 
-        int         → "Int"
+        int         → "Int!"
         str         → "String"
         list[int]   → "[Int!]!"
         int | None  → "Int"
-        UserDTO     → "UserDTO"
+        UserDTO     → "UserDTO!"
         list[UserDTO] | None → "[UserDTO!]!"
     """
     if anno is inspect.Parameter.empty or anno is None:
@@ -42,57 +54,27 @@ def _type_to_sdl_name(anno: Any) -> str:
     if isinstance(anno, str):
         return "String"
 
-    origin = get_origin(anno)
-
-    # Handle list[X]
-    if origin is list:
-        args = get_args(anno)
-        if args:
-            inner = _type_to_sdl_name(args[0])
-            return f"[{inner}!]!"
-        return "[String!]!"
-
-    # Handle Optional[X] / Union[X, None]
-    import types as _types
-
-    if origin is typing.Union or isinstance(anno, _types.UnionType):
-        args = get_args(anno)
-        non_none = [a for a in args if a is not type(None)]
-        has_none = any(a is type(None) for a in args)
-
-        if has_none and len(non_none) == 1:
-            # Optional[X] — nullable (no trailing !)
-            return _type_to_sdl_name(non_none[0])
-        # General Union — use first non-None type
-        if non_none:
-            return _type_to_sdl_name(non_none[0])
-        return "String"
-
-    # Handle Annotated[X, ...]
-    if origin is typing.Annotated:
-        args = get_args(anno)
-        if args:
-            return _type_to_sdl_name(args[0])
-        return "String"
-
-    # Handle Pydantic BaseModel subclasses (DTOs) → use class name
-    if isinstance(anno, type) and issubclass(anno, BaseModel):
-        return anno.__name__
-
-    # Handle basic Python types
-    _SCALAR_MAP = {int: "Int", float: "Float", str: "String", bool: "Boolean"}
-    if anno in _SCALAR_MAP:
-        return _SCALAR_MAP[anno]
-
-    # Handle dict
+    # Descriptive-only output: the compose schema rejects dict outright;
+    # describe keeps rendering it as the conventional "JSON" scalar name
+    # rather than failing the whole description.
     if anno is dict:
         return "JSON"
 
-    # Fallback
-    if isinstance(anno, type):
-        return anno.__name__
-
-    return "String"
+    try:
+        ref = ComposeTypeMapper().map_python_type(anno)
+    except Exception:
+        # Lenient fallbacks for shapes the compose mapper rejects —
+        # describe is informational; keep the former conventions instead
+        # of crashing or rendering a misleading bare "List"/"String".
+        origin = get_origin(anno)
+        if origin is list:
+            return "[String!]!"
+        if origin is typing.Union or isinstance(anno, types.UnionType):
+            args = get_args(anno)
+            non_none = [a for a in args if a is not type(None)]
+            return _type_to_sdl_name(non_none[0]) if non_none else "String"
+        return getattr(anno, "__name__", "String")
+    return type_ref_to_sdl(ref)
 
 
 def _type_to_legacy_name(anno: Any) -> str:

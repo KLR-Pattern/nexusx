@@ -5,7 +5,8 @@ research.md R2 for rationale). The general-purpose ``type_converter`` is
 SQLModel/SQLAlchemy-aware (``is_mapped_wrapper()``, ``is_relationship()``);
 UseCase compose schemas only ever see Pydantic models + Python scalars + enums,
 and dragging SQLAlchemy coupling into that path would violate the
-"two modes are orthogonal" principle.
+"two modes are orthogonal" principle. The scalar TABLE is shared though
+(``SCALAR_TYPE_MAP``, single source) — the fork covers behavior, not data.
 
 Naming conventions (``Int``, ``[T!]!``, ``Boolean`` etc.) intentionally match
 ``type_converter`` so users moving between SQLModel-driven GraphQL and
@@ -23,15 +24,14 @@ Public surface:
 from __future__ import annotations
 
 import dataclasses
-import datetime
 import enum
 import types
-import uuid
 from typing import Annotated, Any, Union, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo as PydanticFieldInfo
 
+from nexusx.type_converter import SCALAR_TYPE_MAP
 from nexusx.use_case.compose_schema import (
     ArgumentInfo,
     DuplicateTypeError,
@@ -52,16 +52,7 @@ __all__ = ["ComposeTypeMapper", "is_from_context_annotation"]
 # existing ``type_converter.py`` scalar naming so cross-mode queries behave
 # consistently. ``DateTime`` / ``Date`` / ``Time`` mirror graphql-core's
 # built-in scalar names where one exists.
-_SCALAR_NAMES: dict[type, str] = {
-    int: "Int",
-    float: "Float",
-    str: "String",
-    bool: "Boolean",
-    uuid.UUID: "UUID",
-    datetime.datetime: "DateTime",
-    datetime.date: "Date",
-    datetime.time: "Time",
-}
+_SCALAR_NAMES: dict[type, str] = SCALAR_TYPE_MAP
 
 _SCALAR_DESCRIPTIONS: dict[str, str] = {
     "Int": "32-bit integer scalar.",
