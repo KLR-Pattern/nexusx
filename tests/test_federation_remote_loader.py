@@ -283,3 +283,182 @@ async def test_wire_never_carries_aliases_nested():
     q = transport.posts[0][1]["query"]
     assert "friend" in q and "name" in q
     assert "n:" not in q
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Mindmap #14 修复④ / 实锤缺陷 1: distinct page params MUST get distinct
+# loader instances (REMOTE_PAGED selections wrap {items, pagination}, so
+# type_key is always None there and force_split alone never fired —
+# concurrent limit=5 / limit=10 shared one instance and overwrote each
+# other's _remote_page_params).
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestPagedParamsSplit:
+    def test_fetch_passes_params_key_for_isolation(self):
+        """fetch_remote_subtree must route page params into get_loader's
+        params_key — the per-params split that isolates concurrent
+        limit=5 / limit=10 loads (defect 1)."""
+        import asyncio
+
+        from nexusx.federation.remote_loader import fetch_remote_subtree
+        from nexusx.loader.pagination import Paged
+        from nexusx.loader.registry import ErManager
+        from nexusx.query_parser import FieldSelection
+        from pydantic import BaseModel
+
+        class Target(BaseModel):
+            id: int
+            product_id: int
+
+        registry = ErManager(session_factory=None, entities=[])
+        rel_info = type("R", (), {})()
+        rel_info.target_entity = Target
+        rel_info.fk_field = "product_id"
+        rel_info.page_loader = type("L2", (), {})
+
+        sel = FieldSelection(
+            name="Target",
+            sub_fields={
+                "items": FieldSelection(name="items", sub_fields={
+                    "id": FieldSelection(name="id")}),
+                "pagination": FieldSelection(name="pagination"),
+            },
+        )
+
+        calls: list[dict] = []
+
+        def fake_get_loader(loader_cls, **kwargs):
+            calls.append(kwargs)
+
+            class NoopLoader:
+                async def load_many(self, keys):
+                    return []
+
+            return NoopLoader()
+
+        registry.get_loader = fake_get_loader
+
+        async def run(params):
+            return await fetch_remote_subtree(
+                registry=registry, rel_info=rel_info, parents=[],
+                selection=sel, paged=True, page_params=params,
+            )
+
+        async def main():
+            await asyncio.gather(
+                run(Paged(limit=5)), run(Paged(limit=10)), run(Paged(limit=5)),
+            )
+
+        asyncio.run(main())
+        keys = [c["params_key"] for c in calls]
+        assert (5, 0, None, None) in keys
+        assert (10, 0, None, None) in keys
+
+    def test_registry_params_key_isolates_instances(self):
+        """The registry-level guarantee: distinct params_key → distinct
+        instances (side-channel overwrite impossible); identical → shared
+        (batching preserved)."""
+        from nexusx.loader.registry import ErManager
+
+        registry = ErManager(session_factory=None, entities=[])
+
+        class L:
+            pass
+
+        a = registry.get_loader(L, type_key=None, force_split=True,
+                                params_key=(5, 0, None, None))
+        b = registry.get_loader(L, type_key=None, force_split=True,
+                                params_key=(10, 0, None, None))
+        c = registry.get_loader(L, type_key=None, force_split=True,
+                                params_key=(5, 0, None, None))
+        assert a is not b
+        assert a is c
+
+    def test_paged_selection_alone_yields_none_type_key(self):
+        """The root cause, locked: the {items, pagination} wrapper is not a
+        target-entity field set, so the selection fingerprint is None."""
+        from nexusx.loader.query_meta import generate_type_key_from_selection
+        from nexusx.query_parser import FieldSelection
+        from pydantic import BaseModel
+
+        class Target(BaseModel):
+            id: int
+
+        sel = FieldSelection(
+            name="Target",
+            sub_fields={
+                "items": FieldSelection(name="items", sub_fields={
+                    "id": FieldSelection(name="id")}),
+                "pagination": FieldSelection(name="pagination"),
+            },
+        )
+        assert generate_type_key_from_selection(sel, Target, fk_lookup={}) is None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Mindmap #14 修复⑤ / 实锤缺陷 5: federation limits are clamped at the
+# dispatch layer (the bound used to live only on the local PageArgs path).
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestFederationLimitClamp:
+    def test_clamp_caps_limit(self):
+        from nexusx.loader.pagination import Paged
+
+        assert Paged(limit=100000).clamp(100).limit == 100
+        assert Paged(limit=50).clamp(100).limit == 50
+        # None (full-fetch) and no-bound pass through untouched
+        assert Paged(limit=None).clamp(100).limit is None
+        assert Paged(limit=100000).clamp(None).limit == 100000
+        # other params survive the clamp
+        p = Paged(limit=100000, offset=7, order="RATING").clamp(100)
+        assert (p.limit, p.offset, p.order) == (100, 7, "RATING")
+
+    @pytest.mark.asyncio
+    async def test_fetch_clamps_to_rel_max_page_size(self):
+        """A β fetch with limit=100000 against a relationship whose
+        max_page_size is the default 100 must send limit: 100 on the wire."""
+        from nexusx.federation.remote_loader import (
+            create_paginated_remote_loader,
+            paged_from_selection,
+            set_remote_page_params,
+            set_remote_selection,
+        )
+        from nexusx.query_parser import FieldSelection
+        from pydantic import BaseModel
+
+        class Target(BaseModel):
+            id: int
+            product_id: int
+
+        transport = FakeTransport({
+            "Target": {"page_by_product_id_in": []}
+        })
+        loader_cls = create_paginated_remote_loader(
+            typename="Target", join_remote="product_id",
+            endpoint="http://t", target_cls=Target,
+            transport=transport, arg_name="product_id_list",
+            default_order="BY_ID",
+        )
+        sel = FieldSelection(
+            name="Target",
+            arguments={"limit": 100000},
+            sub_fields={
+                "items": FieldSelection(name="items", sub_fields={
+                    "id": FieldSelection(name="id")}),
+                "pagination": FieldSelection(name="pagination"),
+            },
+        )
+        loader = loader_cls()
+        set_remote_selection(loader, sel)
+        # the dispatch layer resolved+clamped params (fetch does this; the
+        # test replays it — limit 100000 must arrive on the loader already
+        # clamped to the rel's default max of 100)
+        params = paged_from_selection(sel).clamp(100)
+        set_remote_page_params(loader, params)
+
+        await loader.load_many([1])
+        q = transport.posts[0][1]["query"]
+        assert "limit: 100" in q
+        assert "100000" not in q

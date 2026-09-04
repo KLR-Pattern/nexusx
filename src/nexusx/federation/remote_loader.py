@@ -59,6 +59,50 @@ def set_remote_page_params(loader: Any, params: Any) -> None:
     loader._remote_page_params = params
 
 
+def paged_from_selection(selection: Any) -> Any:
+    """Resolve a β selection's raw ``arguments`` into a ``Paged`` (mindmap #14 ①).
+
+    The SINGLE dispatch-layer read of raw pagination args: ``fetch_remote_
+    subtree`` calls this once when no merged ``Paged`` arrived (the non-
+    ``enable_pagination`` path). The loader itself never re-reads raw args —
+    the former in-loader GAP B fallback was a second parse of the same
+    intent on a second layer.
+    """
+    from nexusx.loader.pagination import Paged, _PagedOverride
+
+    args = getattr(selection, "arguments", None) or {}
+    ov = _PagedOverride.from_dict(args)
+    if ov is None:
+        return Paged()
+    return Paged(
+        limit=ov.limit,
+        offset=ov.offset if ov.offset is not None else 0,
+        order=ov.order,
+        direction=ov.direction,
+    )
+
+
+def paged_wire_params(p: Any) -> dict[str, Any]:
+    """A ``Paged`` in wire-ready dict form (mindmap #14 ③).
+
+    The single Paged → wire-fields mapping consumed by BOTH wire codecs:
+    the β gql renderer stringifies these into ``k: v`` argument pairs, the γ
+    JSON body serializes the dict as-is. Adding a pagination param (e.g. a
+    future cursor) = one field here plus its formatting per codec — not a
+    hunt through every sender. ``offset`` rides along whenever pagination
+    is active; ``None`` fields are omitted (member defaults apply).
+    """
+    out: dict[str, Any] = {}
+    if p.order is not None:
+        out["order"] = p.order
+    if p.direction is not None:
+        out["direction"] = p.direction
+    if p.limit is not None:
+        out["limit"] = p.limit
+    out["offset"] = p.offset
+    return out
+
+
 async def fetch_remote_subtree(
     *,
     registry: Any,
@@ -106,16 +150,37 @@ async def fetch_remote_subtree(
     type_key = generate_type_key_from_selection(
         selection, rel_info.target_entity, fk_lookup=fk_lookup,
     )
+    # Mindmap #14 修复④ (defect 1): REMOTE_PAGED selections are wrapped in
+    # {items, pagination} — neither key is a target-entity field, so type_key
+    # is ALWAYS None there and force_split never fires: concurrent loads with
+    # different limits shared ONE instance and overwrote each other's
+    # _remote_page_params. The existing per-params split (params_key — the
+    # same mechanism the γ path already uses) isolates them; identical params
+    # still share an instance, so batching is preserved.
+    #
+    # Mindmap #14 修复①: when no merged Paged arrived (the non-
+    # enable_pagination path), resolve the raw selection args ONCE here —
+    # the dispatch layer — so the loader never re-parses raw args (the
+    # former GAP B in-loader fallback). Resolved params also join the split
+    # key, so fallback-args isolation matches the merged-params isolation.
+    if page_params is None:
+        page_params = paged_from_selection(selection)
+    # Mindmap #14 ⑤ (defect 5): clamp at the dispatch layer via the single
+    # Paged.clamp — the bound used to exist only on the local PageArgs path,
+    # so federation limits (e.g. limit=100000 vs a declared max of 100) were
+    # forwarded to the member unclamped.
+    page_params = page_params.clamp(getattr(rel_info, "max_page_size", None))
     loader = registry.get_loader(
-        loader_cls, type_key=type_key, force_split=True,
+        loader_cls,
+        type_key=type_key,
+        force_split=True,
+        params_key=page_params.params_key(),
     )
     set_remote_selection(loader, selection)
-    if page_params is not None:
-        # Merged Paged from the executor's paged_provider (enable_pagination
-        # path) — batch_load_fn reads this instead of raw selection.arguments.
-        # specs/021 GAP A: the paginated path must carry the merged params,
-        # not PageLoadCommand objects the remote loader can't unwrap.
-        set_remote_page_params(loader, page_params)
+    # Merged Paged from the executor's paged_provider (enable_pagination
+    # path) or the dispatch-layer fallback above — batch_load_fn reads this
+    # instead of raw selection.arguments (specs/021 GAP A).
+    set_remote_page_params(loader, page_params)
     fk_values = [getattr(p, rel_info.fk_field) for p in parents]
     return cast("list[Any]", await loader.load_many(fk_values))
 
@@ -516,10 +581,6 @@ def create_dto_remote_loader(
     target_cls: type[BaseModel],
     transport: FederationTransport,
     is_list: bool,
-    order: str | None = None,
-    direction: str | None = None,
-    limit: int | None = None,
-    offset: int = 0,
 ) -> type[DataLoader]:  # type: ignore[type-arg]
     """Build a DataLoader that fetches resolved DTO trees from a member (specs/016).
 
@@ -551,33 +612,15 @@ def create_dto_remote_loader(
             body: dict[str, Any] = {
                 "dto": typename, "join_key": join_key, "keys": wire_keys,
             }
-            # Page params: side-channel (per-call, set by Resolver from context
-            # via set_dto_page_params) wins over closure (create-time fallback).
-            # Omitted ⇒ member full-fetches (back-compat).
+            # Page params: the merged Paged side-channelled by
+            # prepare_dto_loader — the SINGLE merge already happened upstream
+            # (Resolver._merge_paged; mindmap #14 ②). The create-time closure
+            # defaults and their eff_* merge chain are gone: the only caller
+            # never passed them. No side-channel ⇒ member full-fetches
+            # (back-compat).
             p = getattr(self, "_dto_page_params", None)
-            eff_order = p.order if p is not None and p.order is not None else order
-            eff_direction = (
-                p.direction
-                if p is not None and p.direction is not None
-                else direction
-            )
-            eff_limit = p.limit if p is not None and p.limit is not None else limit
-            eff_offset = p.offset if p is not None and p.offset is not None else offset
-            has_page_params = (
-                p is not None
-                or order is not None
-                or direction is not None
-                or limit is not None
-                or offset != 0
-            )
-            if eff_order is not None:
-                body["order"] = eff_order
-            if eff_direction is not None:
-                body["direction"] = eff_direction
-            if eff_limit is not None:
-                body["limit"] = eff_limit
-            if has_page_params:
-                body["offset"] = eff_offset
+            if p is not None:
+                body.update(paged_wire_params(p))
             resp = await transport.post_json(url, body)
             if not isinstance(resp, dict):
                 raise RemoteQueryError(
@@ -688,7 +731,6 @@ def create_paginated_remote_loader(
             selection = getattr(self, "_remote_selection", None)
             items_sel = None
             want_tc = True
-            sel_args: dict[str,Any] = {}
             if selection is not None:
                 sub = getattr(selection, "sub_fields", None) or {}
                 items_sel = sub.get("items")
@@ -698,7 +740,6 @@ def create_paginated_remote_loader(
                     if pag_field else {}
                 )
                 want_tc = "total_count" in pag_sub
-                sel_args = getattr(selection, "arguments", None) or {}
             if items_sel is None:
                 from nexusx.query_parser import FieldSelection
 
@@ -710,38 +751,26 @@ def create_paginated_remote_loader(
                         if _is_scalar_annotation(fi.annotation)
                     },
                 )
-            # Caller params: a merged Paged side-channelled by the Resolver
-            # (enable_pagination path, specs/021 GAP A) wins; otherwise read
-            # the raw selection.arguments through _PagedOverride.from_dict so
-            # graphql Undefined / non-wire values can never reach the wire
-            # (specs/021 GAP B — mirrors the γ dto loader's hardening).
-            from nexusx.loader.pagination import PaginatedPackage, _PagedOverride
+            # Caller params: the Paged side-channelled by fetch_remote_subtree
+            # (merged params on the enable_pagination path, or the dispatch-
+            # layer fallback resolved from raw args — mindmap #14 ①). The
+            # loader itself NEVER re-reads raw selection.arguments: the
+            # former GAP B in-loader fallback was a second parse of the same
+            # intent on a second layer.
+            from nexusx.loader.pagination import Paged, PaginatedPackage
 
-            p = getattr(self, "_remote_page_params", None)
-            if p is not None:
-                limit = p.limit
-                offset = p.offset
-                order = p.order
-                direction = p.direction
-            else:
-                ov = _PagedOverride.from_dict(sel_args)
-                limit = ov.limit if ov is not None else None
-                offset = (
-                    ov.offset
-                    if ov is not None and ov.offset is not None
-                    else 0
-                )
-                order = ov.order if ov is not None else None
-                direction = ov.direction if ov is not None else None
+            p = getattr(self, "_remote_page_params", None) or Paged()
+            wire = paged_wire_params(p)
             # order is always sent — fall back to the member default when the
             # caller omits it; direction is forwarded only when supplied.
             # specs/014.
-            order = order or default_order
             query = build_paginated_gql_query(
                 typename=typename, entry=entry, arg_name=arg_name,
                 join_remote=join_remote, keys=list(keys), items_sel=items_sel,
-                order=order, direction=direction,
-                limit=limit, offset=offset, want_total_count=want_tc,
+                order=wire.get("order") or default_order,
+                direction=wire.get("direction"),
+                limit=wire.get("limit"),
+                offset=wire.get("offset", 0), want_total_count=want_tc,
             )
             resp = await transport.post_json(gql_url, {"query": query})
             packages = _unwrap_gql_response(resp, typename, entry)

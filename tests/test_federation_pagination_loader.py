@@ -14,6 +14,8 @@ from nexusx.federation.remote_loader import (
     RemoteQueryError,
     build_paginated_gql_query,
     create_paginated_remote_loader,
+    paged_from_selection,
+    set_remote_page_params,
     set_remote_selection,
 )
 from nexusx.query_parser import FieldSelection
@@ -77,6 +79,14 @@ def _selection(
 
 
 @pytest.mark.asyncio
+
+def _attach(loader, sel):
+    """Dispatch-layer contract (mindmap #14 ①): the loader receives BOTH the
+    selection tree and the resolved Paged — it never re-reads raw args."""
+    set_remote_selection(loader, sel)
+    set_remote_page_params(loader, paged_from_selection(sel))
+
+
 async def test_build_paginated_gql_query_shape():
     items_sel = FieldSelection(
         name="PagReview",
@@ -144,7 +154,7 @@ async def test_paginated_loader_aligns_per_key_by_join_key():
         default_order="HIGHEST_RATING",
     )
     loader = loader_cls()
-    set_remote_selection(loader, _selection(limit=5, offset=0))
+    _attach(loader, _selection(limit=5, offset=0))
     # Out-of-order keys prove alignment is by join key, not position.
     results = await loader.load_many([2, 1, 99])
 
@@ -178,9 +188,7 @@ async def test_paginated_loader_passes_order_direction_from_selection():
         default_order="HIGHEST_RATING",
     )
     loader = loader_cls()
-    set_remote_selection(
-        loader, _selection(limit=3, offset=10, order="NEWEST", direction="ASC")
-    )
+    _attach(loader, _selection(limit=3, offset=10, order="NEWEST", direction="ASC"))
     await loader.load_many([1])
     sent = fake.calls[0]["query"]
     assert "limit: 3" in sent
@@ -199,7 +207,7 @@ async def test_paginated_loader_falls_back_to_default_order_when_omitted():
         default_order="HIGHEST_RATING",
     )
     loader = loader_cls()
-    set_remote_selection(loader, _selection(limit=3, offset=0))  # no order/direction
+    _attach(loader, _selection(limit=3, offset=0))  # no order/direction
     await loader.load_many([1])
     sent = fake.calls[0]["query"]
     assert "order: HIGHEST_RATING" in sent  # default fallback
@@ -243,7 +251,7 @@ async def test_paginated_loader_aligns_uuid_join_key():
         default_order="TITLE",
     )
     loader = loader_cls()
-    set_remote_selection(loader, _selection(limit=5, offset=0))
+    _attach(loader, _selection(limit=5, offset=0))
     # UUID objects, out of order — alignment must bridge UUID ↔ string.
     results = await loader.load_many([pk2, pk1])
     assert results[0].items[0].title == "U2"
@@ -282,6 +290,6 @@ async def test_paginated_loader_rejects_malformed_response(response):
         default_order="HIGHEST_RATING",
     )
     loader = loader_cls()
-    set_remote_selection(loader, _selection())
+    _attach(loader, _selection())
     with pytest.raises(RemoteQueryError):
         await loader.load_many([1])
