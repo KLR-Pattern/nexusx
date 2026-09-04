@@ -514,17 +514,25 @@ def _build_method_arguments(
 # ---------------------------------------------------------------------------
 
 
-def _type_ref_to_sdl(ref: TypeRef) -> str:
-    """Render a TypeRef as an SDL type expression (e.g. ``[Int!]!``)."""
+def type_ref_to_sdl(ref: TypeRef) -> str:
+    """Render a TypeRef as an SDL type expression (e.g. ``[Int!]!``).
+
+    Public single implementation of TypeRef rendering (the compose MCP
+    server previously carried a verbatim copy — ``_type_ref_to_str``).
+    """
     if ref.kind == "NON_NULL":
         assert ref.of_type is not None
-        return f"{_type_ref_to_sdl(ref.of_type)}!"
+        return f"{type_ref_to_sdl(ref.of_type)}!"
     if ref.kind == "LIST":
         assert ref.of_type is not None
-        return f"[{_type_ref_to_sdl(ref.of_type)}]"
+        return f"[{type_ref_to_sdl(ref.of_type)}]"
     # Leaf
     assert ref.name is not None
     return ref.name
+
+
+# Backwards-compatible alias (the private name predates the public export).
+_type_ref_to_sdl = type_ref_to_sdl
 
 
 def _render_sdl(registry: dict[str, TypeInfo], has_mutation: bool) -> str:

@@ -245,16 +245,16 @@ class TestUseCaseService:
 
 class TestTypeToSdlName:
     def test_int(self):
-        assert _type_to_sdl_name(int) == "Int"
+        assert _type_to_sdl_name(int) == "Int!"
 
     def test_str(self):
-        assert _type_to_sdl_name(str) == "String"
+        assert _type_to_sdl_name(str) == "String!"
 
     def test_float(self):
-        assert _type_to_sdl_name(float) == "Float"
+        assert _type_to_sdl_name(float) == "Float!"
 
     def test_bool(self):
-        assert _type_to_sdl_name(bool) == "Boolean"
+        assert _type_to_sdl_name(bool) == "Boolean!"
 
     def test_list_of_int(self):
         assert _type_to_sdl_name(list[int]) == "[Int!]!"
@@ -269,7 +269,7 @@ class TestTypeToSdlName:
         assert _type_to_sdl_name(UserDTO | None) == "UserDTO"
 
     def test_dto_class(self):
-        assert _type_to_sdl_name(UserDTO) == "UserDTO"
+        assert _type_to_sdl_name(UserDTO) == "UserDTO!"
 
     def test_dict(self):
         assert _type_to_sdl_name(dict) == "JSON"
@@ -558,7 +558,7 @@ class TestTypeNames:
         assert _type_to_sdl_name(typing.List) == "[String!]!"  # noqa: UP006
 
     def test_sdl_union_without_none_uses_first_arm(self):
-        assert _type_to_sdl_name(int | str) == "Int"
+        assert _type_to_sdl_name(int | str) == "Int!"
 
     def test_sdl_dict_is_json(self):
         assert _type_to_sdl_name(dict) == "JSON"
@@ -566,7 +566,7 @@ class TestTypeNames:
     def test_sdl_plain_class_falls_back_to_name(self):
         import datetime
 
-        assert _type_to_sdl_name(datetime.date) == "date"
+        assert _type_to_sdl_name(datetime.date) == "Date!"
 
     def test_sdl_non_type_annotation_is_string(self):
         assert _type_to_sdl_name(object()) == "String"
@@ -759,3 +759,43 @@ class TestAutoSummaryAndComplexParams:
         # Union return type → selection unsupported, but SDL signature renders.
         assert methods["raw"]["selection_supported"] is False
         assert ": Int" in methods["raw"]["signature_sdl"]
+
+
+class TestTypeMappingSingleSource:
+    """Type-mapping single-source convergence: introspector's SDL names now
+    come from the shared ComposeTypeMapper (same names the compose MCP
+    schema exposes) — the former 4-entry private table described datetime
+    as "datetime" (class-name fallback) and invented a "JSON" scalar."""
+
+    def test_datetime_is_a_real_scalar_now(self):
+        import datetime
+
+        assert _type_to_sdl_name(datetime.datetime) == "DateTime!"
+        assert _type_to_sdl_name(datetime.date) == "Date!"
+
+    def test_uuid_comes_from_the_shared_table(self):
+        import uuid
+
+        # Used to be "UUID" only by luck (class-name fallback happened to
+        # match); now it is the registered scalar name, same as compose.
+        assert _type_to_sdl_name(uuid.UUID) == "UUID!"
+
+    def test_dict_keeps_descriptive_json(self):
+        # compose rejects dict outright; describe renders the conventional
+        # JSON scalar name instead of failing the whole description.
+        assert _type_to_sdl_name(dict) == "JSON"
+
+    def test_scalar_table_is_single_sourced(self):
+        from nexusx.type_converter import SCALAR_TYPE_MAP
+        from nexusx.use_case import compose_type_mapper
+
+        assert compose_type_mapper._SCALAR_NAMES is SCALAR_TYPE_MAP
+
+    def test_type_ref_renderer_is_public(self):
+        from nexusx.use_case.compose_schema import TypeRef, type_ref_to_sdl
+
+        nested = TypeRef(kind="NON_NULL", name=None,
+                         of_type=TypeRef(kind="LIST", name=None,
+                                         of_type=TypeRef(kind="NON_NULL", name=None,
+                                                         of_type=TypeRef(kind="SCALAR", name="Int", of_type=None))))
+        assert type_ref_to_sdl(nested) == "[Int!]!"

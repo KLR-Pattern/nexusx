@@ -8,6 +8,20 @@ from datetime import date, datetime, time
 from enum import Enum
 from typing import Any, Union, get_args, get_origin
 
+# The single Python-type → GraphQL-scalar-name table (module-level so
+# compose-side consumers can share it without importing the SQLModel-aware
+# TypeConverter class — specs/001 R2 keeps that coupling out of compose).
+SCALAR_TYPE_MAP: dict[Any, str] = {
+    int: "Int",
+    str: "String",
+    bool: "Boolean",
+    float: "Float",
+    datetime: "DateTime",
+    date: "Date",
+    time: "Time",
+    uuid.UUID: "UUID",
+}
+
 
 class TypeConverter:
     """Converts Python types to GraphQL type information.
@@ -16,17 +30,10 @@ class TypeConverter:
     code duplication in type inspection logic.
     """
 
-    # Mapping from Python types to GraphQL scalar names
-    SCALAR_TYPE_MAP: dict[Any, str] = {
-        int: "Int",
-        str: "String",
-        bool: "Boolean",
-        float: "Float",
-        datetime: "DateTime",
-        date: "Date",
-        time: "Time",
-        uuid.UUID: "UUID",
-    }
+    # Mapping from Python types to GraphQL scalar names — THE single source
+    # (issue: type-mapping had 4 parallel implementations / 3 scalar tables;
+    # compose_type_mapper and use_case/introspector now import this one).
+    SCALAR_TYPE_MAP: dict[Any, str] = SCALAR_TYPE_MAP
 
     def __init__(self, entity_names: set[str]):
         """Initialize the type converter.
