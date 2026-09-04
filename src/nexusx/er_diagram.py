@@ -25,6 +25,7 @@ from sqlalchemy.orm import RelationshipProperty
 from sqlmodel import SQLModel
 
 from nexusx.relationship import is_virtual_entity
+from nexusx.utils.type_utils import is_fk_field_info
 
 
 class RelationType(str, Enum):
@@ -163,7 +164,7 @@ class ErDiagram:
             fk_fields = []
             for fname, finfo in entity.model_fields.items():
                 all_fields.append(fname)
-                if _is_fk_field(finfo):
+                if is_fk_field_info(finfo):
                     fk_fields.append(fname)
 
             # Remove relationship names from field list (SQLModel ORM rels only)
@@ -301,17 +302,6 @@ class ErDiagram:
                     )
 
         return "\n".join(lines)
-
-
-def _is_fk_field(field_info: Any) -> bool:
-    """Check if a FieldInfo represents a foreign key field."""
-    if hasattr(field_info, "foreign_key") and isinstance(field_info.foreign_key, str):
-        return True
-    if hasattr(field_info, "metadata"):
-        for meta in field_info.metadata:
-            if hasattr(meta, "foreign_key") and isinstance(meta.foreign_key, str):
-                return True
-    return False
 
 
 def _get_relation_direction(rel: RelationshipProperty) -> RelationType:

@@ -77,26 +77,40 @@ def map_annotation(annotation: Any, leaf_fn: Callable[[Any], Any]) -> Any:
         return annotation
 
 
+def is_fk_field_info(field_info: Any) -> bool:
+    """True when a field info carries a SQLModel/SQLAlchemy column FK marker.
+
+    THE single FK detection (mindmap #15): a str ``foreign_key`` attribute, or
+    a str ``foreign_key`` inside a ``metadata`` entry. The same three-line
+    check used to be inlined 7 times across sdl_generator / introspection /
+    er_diagram / subset (×2) / introspector — all now delegate here.
+    """
+    if hasattr(field_info, "foreign_key") and isinstance(
+        field_info.foreign_key, str
+    ):
+        return True
+    if hasattr(field_info, "metadata"):
+        for meta in field_info.metadata:
+            if hasattr(meta, "foreign_key") and isinstance(
+                meta.foreign_key, str
+            ):
+                return True
+    return False
+
+
 def get_fk_fields(entity: type) -> set[str]:
     """Foreign-key field names on an entity (specs/021 P1-7).
 
-    Detects ``field_info.foreign_key`` (str) and ``metadata`` entries carrying
-    a str ``foreign_key`` — SQLModel/SQLAlchemy column FK markers. Shared by
-    query_executor (output filtering), subset (FK auto-include into
-    DTO subset fields) and standard_queries (PK-vs-FK filtering).
+    Shared by query_executor (output filtering), subset (FK auto-include into
+    DTO subset fields) and standard_queries (PK-vs-FK filtering); built on
+    the single-field detector above.
     """
     fks: set[str] = set()
     if not hasattr(entity, "model_fields"):
         return fks
     for fname, fi in entity.model_fields.items():
-        if hasattr(fi, "foreign_key") and isinstance(fi.foreign_key, str):
+        if is_fk_field_info(fi):
             fks.add(fname)
-        if hasattr(fi, "metadata"):
-            for meta in fi.metadata:
-                if hasattr(meta, "foreign_key") and isinstance(
-                    meta.foreign_key, str
-                ):
-                    fks.add(fname)
     return fks
 
 

@@ -37,6 +37,7 @@ from pydantic.fields import FieldInfo
 from sqlmodel import SQLModel
 
 from nexusx.resolver import POST_PREFIX, RESOLVE_PREFIX  # noqa: F401
+from nexusx.utils.type_utils import is_fk_field_info
 
 # ──────────────────────────────────────────────────────────
 # Constants
@@ -101,7 +102,7 @@ def _get_fk_field_names(entity: type[SQLModel]) -> list[str]:
     """Get foreign key field names from a SQLModel entity."""
     fk_names: list[str] = []
     for field_name, field_info in entity.model_fields.items():
-        if _is_fk_field(field_info):
+        if is_fk_field_info(field_info):
             fk_names.append(field_name)
     return fk_names
 
@@ -136,12 +137,8 @@ def _get_sqlmodel_scalar_fields(entity: type[SQLModel]) -> dict[str, FieldInfo]:
     # Get FK field names
     fk_fields: set[str] = set()
     for field_name, field_info in entity.model_fields.items():
-        if hasattr(field_info, "foreign_key") and isinstance(field_info.foreign_key, str):
+        if is_fk_field_info(field_info):
             fk_fields.add(field_name)
-        if hasattr(field_info, "metadata"):
-            for meta in field_info.metadata:
-                if hasattr(meta, "foreign_key") and isinstance(meta.foreign_key, str):
-                    fk_fields.add(field_name)
 
     scalar_fields = {}
     for field_name, field_info in entity.model_fields.items():
@@ -183,7 +180,7 @@ def _extract_field_infos(
             )
 
         # Check if this is a FK field
-        is_fk = _is_fk_field(field)
+        is_fk = is_fk_field_info(field)
 
         if is_fk and not include_fks:
             continue
@@ -202,16 +199,6 @@ def _extract_field_infos(
 
     return field_definitions
 
-
-def _is_fk_field(field: FieldInfo) -> bool:
-    """Check if a FieldInfo represents a foreign key field."""
-    if hasattr(field, "foreign_key") and isinstance(field.foreign_key, str):
-        return True
-    if hasattr(field, "metadata"):
-        for meta in field.metadata:
-            if hasattr(meta, "foreign_key") and isinstance(meta.foreign_key, str):
-                return True
-    return False
 
 
 def _validate_subset_fields(fields: Any) -> None:
@@ -950,7 +937,7 @@ class SubsetMeta(type):
                     new_fi = copy.deepcopy(fi)
                     new_fi.exclude = True
                     # Make auto-included FK fields optional with default None
-                    if _is_fk_field(fi):
+                    if is_fk_field_info(fi):
                         _anno = _anno | None
                         new_fi.default = None
                     field_definitions[field_name] = (_anno, new_fi)
