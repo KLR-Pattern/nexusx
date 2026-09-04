@@ -161,13 +161,11 @@ def _is_fk_field(field_name: str, dto_class: type[BaseModel]) -> bool:
         # Check source entity's model_fields for FK metadata
         source_field = source.model_fields.get(field_name)
         if source_field:
-            if hasattr(source_field, "foreign_key") and isinstance(
-                source_field.foreign_key, str
-            ):
-                return True
-            for meta in getattr(source_field, "metadata", []):
-                if hasattr(meta, "foreign_key") and isinstance(meta.foreign_key, str):
-                    return True
+            # single FK detection (mindmap #15) — the shell above (resolving
+            # the DTO's source entity) is the DTO-world-specific part
+            from nexusx.utils.type_utils import is_fk_field_info
+
+            return is_fk_field_info(source_field)
     return False
 
 

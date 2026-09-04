@@ -25,6 +25,7 @@ from nexusx.utils.schema_helpers import (
     get_core_types,
     is_input_type,
 )
+from nexusx.utils.type_utils import is_fk_field_info
 
 QUERY_META_PARAM = "query_meta"
 
@@ -256,7 +257,7 @@ class IntrospectionGenerator:
 
         # Get fields from model_fields (skip FK fields)
         for field_name, field_info in entity.model_fields.items():
-            if self._is_fk_field(field_info):
+            if is_fk_field_info(field_info):
                 continue
             description = field_info.description
             all_fields.append((field_name, field_info.annotation, description))
@@ -743,16 +744,6 @@ class IntrospectionGenerator:
             "enumValues": None,
             "possibleTypes": None,
         }
-
-    def _is_fk_field(self, field_info: Any) -> bool:
-        """Check if a field is a foreign key field (excluded from GraphQL output)."""
-        if hasattr(field_info, "foreign_key") and isinstance(field_info.foreign_key, str):
-            return True
-        if hasattr(field_info, "metadata"):
-            for meta in field_info.metadata:
-                if hasattr(meta, "foreign_key") and isinstance(meta.foreign_key, str):
-                    return True
-        return False
 
     def _is_paginated_relationship(
         self,

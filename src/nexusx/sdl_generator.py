@@ -22,6 +22,7 @@ from nexusx.utils.schema_helpers import (
     get_core_types,
     is_input_type,
 )
+from nexusx.utils.type_utils import is_fk_field_info
 
 logger = logging.getLogger(__name__)
 
@@ -419,7 +420,7 @@ class SDLGenerator:
         )
         for field_name, field_info in entity.model_fields.items():
             # Skip FK fields from output
-            if self._is_fk_field(field_info):
+            if is_fk_field_info(field_info):
                 continue
             # Skip relationship fields (model_fields on materialized remote
             # types) — rendered by the registry-driven path below.
@@ -490,16 +491,6 @@ class SDLGenerator:
         if entity.__doc__:
             type_def = f'"""{entity.__doc__}"""\n{type_def}'
         return type_def
-
-    def _is_fk_field(self, field_info: Any) -> bool:
-        """Check if a field is a foreign key field (should be excluded from GraphQL output)."""
-        if hasattr(field_info, "foreign_key") and isinstance(field_info.foreign_key, str):
-            return True
-        if hasattr(field_info, "metadata"):
-            for meta in field_info.metadata:
-                if hasattr(meta, "foreign_key") and isinstance(meta.foreign_key, str):
-                    return True
-        return False
 
     def _type_hint_to_graphql(
         self, hint: Any, entity: type[SQLModel] | None = None, field_name: str | None = None

@@ -165,3 +165,56 @@ class TestGetReturnEntityType:
             TestEntityListOpt.search, [TestEntityListOpt]
         )
         assert result == TestEntityListOpt
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Mindmap #15: FK detection is single-sourced — the same three-line check
+# used to be inlined 7 times (sdl_generator / introspection / er_diagram /
+# subset ×2 / introspector variant / get_fk_fields itself).
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestFkDetectionSingleSource:
+    def test_is_fk_field_info_basics(self):
+        from types import SimpleNamespace
+
+        from nexusx.utils.type_utils import is_fk_field_info
+
+        assert is_fk_field_info(SimpleNamespace(foreign_key="user.id"))
+        assert is_fk_field_info(SimpleNamespace(
+            foreign_key=None, metadata=[SimpleNamespace(foreign_key="a.b")]))
+        assert not is_fk_field_info(SimpleNamespace(foreign_key=None, metadata=[]))
+        assert not is_fk_field_info(SimpleNamespace())
+
+    def test_local_copies_are_gone(self):
+        """The verbatim copies no longer exist; the introspector shell (the
+        DTO-world variant resolving the source entity) delegates to the
+        shared detector."""
+        import inspect
+
+        import nexusx.er_diagram as er
+        import nexusx.introspection as intro
+        import nexusx.sdl_generator as sdl
+        import nexusx.subset as subset_mod
+        from nexusx.use_case import introspector
+
+        for mod in (er, sdl, intro, subset_mod):
+            assert not hasattr(mod, "_is_fk_field"), mod.__name__
+        # introspector keeps its shell but its body delegates (no inline FK
+        # marker check remains)
+        assert "foreign_key" not in inspect.getsource(introspector._is_fk_field)
+
+    def test_get_fk_fields_uses_the_detector(self):
+        """Same entity, same verdict through the set API (behavior lock)."""
+        from sqlmodel import Field, SQLModel
+
+        from nexusx.utils.type_utils import get_fk_fields, is_fk_field_info
+
+        class E(SQLModel, table=False):
+            id: int | None = Field(default=None, primary_key=True)
+            owner_id: int = Field(foreign_key="user.id")
+            name: str
+
+        assert get_fk_fields(E) == {"owner_id"}
+        assert is_fk_field_info(E.model_fields["owner_id"])
+        assert not is_fk_field_info(E.model_fields["name"])
