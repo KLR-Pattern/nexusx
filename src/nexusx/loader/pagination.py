@@ -86,6 +86,26 @@ class Paged:
     def params_key(self) -> tuple:
         return (self.limit, self.offset, self.order, self.direction)
 
+    def clamp(self, max_page_size: int | None) -> Paged:
+        """Cap ``limit`` at ``max_page_size`` (mindmap #14 ⑤, defect 5).
+
+        THE single clamping implementation — β/γ senders call it before the
+        wire so the bound holds on every path (it used to exist only on the
+        local PageArgs path, letting federation limits through unclamped).
+        ``limit=None`` stays ``None`` (remote full-fetch semantics unchanged);
+        ``max_page_size=None`` means no declared bound.
+        """
+        if max_page_size is None or self.limit is None:
+            return self
+        if self.limit <= max_page_size:
+            return self
+        return Paged(
+            limit=max_page_size,
+            offset=self.offset,
+            order=self.order,
+            direction=self.direction,
+        )
+
 
 @dataclass(frozen=True)
 class _PagedOverride:

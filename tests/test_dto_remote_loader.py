@@ -99,6 +99,10 @@ async def test_dto_remote_loader_missing_key_returns_empty_list():
 
 @pytest.mark.asyncio
 async def test_dto_remote_loader_preserves_zero_page_overrides():
+    """mindmap #14 ②: the create-time closure defaults are gone (dead config —
+    the only caller never passed them); the side-channel Paged is the single
+    source. The semantic this locks: explicit ``limit=0`` / ``offset=0`` are
+    SENT, distinct from "not provided" (member full-fetches)."""
     from nexusx.federation.remote_loader import (
         create_dto_remote_loader,
         set_dto_page_params,
@@ -114,8 +118,6 @@ async def test_dto_remote_loader_preserves_zero_page_overrides():
         target_cls=target_cls,
         transport=transport,
         is_list=True,
-        limit=7,
-        offset=3,
     )
     loader = loader_cls()
     set_dto_page_params(loader, Paged(limit=0, offset=0))
@@ -125,6 +127,35 @@ async def test_dto_remote_loader_preserves_zero_page_overrides():
     _url, body = transport.posts[0]
     assert body["limit"] == 0
     assert body["offset"] == 0
+
+
+@pytest.mark.asyncio
+async def test_dto_remote_loader_without_params_full_fetches():
+    """No side-channel ⇒ no pagination fields in the body (back-compat full
+    fetch), and Paged(offset=N) alone still sends offset."""
+    from nexusx.federation.remote_loader import (
+        create_dto_remote_loader,
+        set_dto_page_params,
+    )
+    from nexusx.loader.pagination import Paged
+
+    target_cls = create_model("R2", title=(str, None), product_id=(int, None))
+    transport = FakeTransport([])
+    loader_cls = create_dto_remote_loader(
+        typename="R2", join_key="product_id", endpoint="http://test/r",
+        target_cls=target_cls, transport=transport, is_list=True,
+    )
+
+    loader = loader_cls()
+    await loader.load_many([10])
+    _url, body = transport.posts[0]
+    assert "limit" not in body and "offset" not in body and "order" not in body
+
+    loader2 = loader_cls()
+    set_dto_page_params(loader2, Paged(offset=5))
+    await loader2.load_many([11])
+    _url, body2 = transport.posts[1]
+    assert "limit" not in body2 and body2["offset"] == 5
 
 
 @pytest.mark.asyncio
