@@ -22,9 +22,11 @@ before any service method is invoked.
 from __future__ import annotations
 
 import asyncio
+import enum
 import inspect
+import types
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Union, get_args, get_origin
 
 from graphql import DocumentNode, FieldNode, OperationDefinitionNode, parse
 from pydantic import BaseModel, TypeAdapter
@@ -535,17 +537,86 @@ def _build_kwargs(
     return kwargs
 
 
+def _promote_enum_names(value: Any, annotation: Any) -> Any:
+    """Promote GraphQL enum wire names to enum members before validation.
+
+    The compose SDL renders enum members by *name* and GraphQL enum
+    literals/variables carry names — but Pydantic validates enums by
+    *value* (``TypeAdapter(Status).validate_python("HIGH")`` fails when the
+    member value is ``"high"``). Walk the annotation shape and swap any wire
+    name matching ``Enum.__members__`` for the member instance. Member
+    *values* keep flowing through untouched, so both wire conventions work.
+    """
+    if value is None or annotation is None or annotation is inspect.Parameter.empty:
+        return value
+    origin = get_origin(annotation)
+    if origin is Union or origin is types.UnionType:
+        args = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if len(args) == 1:  # Optional[X] — recurse into X
+            return _promote_enum_names(value, args[0])
+        return value  # genuine unions: leave to Pydantic
+    if origin is list and isinstance(value, list):
+        args = get_args(annotation)
+        if args:
+            return [_promote_enum_names(item, args[0]) for item in value]
+        return value
+    if not isinstance(annotation, type):
+        return value
+    if issubclass(annotation, enum.Enum):
+        if isinstance(value, str) and value in annotation.__members__:
+            return annotation[value]
+        return value
+    if issubclass(annotation, BaseModel) and isinstance(value, dict):
+        # INPUT_OBJECT literals arrive as dicts; enum fields follow the same
+        # name wire convention, so recurse along the model's field hints.
+        return {
+            key: (
+                _promote_enum_names(item, field.annotation)
+                if (field := annotation.model_fields.get(key)) is not None
+                else item
+            )
+            for key, item in value.items()
+        }
+    return value
+
+
+def _enum_wire_hint(annotation: Any) -> str:
+    """Hint appended to coercion errors for enum-bearing annotations.
+
+    Pydantic's message names the member *value*, which never appears in the
+    SDL — list the member names so an agent can self-correct.
+    """
+    leaf = annotation
+    for _ in range(8):  # peel Optional/list wrappers; 8 is plenty
+        origin = get_origin(leaf)
+        if origin is Union or origin is types.UnionType or origin is list:
+            args = [arg for arg in get_args(leaf) if arg is not type(None)]
+            if not args:
+                break
+            leaf = args[0]
+        else:
+            break
+    if isinstance(leaf, type) and issubclass(leaf, enum.Enum):
+        return (
+            f" {leaf.__name__} accepts member names on the GraphQL side "
+            f"(one of: {', '.join(leaf.__members__)}) or member values."
+        )
+    return ""
+
+
 def _coerce_strict(
     value: Any, annotation: Any, arg_name: str, qualname: str
 ) -> Any:
     """Defensive type coercion via Pydantic TypeAdapter.
 
     ``QueryParser`` already converts graphql value nodes to native Python
-    values (IntValueNode→int, etc.), but two gaps remain:
+    values (IntValueNode→int, etc.), but three gaps remain:
     - Custom scalars declared as Python types (``datetime``, ``UUID``, ``Decimal``)
       come through as strings from the GraphQL side and need promotion.
     - Pydantic ``BaseModel`` parameters: GraphQL object literals become dicts
       and need to be rebuilt as model instances.
+    - Enum wire names: the SDL publishes member *names* but Pydantic validates
+      by *value* — ``_promote_enum_names`` bridges the two when name ≠ value.
 
     The coercion is best-effort: on failure we surface a graphql ``errors``
     entry naming the offending argument, rather than letting the method
@@ -558,11 +629,12 @@ def _coerce_strict(
     if annotation is inspect.Parameter.empty or annotation is None:
         return value
     try:
-        return TypeAdapter(annotation).validate_python(value)
+        promoted = _promote_enum_names(value, annotation)
+        return TypeAdapter(annotation).validate_python(promoted)
     except Exception as exc:  # noqa: BLE001 — re-surface as graphql error
         raise _ComposeExecutionError(
             f"Failed to coerce argument '{arg_name}' on '{qualname}' "
-            f"to {annotation!r}: {exc}",
+            f"to {annotation!r}: {exc}.{_enum_wire_hint(annotation)}",
             service_method=qualname,
         ) from exc
 
