@@ -11,6 +11,7 @@ These tests exercise ``execute_compose_query`` directly (no MCP layer).
 from __future__ import annotations
 
 import asyncio
+import enum
 from typing import Annotated, ClassVar
 
 import pytest
@@ -921,3 +922,203 @@ class TestSingleOperationConstraint:
         )
         assert result["errors"] == []
         assert _AliasGuardService.calls == ["fetch:x"]
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Enum wire-name coercion (compose SDL publishes names, Pydantic
+# validates values — _promote_enum_names bridges the two)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class Level(str, enum.Enum):
+    """str enum whose member values differ from their names (common style)."""
+
+    HIGH = "high"
+    LOW = "low"
+
+
+class Priority(enum.Enum):
+    """int-valued enum — names are the only sane wire format."""
+
+    URGENT = 1
+    NORMAL = 2
+
+
+class EnumFilterInput(BaseModel):
+    level: Level
+    priority: Priority
+
+
+class EnumService(UseCaseService):
+    """Enum argument coercion over compose."""
+
+    @query
+    async def by_level(cls, level: Level) -> str:
+        return f"{level.name}={level.value}"
+
+    @query
+    async def by_priority(cls, priority: Priority) -> str:
+        return f"{priority.name}={priority.value}"
+
+    @query
+    async def by_filter(cls, flt: EnumFilterInput) -> str:
+        return f"{flt.level.name}/{flt.priority.name}"
+
+    @query
+    async def by_levels(cls, levels: list[Level]) -> str:
+        return ",".join(item.name for item in levels)
+
+    @query
+    async def maybe_level(cls, level: Level | None = None) -> str:
+        return "none" if level is None else level.name
+
+
+class TestEnumWireNameCoercion:
+    """Enum args accept member names (the SDL contract) and member values."""
+
+    @pytest.fixture
+    def enum_app(self) -> UseCaseAppConfig:
+        return UseCaseAppConfig(name="enums", services=[EnumService])
+
+    @pytest.fixture
+    def enum_schema(self, enum_app: UseCaseAppConfig):
+        return build_compose_schema(enum_app)
+
+    async def test_str_enum_literal_name(
+        self, enum_app, enum_schema
+    ) -> None:
+        result = await execute_compose_query(
+            enum_app, enum_schema, "{ EnumService { by_level(level: HIGH) } }"
+        )
+        assert result["errors"] == []
+        assert result["data"]["EnumService"]["by_level"] == "HIGH=high"
+
+    async def test_str_enum_variable_name(
+        self, enum_app, enum_schema
+    ) -> None:
+        result = await execute_compose_query(
+            enum_app,
+            enum_schema,
+            "query ($l: Level!) { EnumService { by_level(level: $l) } }",
+            variables={"l": "HIGH"},
+        )
+        assert result["errors"] == []
+        assert result["data"]["EnumService"]["by_level"] == "HIGH=high"
+
+    async def test_str_enum_variable_value_still_accepted(
+        self, enum_app, enum_schema
+    ) -> None:
+        result = await execute_compose_query(
+            enum_app,
+            enum_schema,
+            "query ($l: Level!) { EnumService { by_level(level: $l) } }",
+            variables={"l": "high"},
+        )
+        assert result["errors"] == []
+        assert result["data"]["EnumService"]["by_level"] == "HIGH=high"
+
+    async def test_int_enum_literal_name(
+        self, enum_app, enum_schema
+    ) -> None:
+        result = await execute_compose_query(
+            enum_app, enum_schema, "{ EnumService { by_priority(priority: URGENT) } }"
+        )
+        assert result["errors"] == []
+        assert result["data"]["EnumService"]["by_priority"] == "URGENT=1"
+
+    async def test_int_enum_variable_name(
+        self, enum_app, enum_schema
+    ) -> None:
+        result = await execute_compose_query(
+            enum_app,
+            enum_schema,
+            "query ($p: Priority!) { EnumService { by_priority(priority: $p) } }",
+            variables={"p": "URGENT"},
+        )
+        assert result["errors"] == []
+        assert result["data"]["EnumService"]["by_priority"] == "URGENT=1"
+
+    async def test_int_enum_variable_value_still_accepted(
+        self, enum_app, enum_schema
+    ) -> None:
+        result = await execute_compose_query(
+            enum_app,
+            enum_schema,
+            "query ($p: Priority!) { EnumService { by_priority(priority: $p) } }",
+            variables={"p": 1},
+        )
+        assert result["errors"] == []
+        assert result["data"]["EnumService"]["by_priority"] == "URGENT=1"
+
+    async def test_nested_input_object_enum_names_literal(
+        self, enum_app, enum_schema
+    ) -> None:
+        result = await execute_compose_query(
+            enum_app,
+            enum_schema,
+            "{ EnumService { by_filter(flt: { level: HIGH, priority: URGENT }) } }",
+        )
+        assert result["errors"] == []
+        assert result["data"]["EnumService"]["by_filter"] == "HIGH/URGENT"
+
+    async def test_nested_input_object_enum_names_variable(
+        self, enum_app, enum_schema
+    ) -> None:
+        result = await execute_compose_query(
+            enum_app,
+            enum_schema,
+            "query ($f: EnumFilterInput!) { EnumService { by_filter(flt: $f) } }",
+            variables={"f": {"level": "HIGH", "priority": "URGENT"}},
+        )
+        assert result["errors"] == []
+        assert result["data"]["EnumService"]["by_filter"] == "HIGH/URGENT"
+
+    async def test_list_of_enums_literal(
+        self, enum_app, enum_schema
+    ) -> None:
+        result = await execute_compose_query(
+            enum_app,
+            enum_schema,
+            "{ EnumService { by_levels(levels: [HIGH, LOW]) } }",
+        )
+        assert result["errors"] == []
+        assert result["data"]["EnumService"]["by_levels"] == "HIGH,LOW"
+
+    async def test_list_of_enums_variable(
+        self, enum_app, enum_schema
+    ) -> None:
+        result = await execute_compose_query(
+            enum_app,
+            enum_schema,
+            "query ($ls: [Level!]!) { EnumService { by_levels(levels: $ls) } }",
+            variables={"ls": ["HIGH", "LOW"]},
+        )
+        assert result["errors"] == []
+        assert result["data"]["EnumService"]["by_levels"] == "HIGH,LOW"
+
+    async def test_optional_enum_variable_name(
+        self, enum_app, enum_schema
+    ) -> None:
+        result = await execute_compose_query(
+            enum_app,
+            enum_schema,
+            "query ($l: Level) { EnumService { maybe_level(level: $l) } }",
+            variables={"l": "LOW"},
+        )
+        assert result["errors"] == []
+        assert result["data"]["EnumService"]["maybe_level"] == "LOW"
+
+    async def test_invalid_name_error_lists_member_names(
+        self, enum_app, enum_schema
+    ) -> None:
+        result = await execute_compose_query(
+            enum_app,
+            enum_schema,
+            "query ($l: Level!) { EnumService { by_level(level: $l) } }",
+            variables={"l": "NOPE"},
+        )
+        message = result["errors"][0]["message"]
+        # The hint names the wire values the SDL actually publishes.
+        assert "HIGH" in message and "LOW" in message
+        # Field-level error: the method is nulled inside partial data.
+        assert result["data"]["EnumService"]["by_level"] is None
