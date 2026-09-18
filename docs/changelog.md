@@ -12,6 +12,22 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 
 ## 6.3
 
+### 6.3.1 (2026-9-18)
+
+- fix:
+  - **Enum arguments accept member names as wire values (#150)**: The compose
+    SDL renders enum members by name and GraphQL enum literals/variables carry
+    names, but argument coercion validated through Pydantic, which matches
+    enums by value. Any enum whose member names differ from their values
+    (`LOW = "low"`, `URGENT = 1` — both common Python styles) was unusable
+    over compose, and the failure surfaced as a raw Pydantic error naming a
+    value that never appears in the SDL, so agents could not self-correct.
+    `_promote_enum_names` now walks the argument annotation (`Optional`,
+    `list`, and input-object dicts included) and swaps wire names matching
+    `Enum.__members__` for member instances before validation; member values
+    keep working, so both wire conventions are accepted. Coercion errors for
+    enum arguments now list the valid member names.
+
 ### 6.3.0 (2026-9-9)
 
 - feat:
