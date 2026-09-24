@@ -90,6 +90,47 @@ def is_from_context_annotation(annotation: Any) -> bool:
     return any(isinstance(meta, FromContext) for meta in metadata)
 
 
+def literal_allowed_values(annotation: Any) -> tuple[Any, ...] | None:
+    """Return the allowed values of a scalar ``Literal`` annotation.
+
+    Unwraps ``Annotated`` / ``Optional`` / ``list`` wrappers so field and
+    argument descriptions can mention the constraint even though the GraphQL
+    type is the plain underlying scalar — SDL has no constrained-scalar kind,
+    so the description is where the values live for agents.
+    """
+    annotation = _strip_annotated(annotation)
+    origin = get_origin(annotation)
+    if origin is Union or origin is types.UnionType:
+        args = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if len(args) == 1:  # Optional[X] — recurse into X
+            return literal_allowed_values(args[0])
+        return None
+    if origin is list:
+        args = get_args(annotation)
+        if args:
+            return literal_allowed_values(args[0])
+        return None
+    if origin is Literal:
+        values = tuple(value for value in get_args(annotation) if value is not None)
+        return values or None
+    return None
+
+
+def describe_literal_values(description: str | None, annotation: Any) -> str | None:
+    """Append ``Allowed values: ...`` to a description for ``Literal`` annotations.
+
+    No-op for annotations without a ``Literal`` leaf, so callers can route
+    every field/argument description through it unconditionally.
+    """
+    values = literal_allowed_values(annotation)
+    if values is None:
+        return description
+    suffix = "Allowed values: " + ", ".join(str(value) for value in values)
+    if description:
+        return f"{description} {suffix}"
+    return suffix
+
+
 class ComposeTypeMapper:
     """Accumulates ``TypeInfo`` definitions while mapping Python types.
 
@@ -514,7 +555,9 @@ class ComposeTypeMapper:
         return FieldInfo(
             name=field_name,
             type_ref=self.map_python_type(field_type),
-            description=description,
+            # Literal constraints are invisible in the GraphQL type system —
+            # surface the allowed values in the description instead.
+            description=describe_literal_values(description, field_type),
         )
 
     def _reject_sqlmodel_entity(self, py_type: type) -> None:

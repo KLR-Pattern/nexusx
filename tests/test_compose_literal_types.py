@@ -89,3 +89,55 @@ async def test_literal_argument_constraints_are_enforced(status: str, has_errors
     assert bool(result["errors"]) is has_errors
     if not has_errors:
         assert result["data"]["MeetingService"]["echo_status"] == status
+
+
+class DescribedTaskDTO(BaseModel):
+    status: Literal["open", "closed"] = "open"
+    mode: Literal["fast"] | None = None
+
+
+class DescribedService(UseCaseService):
+    @query
+    async def pick(cls, mode: Literal["fast", "slow"]) -> DescribedTaskDTO:
+        return DescribedTaskDTO(status="open")
+
+
+def test_literal_field_description_lists_allowed_values() -> None:
+    schema = build_compose_schema(
+        UseCaseAppConfig(name="meeting-literal-desc", services=[MeetingService])
+    )
+
+    task_type = schema.registry["FollowUpTaskDTO"]
+    status_field = next(field for field in task_type.fields if field.name == "status")
+
+    assert status_field.description == "Allowed values: open"
+
+
+def test_literal_argument_description_lists_allowed_values() -> None:
+    schema = build_compose_schema(
+        UseCaseAppConfig(name="meeting-literal-arg", services=[MeetingService])
+    )
+
+    service_type = schema.registry["MeetingServiceQuery"]
+    method = next(f for f in service_type.fields if f.name == "echo_status")
+    status_arg = next(a for a in method.args if a.name == "status")
+
+    assert status_arg.description == "Allowed values: open, closed"
+
+
+def test_existing_description_is_kept_and_extended() -> None:
+    schema = build_compose_schema(
+        UseCaseAppConfig(name="described-literal", services=[DescribedService])
+    )
+
+    task_type = schema.registry["DescribedTaskDTO"]
+    by_name = {f.name: f for f in task_type.fields}
+    assert by_name["status"].description == "Allowed values: open, closed"
+    # Optional[Literal[...]] keeps both the values and the nullable type.
+    assert by_name["mode"].description == "Allowed values: fast"
+    assert by_name["mode"].type_ref.kind == "SCALAR"
+
+
+def test_int_literal_values_render_in_description() -> None:
+    ref = ComposeTypeMapper().map_python_type(Literal[1, 2])
+    assert ref.of_type is not None and ref.of_type.name == "Int"
