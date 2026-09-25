@@ -98,21 +98,40 @@ def literal_allowed_values(annotation: Any) -> tuple[Any, ...] | None:
     type is the plain underlying scalar — SDL has no constrained-scalar kind,
     so the description is where the values live for agents.
     """
+    constraint = _literal_constraint(annotation)
+    return constraint[0] if constraint is not None else None
+
+
+def _literal_constraint(annotation: Any) -> tuple[tuple[Any, ...], bool] | None:
+    """Return ``(non-None values, has_none)`` for a scalar ``Literal`` leaf.
+
+    ``has_none`` tracks nullability from any layer: a ``None`` member inside
+    the ``Literal`` itself, or an ``Optional``/``| None`` wrapper around it.
+    The type mapper surfaces the same fact as a nullable TypeRef; descriptions
+    need it so agents learn ``null`` is a legal input, not a violation.
+    """
     annotation = _strip_annotated(annotation)
     origin = get_origin(annotation)
     if origin is Union or origin is types.UnionType:
-        args = [arg for arg in get_args(annotation) if arg is not type(None)]
-        if len(args) == 1:  # Optional[X] — recurse into X
-            return literal_allowed_values(args[0])
-        return None
+        raw_args = get_args(annotation)
+        args = [arg for arg in raw_args if arg is not type(None)]
+        if len(args) != 1:  # Optional[X] only — a real union has no Literal leaf
+            return None
+        inner = _literal_constraint(args[0])
+        if inner is None:
+            return None
+        return inner[0], inner[1] or type(None) in raw_args
     if origin is list:
         args = get_args(annotation)
         if args:
-            return literal_allowed_values(args[0])
+            return _literal_constraint(args[0])
         return None
     if origin is Literal:
-        values = tuple(value for value in get_args(annotation) if value is not None)
-        return values or None
+        values = get_args(annotation)
+        non_none = tuple(value for value in values if value is not None)
+        if not non_none:
+            return None
+        return non_none, None in values
     return None
 
 
@@ -120,15 +139,25 @@ def describe_literal_values(description: str | None, annotation: Any) -> str | N
     """Append ``Allowed values: ...`` to a description for ``Literal`` annotations.
 
     No-op for annotations without a ``Literal`` leaf, so callers can route
-    every field/argument description through it unconditionally.
+    every field/argument description through it unconditionally. Booleans
+    render lower-case (``true``/``false``) to match GraphQL literals, and a
+    nullable constraint gains an ``(or null)`` tail.
     """
-    values = literal_allowed_values(annotation)
-    if values is None:
+    constraint = _literal_constraint(annotation)
+    if constraint is None:
         return description
-    suffix = "Allowed values: " + ", ".join(str(value) for value in values)
+    values, has_none = constraint
+    suffix = "Allowed values: " + ", ".join(_format_literal_value(v) for v in values)
+    if has_none:
+        suffix += " (or null)"
     if description:
         return f"{description} {suffix}"
     return suffix
+
+
+def _format_literal_value(value: Any) -> str:
+    """Render one allowed value the way GraphQL spells its literal."""
+    return str(value).lower() if isinstance(value, bool) else str(value)
 
 
 class ComposeTypeMapper:
@@ -537,7 +566,10 @@ class ComposeTypeMapper:
             type_ref=self.map_python_type_as_input(field_type),
             has_default=has_default,
             default_value=default_value,
-            description=description,
+            # Same Literal surfacing as the output side (_build_field_info) —
+            # agents constructing input objects need the constraint even more
+            # than agents reading outputs.
+            description=describe_literal_values(description, field_type),
         )
 
     def _build_field_info(
