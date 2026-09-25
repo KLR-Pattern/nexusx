@@ -10,7 +10,7 @@ from nexusx.decorator import query
 from nexusx.use_case.business import UseCaseService
 from nexusx.use_case.compose_executor import execute_compose_query
 from nexusx.use_case.compose_schema import UnsupportedTypeError, build_compose_schema
-from nexusx.use_case.compose_type_mapper import ComposeTypeMapper
+from nexusx.use_case.compose_type_mapper import ComposeTypeMapper, describe_literal_values
 from nexusx.use_case.types import UseCaseAppConfig
 
 
@@ -133,11 +133,91 @@ def test_existing_description_is_kept_and_extended() -> None:
     task_type = schema.registry["DescribedTaskDTO"]
     by_name = {f.name: f for f in task_type.fields}
     assert by_name["status"].description == "Allowed values: open, closed"
-    # Optional[Literal[...]] keeps both the values and the nullable type.
-    assert by_name["mode"].description == "Allowed values: fast"
+    # Optional[Literal[...]] keeps the values, the nullable type, and tells
+    # agents that null is a legal input.
+    assert by_name["mode"].description == "Allowed values: fast (or null)"
     assert by_name["mode"].type_ref.kind == "SCALAR"
 
 
 def test_int_literal_values_render_in_description() -> None:
+    assert describe_literal_values(None, Literal[1, 2]) == "Allowed values: 1, 2"
     ref = ComposeTypeMapper().map_python_type(Literal[1, 2])
     assert ref.of_type is not None and ref.of_type.name == "Int"
+
+
+# ---------------------------------------------------------------------------
+# Input-side surfacing — agents constructing input objects need the allowed
+# values at least as much as agents reading outputs.
+# ---------------------------------------------------------------------------
+
+
+class TaskFilterDTO(BaseModel):
+    status: Literal["open", "closed"] = "open"
+
+
+class FilterService(UseCaseService):
+    @query
+    async def filter_tasks(cls, filt: TaskFilterDTO) -> TaskFilterDTO:
+        return filt
+
+
+def test_literal_input_object_field_description_lists_allowed_values() -> None:
+    schema = build_compose_schema(
+        UseCaseAppConfig(name="literal-input-desc", services=[FilterService])
+    )
+
+    input_type = schema.registry["TaskFilterDTOInput"]
+    status_field = next(f for f in input_type.input_fields if f.name == "status")
+
+    assert status_field.description == "Allowed values: open, closed"
+
+
+# ---------------------------------------------------------------------------
+# list[Literal[...]] — both unwrap implementations (type mapping + description)
+# recurse through list.
+# ---------------------------------------------------------------------------
+
+
+class TaggedTaskDTO(BaseModel):
+    tags: list[Literal["alpha", "beta"]] = []
+
+
+class TaggedService(UseCaseService):
+    @query
+    async def tagged(cls) -> TaggedTaskDTO:
+        return TaggedTaskDTO()
+
+
+def test_list_of_literals_maps_to_list_of_element_scalar() -> None:
+    ref = ComposeTypeMapper().map_python_type(list[Literal["alpha", "beta"]])
+
+    assert ref.kind == "NON_NULL"
+    assert ref.of_type is not None and ref.of_type.kind == "LIST"
+    element = ref.of_type.of_type
+    assert element is not None
+    assert element.kind == "NON_NULL"
+    assert element.of_type is not None and element.of_type.name == "String"
+
+
+def test_list_literal_field_description_lists_allowed_values() -> None:
+    schema = build_compose_schema(UseCaseAppConfig(name="list-literal", services=[TaggedService]))
+
+    task_type = schema.registry["TaggedTaskDTO"]
+    tags_field = next(f for f in task_type.fields if f.name == "tags")
+
+    assert tags_field.description == "Allowed values: alpha, beta"
+
+
+# ---------------------------------------------------------------------------
+# Value formatting — descriptions must spell values the way GraphQL does.
+# ---------------------------------------------------------------------------
+
+
+def test_bool_literal_values_render_as_graphql_literals() -> None:
+    assert describe_literal_values(None, Literal[True, False]) == ("Allowed values: true, false")
+
+
+def test_none_member_literal_description_mentions_null() -> None:
+    assert describe_literal_values(None, Literal["open", None]) == (
+        "Allowed values: open (or null)"
+    )
