@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.4.1."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.4.0."
 ---
 
 # Changelog
@@ -9,6 +9,43 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 - **Patch (x.y.Z)**: Bug fixes and minor improvements
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
+
+## 6.4
+
+### 6.4.0 (2026-9-26)
+
+- feat:
+  - **Scalar `Literal` annotations on the compose path (#151)**: DTO fields
+    and method arguments annotated with `Literal[...]` previously raised
+    `UnsupportedTypeError`. They now map to the GraphQL scalar shared by
+    their values (`Literal["a", "b"]` → `String`, `Literal[1, 2]` → `Int`).
+    A `None` member maps to a nullable type; mixed-type and enum-member
+    literals are rejected with a clear hint ("use the enum class directly").
+    Pydantic keeps enforcing the allowed values at runtime.
+  - **`Allowed values: ...` descriptions for Literal fields and arguments
+    (#151, #152)**: GraphQL has no constrained-scalar kind, so a Literal
+    constraint is invisible in the type system. Output fields, input-object
+    fields (#152), method arguments, and introspection now list the allowed
+    values in descriptions — booleans render as GraphQL literals
+    (`true`/`false`, #152) and nullable constraints gain an `(or null)` tail
+    (#152) so agents learn null is a legal input, not a violation.
+  - **Scalar `Literal` support on the entity-first path (#154)**: SDL and
+    introspection silently rendered every `Literal[...]` as `String` through
+    the lenient scalar fallback — int/bool literals got a wrong type
+    (`Literal[1, 2, 3]` → `String!`) and nullable literals were forced
+    `NON_NULL`. Literals now map through shared helpers in
+    `type_converter.py` (single source for both GraphQL paths), and
+    `ArgumentBuilder` validates scalar Literal arguments with `TypeAdapter`
+    so mistyped-but-parseable values fail loudly instead of flowing into the
+    method body (mirrors compose's `_coerce_strict`).
+
+- behavior change:
+  - **Unmappable Literals raise at schema-generation time (#154)**: On the
+    entity-first path, `Literal["a", 1]`, `Literal[SomeEnum.X]`, or an
+    all-`None` literal previously fell through to `String` silently — str
+    literals looked correct by accident, hiding the mis-typing. SDL and
+    introspection generation now raises `ValueError` for them (the compose
+    path keeps raising `UnsupportedTypeError` with identical messages).
 
 ## 6.3
 
