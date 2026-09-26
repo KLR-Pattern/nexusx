@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import uuid
 from datetime import date, datetime, time, timezone
-from typing import Any, get_args, get_origin, get_type_hints
+from typing import Any, Literal, get_args, get_origin, get_type_hints
 
 from graphql.utilities import value_from_ast_untyped
 from pydantic import AwareDatetime, TypeAdapter, ValidationError
@@ -98,6 +98,12 @@ class ArgumentBuilder:
                 return target_type[value]
             except KeyError:
                 return target_type(value)
+
+        # Scalar Literal — the schema advertises the underlying scalar, so a
+        # mistyped value parses fine but violates the constraint; Pydantic
+        # owns the enforcement here (mirrors compose's _coerce_strict).
+        if get_origin(target_type) is Literal:
+            return TypeAdapter(target_type).validate_python(value)
 
         if target_type is datetime and isinstance(value, str):
             return self._parse_datetime(value)

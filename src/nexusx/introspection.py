@@ -12,7 +12,13 @@ from graphql import FieldNode, OperationDefinitionNode, parse
 from graphql.utilities import value_from_ast_untyped
 from sqlmodel import SQLModel
 
-from nexusx.type_converter import TypeConverter
+from nexusx.type_converter import (
+    SCALAR_TYPE_MAP,
+    TypeConverter,
+    describe_literal_values,
+    is_literal_annotation,
+    literal_scalar_type,
+)
 from nexusx.utils.pagination_schema import (
     federation_order_enum_layout,
     has_any_paginated_relationship,
@@ -259,7 +265,9 @@ class IntrospectionGenerator:
         for field_name, field_info in entity.model_fields.items():
             if is_fk_field_info(field_info):
                 continue
-            description = field_info.description
+            description = describe_literal_values(
+                field_info.description, field_info.annotation
+            )
             all_fields.append((field_name, field_info.annotation, description))
 
         # Get relationship fields from type hints (only entity references)
@@ -322,10 +330,12 @@ class IntrospectionGenerator:
         # Unwrap wrappers (Optional, list, Mapped)
         base_type = self._converter.unwrap_to_base_type(type_hint)
 
-        # Check if it's a scalar or enum
+        # Check if it's a scalar, enum, or scalar Literal
         if self._converter.get_scalar_type_name(base_type):
             return True
         if self._converter.is_enum_type(base_type):
+            return True
+        if is_literal_annotation(base_type):
             return True
 
         return False
@@ -530,6 +540,20 @@ class IntrospectionGenerator:
                 return {"kind": "NON_NULL", "name": None, "ofType": list_ref}
             return list_ref
 
+        # Scalar Literal — map to the scalar shared by its values; a None
+        # member keeps the type nullable even when required=True (single
+        # source: type_converter.literal_scalar_type).
+        literal = literal_scalar_type(python_type)
+        if literal is not None:
+            scalar, has_none = literal
+            if required and not has_none:
+                return {
+                    "kind": "NON_NULL",
+                    "name": None,
+                    "ofType": {"kind": "SCALAR", "name": SCALAR_TYPE_MAP[scalar], "ofType": None},
+                }
+            return {"kind": "SCALAR", "name": SCALAR_TYPE_MAP[scalar], "ofType": None}
+
         # Scalar types
         scalar_name = self._converter.get_scalar_type_name(python_type)
         if scalar_name:
@@ -632,7 +656,10 @@ class IntrospectionGenerator:
 
         return {
             "name": name,
-            "description": None,
+            # Introspection is the only channel where argument descriptions
+            # can live (GraphQL SDL has no argument-description syntax) —
+            # Literal constraints surface here for agents.
+            "description": describe_literal_values(None, python_type),
             "type": type_ref,
             "defaultValue": default_value,
         }
@@ -729,7 +756,9 @@ class IntrospectionGenerator:
 
             input_fields.append({
                 "name": field_name,
-                "description": getattr(field_info, "description", None),
+                "description": describe_literal_values(
+                    getattr(field_info, "description", None), field_type
+                ),
                 "type": type_ref,
                 "defaultValue": None,
             })

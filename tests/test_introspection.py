@@ -1,7 +1,7 @@
 """Tests for GraphQL introspection generator."""
 
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
 import pytest
 from sqlmodel import Field, Relationship, SQLModel
@@ -767,3 +767,63 @@ class TestDefaultValueFormat:
         assert IntrospectionGenerator._format_default_value(3.14) == "3.14"
         assert IntrospectionGenerator._format_default_value([1, 2, 3]) == "[1, 2, 3]"
         assert IntrospectionGenerator._format_default_value([]) == "[]"
+
+
+class LiteralIntrospectionEntity(SQLModel):
+    """Entity exercising scalar Literal fields in introspection (#153)."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    status: Literal["open", "closed"] = "open"
+    priority: Literal[1, 2, 3] = 2
+    mode: Literal["fast"] | None = None
+
+    @query
+    def filter(cls, status: Literal["open", "pending"], flag: Literal[True, False] = True) -> Optional["LiteralIntrospectionEntity"]:  # noqa: E501
+        return None
+
+
+class TestIntrospectionLiterals:
+    """Scalar Literal mapping on the entity-first introspection path."""
+
+    @pytest.fixture
+    def literal_types(self) -> dict[str, dict]:
+        query_methods = {
+            "LiteralIntrospectionEntity": {
+                "filter": (LiteralIntrospectionEntity, LiteralIntrospectionEntity.filter),
+            }
+        }
+        data = IntrospectionGenerator(
+            [LiteralIntrospectionEntity], query_methods, {}
+        ).generate()
+        return {t["name"]: t for t in data["types"]}
+
+    def test_int_literal_field_is_int_non_null(self, literal_types) -> None:
+        entity_fields = literal_types["LiteralIntrospectionEntity"]["fields"]
+        field = next(f for f in entity_fields if f["name"] == "priority")
+        assert field["type"] == {
+            "kind": "NON_NULL", "name": None,
+            "ofType": {"kind": "SCALAR", "name": "Int", "ofType": None},
+        }
+
+    def test_bool_literal_argument_is_boolean(self, literal_types) -> None:
+        query_type = literal_types["LiteralIntrospectionEntityQuery"]
+        field = next(f for f in query_type["fields"] if f["name"] == "filter")
+        flag = next(a for a in field["args"] if a["name"] == "flag")
+        assert flag["type"] == {"kind": "SCALAR", "name": "Boolean", "ofType": None}
+
+    def test_none_member_literal_stays_nullable(self, literal_types) -> None:
+        entity_fields = literal_types["LiteralIntrospectionEntity"]["fields"]
+        field = next(f for f in entity_fields if f["name"] == "mode")
+        assert field["type"] == {"kind": "SCALAR", "name": "String", "ofType": None}
+
+    def test_field_descriptions_list_allowed_values(self, literal_types) -> None:
+        fields = {f["name"]: f for f in literal_types["LiteralIntrospectionEntity"]["fields"]}
+        assert fields["status"]["description"] == "Allowed values: open, closed"
+        assert fields["priority"]["description"] == "Allowed values: 1, 2, 3"
+        assert fields["mode"]["description"] == "Allowed values: fast (or null)"
+
+    def test_argument_descriptions_list_allowed_values(self, literal_types) -> None:
+        query_type = literal_types["LiteralIntrospectionEntityQuery"]
+        field = next(f for f in query_type["fields"] if f["name"] == "filter")
+        status = next(a for a in field["args"] if a["name"] == "status")
+        assert status["description"] == "Allowed values: open, pending"
