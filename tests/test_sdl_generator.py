@@ -1,8 +1,9 @@
 """Tests for SDL generator."""
 
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
+import pytest
 from pydantic import BaseModel
 from sqlmodel import Field, SQLModel
 
@@ -556,3 +557,52 @@ class TestSDLGeneratorExtras:
         # generate_operation_sdl internally calls _collect_related_entities
         sdl = generator.generate_operation_sdl("nonExistent", "Query")
         assert sdl is None
+
+
+class LiteralEntityForTest(SQLModel):
+    """Entity exercising scalar Literal fields on the entity-first path."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    status: Literal["open", "closed"] = "open"
+    priority: Literal[1, 2, 3] = 2
+    mode: Literal["fast"] | None = None
+
+    @query
+    async def filter(
+        cls, status: Literal["open", "pending"], flag: Literal[True, False] = True
+    ) -> Optional["LiteralEntityForTest"]:
+        return LiteralEntityForTest(id=1)
+
+
+class TestSDLGeneratorLiterals:
+    """Scalar Literal mapping on the entity-first SDL path (nexusx #153)."""
+
+    def test_string_literal_field_renders_string_with_description(self) -> None:
+        sdl = SDLGenerator([LiteralEntityForTest]).generate()
+        assert '  """Allowed values: open, closed"""' in sdl
+        assert "status: String!" in sdl
+
+    def test_int_literal_field_renders_int(self) -> None:
+        sdl = SDLGenerator([LiteralEntityForTest]).generate()
+        assert "priority: Int!" in sdl
+
+    def test_none_member_literal_is_nullable(self) -> None:
+        sdl = SDLGenerator([LiteralEntityForTest]).generate()
+        # `mode: Literal["fast"] | None` → nullable String, "(or null)" tail
+        assert "mode: String" in sdl
+        assert '"""Allowed values: fast (or null)"""' in sdl
+
+    def test_literal_arguments_map_to_scalars(self) -> None:
+        sdl = SDLGenerator([LiteralEntityForTest]).generate()
+        # str Literal argument lands on String by design; bool Literal must
+        # NOT fall through the lenient String fallback.
+        assert "filter(status: String!" in sdl
+        assert "flag: Boolean)" in sdl
+
+    def test_mixed_type_literal_raises_at_generation(self) -> None:
+        class BadLiteralEntity(SQLModel):
+            id: int | None = Field(default=None, primary_key=True)
+            mixed: Literal["a", 1] = "a"
+
+        with pytest.raises(ValueError, match="must share one Python type"):
+            SDLGenerator([BadLiteralEntity]).generate()

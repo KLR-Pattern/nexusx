@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Literal
 
 import pytest
 from graphql import parse
+from pydantic import ValidationError
 from sqlmodel import SQLModel, select
 
 from nexusx.decorator import query
@@ -186,3 +188,39 @@ class TestArgumentTypeInE2EQuery:
         assert received_types.get("limit") is int, (
             f"Expected int, got {received_types.get('limit')}"
         )
+
+
+class TestLiteralArgumentValidation:
+    """Scalar Literal arguments validate against allowed values (#153).
+
+    The schema advertises the underlying scalar (String/Int/Boolean), so a
+    mistyped value parses fine but violates the constraint — Pydantic owns
+    the enforcement in ArgumentBuilder (mirrors compose's _coerce_strict).
+    """
+
+    def test_valid_value_passes_through(self) -> None:
+        builder = ArgumentBuilder()
+        assert builder._convert_scalar_value("open", Literal["open", "closed"]) == "open"
+
+    def test_invalid_value_raises_validation_error(self) -> None:
+        builder = ArgumentBuilder()
+        with pytest.raises(ValidationError):
+            builder._convert_scalar_value("pending", Literal["open", "closed"])
+
+    def test_optional_literal_validates_inner_value(self) -> None:
+        builder = ArgumentBuilder()
+        assert builder._convert_scalar_value("fast", Literal["fast"] | None) == "fast"
+        with pytest.raises(ValidationError):
+            builder._convert_scalar_value("slow", Literal["fast"] | None)
+
+    def test_build_arguments_validates_literal_param(self) -> None:
+        class Service:
+            @classmethod
+            def pick(cls, status: Literal["open", "closed"] = "open") -> int:
+                return 1
+
+        document = parse('{ users(status: "pending") { id } }')
+        selection = document.definitions[0].selection_set.selections[0]
+        builder = ArgumentBuilder()
+        with pytest.raises(ValidationError):
+            builder.build_arguments(selection, None, Service.pick, FixtureUser)
