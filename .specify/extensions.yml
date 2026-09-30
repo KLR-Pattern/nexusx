@@ -1,8 +1,40 @@
 installed:
 - agent-context
+- nexusx
 settings:
   auto_execute_hooks: true
 hooks:
+  # nexusx prepend hooks — v0.2.0+ 设计：
+  # - optional: true → 用户可禁用、hook 失败不阻塞 spec-kit 主流程
+  # - 失败时 graceful degrade：spec-kit 原生命令继续执行，nexusx 增强内容留空或由用户手动填写
+  # - 移除 nexusx preset 后，hooks 自动消失（spec-kit 主流程完全不受影响）
+  before_specify:
+  - extension: nexusx
+    command: nexusx.phase0
+    enabled: true
+    optional: true
+    priority: 5
+    prompt: Run nexusx Phase 0 八步访谈?
+    description: nexusx Phase 0 八步访谈，结果写入 spec.md 顶部区块
+    condition: null
+  before_plan:
+  - extension: nexusx
+    command: nexusx.plan-decisions
+    enabled: true
+    optional: true
+    priority: 5
+    prompt: Run nexusx plan 决策访谈?
+    description: nexusx DB 选型 / alembic / 第三方库 / TS SDK 决策访谈
+    condition: null
+  before_tasks:
+  - extension: nexusx
+    command: nexusx.tasks-phase-tags
+    enabled: true
+    optional: true
+    priority: 5
+    prompt: Run nexusx tasks phase 标签规则提示?
+    description: nexusx phase-first 混合排序规则与 [P1]-[P4] 标签说明
+    condition: null
   after_specify:
   - extension: agent-context
     command: speckit.agent-context.update
