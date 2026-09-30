@@ -160,6 +160,27 @@ def _resolve_local_page_capability(
     return capability, resolved
 
 
+def _is_backref_created(rel: Any, source_kls: type[SQLModel]) -> bool:
+    """True if ``rel`` was auto-created by SQLAlchemy's ``backref``.
+
+    backref propagates the forward side's conditional primaryjoin to the
+    reverse relationship verbatim; from the reverse side's perspective those
+    conditions reference its *source* table, which would raise at
+    ErManager construction (PR review finding). The user never wrote the
+    reverse relationship, so it keeps master's plain-FK semantics instead:
+    extraction is skipped (with a warning); the forward side's declared
+    conditions still apply there.
+
+    Detected via SQLModel's ``__sqlmodel_relationships__`` — the class's
+    declared ``Relationship()`` fields. A backref-created relationship never
+    appears in it. When the attribute is absent (not a SQLModel-declared
+    field surface) we report False: never silently skip conditions, only
+    skip relationships we can prove the user didn't declare.
+    """
+    declared = getattr(source_kls, "__sqlmodel_relationships__", None)
+    return isinstance(declared, dict) and rel.key not in declared
+
+
 def _extract_extra_filters(
     rel: Any,
     source_kls: type[SQLModel],
@@ -184,20 +205,30 @@ def _extract_extra_filters(
     them would silently rewrite OR into AND). Column-vs-column equalities that
     match the relationship's FK pair (``local_remote_pairs`` — or
     ``secondary_synchronize_pairs`` for M2M) are skipped: the loaders' ``IN``
-    queries already implement them. Everything else is an extra filter.
+    queries already implement them; a **non-equality** operator on the FK pair
+    raises instead of being silently treated as equality. For M2M, both join
+    sides are examined (conditions on link/target columns are executable
+    regardless of which side declares them — the loader routes by column
+    table). Backref-created reverse relationships are skipped entirely (see
+    ``_is_backref_created``).
 
-    Loader SQL only reads the target table (+ secondary for M2M), so:
+    Loader SQL only reads the target table (+ secondary for M2M), so all of
+    these raise ValueError at loader-build time (fail-fast, like
+    ``__pagination_orders__``):
 
-    - extra conditions referencing any other table's columns raise ValueError
-      at loader-build time (fail-fast, like ``__pagination_orders__``);
-    - for M2M only secondaryjoin (secondary→target side) may carry extra
-      conditions — a primaryjoin extra condition would reference source
-      columns the loader query never joins, so it raises as well;
-    - function expressions / subqueries inside extra conditions raise.
+    - extra conditions referencing any other table's columns (e.g. source-
+      entity columns, on either join side);
+    - for M2M, a single condition spanning **both** the target and the
+      secondary table — the loader runs separate per-table queries, so the
+      condition could be applied to neither (an ``or_`` mixing both sides
+      would silently cross-join);
+    - non-equality comparisons on the FK pair;
+    - function expressions / subqueries inside extra conditions.
 
     Returns None when the relationship declares no extra conditions (pure FK
     join) — existing behavior is completely unchanged for such relationships.
     """
+    from sqlalchemy import inspect as sa_inspect
     from sqlalchemy.sql import operators
     from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
     from sqlalchemy.sql.functions import Function
@@ -205,8 +236,26 @@ def _extract_extra_filters(
     from sqlalchemy.sql.selectable import Selectable
     from sqlalchemy.sql.visitors import iterate
 
+    from nexusx.loader.factories import _iter_condition_columns
+
+    if _is_backref_created(rel, source_kls):
+        logger.warning(
+            "Skipping extra join conditions on %s.%s: relationship is the "
+            "auto-created reverse of a backref (forward: %s). The reverse "
+            "loads as a plain FK relationship; conditions declared on the "
+            "forward side apply there.",
+            source_kls.__name__,
+            rel.key,
+            rel.back_populates,
+        )
+        return None
+
     rel_desc = f"{source_kls.__name__}.{rel.key}"
-    allowed_tables = {target_kls.__table__}
+    # Target-side readable tables: the target's own table(s) — for
+    # joined-table inheritance that includes the parent table(s), whose
+    # columns a select(target) join covers. Plus the secondary table for M2M.
+    target_tables: set = set(sa_inspect(target_kls).tables)
+    allowed_tables: set = set(target_tables)
     if use_secondaryjoin:
         if rel.secondary is not None:
             allowed_tables.add(rel.secondary)
@@ -214,15 +263,15 @@ def _extract_extra_filters(
     def _is_column(x: Any) -> bool:
         return isinstance(x, ColumnClause)
 
-    def _pair_keys(pairs: Any) -> set[tuple[str, str, str, str]]:
-        keys: set[tuple[str, str, str, str]] = set()
+    def _col_sig(col: Any) -> tuple:
+        # schema-qualified: same table name in two schemas must not collide
+        return (col.table.schema, col.table.name, col.key)
+
+    def _pair_keys(pairs: Any) -> set[tuple]:
+        keys: set[tuple] = set()
         for left_col, right_col in pairs:
-            keys.add(
-                (left_col.table.name, left_col.key, right_col.table.name, right_col.key)
-            )
-            keys.add(
-                (right_col.table.name, right_col.key, left_col.table.name, left_col.key)
-            )
+            keys.add((*_col_sig(left_col), *_col_sig(right_col)))
+            keys.add((*_col_sig(right_col), *_col_sig(left_col)))
         return keys
 
     def _top_level_clauses(expr: Any) -> list[Any]:
@@ -242,12 +291,17 @@ def _extract_extra_filters(
                 and _is_column(clause.left)
                 and _is_column(clause.right)
             ):
-                sig = (
-                    clause.left.table.name, clause.left.key,
-                    clause.right.table.name, clause.right.key,
-                )
+                sig = (*_col_sig(clause.left), *_col_sig(clause.right))
                 if sig in pair_keys:
-                    continue  # FK equality pair — handled by the IN query
+                    if clause.operator is operators.eq:
+                        continue  # FK equality pair — handled by the IN query
+                    raise ValueError(
+                        f"Non-equality operator between FK pair columns in "
+                        f"{rel_desc} {join_side}: {clause}. The loader "
+                        f"implements the FK pair as an equality IN query — a "
+                        f"non-equality join would be silently rewritten, so "
+                        f"it errors instead."
+                    )
                 raise ValueError(
                     f"Unsupported non-FK column comparison in {rel_desc} "
                     f"{join_side}: {clause}. Only the FK equality pair plus "
@@ -271,43 +325,63 @@ def _extract_extra_filters(
                         f"subquery; only column-to-constant comparisons and "
                         f"boolean combinations are supported."
                     )
-                if _is_column(node) and node.table not in allowed_tables:
+            cols = _iter_condition_columns(extra)
+            for col in cols:
+                if col.table not in allowed_tables:
                     raise ValueError(
                         f"Extra condition in {rel_desc} {join_side} references "
-                        f"column {node!r} which is not on target "
+                        f"column {col!r} which is not on target "
                         f"{target_kls.__name__}"
                         + (" or the secondary table" if use_secondaryjoin else "")
                         + "; loader queries only read those tables."
                     )
+            if use_secondaryjoin and rel.secondary is not None:
+                tables = {c.table for c in cols}
+                if tables and not (
+                    tables <= target_tables or tables <= {rel.secondary}
+                ):
+                    raise ValueError(
+                        f"Extra condition in {rel_desc} {join_side} spans "
+                        f"columns of both the target {target_kls.__name__} and "
+                        f"the secondary table '{rel.secondary.name}': "
+                        f"many-to-many loading runs separate per-table queries, "
+                        f"so the condition can be applied to neither — "
+                        f"applying it to one side would silently cross-join "
+                        f"the other table. Declare target-side and link-side "
+                        f"conditions separately."
+                    )
 
-    # M2M: a primaryjoin extra condition necessarily references source-entity
-    # columns — the loader query never joins the source table, so fail fast
-    # instead of silently dropping it (research D4).
-    if use_secondaryjoin and rel.primaryjoin is not None:
-        pj_extras = _collect(
-            rel.primaryjoin, _pair_keys(rel.synchronize_pairs), "primaryjoin"
-        )
-        if pj_extras:
-            raise ValueError(
-                f"Extra conditions on the primaryjoin side of many-to-many "
-                f"relationship {rel_desc} reference source-entity columns, "
-                f"which loader queries never read. Declare target-side "
-                f"conditions via secondaryjoin instead."
+    if use_secondaryjoin:
+        # Both join sides (PR review): link/target-column conditions are
+        # executable no matter which side declares them; source-entity columns
+        # fail validation with the offending side named. Previously the
+        # primaryjoin side was blanket-rejected with an inaccurate rationale.
+        pj_extras: list[Any] = []
+        sj_extras: list[Any] = []
+        if rel.primaryjoin is not None:
+            pj_extras = _collect(
+                rel.primaryjoin, _pair_keys(rel.synchronize_pairs), "primaryjoin"
             )
+        if rel.secondaryjoin is not None:
+            sj_extras = _collect(
+                rel.secondaryjoin,
+                _pair_keys(rel.secondary_synchronize_pairs),
+                "secondaryjoin",
+            )
+        if not pj_extras and not sj_extras:
+            return None
+        if pj_extras:
+            _validate(pj_extras, "primaryjoin")
+        if sj_extras:
+            _validate(sj_extras, "secondaryjoin")
+        return pj_extras + sj_extras
 
-    join_expr = rel.secondaryjoin if use_secondaryjoin else rel.primaryjoin
-    if join_expr is None:
+    if rel.primaryjoin is None:
         return None
-    pairs = (
-        rel.secondary_synchronize_pairs
-        if use_secondaryjoin
-        else rel.local_remote_pairs
-    )
-    join_side = "secondaryjoin" if use_secondaryjoin else "primaryjoin"
-    extras = _collect(join_expr, _pair_keys(pairs), join_side)
+    extras = _collect(rel.primaryjoin, _pair_keys(rel.local_remote_pairs), "primaryjoin")
     if not extras:
         return None
-    _validate(extras, join_side)
+    _validate(extras, "primaryjoin")
     return extras
 
 

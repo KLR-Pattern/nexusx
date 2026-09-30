@@ -71,7 +71,9 @@ class Comment(SQLModel, table=True):
 ## Many-to-many: secondaryjoin
 
 Conditions apply to the **target side** (target-entity columns) or the
-**association table's own columns** ("this link row itself is valid"):
+**association table's own columns** ("this link row itself is valid"). Either
+join side may declare them — the loader routes by the referenced columns, so
+a link-table condition works in `primaryjoin` or `secondaryjoin` alike:
 
 ```python
 class ArticleReader(SQLModel, table=True):
@@ -95,6 +97,16 @@ class Article(SQLModel, table=True):
         },
     )
 ```
+
+Two M2M-specific rules:
+
+- Each condition must sit on **one** side only. A single condition mixing
+  target and link-table columns (e.g. `or_(Reader.status == "active",
+  link.status == "active")`) raises at startup — M2M loading runs separate
+  per-table queries and the condition could be applied to neither. Declare
+  the two sides as separate conditions (AND) instead.
+- Source-entity columns are not readable by the loader on either join side
+  and raise at startup.
 
 ## Pagination semantics
 
@@ -122,10 +134,27 @@ deferred to a runtime SQL error:
   association table) — e.g. a one-to-many condition on a parent-entity
   column. Loader queries only read the target side; such a condition is
   physically unexecutable.
-- Extra conditions on the many-to-many `primaryjoin` (source↔association)
-  side — same reason; declare them in `secondaryjoin` instead.
+- For many-to-many, a **single condition spanning both** the target and the
+  association table (e.g. an `or_` mixing a link column and a target column)
+  — the loader runs separate per-table queries; the condition could be
+  applied to neither. Split it into separate conditions.
+- **Non-equality comparisons** on the FK pair (e.g. `User.id !=
+  Comment.owner_id`) — the loader implements the pair as an equality `IN`
+  query; rather than silently rewriting your declaration to equality, it
+  errors.
 - **Two-column comparisons** other than the FK equality pair.
 - Function expressions or subqueries inside conditions.
+
+## backref does not propagate conditions to the reverse side
+
+SQLAlchemy's `backref` copies the forward side's conditional `primaryjoin`
+to the auto-created reverse relationship. From the reverse side those
+conditions reference its *source* entity, which the reverse loader never
+reads — so nexusx skips extraction for backref-created relationships (with a
+warning) and the reverse keeps plain FK semantics: `comment.br_user`
+resolves by FK regardless of conditions, while `user.active_comments`
+(where the condition was declared) filters. Declare the reverse explicitly
+(with `back_populates` + its own `primaryjoin`) if it must filter too.
 
 ## Known pitfalls (native SQLAlchemy / SQLModel constraints)
 

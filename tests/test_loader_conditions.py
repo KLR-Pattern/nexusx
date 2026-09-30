@@ -3,8 +3,10 @@
 Fixture 实体族（specs/025-fk-loader-conditions/tasks.md T001）：
 - CondUser / CondComment：O2M（eq / IS NULL / or_ / enum 形态）+ M2O（approver 过滤停用用户）
 - CondProfile：反向一对一（O2M_SCALAR）条件
-- CondArticle / CondReader / CondArticleReader：M2M（目标列 / link 表列条件）
+- CondArticle / CondReader / CondArticleReader：M2M（目标列 / link 表列条件，含 primaryjoin 侧声明）
 - Bad* / OddPair* / Func*：非法声明组（US4 错误矩阵，测试内单独构造 ErManager）
+- PR review 组：Mixed*（跨 target+link 两表 or_）/ Neq*（FK 对非等值）报错矩阵；
+  Brf*（backref 传播）豁免行为，需建表走真实加载
 
 声明面坑规避依据 contracts/declaration-surface.md §4：
 Optional["X"] 注解、link_model 传 SQLModel 类、enum/secondaryjoin 引用 secondary 列用 lambda。
@@ -19,11 +21,10 @@ import pytest_asyncio
 from sqlalchemy import and_, func, or_
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Field, Relationship, SQLModel, select
+from sqlmodel import Field, Relationship, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from nexusx.loader.pagination import PageArgs, PageLoadCommand
-
 
 # ──────────────────────────────────────────────────────────
 # 实体族
@@ -122,10 +123,10 @@ class CondComment(CondBase, table=True):
     body: str
     status: str = Field(default="active")
     pinned: bool = Field(default=False)
-    deleted_at: Optional[datetime] = Field(default=None)
+    deleted_at: datetime | None = Field(default=None)
     visibility: CondVisibility = Field(default=CondVisibility.public)
     owner_id: int = Field(foreign_key="cond_user.id")
-    approver_id: Optional[int] = Field(default=None, foreign_key="cond_user.id")
+    approver_id: int | None = Field(default=None, foreign_key="cond_user.id")
 
     owner: Optional["CondUser"] = Relationship(
         back_populates="comments",
@@ -161,7 +162,27 @@ class CondArticle(CondBase, table=True):
     title: str
 
     readers: list["CondReader"] = Relationship(
-        back_populates="articles", link_model=CondArticleReader
+        back_populates="articles",
+        link_model=CondArticleReader,
+        # order_by 触发无条件 page_loader（悬空 link 口径测试用）
+        sa_relationship_kwargs={"order_by": "CondReader.id"},
+    )
+    # M2M primaryjoin 侧 link 表列条件（PR review 放开：link/target 列条件
+    # 无论声明在哪个 join 侧都可执行，loader 按引用列路由）
+    declared_link_readers: list["CondReader"] = Relationship(
+        back_populates="articles",
+        link_model=CondArticleReader,
+        sa_relationship_kwargs={
+            "primaryjoin": lambda: and_(
+                CondArticle.id == CondArticleReader.__table__.c.article_id,
+                CondArticleReader.__table__.c.status == "active",
+            ),
+            "secondaryjoin": lambda: and_(
+                CondReader.id == CondArticleReader.__table__.c.reader_id,
+            ),
+            "order_by": "CondReader.id",
+            "viewonly": True,
+        },
     )
     # M2M 目标侧条件
     active_readers: list["CondReader"] = Relationship(
@@ -211,7 +232,8 @@ class BadSourceUser(SQLModel, table=True):
 
     items: list["BadSourceItem"] = Relationship(
         sa_relationship_kwargs={
-            "primaryjoin": "and_(BadSourceUser.id==BadSourceItem.owner_id, BadSourceUser.flag=='keep')",
+            "primaryjoin": "and_(BadSourceUser.id==BadSourceItem.owner_id, "
+            "BadSourceUser.flag=='keep')",
             "viewonly": True,
         },
     )
@@ -299,6 +321,98 @@ class FuncItem(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     owner_id: int = Field(foreign_key="cond_func_user.id")
     body: str = Field(default="")
+
+
+# ── PR review 补充错误矩阵（构造期报错，不建表不进 fixture）──
+
+
+class MixedLink(SQLModel, table=True):
+    __tablename__ = "cond_mixed_link"
+    owner_id: int = Field(foreign_key="cond_mixed_owner.id", primary_key=True)
+    item_id: int = Field(foreign_key="cond_mixed_item.id", primary_key=True)
+    status: str = Field(default="active")
+
+
+class MixedOwner(SQLModel, table=True):
+    __tablename__ = "cond_mixed_owner"
+    id: int | None = Field(default=None, primary_key=True)
+
+    items: list["MixedItem"] = Relationship(
+        link_model=MixedLink,
+        sa_relationship_kwargs={
+            # 单一 or_ 同时引用 link 表列与 target 列 → 生成期 ValueError
+            # （两步 M2M loader 无一条查询能承载，错挂一侧会笛卡尔积）
+            "secondaryjoin": lambda: and_(
+                MixedItem.id == MixedLink.__table__.c.item_id,
+                or_(
+                    MixedItem.status == "active",
+                    MixedLink.__table__.c.status == "active",
+                ),
+            ),
+            "viewonly": True,
+        },
+    )
+
+
+class MixedItem(SQLModel, table=True):
+    __tablename__ = "cond_mixed_item"
+    id: int | None = Field(default=None, primary_key=True)
+    status: str = Field(default="active")
+
+
+class NeqUser(SQLModel, table=True):
+    __tablename__ = "cond_neq_user"
+    id: int | None = Field(default=None, primary_key=True)
+
+    items: list["NeqItem"] = Relationship(
+        sa_relationship_kwargs={
+            "foreign_keys": "[NeqItem.owner_id]",
+            # FK 对上的 != 比较：签名撞 pair 不可静默当等值跳过 → 报错
+            "primaryjoin": lambda: and_(
+                NeqUser.id != NeqItem.owner_id, NeqItem.status == "keep"
+            ),
+            "viewonly": True,
+        },
+    )
+
+
+class NeqItem(SQLModel, table=True):
+    __tablename__ = "cond_neq_item"
+    id: int | None = Field(default=None, primary_key=True)
+    owner_id: int = Field(foreign_key="cond_neq_user.id")
+    status: str = Field(default="keep")
+
+
+# ── PR review backref 豁免族（行为测试，需要建表）──
+
+
+class BrfComment(SQLModel, table=True):
+    __tablename__ = "cond_brf_comment"
+    id: int | None = Field(default=None, primary_key=True)
+    owner_id: int = Field(foreign_key="cond_brf_user.id")
+    status: str = Field(default="active")
+
+
+class BrfUser(SQLModel, table=True):
+    __tablename__ = "cond_brf_user"
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(default="")
+
+    active_comments: list["BrfComment"] = Relationship(
+        sa_relationship_kwargs={
+            # backref 自动创建的反向关系会原样继承条件 primaryjoin；
+            # 反向视角条件落在其 source 表 → 豁免提取（行为回到 master 的
+            # 纯 FK 语义），不能在构造期崩
+            "backref": "br_user_rel",
+            "foreign_keys": "[BrfComment.owner_id]",
+            "primaryjoin": lambda: and_(
+                BrfUser.id == BrfComment.owner_id,
+                BrfComment.status == "active",
+            ),
+            "order_by": "BrfComment.id",
+            "viewonly": True,
+        },
+    )
 
 
 # ──────────────────────────────────────────────────────────
@@ -700,6 +814,16 @@ class TestManyToManyConditions:
         )
         assert sorted(r.name for r in readers) == ["r1", "r2", "r3"]
 
+    async def test_m2m_primaryjoin_link_table_condition(self, cond_db):
+        """primaryjoin 侧 link 表列条件（PR review 放开）：与 secondaryjoin
+        侧声明等价 —— r1、r2（r3 关联失效），reader 自身 status 不参与。"""
+        mgr = build_cond_manager()
+        readers = await _load(
+            mgr._registry[CondArticle]["declared_link_readers"].loader,
+            cond_db["article_id"],
+        )
+        assert sorted(r.name for r in readers) == ["r1", "r2"]
+
     async def test_m2m_paginated_path_with_condition(self, cond_db):
         """分页 M2M 路径带条件：active_readers(过滤后 r1、r3) 分页口径一致。"""
         mgr = build_cond_manager()
@@ -713,6 +837,130 @@ class TestManyToManyConditions:
         assert [r.name for r in pkg.items] == ["r1"]
         assert pkg.pagination.total_count == 2  # 过滤后计数，非全量 3
         assert pkg.pagination.has_more is True
+
+
+# ──────────────────────────────────────────────────────────
+# PR review: backref 豁免 + 悬空 link 计数口径
+# ──────────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture
+async def brf_db():
+    """Create brf_* tables + seed: u1 with one active + one deleted comment."""
+    engine = _get_cond_engine()
+    tables = [BrfUser.__table__, BrfComment.__table__]
+    async with engine.begin() as conn:
+        await conn.run_sync(lambda c: SQLModel.metadata.create_all(c, tables=tables))
+
+    sf = get_cond_session_factory()
+    async with sf() as session:
+        u1 = BrfUser(name="u1")
+        session.add(u1)
+        await session.commit()
+        c_active = BrfComment(owner_id=u1.id, status="active")
+        c_deleted = BrfComment(owner_id=u1.id, status="deleted")
+        session.add_all([c_active, c_deleted])
+        await session.commit()
+        ids = (u1.id, c_active.id, c_deleted.id)
+
+    yield {
+        "user_id": ids[0], "active_id": ids[1], "deleted_id": ids[2]
+    }
+
+    async with engine.begin() as conn:
+        await conn.run_sync(lambda c: SQLModel.metadata.drop_all(c, tables=tables))
+
+
+@pytest.mark.asyncio
+class TestBackrefReverseRelationship:
+    async def test_backref_reverse_exempts_extraction(self, brf_db, caplog):
+        """backref 反向：构造期不崩（豁免提取）+ warning；正向条件照常生效；
+        反向保持 master 纯 FK 语义（deleted 评论也解析出 owner）。"""
+        import logging as _logging
+
+        from nexusx import ErManager
+
+        with caplog.at_level(_logging.WARNING, logger="nexusx.loader.registry"):
+            mgr = ErManager(
+                session_factory=get_cond_session_factory(),
+                entities=[BrfUser, BrfComment],
+            )
+        assert any(
+            "BrfComment.br_user_rel" in r.message and "backref" in r.message
+            for r in caplog.records
+        )
+
+        # 正向：声明过条件 → 只剩 active（master 上没有条件机制，这是新能力）
+        rows = await _load(
+            mgr._registry[BrfUser]["active_comments"].loader, brf_db["user_id"]
+        )
+        assert [c.status for c in rows] == ["active"]
+
+        # 反向：backref 自动创建、未写条件 → 纯 FK 解析（key=owner_id），
+        # 行为同 master —— deleted 评论同样解析出 owner
+        owner = await _load(
+            mgr._registry[BrfComment]["br_user_rel"].loader, brf_db["user_id"]
+        )
+        assert owner is not None and owner.id == brf_db["user_id"]
+
+
+@pytest.mark.asyncio
+class TestDanglingLinkCountCaliber:
+    """悬空 link 行（target 已物理删除，SQLite 不强制 FK）下的 count 口径。
+
+    无条件关系的回退计数保持 master 口径（link 行计数、含悬空 —— FR-005
+    存量零变化）；target 列条件关系的回退计数按门控 join target，与窗口
+    口径一致（悬空排除）。窗口口径（join target）在两侧都不含悬空行。
+    """
+
+    async def _seed_dangling(self, article_id: int):
+        sf = get_cond_session_factory()
+        async with sf() as session:
+            session.add(CondArticleReader(article_id=article_id, reader_id=999))
+            await session.commit()
+
+    async def test_unconditioned_fallback_keeps_master_caliber(self, cond_db):
+        await self._seed_dangling(cond_db["article_id"])
+        mgr = build_cond_manager()
+        pl = mgr._registry[CondArticle]["readers"].page_loader
+        assert pl is not None  # readers 声明了 order_by → page_loader 存在
+        # 窗口内：join target → 悬空行不进窗口
+        pkg = await pl().load(
+            PageLoadCommand(
+                fk_value=cond_db["article_id"], page_args=PageArgs(limit=5)
+            )
+        )
+        assert pkg.pagination.total_count == 3
+        # offset 超界 → 回退计数（无条件不 join）→ 含悬空的 link 行数（master 口径）
+        pkg2 = await pl().load(
+            PageLoadCommand(
+                fk_value=cond_db["article_id"],
+                page_args=PageArgs(offset=10, limit=5),
+            )
+        )
+        assert pkg2.items == []
+        assert pkg2.pagination.total_count == 4
+
+    async def test_conditioned_fallback_joins_target_consistently(self, cond_db):
+        await self._seed_dangling(cond_db["article_id"])
+        mgr = build_cond_manager()
+        pl = mgr._registry[CondArticle]["active_readers"].page_loader
+        # 窗口内：target 列条件过滤后 r1、r3
+        pkg = await pl().load(
+            PageLoadCommand(
+                fk_value=cond_db["article_id"], page_args=PageArgs(limit=5)
+            )
+        )
+        assert pkg.pagination.total_count == 2
+        # offset 超界 → 门控开启 join target：悬空排除，与窗口口径一致
+        pkg2 = await pl().load(
+            PageLoadCommand(
+                fk_value=cond_db["article_id"],
+                page_args=PageArgs(offset=10, limit=5),
+            )
+        )
+        assert pkg2.items == []
+        assert pkg2.pagination.total_count == 2
 
 
 # ──────────────────────────────────────────────────────────
@@ -737,12 +985,34 @@ class TestIllegalDeclarations:
         assert "target" in msg  # 支持范围说明
 
     def test_m2m_primaryjoin_side_condition_rejected(self):
-        """M2M primaryjoin 侧额外条件必然引用 source 列 → 报错不静默（D4）。"""
+        """M2M primaryjoin 侧条件引用 source 列 → 报错不静默（D4）。
+        PR review 起 link/target 列条件在 primaryjoin 侧合法（按引用列路由），
+        非法的只剩 source 列引用——本用例正是。"""
         with pytest.raises(ValueError) as ei:
             self._build([BadM2MOwner, BadM2MItem])
         msg = str(ei.value)
         assert "BadM2MOwner.items" in msg
         assert "primaryjoin" in msg
+
+    def test_mixed_table_condition_rejected(self):
+        """单一条件跨 target+link 两表（or_ 混合）→ 报错：两步 M2M loader
+        无一条查询能承载，错挂一侧会笛卡尔积静默错数据（PR review repro：
+        非分页返回多余行、分页正确，两 loader 结果分叉）。"""
+        with pytest.raises(ValueError) as ei:
+            self._build([MixedOwner, MixedItem, MixedLink])
+        msg = str(ei.value)
+        assert "MixedOwner.items" in msg
+        assert "spans" in msg
+        assert "separately" in msg
+
+    def test_non_equality_fk_pair_rejected(self):
+        """FK 对上的 != 比较 → 报错：loader 是等值 IN 查询，非等值声明若
+        静默跳过即"声明不等于、返回恰好相反的集合"（PR review repro 实证）。"""
+        with pytest.raises(ValueError) as ei:
+            self._build([NeqUser, NeqItem])
+        msg = str(ei.value)
+        assert "NeqUser.items" in msg
+        assert "Non-equality" in msg
 
     def test_non_fk_column_pair_rejected(self):
         """双列非 FK 比较：SQLAlchemy 将其推导为第二对 join pair，被既有的

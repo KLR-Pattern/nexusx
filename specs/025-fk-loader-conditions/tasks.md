@@ -186,6 +186,13 @@ Task T004/T005/T006: "O2M 接线 + 测试"
 
 - **M2M 两步查询拆分**（T010/T012 发现）：普通 M2M loader 先查 link 表再查 target，link 列条件若作用于 target 查询会触发 SQLAlchemy 隐式笛卡尔积、条件形同虚设——factories.py 新增 `_split_by_table` 按引用列拆分（link 条件→link 查询、target 条件→target 查询）；分页 M2M 的 count fallback 补 join target。plan 的"factories 零改动"据此修正为 +42 行。
 - **双列非 FK 对的拦截层级**（T013 发现）：SQLAlchemy 会把关系两侧的双列等值推导为第二对 join pair，被既有复合 FK 防御（NotImplementedError）先行拦截——同为启动期诚实失败，测试按双异常类型断言。
+- **PR review 修复轮（2026-09-30，4 项正确性 + 2 项结构性）**：
+  - **单一条件跨 target+link 两表被静默错挂**：`_split_by_table` 按"列全在 link 表则入 link 查询，否则入 target 查询"分类，跨两表的 or_ 整体落入 target 查询 → 隐式笛卡尔积（repro：非分页返回多余行、分页正确，两 loader 结果分叉）——提取期（`_extract_extra_filters`）改为直接拒绝跨表条件，fail-fast 与本特性哲学一致。
+  - **backref 回归**：backref 把条件 primaryjoin 原样传播给自动创建的反向关系，反向视角条件落在其 source 列 → 构造期 ValueError，而该声明在 master 上正常——新增 `_is_backref_created`（经 `__sqlmodel_relationships__` 判定用户未声明）豁免提取 + warning，反向保持 master 纯 FK 语义。
+  - **FK 对上的非等值比较被静默当等值跳过**：pair 签名匹配不校验运算符，`!=` 声明被 loader 等值 IN 查询静默改写为反集——改为非 `operators.eq` 即 ValueError。
+  - **分页 M2M count 回退无条件 join 破坏存量口径**：悬空 link 行（target 已物理删除）在无条件关系下 total_count 变化，违反 FR-005——join 改为按"条件引用 target 列"门控，无条件关系回到 master 的 link 行计数口径。
+  - **M2M primaryjoin 侧放开 link/target 列条件**：原 blanket 拒绝的前提（"primaryjoin 额外条件必然引用 source 列"）不成立，loader 按引用列路由与声明侧无关；source 列引用仍报错但文案如实。附带：列遍历下沉为共享 helper（`_iter_condition_columns`，registry 构建期校验与 factories 查询期拆分同源）、`_split_by_table` 提升到工厂作用域（原先每批次重算）、FK 对签名加 schema 限定、目标侧可读表集合改用 `mapper.tables`（joined-table inheritance 目标实体的父表列不再误拒）。
+  - 测试 +6：混合 or_ 报错、!= 报错、primaryjoin link 条件行为、backref 豁免行为（含 warning）、悬空 link 两口径（无条件=master / 条件=窗口一致）。
 
 ## Notes
 

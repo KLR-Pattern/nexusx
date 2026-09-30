@@ -60,7 +60,7 @@ class Comment(SQLModel, table=True):
 
 ## 多对多：secondaryjoin
 
-条件作用于**目标侧**（目标实体列）或**关联表自身列**（"这条关联记录本身有效"）：
+条件作用于**目标侧**（目标实体列）或**关联表自身列**（"这条关联记录本身有效"）。两个 join 侧都可声明——loader 按条件引用的列路由，关联表列条件写在 `primaryjoin` 或 `secondaryjoin` 效果相同：
 
 ```python
 class ArticleReader(SQLModel, table=True):
@@ -85,6 +85,11 @@ class Article(SQLModel, table=True):
     )
 ```
 
+多对多有两条额外规则：
+
+- 每个条件必须只落在**一侧**。单一条件同时混用目标列与关联表列（如 `or_(Reader.status == "active", link.status == "active")`）会在启动期报错——多对多加载分两条按表的查询执行，这种条件哪条都挂不上。把它拆成各自独立的条件（AND 语义）声明即可。
+- 源实体列在两个 join 侧都不可被加载查询读取，引用即启动期报错。
+
 ## 分页语义
 
 声明了 `order_by` 的关系启用关联分页时，窗口、`total_count`、`has_more` 全部按**过滤后**的集合计算——`total_count` 是过滤后的数量，不是全量数。这对翻页器/进度条类界面是直接可用的口径。
@@ -98,9 +103,14 @@ SQLAlchemy 允许带额外条件的 relationship 不声明 `viewonly`（2.0 起�
 以下声明会在 `ErManager` 构造时（应用启动）抛出 `ValueError`，信息含实体名、关系名与被引用列——不会静默忽略条件，也不会留到运行期才在具体查询上报错：
 
 - 条件引用**目标实体（及关联表）之外**的列——例如一对多关系里引用了父实体的列。加载查询只读取目标侧数据，这类条件物理上不可执行。
-- 多对多在 `primaryjoin` 侧（源↔关联表）声明额外条件——同样引用源实体列，不可执行；请把条件写到 `secondaryjoin`。
+- 多对多里**单一条件同时跨**目标实体与关联表两边的列（例如 `or_` 一边是关联表列、一边是目标列）——加载分两条按表的查询执行，这种条件哪条都挂不上；拆成独立条件声明。
+- FK 等值对上的**非等值比较**（如 `User.id != Comment.owner_id`）——loader 把 FK 对实现为等值 `IN` 查询；与其把你的声明静默改写成等值，不如直接报错。
 - FK 等值对之外的**双列比较**。
 - 条件中包含函数表达式或子查询。
+
+## backref 不会把条件传播给反向侧
+
+SQLAlchemy 的 `backref` 会把正向的条件 `primaryjoin` 原样复制给自动创建的反向关系。反向视角下这些条件引用的是它的**源实体**列，反向 loader 不读取——所以 nexusx 对 backref 自动创建的关系跳过条件提取（记一条 warning），反向保持纯 FK 语义：`comment.br_user` 按 FK 照常解析（无视条件），`user.active_comments`（声明条件的一侧）正常过滤。需要反向也过滤时，显式声明反向（`back_populates` + 自己的 `primaryjoin`）。
 
 ## 已知坑（SQLAlchemy / SQLModel 原生约束）
 
