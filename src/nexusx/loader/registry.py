@@ -164,18 +164,16 @@ def _is_backref_created(rel: Any, source_kls: type[SQLModel]) -> bool:
     """True if ``rel`` was auto-created by SQLAlchemy's ``backref``.
 
     backref propagates the forward side's conditional primaryjoin to the
-    reverse relationship verbatim; from the reverse side's perspective those
-    conditions reference its *source* table, which would raise at
-    ErManager construction (PR review finding). The user never wrote the
-    reverse relationship, so it keeps master's plain-FK semantics instead:
-    extraction is skipped (with a warning); the forward side's declared
-    conditions still apply there.
+    reverse relationship verbatim; from the reverse side those conditions
+    reference its *source* table and would raise at ErManager construction.
+    The user never wrote the reverse relationship, so extraction is skipped
+    (with a warning) and it keeps plain-FK semantics; the forward side's
+    declared conditions still apply there.
 
-    Detected via SQLModel's ``__sqlmodel_relationships__`` — the class's
-    declared ``Relationship()`` fields. A backref-created relationship never
-    appears in it. When the attribute is absent (not a SQLModel-declared
-    field surface) we report False: never silently skip conditions, only
-    skip relationships we can prove the user didn't declare.
+    Detected via ``__sqlmodel_relationships__`` — the class's declared
+    ``Relationship()`` fields; a backref-created relationship never appears
+    in it. When the attribute is absent we report False: never silently
+    skip conditions, only skip relationships we can prove undeclared.
     """
     declared = getattr(source_kls, "__sqlmodel_relationships__", None)
     return isinstance(declared, dict) and rel.key not in declared
@@ -219,9 +217,7 @@ def _extract_extra_filters(
     - extra conditions referencing any other table's columns (e.g. source-
       entity columns, on either join side);
     - for M2M, a single condition spanning **both** the target and the
-      secondary table — the loader runs separate per-table queries, so the
-      condition could be applied to neither (an ``or_`` mixing both sides
-      would silently cross-join);
+      secondary table — the loader runs separate per-table queries;
     - non-equality comparisons on the FK pair;
     - function expressions / subqueries inside extra conditions.
 
@@ -251,9 +247,8 @@ def _extract_extra_filters(
         return None
 
     rel_desc = f"{source_kls.__name__}.{rel.key}"
-    # Target-side readable tables: the target's own table(s) — for
-    # joined-table inheritance that includes the parent table(s), whose
-    # columns a select(target) join covers. Plus the secondary table for M2M.
+    # Target-side readable tables — includes parent tables for joined-table
+    # inheritance; plus the secondary table for M2M.
     target_tables: set = set(sa_inspect(target_kls).tables)
     allowed_tables: set = set(target_tables)
     if use_secondaryjoin:
@@ -352,10 +347,6 @@ def _extract_extra_filters(
                     )
 
     if use_secondaryjoin:
-        # Both join sides (PR review): link/target-column conditions are
-        # executable no matter which side declares them; source-entity columns
-        # fail validation with the offending side named. Previously the
-        # primaryjoin side was blanket-rejected with an inaccurate rationale.
         pj_extras: list[Any] = []
         sj_extras: list[Any] = []
         if rel.primaryjoin is not None:
@@ -555,10 +546,8 @@ def _inspect_relationships(
             )
             sort_field = None
             page_loader = None
-            # Only secondaryjoin (secondary→target) can carry extra conditions;
-            # a primaryjoin extra condition references source columns, which
-            # the loader query (target JOIN secondary) never touches — the
-            # extractor raises for it (research D4).
+            # Extra conditions may sit on either join side (primaryjoin or
+            # secondaryjoin); extraction validates the referenced columns.
             m2m_filters = _extract_extra_filters(
                 rel, entity_kls, target_entity, use_secondaryjoin=True
             )

@@ -5,7 +5,7 @@ Fixture 实体族（specs/025-fk-loader-conditions/tasks.md T001）：
 - CondProfile：反向一对一（O2M_SCALAR）条件
 - CondArticle / CondReader / CondArticleReader：M2M（目标列 / link 表列条件，含 primaryjoin 侧声明）
 - Bad* / OddPair* / Func*：非法声明组（US4 错误矩阵，测试内单独构造 ErManager）
-- PR review 组：Mixed*（跨 target+link 两表 or_）/ Neq*（FK 对非等值）报错矩阵；
+- 补充组：Mixed*（跨 target+link 两表 or_）/ Neq*（FK 对非等值）报错矩阵；
   Brf*（backref 传播）豁免行为，需建表走真实加载
 
 声明面坑规避依据 contracts/declaration-surface.md §4：
@@ -167,8 +167,7 @@ class CondArticle(CondBase, table=True):
         # order_by 触发无条件 page_loader（悬空 link 口径测试用）
         sa_relationship_kwargs={"order_by": "CondReader.id"},
     )
-    # M2M primaryjoin 侧 link 表列条件（PR review 放开：link/target 列条件
-    # 无论声明在哪个 join 侧都可执行，loader 按引用列路由）
+    # M2M primaryjoin 侧 link 表列条件（loader 按引用列路由，与声明侧无关）
     declared_link_readers: list["CondReader"] = Relationship(
         back_populates="articles",
         link_model=CondArticleReader,
@@ -323,7 +322,7 @@ class FuncItem(SQLModel, table=True):
     body: str = Field(default="")
 
 
-# ── PR review 补充错误矩阵（构造期报错，不建表不进 fixture）──
+# ── 补充错误矩阵（构造期报错，不建表不进 fixture）──
 
 
 class MixedLink(SQLModel, table=True):
@@ -383,7 +382,7 @@ class NeqItem(SQLModel, table=True):
     status: str = Field(default="keep")
 
 
-# ── PR review backref 豁免族（行为测试，需要建表）──
+# ── backref 豁免族（行为测试，需要建表）──
 
 
 class BrfComment(SQLModel, table=True):
@@ -401,8 +400,8 @@ class BrfUser(SQLModel, table=True):
     active_comments: list["BrfComment"] = Relationship(
         sa_relationship_kwargs={
             # backref 自动创建的反向关系会原样继承条件 primaryjoin；
-            # 反向视角条件落在其 source 表 → 豁免提取（行为回到 master 的
-            # 纯 FK 语义），不能在构造期崩
+            # 反向视角条件落在其 source 表 → 豁免提取（保持纯 FK 语义），
+            # 不能在构造期崩
             "backref": "br_user_rel",
             "foreign_keys": "[BrfComment.owner_id]",
             "primaryjoin": lambda: and_(
@@ -818,7 +817,7 @@ class TestManyToManyConditions:
         assert sorted(r.name for r in readers) == ["r1", "r2", "r3"]
 
     async def test_m2m_primaryjoin_link_table_condition(self, cond_db):
-        """primaryjoin 侧 link 表列条件（PR review 放开）：与 secondaryjoin
+        """primaryjoin 侧 link 表列条件：与 secondaryjoin
         侧声明等价 —— r1、r2（r3 关联失效），reader 自身 status 不参与。"""
         mgr = build_cond_manager()
         readers = await _load(
@@ -843,7 +842,7 @@ class TestManyToManyConditions:
 
 
 # ──────────────────────────────────────────────────────────
-# PR review: backref 豁免 + 悬空 link 计数口径
+# backref 豁免 + 悬空 link 计数口径
 # ──────────────────────────────────────────────────────────
 
 
@@ -878,7 +877,7 @@ async def brf_db():
 class TestBackrefReverseRelationship:
     async def test_backref_reverse_exempts_extraction(self, brf_db, caplog):
         """backref 反向：构造期不崩（豁免提取）+ warning；正向条件照常生效；
-        反向保持 master 纯 FK 语义（deleted 评论也解析出 owner）。"""
+        反向保持纯 FK 语义（deleted 评论也解析出 owner）。"""
         import logging as _logging
 
         from nexusx import ErManager
@@ -893,14 +892,14 @@ class TestBackrefReverseRelationship:
             for r in caplog.records
         )
 
-        # 正向：声明过条件 → 只剩 active（master 上没有条件机制，这是新能力）
+        # 正向：声明过条件 → 只剩 active
         rows = await _load(
             mgr._registry[BrfUser]["active_comments"].loader, brf_db["user_id"]
         )
         assert [c.status for c in rows] == ["active"]
 
         # 反向：backref 自动创建、未写条件 → 纯 FK 解析（key=owner_id），
-        # 行为同 master —— deleted 评论同样解析出 owner
+        # 无视条件 —— deleted 评论同样解析出 owner
         owner = await _load(
             mgr._registry[BrfComment]["br_user_rel"].loader, brf_db["user_id"]
         )
@@ -911,7 +910,7 @@ class TestBackrefReverseRelationship:
 class TestDanglingLinkCountCaliber:
     """悬空 link 行（target 已物理删除，SQLite 不强制 FK）下的 count 口径。
 
-    无条件关系的回退计数保持 master 口径（link 行计数、含悬空 —— FR-005
+    无条件关系的回退计数保持存量口径（link 行计数、含悬空 —— FR-005
     存量零变化）；target 列条件关系的回退计数按门控 join target，与窗口
     口径一致（悬空排除）。窗口口径（join target）在两侧都不含悬空行。
     """
@@ -922,7 +921,7 @@ class TestDanglingLinkCountCaliber:
             session.add(CondArticleReader(article_id=article_id, reader_id=999))
             await session.commit()
 
-    async def test_unconditioned_fallback_keeps_master_caliber(self, cond_db):
+    async def test_unconditioned_fallback_keeps_legacy_caliber(self, cond_db):
         await self._seed_dangling(cond_db["article_id"])
         mgr = build_cond_manager()
         pl = mgr._registry[CondArticle]["readers"].page_loader
@@ -934,7 +933,7 @@ class TestDanglingLinkCountCaliber:
             )
         )
         assert pkg.pagination.total_count == 3
-        # offset 超界 → 回退计数（无条件不 join）→ 含悬空的 link 行数（master 口径）
+        # offset 超界 → 回退计数（无条件不 join）→ 含悬空的 link 行数（存量口径）
         pkg2 = await pl().load(
             PageLoadCommand(
                 fk_value=cond_db["article_id"],
@@ -989,7 +988,7 @@ class TestIllegalDeclarations:
 
     def test_m2m_primaryjoin_side_condition_rejected(self):
         """M2M primaryjoin 侧条件引用 source 列 → 报错不静默（D4）。
-        PR review 起 link/target 列条件在 primaryjoin 侧合法（按引用列路由），
+        link/target 列条件在 primaryjoin 侧合法（按引用列路由），
         非法的只剩 source 列引用——本用例正是。"""
         with pytest.raises(ValueError) as ei:
             self._build([BadM2MOwner, BadM2MItem])
@@ -999,7 +998,7 @@ class TestIllegalDeclarations:
 
     def test_mixed_table_condition_rejected(self):
         """单一条件跨 target+link 两表（or_ 混合）→ 报错：两步 M2M loader
-        无一条查询能承载，错挂一侧会笛卡尔积静默错数据（PR review repro：
+        无一条查询能承载，错挂一侧会笛卡尔积静默错数据（repro 实证：
         非分页返回多余行、分页正确，两 loader 结果分叉）。"""
         with pytest.raises(ValueError) as ei:
             self._build([MixedOwner, MixedItem, MixedLink])
@@ -1010,7 +1009,7 @@ class TestIllegalDeclarations:
 
     def test_non_equality_fk_pair_rejected(self):
         """FK 对上的 != 比较 → 报错：loader 是等值 IN 查询，非等值声明若
-        静默跳过即"声明不等于、返回恰好相反的集合"（PR review repro 实证）。"""
+        静默跳过即"声明不等于、返回恰好相反的集合"（repro 实证）。"""
         with pytest.raises(ValueError) as ei:
             self._build([NeqUser, NeqItem])
         msg = str(ei.value)

@@ -58,10 +58,8 @@ def _apply_filters(stmt: Any, filters: list[Any] | None) -> Any:
 def _iter_condition_columns(expr: Any) -> list[Any]:
     """ColumnClause nodes of an extra-condition expression tree.
 
-    Shared with registry's build-time validation (``_extract_extra_filters``)
-    so both classify a condition's referenced columns identically — keeping
-    two private copies of this traversal is exactly how the mixed-table
-    cross-join bug slipped through (same PR's review).
+    Shared with registry's build-time validation so both classify a
+    condition's referenced columns identically.
     """
     from sqlalchemy.sql.schema import ColumnClause
     from sqlalchemy.sql.visitors import iterate
@@ -261,10 +259,8 @@ def create_many_to_many_loader(
 ) -> type[DataLoader]:
     """Create a DataLoader for many-to-many relationships through a secondary table."""
 
-    # specs/025: split extra conditions by the table they read — computed once
-    # here (the declaration is static); secondary-table columns constrain
-    # which link rows are valid, target columns constrain the target query.
-    # Applying a condition to the wrong statement would derive a cross join.
+    # specs/025: split once at build time — link-table columns constrain the
+    # link query, target columns the target query (see _split_by_table).
     join_filters, target_filters = _split_by_table(filters, secondary_table)
 
     class _Loader(DataLoader):
@@ -549,9 +545,8 @@ def create_page_many_to_many_loader(
     (association) table.
     """
 
-    # specs/025: precomputed at build time — the main window query joins both
-    # tables so ALL filters apply to it; only the fallback count query needs
-    # the split (see below).
+    # specs/025: the window query joins both tables, so ALL filters apply to
+    # it; only the fallback count query needs the per-table split.
     _join_filters, _target_filters = _split_by_table(filters, secondary_table)
 
     class _Loader(DataLoader):
@@ -661,10 +656,10 @@ def create_page_many_to_many_loader(
                         .where(sec_local_col.in_(missing_fks))
                     )
                     # specs/025: join the target only when a target-column
-                    # extra condition needs it (a secondary-only FROM would
-                    # cross-join such conditions silently). Unconditional
-                    # relationships keep master's exact fallback semantics —
-                    # link-row count, dangling links included (FR-005).
+                    # condition needs it (a secondary-only FROM would
+                    # cross-join it silently); unconditional relationships
+                    # keep the plain link-row count, dangling links included
+                    # (FR-005).
                     if _target_filters:
                         count_q = count_q.join(
                             target_kls, target_match_col == sec_remote_col
