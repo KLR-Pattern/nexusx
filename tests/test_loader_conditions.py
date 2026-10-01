@@ -13,7 +13,7 @@ Optional["X"] 注解、link_model 传 SQLModel 类、enum/secondaryjoin 引用 s
 """
 
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import pytest
@@ -485,7 +485,10 @@ async def cond_db():
         )
         c3 = CondComment(
             body="c3", status="active", pinned=True, owner_id=alice.id,
-            deleted_at=datetime(2026, 1, 1), visibility=CondVisibility.private,
+            # aware datetime：SQLModel 0.0.45 起 naive datetime 写库报错
+            # （UTCDateTime breaking change），aware 在新旧版本都合法
+            deleted_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            visibility=CondVisibility.private,
         )
         session.add_all([c1, c2, c3])
 
