@@ -55,6 +55,44 @@ def _apply_filters(stmt: Any, filters: list[Any] | None) -> Any:
     return stmt
 
 
+def _iter_condition_columns(expr: Any) -> list[Any]:
+    """ColumnClause nodes of an extra-condition expression tree.
+
+    Shared with registry's build-time validation so both classify a
+    condition's referenced columns identically.
+    """
+    from sqlalchemy.sql.schema import ColumnClause
+    from sqlalchemy.sql.visitors import iterate
+
+    return [n for n in iterate(expr) if isinstance(n, ColumnClause)]
+
+
+def _split_by_table(
+    filters: list[Any] | None, table: Any
+) -> tuple[list[Any], list[Any]]:
+    """Split extra conditions into (all-columns-on-`table`, rest).
+
+    Used by the two-step M2M loader (specs/025): the secondary-table query and
+    the target query run separately, so a condition may only be applied to the
+    statement whose FROM actually contains its columns — otherwise SQLAlchemy
+    derives an implicit cross join and the condition silently matches
+    everything. Build-time validation (registry) guarantees every condition
+    sits entirely on one side, so this partition is exhaustive.
+    """
+    if not filters:
+        return [], []
+    table_cols = set(table.c)
+    on_table: list[Any] = []
+    rest: list[Any] = []
+    for f in filters:
+        cols = _iter_condition_columns(f)
+        if cols and all(c in table_cols for c in cols):
+            on_table.append(f)
+        else:
+            rest.append(f)
+    return on_table, rest
+
+
 def _dedupe_fields(fields: list[str]) -> list[str]:
     """Deduplicate fields while preserving order."""
     seen: set[str] = set()
@@ -221,6 +259,10 @@ def create_many_to_many_loader(
 ) -> type[DataLoader]:
     """Create a DataLoader for many-to-many relationships through a secondary table."""
 
+    # specs/025: split once at build time — link-table columns constrain the
+    # link query, target columns the target query (see _split_by_table).
+    join_filters, target_filters = _split_by_table(filters, secondary_table)
+
     class _Loader(DataLoader):
         async def batch_load_fn(self, keys):
             from sqlmodel import select
@@ -234,6 +276,7 @@ def create_many_to_many_loader(
                 join_stmt = select(secondary_table).where(
                     getattr(secondary_table.c, secondary_local_col_name).in_(keys)
                 )
+                join_stmt = _apply_filters(join_stmt, join_filters)
                 # Use session.execute() (not exec()) for raw Table queries.
                 # SQLModel's exec() unwraps multi-column rows into scalars,
                 # but we need proper Row objects to access columns by name.
@@ -251,7 +294,7 @@ def create_many_to_many_loader(
                 target_stmt = target_stmt.where(
                     getattr(target_kls, target_match_col_name).in_(target_keys)
                 )
-                target_stmt = _apply_filters(target_stmt, filters)
+                target_stmt = _apply_filters(target_stmt, target_filters)
                 target_rows = (await session.exec(target_stmt)).all()
 
             target_map = {
@@ -502,6 +545,10 @@ def create_page_many_to_many_loader(
     (association) table.
     """
 
+    # specs/025: the window query joins both tables, so ALL filters apply to
+    # it; only the fallback count query needs the per-table split.
+    _join_filters, _target_filters = _split_by_table(filters, secondary_table)
+
     class _Loader(DataLoader):
         async def batch_load_fn(self, keys):
             from sqlalchemy import func, select
@@ -608,6 +655,15 @@ def create_page_many_to_many_loader(
                         select(sec_local_col, func.count().label(tc_label))
                         .where(sec_local_col.in_(missing_fks))
                     )
+                    # specs/025: join the target only when a target-column
+                    # condition needs it (a secondary-only FROM would
+                    # cross-join it silently); unconditional relationships
+                    # keep the plain link-row count, dangling links included
+                    # (FR-005).
+                    if _target_filters:
+                        count_q = count_q.join(
+                            target_kls, target_match_col == sec_remote_col
+                        )
                     count_q = _apply_filters(count_q, filters)
                     count_q = count_q.group_by(sec_local_col)
                     for row in (await session.execute(count_q)).all():

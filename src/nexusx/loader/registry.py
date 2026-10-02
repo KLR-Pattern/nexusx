@@ -160,6 +160,222 @@ def _resolve_local_page_capability(
     return capability, resolved
 
 
+def _is_backref_created(rel: Any, source_kls: type[SQLModel]) -> bool:
+    """True if ``rel`` was auto-created by SQLAlchemy's ``backref``.
+
+    backref propagates the forward side's conditional primaryjoin to the
+    reverse relationship verbatim; from the reverse side those conditions
+    reference its *source* table and would raise at ErManager construction.
+    The user never wrote the reverse relationship, so extraction is skipped
+    (with a warning) and it keeps plain-FK semantics; the forward side's
+    declared conditions still apply there.
+
+    Detected via ``__sqlmodel_relationships__`` — the class's declared
+    ``Relationship()`` fields; a backref-created relationship never appears
+    in it. When the attribute is absent we report False: never silently
+    skip conditions, only skip relationships we can prove undeclared.
+    """
+    declared = getattr(source_kls, "__sqlmodel_relationships__", None)
+    return isinstance(declared, dict) and rel.key not in declared
+
+
+def _extract_extra_filters(
+    rel: Any,
+    source_kls: type[SQLModel],
+    target_kls: type[SQLModel],
+    *,
+    use_secondaryjoin: bool = False,
+) -> list[Any] | None:
+    """Extract non-FK extra conditions from a relationship's join declaration.
+
+    Supports soft-delete-style constraints declared via SQLAlchemy's native
+    mechanism (specs/025)::
+
+        Relationship(sa_relationship_kwargs={
+            "primaryjoin": "and_(User.id==Comment.owner_id, "
+            "Comment.status=='active')",
+            "viewonly": True,   # recommended (write-side semantics), not required
+        })
+
+    Extraction walks the join expression **as a tree** (specs/025 research D1):
+    top-level ``and_`` clauses are examined individually; ``or_`` / ``not_``
+    boolean combinations are kept **whole** as a single condition (flattening
+    them would silently rewrite OR into AND). Column-vs-column equalities that
+    match the relationship's FK pair (``local_remote_pairs`` — or
+    ``secondary_synchronize_pairs`` for M2M) are skipped: the loaders' ``IN``
+    queries already implement them; a **non-equality** operator on the FK pair
+    raises instead of being silently treated as equality. For M2M, both join
+    sides are examined (conditions on link/target columns are executable
+    regardless of which side declares them — the loader routes by column
+    table). Backref-created reverse relationships are skipped entirely (see
+    ``_is_backref_created``).
+
+    Loader SQL only reads the target table (+ secondary for M2M), so all of
+    these raise ValueError at loader-build time (fail-fast, like
+    ``__pagination_orders__``):
+
+    - extra conditions referencing any other table's columns (e.g. source-
+      entity columns, on either join side);
+    - for M2M, a single condition spanning **both** the target and the
+      secondary table — the loader runs separate per-table queries;
+    - non-equality comparisons on the FK pair;
+    - function expressions / subqueries inside extra conditions.
+
+    Returns None when the relationship declares no extra conditions (pure FK
+    join) — existing behavior is completely unchanged for such relationships.
+    """
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy.sql import operators
+    from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
+    from sqlalchemy.sql.functions import Function
+    from sqlalchemy.sql.schema import ColumnClause
+    from sqlalchemy.sql.selectable import Selectable
+    from sqlalchemy.sql.visitors import iterate
+
+    from nexusx.loader.factories import _iter_condition_columns
+
+    if _is_backref_created(rel, source_kls):
+        logger.warning(
+            "Skipping extra join conditions on %s.%s: relationship is the "
+            "auto-created reverse of a backref (forward: %s). The reverse "
+            "loads as a plain FK relationship; conditions declared on the "
+            "forward side apply there.",
+            source_kls.__name__,
+            rel.key,
+            rel.back_populates,
+        )
+        return None
+
+    rel_desc = f"{source_kls.__name__}.{rel.key}"
+    # Target-side readable tables — includes parent tables for joined-table
+    # inheritance; plus the secondary table for M2M.
+    target_tables: set = set(sa_inspect(target_kls).tables)
+    allowed_tables: set = set(target_tables)
+    if use_secondaryjoin:
+        if rel.secondary is not None:
+            allowed_tables.add(rel.secondary)
+
+    def _is_column(x: Any) -> bool:
+        return isinstance(x, ColumnClause)
+
+    def _col_sig(col: Any) -> tuple:
+        # schema-qualified: same table name in two schemas must not collide
+        return (col.table.schema, col.table.name, col.key)
+
+    def _pair_keys(pairs: Any) -> set[tuple]:
+        keys: set[tuple] = set()
+        for left_col, right_col in pairs:
+            keys.add((*_col_sig(left_col), *_col_sig(right_col)))
+            keys.add((*_col_sig(right_col), *_col_sig(left_col)))
+        return keys
+
+    def _top_level_clauses(expr: Any) -> list[Any]:
+        """Split top-level ``and_``; keep ``or_`` / ``not_`` / atoms whole."""
+        if isinstance(expr, BooleanClauseList) and expr.operator is operators.and_:
+            clauses: list[Any] = []
+            for c in expr.clauses:
+                clauses.extend(_top_level_clauses(c))
+            return clauses
+        return [expr]
+
+    def _collect(join_expr: Any, pair_keys: set, join_side: str) -> list[Any]:
+        extras: list[Any] = []
+        for clause in _top_level_clauses(join_expr):
+            if (
+                isinstance(clause, BinaryExpression)
+                and _is_column(clause.left)
+                and _is_column(clause.right)
+            ):
+                sig = (*_col_sig(clause.left), *_col_sig(clause.right))
+                if sig in pair_keys:
+                    if clause.operator is operators.eq:
+                        continue  # FK equality pair — handled by the IN query
+                    raise ValueError(
+                        f"Non-equality operator between FK pair columns in "
+                        f"{rel_desc} {join_side}: {clause}. The loader "
+                        f"implements the FK pair as an equality IN query — a "
+                        f"non-equality join would be silently rewritten, so "
+                        f"it errors instead."
+                    )
+                raise ValueError(
+                    f"Unsupported non-FK column comparison in {rel_desc} "
+                    f"{join_side}: {clause}. Only the FK equality pair plus "
+                    f"extra conditions on target-entity columns are supported."
+                )
+            extras.append(clause)
+        return extras
+
+    def _validate(extras: list[Any], join_side: str) -> None:
+        for extra in extras:
+            for node in iterate(extra):
+                if isinstance(node, Function):
+                    raise ValueError(
+                        f"Extra condition in {rel_desc} {join_side} contains a "
+                        f"function expression ({node}); only column-to-constant "
+                        f"comparisons and boolean combinations are supported."
+                    )
+                if isinstance(node, Selectable):
+                    raise ValueError(
+                        f"Extra condition in {rel_desc} {join_side} contains a "
+                        f"subquery; only column-to-constant comparisons and "
+                        f"boolean combinations are supported."
+                    )
+            cols = _iter_condition_columns(extra)
+            for col in cols:
+                if col.table not in allowed_tables:
+                    raise ValueError(
+                        f"Extra condition in {rel_desc} {join_side} references "
+                        f"column {col!r} which is not on target "
+                        f"{target_kls.__name__}"
+                        + (" or the secondary table" if use_secondaryjoin else "")
+                        + "; loader queries only read those tables."
+                    )
+            if use_secondaryjoin and rel.secondary is not None:
+                tables = {c.table for c in cols}
+                if tables and not (
+                    tables <= target_tables or tables <= {rel.secondary}
+                ):
+                    raise ValueError(
+                        f"Extra condition in {rel_desc} {join_side} spans "
+                        f"columns of both the target {target_kls.__name__} and "
+                        f"the secondary table '{rel.secondary.name}': "
+                        f"many-to-many loading runs separate per-table queries, "
+                        f"so the condition can be applied to neither — "
+                        f"applying it to one side would silently cross-join "
+                        f"the other table. Declare target-side and link-side "
+                        f"conditions separately."
+                    )
+
+    if use_secondaryjoin:
+        pj_extras: list[Any] = []
+        sj_extras: list[Any] = []
+        if rel.primaryjoin is not None:
+            pj_extras = _collect(
+                rel.primaryjoin, _pair_keys(rel.synchronize_pairs), "primaryjoin"
+            )
+        if rel.secondaryjoin is not None:
+            sj_extras = _collect(
+                rel.secondaryjoin,
+                _pair_keys(rel.secondary_synchronize_pairs),
+                "secondaryjoin",
+            )
+        if not pj_extras and not sj_extras:
+            return None
+        if pj_extras:
+            _validate(pj_extras, "primaryjoin")
+        if sj_extras:
+            _validate(sj_extras, "secondaryjoin")
+        return pj_extras + sj_extras
+
+    if rel.primaryjoin is None:
+        return None
+    extras = _collect(rel.primaryjoin, _pair_keys(rel.local_remote_pairs), "primaryjoin")
+    if not extras:
+        return None
+    _validate(extras, "primaryjoin")
+    return extras
+
+
 def _inspect_relationships(
     entity_kls: type[SQLModel],
     all_entities: set[type[SQLModel]],
@@ -209,6 +425,7 @@ def _inspect_relationships(
                 target_kls=target_entity,
                 target_remote_col_name=remote_col.key,
                 session_factory=session_factory,
+                filters=_extract_extra_filters(rel, entity_kls, target_entity),
             )
             results.append(
                 RelationshipInfo(
@@ -240,6 +457,7 @@ def _inspect_relationships(
                     target_kls=target_entity,
                     target_remote_col_name=remote_col.key,
                     session_factory=session_factory,
+                    filters=_extract_extra_filters(rel, entity_kls, target_entity),
                 )
                 results.append(
                     RelationshipInfo(
@@ -258,6 +476,7 @@ def _inspect_relationships(
                 )
                 sort_field = None
                 page_loader = None
+                o2m_filters = _extract_extra_filters(rel, entity_kls, target_entity)
 
                 order_by = rel.order_by
                 if order_by and order_by is not False:
@@ -273,6 +492,7 @@ def _inspect_relationships(
                         sort_field=sort_field,
                         pk_col_name=pk_col_name,
                         session_factory=session_factory,
+                        filters=o2m_filters,
                         page_orders_resolved=page_orders_resolved,
                         default_order=(
                             page_capability.default_order
@@ -287,6 +507,7 @@ def _inspect_relationships(
                     target_kls=target_entity,
                     target_fk_col_name=remote_col.key,
                     session_factory=session_factory,
+                    filters=o2m_filters,
                 )
 
                 results.append(
@@ -325,6 +546,11 @@ def _inspect_relationships(
             )
             sort_field = None
             page_loader = None
+            # Extra conditions may sit on either join side (primaryjoin or
+            # secondaryjoin); extraction validates the referenced columns.
+            m2m_filters = _extract_extra_filters(
+                rel, entity_kls, target_entity, use_secondaryjoin=True
+            )
 
             order_by = rel.order_by
             if order_by and order_by is not False:
@@ -343,6 +569,7 @@ def _inspect_relationships(
                     sort_field=sort_field,
                     pk_col_name=pk_col_name,
                     session_factory=session_factory,
+                    filters=m2m_filters,
                     page_orders_resolved=m2m_orders_resolved,
                     default_order=(
                         page_capability.default_order
@@ -360,6 +587,7 @@ def _inspect_relationships(
                 secondary_remote_col_name=secondary_remote_col.key,
                 target_match_col_name=target_col.key,
                 session_factory=session_factory,
+                filters=m2m_filters,
             )
 
             results.append(
