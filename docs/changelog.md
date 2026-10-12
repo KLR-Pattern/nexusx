@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.4.0."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.5.0."
 ---
 
 # Changelog
@@ -9,6 +9,42 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 - **Patch (x.y.Z)**: Bug fixes and minor improvements
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
+
+## 6.5
+
+### 6.5.0 (2026-10-12)
+
+- feat:
+  - **Relationship conditions via native `primaryjoin`/`secondaryjoin` (#155)**:
+    "Logically only a subset" relationships — soft deletes, archived
+    records, status filtering — can now be declared with SQLAlchemy's own
+    join condition instead of hand-written loaders. Declaring
+    `primaryjoin="and_(User.id == Comment.owner_id, Comment.status ==
+    'active')"` (the exact shape of a hand-written join) makes every loading
+    path of that relationship filter automatically: entity GraphQL nesting,
+    compose DTO assembly, MCP, and the federation member side. Supported
+    forms: column-vs-constant comparisons, `IS NULL`, enum values, multiple
+    AND conditions, and `or_`/`not_` combinations kept whole (an `or_` is
+    never flattened into AND). Many-to-many conditions may reference
+    target-entity columns or the link table's own columns ("this link row
+    is valid"), on either join side. Paginated relationships count over the
+    filtered set (`total_count` is post-filter). Unconditioned relationships
+    are unchanged, and the wire contract (SDL/introspection) is untouched —
+    conditions are query semantics, not schema semantics.
+
+- behavior change:
+  - **Unexecutable join conditions fail fast at startup (#155)**: 6.4 read a
+    conditional `primaryjoin` only for its FK pair and silently ignored the
+    rest, so such relationships loaded unfiltered. 6.5 extracts the extra
+    conditions and refuses what it cannot execute: conditions referencing
+    source-entity columns, a single M2M condition spanning both the target
+    and the link table (the two-step loader would silently cross-join one
+    side), a non-equality operator on the FK pair, and function expressions
+    or subqueries all raise `ValueError` when `ErManager` is constructed,
+    with the entity, relationship, and offending column named.
+    `backref`-created reverse relationships are exempt — the reverse keeps
+    plain-FK semantics with a logged warning, while conditions declared on
+    the forward side still apply there.
 
 ## 6.4
 
