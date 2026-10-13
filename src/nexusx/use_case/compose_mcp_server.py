@@ -27,6 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from nexusx.mcp.annotations import destructive, read_only
 from nexusx.mcp.types.errors import (
     MCPErrors,
     create_error_response,
@@ -109,7 +110,7 @@ def _get_app(registry: dict[str, _ComposeAppEntry], name: str) -> _ComposeAppEnt
 
 
 def _register_list_apps(mcp: FastMCP, registry: dict[str, _ComposeAppEntry]) -> None:
-    @mcp.tool()
+    @mcp.tool(annotations=read_only())
     def list_apps() -> dict[str, Any]:
         """List all available UseCase applications registered on this server.
 
@@ -141,7 +142,7 @@ def _register_list_apps(mcp: FastMCP, registry: dict[str, _ComposeAppEntry]) -> 
 def _register_describe_compose_schema(
     mcp: FastMCP, registry: dict[str, _ComposeAppEntry]
 ) -> None:
-    @mcp.tool()
+    @mcp.tool(annotations=read_only())
     def describe_compose_schema(app_name: str) -> dict[str, Any]:
         """List services and methods for an app.
 
@@ -199,7 +200,7 @@ def _register_describe_compose_schema(
 def _register_describe_compose_method(
     mcp: FastMCP, registry: dict[str, _ComposeAppEntry]
 ) -> None:
-    @mcp.tool()
+    @mcp.tool(annotations=read_only())
     def describe_compose_method(
         app_name: str,
         service_name: str,
@@ -285,7 +286,17 @@ def _arg_to_dict(a: Any) -> dict[str, Any]:
 def _register_compose_query(
     mcp: FastMCP, registry: dict[str, _ComposeAppEntry]
 ) -> None:
-    @mcp.tool()
+    # AI mutation safety (hint layer): compose_query executes methods by name,
+    # query or mutation alike — read-only only when no service exposes a
+    # mutation method (a `{Service}Mutation` entry in the compose registry).
+    has_mutations = any(
+        entry.schema.registry.get(f"{service_cls.__name__}Mutation") is not None
+        for entry in registry.values()
+        for service_cls in entry.config.services
+    )
+    exec_annotations = destructive() if has_mutations else read_only()
+
+    @mcp.tool(annotations=exec_annotations)
     async def compose_query(
         app_name: str,
         query: str,
