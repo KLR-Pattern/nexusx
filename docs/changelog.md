@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.5.0."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.6.0."
 ---
 
 # Changelog
@@ -9,6 +9,39 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 - **Patch (x.y.Z)**: Bug fixes and minor improvements
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
+
+## 6.6
+
+### 6.6.0 (2026-10-13)
+
+- fix:
+  - **Federated DTO rebuild on Python 3.14 (#157)**: Python 3.14 (PEP
+    649/749) no longer puts an eager `__annotations__` dict in a class-body
+    namespace — annotations live behind `__annotate_func__`. The deferred
+    `DefineSubset` rebuild at `federate()` time read the captured namespace
+    with a plain `__annotations__` lookup, so every rebuilt DTO silently
+    lost all body-declared fields: `SendTo`/`ExposeAs` overrides stopped
+    collecting, and remote-sourced instances missed relationship fields.
+    The rebuild now reads annotations through the shared 3.14-compatible
+    helper, which also gained a `FORWARDREF` fallback for names not yet
+    resolvable (mirrors the equivalent pydantic-resolve fix, PR #310).
+
+- feat:
+  - **FastMCP 4.1 and Python 3.10–3.14 support (#157)**: the `fastmcp`
+    extra jumps from the 3.1 pin to current 4.1.0 (MCP Python SDK v2
+    underneath). The v4 session-manager lifespan path was verified
+    end-to-end with a real MCP client: handshake → `list_tools` →
+    `call_tool` → session exit runs nexusx's lifespan dispose wiring.
+    `requires-python` becomes `>=3.10,<3.15`, and classifiers plus the CI
+    matrix now cover 3.13 and 3.14 (previously 3.10–3.12).
+
+- breaking change:
+  - **`fastmcp` extra requires `fastmcp>=4.1` (#157)**: installers of
+    `nexusx[fastmcp]` previously on FastMCP 3.x will see FastMCP upgraded
+    to 4.x. The MCP surface is source-compatible (full suite and the
+    in-memory client round-trip pass unchanged); if you pinned
+    `fastmcp<4`, relax the pin to `>=4.1,<5`. `requires-python` also
+    gains the `<3.15` cap (declared support is 3.10–3.14).
 
 ## 6.5
 
