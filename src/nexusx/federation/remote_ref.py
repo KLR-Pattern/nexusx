@@ -312,11 +312,16 @@ def resolve_deferred_subsets(fed_registry: Any) -> list[type]:
         module = sys.modules.get(module_name)
         old_cls = getattr(module, name, None) if module else None
 
-        # Build resolved annotations.
+        # Build resolved annotations. Read via the 3.14-compatible helper:
+        # on PEP 649/749 the class-body namespace carries __annotate_func__,
+        # not an eager __annotations__ dict — a plain .get() returns nothing
+        # and the rebuilt class silently loses every body-declared field.
+        from nexusx.subset import _get_namespace_annotations
+
         resolved_annotations: dict[str, Any] = {}
         remote_field_refs: dict[str, Any] = {}
         try:
-            for fname, anno in namespace.get("__annotations__", {}).items():
+            for fname, anno in _get_namespace_annotations(namespace).items():
                 raw_anno = anno
                 if isinstance(raw_anno, str):
                     try:
