@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.6.0."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.7.0."
 ---
 
 # Changelog
@@ -9,6 +9,41 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 - **Patch (x.y.Z)**: Bug fixes and minor improvements
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
+
+## 6.7
+
+### 6.7.0 (2026-10-14)
+
+- feat:
+  - **MCP tool annotations — `readOnlyHint` / `destructiveHint` (#158)**:
+    MCP tools now carry spec annotations, the "hint layer" of AI mutation
+    safety: agents and clients read them from `tools/list` for UI routing
+    and planning caution. Discovery/introspection tools are marked
+    `readOnlyHint`; execution tools (`graphql_query` / `compose_query`) get
+    `readOnlyHint` only when no reachable schema exposes a Mutation
+    operation — computed from schema content, not from the `allow_mutation`
+    flag, because the flag gates tool advertising while the handler still
+    executes whatever the schema contains. `graphql_mutation` is marked
+    `destructiveHint`. Applied uniformly on all three server surfaces
+    (entity single-app, multi-app, UseCase compose) and verified to reach
+    `tools/list`. Per the spec these are untrusted hints; enforcement is
+    the separate contract layer below.
+  - **Optional human confirmation for `compose_query` mutations (#158)**:
+    the contract layer of AI mutation safety. A new `confirm_mutations`
+    flag on `create_use_case_graphql_mcp_server` (default `False`) gates
+    mutations behind a human decision: the tool names the top-level
+    mutation fields (`Service.method` form) in an ask, and only a confirmed
+    accept executes. Handshake-era connections get a synchronous
+    `ctx.elicit()` round-trip; 2026-07-28 connections (where
+    server-initiated elicitation is unavailable) use the SEP-2322 guard
+    pattern — the ask is an `InputRequiredResult` (a legitimate result,
+    not an error), and the client re-issues the identical call carrying the
+    answer. A decline returns an errors payload without executing. Queries
+    are never gated; parse-broken mutations pass through so the executor
+    surfaces the real parse error. Clients that declared no elicitation
+    capability pass ungated — fail-open, demo scope; a spec'd contract
+    layer would fail closed and mint a nonce `request_state`
+    (the current token is a constant).
 
 ## 6.6
 
