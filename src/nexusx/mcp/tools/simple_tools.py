@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nexusx.mcp.annotations import destructive, read_only
 from nexusx.mcp.types.errors import (
     MCPErrors,
     create_error_response,
@@ -36,7 +37,13 @@ def register_simple_tools(
             Mutation type in schema. Default is False (read-only mode).
     """
 
-    @mcp.tool()
+    # AI mutation safety (hint layer): graphql_query executes arbitrary
+    # GraphQL against the handler; read-only only when the schema has no
+    # Mutation operation (allow_mutation gates advertising, not execution).
+    has_mutations = bool(manager.tracer.list_group_operations("Mutation"))
+    exec_annotations = destructive() if has_mutations else read_only()
+
+    @mcp.tool(annotations=read_only())
     def get_schema() -> dict[str, Any]:
         """Get the complete GraphQL schema in SDL format.
 
@@ -79,7 +86,7 @@ def register_simple_tools(
         except Exception as e:
             return create_error_response(str(e), MCPErrors.INTERNAL_ERROR)
 
-    @mcp.tool()
+    @mcp.tool(annotations=exec_annotations)
     async def graphql_query(query: str) -> dict[str, Any]:
         """Execute a GraphQL query.
 
@@ -131,7 +138,7 @@ def register_simple_tools(
 
     if allow_mutation:
 
-        @mcp.tool()
+        @mcp.tool(annotations=destructive())
         async def graphql_mutation(mutation: str) -> dict[str, Any]:
             """Execute a GraphQL mutation.
 
