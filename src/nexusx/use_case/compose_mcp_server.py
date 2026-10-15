@@ -71,6 +71,7 @@ def create_use_case_graphql_mcp_server(
     name: str = "nexusx UseCase GraphQL API",
     *,
     confirm_mutations: bool = False,
+    instructions: str | None = None,
 ) -> FastMCP:
     """Create a 4-layer progressive-disclosure MCP server.
 
@@ -87,6 +88,12 @@ def create_use_case_graphql_mcp_server(
             executes. Clients that did not declare elicitation capability
             (embedded agents with empty capabilities) pass through ungated —
             fail-open, demo scope; a spec'd contract layer fails closed.
+        instructions: Usage guide agents receive with the ``initialize``
+            handshake (MCP protocol field) — a short map of the domains and
+            how to query. Clients inject it into the conversation once per
+            connection, before any tool call. Keep it under ~120 tokens
+            (resident context for the whole session). ``None`` (default)
+            sends nothing.
 
     Returns:
         ``FastMCP`` instance.
@@ -106,7 +113,7 @@ def create_use_case_graphql_mcp_server(
             schema=build_compose_schema(app_config),
         )
 
-    mcp: FastMCP = FastMCP(name)
+    mcp: FastMCP = FastMCP(name, instructions=instructions)
     _register_list_apps(mcp, registry)
     _register_describe_compose_schema(mcp, registry)
     _register_describe_compose_method(mcp, registry)
