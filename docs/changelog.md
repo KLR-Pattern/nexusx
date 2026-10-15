@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.7.0."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.8.0."
 ---
 
 # Changelog
@@ -9,6 +9,23 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 - **Patch (x.y.Z)**: Bug fixes and minor improvements
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
+
+## 6.8
+
+### 6.8.0 (2026-10-15)
+
+- feat:
+  - **Server `instructions` pass-through on all three MCP surfaces (#159)**:
+    MCP's initialize handshake carries an optional `instructions` field —
+    the agent's first read of the server. Clients inject it into the
+    conversation once per connection, before any tool call, which makes it
+    the right channel for a short map of the domains and how to query them.
+    All three server factories (`create_single_app_mcp_server`,
+    `create_multi_app_mcp_server`, `create_use_case_graphql_mcp_server`)
+    gain an `instructions: str | None = None` parameter forwarded to
+    FastMCP; the default sends nothing, so existing callers are unchanged.
+    Keep it short (a rough budget is ~120 tokens) — it is resident context
+    for the whole session.
 
 ## 6.7
 
