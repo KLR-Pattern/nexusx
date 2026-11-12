@@ -1,5 +1,15 @@
 # Changelog
 
+## 6.9.0
+
+### Fixed
+
+- Restore `AutoLoad(origin=...)` for DTO fields whose names differ from their
+  registered relationships. Type checks and manual resolver priority remain unchanged.
+- Preserve required SQL columns when fields use one relationship with different DTO types.
+- Apply pagination defaults by DTO field name so aliases retain separate limits and offsets.
+- Add regression tests and document relationship overrides in the Core API guide.
+
 ## [Unreleased] — specs/019 可组合 ErManager（同进程多 engine 组合）
 
 新增 `ComposedErManager`：把多个自洽的 `ErManager`（各自单 engine）组合成一个

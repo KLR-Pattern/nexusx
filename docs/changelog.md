@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.8.0."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.9.0."
 ---
 
 # Changelog
@@ -9,6 +9,25 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 - **Patch (x.y.Z)**: Bug fixes and minor improvements
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
+
+## 6.9
+
+### 6.9.0 (2026-11-12)
+
+- fix:
+  - **Restore relationship overrides with `AutoLoad(origin=...)`**:
+    DTO fields can load a registered relationship with a different name.
+    For example, `owner_summary` can use `AutoLoad(origin="owner")`.
+    Type checks and manual `resolve_*` priority remain unchanged.
+  - **Preserve columns for multiple DTO projections**:
+    Fields that use one relationship now load all SQL columns their DTO types need.
+  - **Keep pagination defaults separate for aliased fields**:
+    Each field uses its own `Paged` limits and offsets, even when fields share a relationship.
+
+- tests and docs:
+  - Add coverage for overrides, default names, nested lists, scalar lists,
+    multiple DTO projections, pagination, and invalid relationship targets.
+  - Document `AutoLoad(origin=...)` in the Core API guide.
 
 ## 6.8
 
@@ -886,4 +905,3 @@ Port of pydantic-resolve v5.10.2 (`184886d`) — three `INPUT_OBJECT` correctnes
   - **UseCase GraphQL + 4-layer MCP**: New public API: `create_use_case_mcp_server(apps, name)` (4-layer progressive disclosure: `list_apps` → `describe_compose_schema` → `describe_compose_method` → `compose_query`); `build_compose_schema(app) -> ComposeSchema`; `ComposeSchema` (`render_introspection()`/`render_sdl()`/`render_method_sdl()`); `compose_introspect(schema, query)` (GraphiQL-style introspection, paired with MCP Layer 3 which rejects introspection — MCP uses progressive disclosure, HTTP GraphiQL uses full introspection); `ComposeSchemaError` and subclasses. Fixed three-layer schema (`Query` → `*ServiceQuery` → methods). Layer 3 takes a standard GraphQL string and **rejects introspection** (`__schema`/`__type`/`__typename`), returning `{data: null, errors: [...]}` to steer exploration to Layers 1/2. Execution boundary: the GraphQL layer does **not** wrap the service method's return in another `Resolver` — the method already does `Resolver().resolve(dtos)` internally; the outer layer only calls the method → field projection (`subset.build_subset_model`) → serialization.
 - preserved (unchanged):
   - `UseCaseService`/`BusinessMeta`/`@query`/`@mutation`/`FromContext`/`UseCaseAppConfig`, `create_use_case_router`, `create_use_case_jsonrpc_router`, `create_use_case_voyager`, and all GraphQL-mode capabilities (`GraphQLHandler`/`SDLGenerator`/existing `mcp/`).
-

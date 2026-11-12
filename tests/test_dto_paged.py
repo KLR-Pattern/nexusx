@@ -14,6 +14,7 @@ from sqlmodel import Field, Relationship, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from nexusx import (
+    AutoLoad,
     AutoQueryConfig,
     BatchPageConfig,
     DefineSubset,
@@ -139,6 +140,26 @@ async def test_paged_order_none_uses_entity_default(handler):
     resolver = ResolverCls()
     resolved = await resolver.resolve([_DTO(id=1, title="T1")])
     assert [c.text for c in resolved[0].comments] == ["C5", "C3"]  # entity default
+
+
+@pytest.mark.asyncio
+async def test_paged_origin_override_keeps_field_defaults(handler):
+    """Aliased fields keep separate pagination defaults for one relationship."""
+
+    class ThreadDTO(DefineSubset):
+        __subset__ = (DPThread, ("id", "title"))
+        preview: Annotated[
+            list[DPCommentDTO], AutoLoad("comments"), Paged(limit=1)
+        ] = Field(default_factory=list)
+        next_comments: Annotated[
+            list[DPCommentDTO], AutoLoad(origin="comments"), Paged(limit=1, offset=1)
+        ] = Field(default_factory=list)
+
+    resolver_cls = handler._er_manager.create_resolver()
+    result = await resolver_cls().resolve(ThreadDTO(id=1, title="T1"))
+
+    assert [comment.text for comment in result.preview] == ["C5"]
+    assert [comment.text for comment in result.next_comments] == ["C3"]
 
 
 @pytest.mark.asyncio

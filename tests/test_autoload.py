@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import pytest
 from aiodataloader import DataLoader
 from pydantic import BaseModel
 from sqlmodel import Field, SQLModel, select
 
+from nexusx import AutoLoad
 from nexusx.loader.registry import ErManager
 from nexusx.relationship import Relationship
 from nexusx.resolver import Depends, Loader, Resolver
@@ -468,6 +471,7 @@ class TestAutoLoadScalarListField:
         class ScalarDTO(DefineSubset):
             __subset__ = (ScalarEntity, ("id",))
             ids: list[int] = []
+            id_summaries: Annotated[list[int], AutoLoad("ids")] = []
 
         result = await Resolver(registry).resolve(
             [ScalarDTO(id=1), ScalarDTO(id=2)]
@@ -475,6 +479,8 @@ class TestAutoLoadScalarListField:
 
         assert result[0].ids == [10, 20]
         assert result[1].ids == [30]
+        assert result[0].id_summaries == [10, 20]
+        assert result[1].id_summaries == [30]
 
     async def test_scalar_list_field_works_with_explicit_resolve(self):
         """Documented workaround: explicit ``resolve_*`` with ``Loader(callable)``."""
@@ -515,3 +521,179 @@ class TestAutoLoadScalarListField:
 
         assert result[0].ids == [10, 20]
         assert result[1].ids == [30]
+
+
+# ──────────────────────────────────────────────────────────
+# AutoLoad(origin=...) relationship override
+# ──────────────────────────────────────────────────────────
+
+class TestAutoLoadOriginOverride:
+    """``AutoLoad(origin=...)`` must load the named relationship.
+
+    ``AutoLoad`` accepts an ``origin`` argument documented as: "Override
+    relationship name. Defaults to the field name." These tests pin that
+    contract so a field whose name differs from the relationship can still
+    auto-load.
+    """
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_origin_override_loads_when_field_name_differs(self):
+        """A field named ``owner_summary`` with ``AutoLoad("owner")`` loads."""
+        session_factory = get_test_session_factory()
+        registry = ErManager(
+            entities=[FixtureUser, FixtureSprint, FixtureTask],
+            session_factory=session_factory,
+        )
+
+        class UserDTO(DefineSubset):
+            __subset__ = (FixtureUser, ("id", "name"))
+
+        class TaskDTO(DefineSubset):
+            __subset__ = (FixtureTask, ("id", "title", "owner_id"))
+            # Field name differs from the relationship name; origin overrides it.
+            owner_summary: Annotated[UserDTO | None, AutoLoad("owner")] = None
+
+        async with session_factory() as session:
+            tasks = (await session.exec(select(FixtureTask))).all()
+
+        dtos = [
+            TaskDTO(id=t.id, title=t.title, owner_id=t.owner_id) for t in tasks
+        ]
+        result = await Resolver(registry).resolve(dtos)
+
+        assert len(result) == 4
+        assert all(dto.owner_summary is not None for dto in result)
+        assert [dto.owner_summary.id for dto in result] == [task.owner_id for task in tasks]
+        assert {dto.owner_summary.name for dto in result} == {"Alice", "Bob"}
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_origin_defaults_to_field_name(self):
+        """AutoLoad() uses the field name when origin is absent."""
+        session_factory = get_test_session_factory()
+        registry = ErManager(
+            entities=[FixtureUser, FixtureSprint, FixtureTask],
+            session_factory=session_factory,
+        )
+
+        class UserDTO(DefineSubset):
+            __subset__ = (FixtureUser, ("id", "name"))
+
+        class TaskDTO(DefineSubset):
+            __subset__ = (FixtureTask, ("id", "title", "owner_id"))
+            owner: Annotated[UserDTO | None, AutoLoad()] = None
+
+        async with session_factory() as session:
+            tasks = (await session.exec(select(FixtureTask))).all()
+
+        dtos = [
+            TaskDTO(id=t.id, title=t.title, owner_id=t.owner_id) for t in tasks
+        ]
+        result = await Resolver(registry).resolve(dtos)
+
+        assert all(dto.owner is not None for dto in result)
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_origin_override_loads_list_and_nested_relationships(self):
+        """An aliased list loads its items and their nested relationships."""
+        session_factory = get_test_session_factory()
+        registry = ErManager(
+            entities=[FixtureUser, FixtureSprint, FixtureTask],
+            session_factory=session_factory,
+        )
+
+        class UserDTO(DefineSubset):
+            __subset__ = (FixtureUser, ("id", "name"))
+
+        class TaskDTO(DefineSubset):
+            __subset__ = (FixtureTask, ("id", "title", "owner_id"))
+            owner: UserDTO | None = None
+
+        class SprintDTO(DefineSubset):
+            __subset__ = (FixtureSprint, ("id", "name"))
+            task_summaries: Annotated[list[TaskDTO], AutoLoad(origin="tasks")] = []
+
+        async with session_factory() as session:
+            sprints = (await session.exec(select(FixtureSprint))).all()
+            tasks = (await session.exec(select(FixtureTask))).all()
+
+        result = await Resolver(registry).resolve(
+            [SprintDTO(id=sprint.id, name=sprint.name) for sprint in sprints]
+        )
+
+        assert len(result) == 2
+        for sprint in result:
+            expected_ids = {task.id for task in tasks if task.sprint_id == sprint.id}
+            assert {task.id for task in sprint.task_summaries} == expected_ids
+            assert all(task.owner.id == task.owner_id for task in sprint.task_summaries)
+
+    @pytest.mark.usefixtures("test_db")
+    @pytest.mark.parametrize("split_loader_by_type", [False, True])
+    async def test_origin_override_keeps_distinct_dto_projections(self, split_loader_by_type):
+        """Fields using one relationship can request different SQL columns."""
+        registry = ErManager(
+            entities=[FixtureUser, FixtureSprint, FixtureTask],
+            session_factory=get_test_session_factory(),
+            split_loader_by_type=split_loader_by_type,
+        )
+
+        class UserDTO(DefineSubset):
+            __subset__ = (FixtureUser, ("id", "name"))
+
+        class UserContactDTO(DefineSubset):
+            __subset__ = (FixtureUser, ("id", "email"))
+
+        class TaskDTO(DefineSubset):
+            __subset__ = (FixtureTask, ("id", "title", "owner_id"))
+            owner: UserDTO | None = None
+            owner_contact: Annotated[UserContactDTO | None, AutoLoad("owner")] = None
+
+        result = await Resolver(registry).resolve(TaskDTO(id=1, title="Test", owner_id=1))
+
+        assert result.owner.name == "Alice"
+        assert result.owner_contact.email == "alice@test.com"
+        assert result.owner.id == result.owner_contact.id == result.owner_id
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_manual_resolve_takes_priority_over_origin(self):
+        """A resolve method still overrides an explicit AutoLoad marker."""
+        registry = ErManager(
+            entities=[FixtureUser, FixtureSprint, FixtureTask],
+            session_factory=get_test_session_factory(),
+        )
+
+        class UserDTO(DefineSubset):
+            __subset__ = (FixtureUser, ("id", "name"))
+
+        class TaskDTO(DefineSubset):
+            __subset__ = (FixtureTask, ("id", "title", "owner_id"))
+            owner_summary: Annotated[UserDTO | None, AutoLoad("owner")] = None
+
+            def resolve_owner_summary(self):
+                return UserDTO(id=999, name="Manual Override")
+
+        result = await Resolver(registry).resolve(TaskDTO(id=1, title="Test", owner_id=1))
+
+        assert result.owner_summary.id == 999
+        assert result.owner_summary.name == "Manual Override"
+
+    @pytest.mark.usefixtures("test_db")
+    @pytest.mark.parametrize("origin", ["missing", "sprint"])
+    async def test_invalid_origin_does_not_fall_back_to_field_name(self, origin):
+        """An unknown or incompatible origin does not use the implicit relationship."""
+        registry = ErManager(
+            entities=[FixtureUser, FixtureSprint, FixtureTask],
+            session_factory=get_test_session_factory(),
+        )
+
+        class UserDTO(DefineSubset):
+            __subset__ = (FixtureUser, ("id", "name"))
+
+        class TaskDTO(DefineSubset):
+            __subset__ = (FixtureTask, ("id", "title", "owner_id", "sprint_id"))
+            owner: Annotated[UserDTO | None, AutoLoad(origin=origin)] = None
+
+        result = await Resolver(registry).resolve(
+            TaskDTO(id=1, title="Test", owner_id=1, sprint_id=1)
+        )
+
+        assert result.owner is None

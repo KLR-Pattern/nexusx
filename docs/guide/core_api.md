@@ -101,6 +101,20 @@ The Resolver auto-loads a field when **all four** conditions are met:
 3. The field name matches a registered ORM/custom relationship
 4. The field type is a BaseModel DTO compatible with the relationship target
 
+When the field name differs from the relationship name, use `AutoLoad(origin=...)`:
+
+```python
+from typing import Annotated
+from nexusx import AutoLoad
+
+class TaskDTO(DefineSubset):
+    __subset__ = (Task, ("id", "title", "owner_id"))
+    owner_summary: Annotated[UserDTO | None, AutoLoad(origin="owner")] = None
+```
+
+The override must name a registered relationship with a compatible target type.
+A manual `resolve_*` method still takes priority over `AutoLoad`.
+
 When any condition fails, you can use `resolve_*` to load the field manually — see [Core API Advanced](./core_api_advanced.md).
 
 ## Recap
