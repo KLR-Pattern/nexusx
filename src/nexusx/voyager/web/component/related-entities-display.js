@@ -58,7 +58,21 @@ export default defineComponent({
             useWorker: false,
           })
         }
-        graphvizInstance.transition(() => null).renderDot(dot.value)
+        // d3-graphviz only honors `fit` when width/height are set: it then keeps
+        // graphviz's own viewBox and lets the SVG (preserveAspectRatio) scale the
+        // graph down to the container. Without this the sub-graph renders at its
+        // natural size and overflows the sidebar. Mirrors GraphUI.render().
+        graphvizInstance
+          .width("100%")
+          .height("100%")
+          .fit(true)
+          .transition(() => null)
+          .renderDot(dot.value)
+          .on("end", () => {
+            // Re-center on every (re)render so switching entities/tabs doesn't
+            // inherit a previous pan/zoom transform.
+            graphvizInstance.resetZoom()
+          })
       } catch (e) {
         console.warn("[related-entities] render failed", e)
       }
