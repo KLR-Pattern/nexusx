@@ -1,5 +1,15 @@
 # Changelog
 
+## 6.9.1
+
+### Fixed
+
+- Auto-fit the Related Entities sub-graph in the Voyager sidebar. d3-graphviz only
+  honors `fit` when a width/height is set, so the component now mirrors
+  `GraphUI.render()` (`.width("100%").height("100%").fit(true)` + `resetZoom()`)
+  and re-centers on every tab/entity switch. Previously the sub-graph rendered at
+  its natural size and overflowed the sidebar, requiring a manual zoom-out.
+
 ## 6.9.0
 
 ### Fixed

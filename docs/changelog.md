@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.9.0."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.9.1."
 ---
 
 # Changelog
@@ -11,6 +11,16 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
 
 ## 6.9
+
+### 6.9.1 (2026-11-18)
+
+- fix:
+  - **Auto-fit the Related Entities sub-graph**: The focused ER sub-graph in the
+    Voyager sidebar's *Related Entities* tab now scales to the container on first
+    render instead of overflowing it. d3-graphviz only honors `fit` when an explicit
+    width/height is set, so the component now mirrors `GraphUI.render()`
+    (`.width("100%").height("100%").fit(true)` plus `resetZoom()`) and re-centers
+    every time the tab or the selected entity changes.
 
 ### 6.9.0 (2026-11-12)
 
