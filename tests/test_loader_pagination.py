@@ -34,13 +34,23 @@ class TestPageArgs:
         pa = PageArgs(limit=200, max_page_size=100)
         assert pa.effective_limit == 100
 
-    def test_effective_limit_none_returns_default(self):
-        pa = PageArgs(limit=None, default_page_size=15)
-        assert pa.effective_limit == 15
+    def test_missing_intent_rejected(self):
+        """2026-11 contract: volume intent is mandatory — no default page size."""
+        with pytest.raises(ValueError, match="pagination intent is required"):
+            PageArgs(limit=None)
 
-    def test_invalid_default_page_size(self):
-        with pytest.raises(ValueError, match="default_page_size"):
-            PageArgs(default_page_size=0)
+    def test_missing_intent_with_offset_only_rejected(self):
+        with pytest.raises(ValueError, match="pagination intent is required"):
+            PageArgs(offset=40)
+
+    def test_fetch_all_overrides_limit_and_offset(self):
+        """fetchAll wins literally — limit/offset are overridden."""
+        pa = PageArgs(limit=5, offset=40, fetch_all=True)
+        assert pa.effective_limit is None  # unbounded window
+
+    def test_fetch_all_without_limit_ok(self):
+        pa = PageArgs(fetch_all=True)
+        assert pa.effective_limit is None
 
     def test_invalid_max_page_size(self):
         with pytest.raises(ValueError, match="max_page_size"):
@@ -53,6 +63,10 @@ class TestPageArgs:
     def test_invalid_negative_offset(self):
         with pytest.raises(ValueError, match="offset"):
             PageArgs(offset=-1)
+
+    def test_invalid_max_fetch_all(self):
+        with pytest.raises(ValueError, match="max_fetch_all"):
+            PageArgs(fetch_all=True, max_fetch_all=0)
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +256,56 @@ class TestPageOneToManyLoader:
         assert len(results[0].items) == 1
         assert results[0].pagination.total_count == 2
         assert results[0].pagination.has_more is True
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_fetch_all_returns_everything(self):
+        """2026-11 契约：fetchAll = 退化窗口 [1,∞) — 全量、has_more 恒 False、
+        total_count = 全量；limit/offset 被覆盖。"""
+        from tests.conftest import FixtureSprint, FixtureTask
+
+        LoaderCls = create_page_one_to_many_loader(
+            source_kls=FixtureSprint,
+            rel_name="tasks",
+            target_kls=FixtureTask,
+            target_fk_col_name="sprint_id",
+            sort_field="id",
+            pk_col_name="id",
+            session_factory=get_test_session_factory(),
+        )
+        loader = LoaderCls()
+        # limit:1 + offset:1 都声明了 — fetchAll 字面意思优先，全部覆盖
+        cmd = PageLoadCommand(
+            fk_value=1,
+            page_args=PageArgs(limit=1, offset=1, fetch_all=True),
+        )
+        results = await loader.load_many([cmd])
+
+        assert len(results) == 1
+        assert len(results[0].items) == 2  # 全量(非 limit:1 窗口)
+        assert results[0].pagination.total_count == 2
+        assert results[0].pagination.has_more is False
+
+    @pytest.mark.usefixtures("test_db")
+    async def test_fetch_all_seatbelt_errors_past_cap(self):
+        """fetchAll 硬顶：超顶报错不截断 — 错误优于假装给了全部。"""
+        from tests.conftest import FixtureSprint, FixtureTask
+
+        LoaderCls = create_page_one_to_many_loader(
+            source_kls=FixtureSprint,
+            rel_name="tasks",
+            target_kls=FixtureTask,
+            target_fk_col_name="sprint_id",
+            sort_field="id",
+            pk_col_name="id",
+            session_factory=get_test_session_factory(),
+        )
+        loader = LoaderCls()
+        cmd = PageLoadCommand(
+            fk_value=1,
+            page_args=PageArgs(fetch_all=True, max_fetch_all=1),  # total=2 > cap
+        )
+        with pytest.raises(ValueError, match="max_fetch_all"):
+            await loader.load_many([cmd])
 
     @pytest.mark.usefixtures("test_db")
     async def test_offset_pagination(self):

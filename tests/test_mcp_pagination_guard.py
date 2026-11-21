@@ -47,7 +47,9 @@ class _ThreadingUser(_ThreadingBase, table=True):
 
     id: int = Field(default=None, primary_key=True)
     name: str
-    posts: list["_ThreadingPost"] = Relationship()
+    posts: list["_ThreadingPost"] = Relationship(
+        sa_relationship_kwargs={"order_by": "_ThreadingPost.id"},
+    )
 
     @query
     def get_all(cls) -> list["_ThreadingUser"]:
@@ -120,13 +122,11 @@ class TestThreadingBothOptions:
         bare = GraphQLHandler(
             base=_ThreadingBase,
             session_factory=sf,
-            enable_pagination=True,
             auto_query_config=cfg,
         ).get_sdl()
         via_manager = SingleAppManager(
             base=_ThreadingBase,
             session_factory=sf,
-            enable_pagination=True,
             auto_query_config=cfg,
         ).handler.get_sdl()
 
@@ -143,14 +143,12 @@ class TestThreadingBothOptions:
         bare = GraphQLHandler(
             base=_ThreadingBase,
             session_factory=sf,
-            enable_pagination=True,
             auto_query_config=cfg,
         ).get_sdl()
         via_app = Application(
             name="x",
             base=_ThreadingBase,
             session_factory=sf,
-            enable_pagination=True,
             auto_query_config=cfg,
         ).resources.handler.get_sdl()
 
@@ -163,7 +161,6 @@ class TestThreadingBothOptions:
             name="x",
             base=_ThreadingBase,
             session_factory=_DummySessionFactory(),
-            enable_pagination=True,
             auto_query_config=cfg,
         )
         sdl = app.resources.handler.get_sdl()

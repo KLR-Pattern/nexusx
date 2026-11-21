@@ -47,7 +47,6 @@ class GraphQLHandler:
         handler = GraphQLHandler(
             base=BaseEntity,
             session_factory=async_session,
-            enable_pagination=True,
         )
         result = await handler.execute('{ users { id name posts { items { title } } } }')
         ```
@@ -60,7 +59,6 @@ class GraphQLHandler:
         query_description: str | None = None,
         mutation_description: str | None = None,
         auto_query_config: AutoQueryConfig | None = None,
-        enable_pagination: bool = False,
         service_name: str | None = None,
         expose_mounted_endpoints: bool = False,
         dto_classes: list[type] | None = None,
@@ -92,8 +90,6 @@ class GraphQLHandler:
             mutation_description: Optional custom description for Mutation type.
             auto_query_config: Optional AutoQueryConfig for auto-generating
                                standard queries (by_id, by_filter).
-            enable_pagination: When True, list relationships return Result types
-                with { items, pagination } wrapping.
             service_name: This service's own name (prefix); required for a
                 federable member (its ER-introspection payload carries it).
             expose_mounted_endpoints: When True, this member advertises the
@@ -124,7 +120,6 @@ class GraphQLHandler:
             )
 
         self.session_factory = session_factory
-        self.enable_pagination = enable_pagination
         self._query_description = query_description
         self._mutation_description = mutation_description
 
@@ -157,7 +152,6 @@ class GraphQLHandler:
             self._er_manager = ErManager(
                 entities=self.entities,
                 session_factory=session_factory,
-                enable_pagination=enable_pagination,
                 service_name=service_name,
                 expose_mounted_endpoints=expose_mounted_endpoints,
                 dto_classes=dto_classes,
@@ -190,7 +184,6 @@ class GraphQLHandler:
         # reads the live (version-cached) generator, so __schema reflects federation.
         self._executor = QueryExecutor(
             loader_registry=self._er_manager,
-            enable_pagination=enable_pagination,
             introspection_generator=_LiveIntrospection(self),
         )
 
@@ -237,7 +230,6 @@ class GraphQLHandler:
                     mutation_methods=self._mutation_methods,
                     query_description=self._query_description,
                     mutation_description=self._mutation_description,
-                    enable_pagination=self.enable_pagination,
                     loader_registry=self._er_manager,
                 ),
             )
@@ -264,7 +256,6 @@ class GraphQLHandler:
         """
         return self._sdl_generator.generate(
             include_mutations=include_mutations,
-            enable_pagination=self.enable_pagination,
             loader_registry=self._er_manager,
         )
 

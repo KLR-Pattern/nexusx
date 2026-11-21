@@ -355,6 +355,9 @@ def register_multi_app_tools(
         operations with list_queries and understanding their schema with
         get_query_schema.
 
+        Paginated (Result-wrapped) fields require volume intent — see the
+        server instructions; e.g. ``{ User { posts(fetchAll: true) { items { id } } } }``.
+
         Args:
             query: A GraphQL query string
             app_name: Name of the application (required)

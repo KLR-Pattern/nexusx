@@ -56,8 +56,9 @@ def register_simple_tools(
         - ``field: [Entity!]!`` — plain list, select fields directly
         - ``field(...): EntityResult!`` — wrapped, select
           ``field { items { ... } pagination { has_more total_count } }``
-
-        Example: ``{ User { posts(limit: 10) { items { id } } } }``
+          (volume intent is mandatory — see the server instructions).
+          E.g. ``{ User { posts(limit: 10) { items { id } } } }`` or
+          ``{ User { posts(fetchAll: true) { items ... pagination { total_count } } } }``
 
         Inside graphql_query, every call is processed as:
         - The query is validated against this schema.
@@ -93,6 +94,9 @@ def register_simple_tools(
         Use this tool to fetch data from your GraphQL API.
         First use get_schema to discover available queries and their structure.
 
+        Paginated (Result-wrapped) fields require volume intent — see the
+        server instructions; e.g. ``{ User { posts(fetchAll: true) { items { id } } } }``.
+
         Args:
             query: A GraphQL query string (must be valid GraphQL syntax)
 
@@ -110,6 +114,9 @@ def register_simple_tools(
 
             # Traverse a relationship
             { Hero { by_id(id: 1) { name team { name } } } }
+
+            # Paginated relationship — volume intent is mandatory
+            { User { posts(fetchAll: true) { items { id } } } }
 
             # Custom @query methods appear under their entity
             { User { get_users(limit: 5) { id name } } }

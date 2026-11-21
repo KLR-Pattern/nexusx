@@ -26,7 +26,7 @@ from tests.conftest import (
 
 
 def _make_executor(
-    entities=None, session_factory=None, enable_pagination=False
+    entities=None, session_factory=None
 ) -> QueryExecutor:
     if entities is None:
         entities = [FixtureUser, FixtureSprint, FixtureTask]
@@ -35,9 +35,8 @@ def _make_executor(
     registry = ErManager(
         entities=entities,
         session_factory=session_factory,
-        enable_pagination=enable_pagination,
     )
-    return QueryExecutor(registry, enable_pagination=enable_pagination)
+    return QueryExecutor(registry)
 
 
 def _get_bound_method(entity_cls, method_name: str):
@@ -634,8 +633,10 @@ class TestQueryExecutorSplitMode:
 
         method = _get_bound_method(SprintQuery, "get_all")
         query_methods = {"FixtureSprint": {"get_all": (FixtureSprint, method)}}
+        # 2026-11 契约：FixtureSprint.tasks 有 order_by → 分页字段（量意图强制）
         document, parsed = _parse(
-            "{ FixtureSprint { get_all { id name tasks { id title owner { id name } } } } }"
+            "{ FixtureSprint { get_all { id name "
+            "tasks(fetchAll: true) { items { id title owner { id name } } } } } }"
         )
 
         result = await executor.execute_query(
@@ -648,7 +649,7 @@ class TestQueryExecutorSplitMode:
         assert len(sprints) == 2
         for sprint in sprints:
             assert "tasks" in sprint
-            for task in sprint["tasks"]:
+            for task in sprint["tasks"]["items"]:
                 assert task["owner"] is not None
                 assert "name" in task["owner"]
 
@@ -714,7 +715,7 @@ class TestQueryExecutorPagination:
     @pytest.mark.usefixtures("test_db")
     async def test_paginated_query_e2e(self):
         """End-to-end paginated query should return items + pagination metadata."""
-        executor = _make_executor(enable_pagination=True)
+        executor = _make_executor()
         session_factory = get_test_session_factory()
 
         class SprintQuery(SQLModel, table=False):
@@ -726,7 +727,7 @@ class TestQueryExecutorPagination:
         method = _get_bound_method(SprintQuery, "get_all")
         query_methods = {"FixtureSprint": {"get_all": (FixtureSprint, method)}}
         gql = (
-            "{ FixtureSprint { get_all { id name tasks { items { id title } "
+            "{ FixtureSprint { get_all { id name tasks(limit: 5) { items { id title } "
             "pagination { total_count has_more } } } } }"
         )
         document, parsed = _parse(gql)
@@ -748,7 +749,7 @@ class TestQueryExecutorPagination:
     @pytest.mark.usefixtures("test_db")
     async def test_paginated_query_respects_limit(self):
         """limit argument should be propagated to paginated loader."""
-        executor = _make_executor(enable_pagination=True)
+        executor = _make_executor()
         session_factory = get_test_session_factory()
 
         class SprintQuery(SQLModel, table=False):
@@ -780,7 +781,7 @@ class TestQueryExecutorPagination:
 
     @pytest.mark.usefixtures("test_db")
     async def test_custom_relationship_with_pagination_enabled(self):
-        """Custom relationships should query normally when enable_pagination=True."""
+        """Custom relationships should query normally on the paged path."""
         from nexusx.relationship import Relationship
 
         session_factory = get_test_session_factory()
@@ -811,7 +812,6 @@ class TestQueryExecutorPagination:
             executor = _make_executor(
                 entities=[FixtureSprint, FixtureTask],
                 session_factory=session_factory,
-                enable_pagination=True,
             )
 
             class SprintQuery(SQLModel, table=False):

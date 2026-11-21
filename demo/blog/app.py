@@ -24,13 +24,12 @@ class GraphQLRequest(BaseModel):
     operation_name: str | None = None
 
 
-# Create GraphQL handler with auto query configuration and pagination
+# Create GraphQL handler with auto query configuration
 config = AutoQueryConfig(default_limit=20)
 handler = GraphQLHandler(
     base=BaseEntity,
     session_factory=async_session,
     auto_query_config=config,
-    enable_pagination=False,
 )
 
 

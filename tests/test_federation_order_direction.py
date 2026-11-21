@@ -460,7 +460,7 @@ async def test_us2_sdl_exposes_order_enum_and_direction(od_federation):
     catalog_handler, _ = od_federation
     sdl = catalog_handler.get_sdl()
     assert (
-        "reviews(limit: Int, offset: Int = 0, "
+        "reviews(limit: Int, offset: Int = 0, fetchAll: Boolean, "
         "order: ODReviewOrder = HIGHEST_RATING, direction: Direction): ODReviewResult!"
     ) in sdl
     # order enum carries BOTH member profile names.

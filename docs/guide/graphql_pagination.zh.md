@@ -21,7 +21,6 @@ class User(SQLModel, table=True):
 handler = GraphQLHandler(
     base=SQLModel,
     session_factory=async_session,
-    enable_pagination=True,
 )
 ```
 
@@ -35,7 +34,7 @@ handler = GraphQLHandler(
   User {
     get_all {
       name
-      posts(limit: 3, offset: 0) {
+      posts(limit: 3) {          # 量意图必填——没有默认页大小
         items { title }
         pagination { has_more total_count }
       }
@@ -43,6 +42,14 @@ handler = GraphQLHandler(
   }
 }
 ```
+
+显式获取全部：
+
+```graphql
+posts(fetchAll: true) { items { title } pagination { total_count } }   # 覆盖 limit/offset
+```
+
+两者都不带会触发带指引的校验错误——列表查询绝不会静默截断到某个隐藏默认值。
 
 ### 响应结构
 
@@ -98,9 +105,8 @@ handler = GraphQLHandler(
 
 ## 回顾
 
-- 在 `GraphQLHandler` 上设置 `enable_pagination=True` 启用分页
-- 列表关系必须有 `order_by`，使用 `"Entity.column"` 字符串格式
-- 在 GraphQL 查询中使用 `limit` 和 `offset` 参数
+- 列表关系必须有 `order_by`，使用 `"Entity.column"` 字符串格式——声明即开启
+- 在 GraphQL 查询中使用 `limit` 或 `fetchAll`（量意图强制，无默认页大小）
 - 每个分页关系返回 `{ items, pagination }`，包含 `has_more` 和 `total_count`
 
 ## 下一步

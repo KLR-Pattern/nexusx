@@ -375,3 +375,28 @@ class TestCoerceToApplication:
     def test_invalid_type_raises(self):
         with pytest.raises(TypeError, match="must be an Application instance"):
             _coerce_to_application("not an app")  # type: ignore[arg-type]
+
+
+class TestUrlSessionClass:
+    """url=/engine= 构造的 session 必须是 sqlmodel 的 AsyncSession。
+
+    Loaders 与标准查询都调 ``session.exec``；sqlalchemy 原生 AsyncSession
+    没有该方法——关系加载必炸（master 旧疾，2026-11 MCP E2E 暴露）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_url_built_sessions_have_exec(self, tmp_path):
+        app = Application(
+            name="exec-check",
+            base=_TestBase,
+            url=f"sqlite+aiosqlite:///{tmp_path}/exec_check.db",
+        )
+        try:
+            factory = app._session_factory
+            async with factory() as session:
+                assert hasattr(session, "exec"), (
+                    "session lacks .exec — relationship loaders would raise "
+                    "AttributeError (need sqlmodel.ext.asyncio.session.AsyncSession)"
+                )
+        finally:
+            await app.dispose()

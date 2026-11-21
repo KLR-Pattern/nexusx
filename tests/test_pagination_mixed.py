@@ -65,7 +65,6 @@ def _make_registry() -> ErManager:
     return ErManager(
         entities=MIXED_ENTITIES,
         session_factory=get_test_session_factory(),
-        enable_pagination=True,
     )
 
 
@@ -79,7 +78,7 @@ class TestSDLMixedPagination:
         """sorted_kids (has order_by) → SortedKidResult! with limit/offset args."""
         registry = _make_registry()
         sdl = SDLGenerator(MIXED_ENTITIES).generate(
-            enable_pagination=True, loader_registry=registry
+            loader_registry=registry
         )
 
         assert "type SortedKidResult {" in sdl
@@ -99,17 +98,20 @@ class TestSDLMixedPagination:
         """
         registry = _make_registry()
         sdl = SDLGenerator(MIXED_ENTITIES).generate(
-            enable_pagination=True, loader_registry=registry
+            loader_registry=registry
         )
 
         parent_block = sdl.split("type MixedParent {", 1)[1].split("}", 1)[0]
-        assert "sorted_kids(limit: Int, offset: Int = 0): SortedKidResult!" in parent_block
+        assert (
+            "sorted_kids(limit: Int, offset: Int = 0, fetchAll: Boolean): "
+            "SortedKidResult!" in parent_block
+        )
 
     def test_non_paginated_list_renders_as_plain_list(self):
         """raw_kids (no order_by) → [RawKid!]! with no pagination args."""
         registry = _make_registry()
         sdl = SDLGenerator(MIXED_ENTITIES).generate(
-            enable_pagination=True, loader_registry=registry
+            loader_registry=registry
         )
 
         assert "RawKidResult" not in sdl
@@ -145,7 +147,6 @@ def _make_introspection() -> dict:
         entities=MIXED_ENTITIES,
         query_methods={},
         mutation_methods={},
-        enable_pagination=True,
         loader_registry=registry,
     )
     return gen.generate()

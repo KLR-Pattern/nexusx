@@ -15,8 +15,9 @@ resolved within the blog engine, ``orders`` hops to the shop engine::
       CmUser {
         get_users {
           name
-          posts { title }     # blog engine (same DB)
-          orders { total }    # shop engine (cross-engine edge)
+          # posts declares order_by → paginated field (volume intent required)
+          posts(limit: 3) { items { title } }   # blog engine (same DB)
+          orders { total }                      # shop engine (cross-engine edge)
         }
       }
     }

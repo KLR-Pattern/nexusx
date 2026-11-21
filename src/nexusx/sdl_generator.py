@@ -127,24 +127,20 @@ class SDLGenerator:
         self._converter = TypeConverter(self._entity_names)
         self._query_description = query_description
         self._mutation_description = mutation_description
-        self._enable_pagination = False
         self._loader_registry: Any = None
 
     def generate(
         self,
         include_mutations: bool = True,
-        enable_pagination: bool = False,
         loader_registry: Any | None = None,
     ) -> str:
         """Generate complete GraphQL SDL string.
 
         Args:
             include_mutations: If True, includes Mutation type in SDL. Default is True.
-            enable_pagination: If True, list relationship fields become Result types.
             loader_registry: ErManager for relationship introspection (required
-                when enable_pagination is True).
+                when any relationship is paginated).
         """
-        self._enable_pagination = enable_pagination
         self._loader_registry = loader_registry
         # Mounter-side federation order enums + per-field enum names (specs/014).
         # Computed once so SDL and the (separate) introspection generator, which
@@ -168,12 +164,11 @@ class SDLGenerator:
         for entity in self.entities:
             parts.append(self._generate_type(entity))
 
-        # 4. Generate Pagination and Result types. Local relationships remain
-        # gated by enable_pagination; federated paginated relationships and
-        # member-side page_by_<key>_in roots are independently active.
+        # 4. Generate Pagination and Result types. Local relationships are
+        # active via their declared order_by (page_loader assembled); there
+        # is no global toggle (2026-11 contract).
         if (
-            enable_pagination
-            or self._has_any_paginated_relationship()
+            self._has_any_paginated_relationship()
             or self._has_any_pagination_root()
         ):
             pag_types = self._generate_pagination_types()
@@ -575,29 +570,31 @@ class SDLGenerator:
     def _has_any_paginated_relationship(self) -> bool:
         """True if any registered relationship exposes pagination in this schema."""
         return has_any_paginated_relationship(
-            self._loader_registry, self.entities, self._enable_pagination
+            self._loader_registry, self.entities
         )
 
     def _is_active_paginated_relationship(self, rel_info: Any) -> bool:
-        """Apply the local toggle without disabling explicit federation pagination."""
-        return is_active_paginated_relationship(rel_info, self._enable_pagination)
+        """True when the relationship renders as a pagination field."""
+        return is_active_paginated_relationship(rel_info)
 
     def _paginated_field_args(
         self, entity: type[SQLModel], rel_name: str, rel_info: Any
     ) -> str:
         """Render the ``(...)`` argument list for a paginated relationship field.
 
-        Federation REMOTE_PAGED relationships (``page_capability`` set) expose
-        ``order`` (enum, default = member ``default_order``) and ``direction``;
-        local / coalesced paginated relationships expose only ``limit``/``offset``.
-        specs/014.
+        2026-11 contract: volume intent is mandatory — callers must pass
+        ``limit`` OR ``fetchAll`` (no default page size); ``fetchAll``
+        overrides ``limit``/``offset``. Federation REMOTE_PAGED relationships
+        (``page_capability`` set) additionally expose ``order`` (enum, default
+        = member ``default_order``) and ``direction``; local / coalesced
+        paginated relationships keep just the volume trio. specs/014.
         """
         capability = getattr(rel_info, "page_capability", None)
         if capability is None:
-            return "(limit: Int, offset: Int = 0)"
+            return "(limit: Int, offset: Int = 0, fetchAll: Boolean)"
         enum_name = self._fed_order_field_name.get((entity.__name__, rel_name))
         return (
-            f"(limit: Int, offset: Int = 0, "
+            f"(limit: Int, offset: Int = 0, fetchAll: Boolean, "
             f"order: {enum_name} = {capability.default_order}, direction: Direction)"
         )
 

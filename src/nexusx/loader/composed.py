@@ -169,7 +169,10 @@ class ComposedErManager:
                     # path fetches instances via page_loader (a separate
                     # class — registering only loader would KeyError on
                     # paged queries).
-                    for _lk in (rel_info.loader, rel_info.page_loader):
+                    for _lk in (
+                        getattr(rel_info, "loader", None),
+                        getattr(rel_info, "page_loader", None),
+                    ):
                         if _lk is not None:
                             self._loader_owner[_lk] = m
 
@@ -240,8 +243,12 @@ class ComposedErManager:
         cls_set: set[type] = set()
         for rels in self._cross_rels.values():
             for rel_info in rels.values():
-                if rel_info.loader is not None:
-                    cls_set.add(rel_info.loader)
+                # Guarded read: loader does not exist on every variant
+                # (Coalesced has no loader fields). _cross_rels only holds
+                # locally-built customs today — keep the read defensive.
+                loader_cls = getattr(rel_info, "loader", None)
+                if loader_cls is not None:
+                    cls_set.add(loader_cls)
         return cls_set
 
     # ── Query interface consumed by the Resolver (route by entity + cross-boundary overlay) ──
@@ -321,8 +328,10 @@ class ComposedErManager:
         # composed manager owns the instance
         for rels in self._cross_rels.values():
             rel_info = rels.get(name)
-            if rel_info is not None and rel_info.loader is not None:
-                return self._get_cross_loader(rel_info.loader)
+            if rel_info is not None:
+                loader_cls = getattr(rel_info, "loader", None)
+                if loader_cls is not None:
+                    return self._get_cross_loader(loader_cls)
         return None
 
     def get_loader(
@@ -353,7 +362,10 @@ class ComposedErManager:
             for m in self._members:
                 for _entity, rels in m.get_all_relationships().items():
                     for rel_info in rels.values():
-                        if loader_cls in (rel_info.loader, rel_info.page_loader):
+                        if loader_cls in (
+                            getattr(rel_info, "loader", None),
+                            getattr(rel_info, "page_loader", None),
+                        ):
                             owner = m
                             break
                     if owner is not None:

@@ -353,8 +353,8 @@ class TestPagedParamsSplit:
 
         asyncio.run(main())
         keys = [c["params_key"] for c in calls]
-        assert (5, 0, None, None) in keys
-        assert (10, 0, None, None) in keys
+        assert (5, 0, None, None, False) in keys
+        assert (10, 0, None, None, False) in keys
 
     def test_registry_params_key_isolates_instances(self):
         """The registry-level guarantee: distinct params_key → distinct
@@ -368,11 +368,11 @@ class TestPagedParamsSplit:
             pass
 
         a = registry.get_loader(L, type_key=None, force_split=True,
-                                params_key=(5, 0, None, None))
+                                params_key=(5, 0, None, None, False))
         b = registry.get_loader(L, type_key=None, force_split=True,
-                                params_key=(10, 0, None, None))
+                                params_key=(10, 0, None, None, False))
         c = registry.get_loader(L, type_key=None, force_split=True,
-                                params_key=(5, 0, None, None))
+                                params_key=(5, 0, None, None, False))
         assert a is not b
         assert a is c
 

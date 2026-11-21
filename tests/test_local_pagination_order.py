@@ -77,7 +77,6 @@ async def handler() -> GraphQLHandler:
         base=LOBase,
         session_factory=_sf,
         auto_query_config=AutoQueryConfig(),
-        enable_pagination=True,
     )
 
 

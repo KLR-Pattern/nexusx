@@ -15,10 +15,10 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
-    AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from nexusx.handler import GraphQLHandler
 from nexusx.mcp.builders.type_tracer import TypeTracer
@@ -74,7 +74,6 @@ class Application:
         mutation_description: str | None = None,
         aliases: list[str] | None = None,
         engine_kwargs: dict[str, Any] | None = None,
-        enable_pagination: bool = False,
         auto_query_config: AutoQueryConfig | None = None,
         er_manager: Any = None,
         entities: list[type] | None = None,
@@ -119,6 +118,10 @@ class Application:
                 if engine_kwargs:
                     kwargs.update(engine_kwargs)
                 self._engine = create_async_engine(url, **kwargs)
+                # sqlmodel's AsyncSession (subclass) — loaders and
+                # standard queries call ``session.exec``; the plain
+                # sqlalchemy class has no ``.exec`` (AttributeError on every
+                # relationship load — pre-existing, surfaced by the MCP E2E)
                 self._session_factory = async_sessionmaker(
                     self._engine,
                     class_=AsyncSession,
@@ -143,7 +146,6 @@ class Application:
         self._query_description = query_description
         self._mutation_description = mutation_description
         self._aliases: list[str] = self._validate_aliases(aliases, name)
-        self._enable_pagination = enable_pagination
         self._auto_query_config = auto_query_config
 
         # ── eager 构造 AppResources（全同步） ───────────────────────────
@@ -245,7 +247,6 @@ class Application:
             session_factory=self._session_factory,
             query_description=self._query_description,
             mutation_description=self._mutation_description,
-            enable_pagination=self._enable_pagination,
             auto_query_config=self._auto_query_config,
         )
         introspection_data = handler.get_introspection_data()

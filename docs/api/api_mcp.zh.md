@@ -29,7 +29,6 @@ mcp = create_single_app_mcp_server(
 | `desc` | `str \| None` | 否 | Query 与 Mutation 的 schema 描述 |
 | `allow_mutation` | `bool` | 否 | 是否注册 mutation，默认 `False` |
 | `session_factory` | `Callable \| None` | 否 | 数据库关系加载使用的异步 session 工厂 |
-| `enable_pagination` | `bool` | 否 | 是否为列表关系生成分页元数据 |
 | `auto_query_config` | `AutoQueryConfig \| None` | 否 | 是否生成标准 `by_id` / `by_filter` 查询 |
 
 ### 生成的工具

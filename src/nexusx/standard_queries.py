@@ -376,9 +376,16 @@ def _create_page_by_keys_in_query(
             msg = f"Missing required argument: {arg_name}"
             raise TypeError(msg)
         values = list(kwargs[arg_name])
+        # 2026-11 contract: volume intent is mandatory (limit or fetchAll);
+        # fetchAll overrides limit/offset — literal wins.
+        raw_fetch_all = kwargs.get("fetchAll")
+        if raw_fetch_all is None:
+            raw_fetch_all = kwargs.get("fetch_all")
+        fetch_all = bool(raw_fetch_all) if raw_fetch_all is not None else False
         page_args = PageArgs(
-            limit=kwargs.get("limit"),
+            limit=None if fetch_all else kwargs.get("limit"),
             offset=kwargs.get("offset", 0),
+            fetch_all=fetch_all,
         )
         # ``order`` is optional per the SDL (default_order lives in the
         # capability); SDL-direct callers (e.g. MCP agents) may omit it, and
@@ -408,6 +415,10 @@ def _create_page_by_keys_in_query(
             pagination_selection is None
             or "total_count" in pagination_selection
         )
+        # fetchAll needs per-partition totals for the max_fetch_all seatbelt
+        # even when the caller didn't select total_count (the extra column is
+        # internal; response emission below stays gated by want_total_count).
+        compute_totals = want_total_count or fetch_all
         effective_limit = page_args.effective_limit
 
         if not values:
@@ -424,7 +435,7 @@ def _create_page_by_keys_in_query(
                 order_by=window_order,
             ).label(rn_label)
             inner_columns = [cls, row_num_col]
-            if want_total_count:
+            if compute_totals:
                 inner_columns.append(
                     func.count().over(partition_by=fk_col).label(tc_label)
                 )
@@ -435,13 +446,18 @@ def _create_page_by_keys_in_query(
             fk_col_sub = subq.c[field_name]
             outer_order = _build_order_expressions(subq.c, effective_terms)
 
-            start = page_args.offset + 1
-            end = page_args.offset + effective_limit + 1  # peek-by-1
-            outer = (
-                select(subq)
-                .where(rn_col.between(start, end))
-                .order_by(fk_col_sub, *outer_order)
-            )
+            if fetch_all:
+                # Degenerate window [1, ∞): fetchAll overrides limit/offset
+                # (literal wins) — no BETWEEN, no peek-by-1.
+                outer = select(subq).order_by(fk_col_sub, *outer_order)
+            else:
+                start = page_args.offset + 1
+                end = page_args.offset + effective_limit + 1  # peek-by-1
+                outer = (
+                    select(subq)
+                    .where(rn_col.between(start, end))
+                    .order_by(fk_col_sub, *outer_order)
+                )
             rows = (await session.exec(outer)).all()
 
             grouped: dict[Any, list[Any]] = defaultdict(list)
@@ -451,14 +467,14 @@ def _create_page_by_keys_in_query(
                 mapping = row._mapping
                 fk_val = mapping[field_name]
                 grouped[fk_val].append(mapping)
-                if want_total_count:
+                if compute_totals:
                     total_counts[fk_val] = mapping[tc_label]
 
             # Keys whose offset is beyond their total (no rows in the window)
             # still need a total_count entry.
             missing = (
                 [v for v in values if v not in total_counts]
-                if want_total_count
+                if compute_totals
                 else []
             )
             if missing:
@@ -470,6 +486,17 @@ def _create_page_by_keys_in_query(
                 for row in (await session.exec(count_q)).all():
                     total_counts[row[0]] = row[1]
 
+            if fetch_all:
+                cap = page_args.max_fetch_all
+                over = [v for v, tc in total_counts.items() if tc > cap]
+                if over:
+                    raise ValueError(
+                        f"fetchAll exceeded max_fetch_all={cap} for "
+                        f"{len(over)} key(s) (e.g. {over[0]!r} with "
+                        f"total_count={total_counts[over[0]]}); use windowed "
+                        "pagination (limit/offset) instead"
+                    )
+
             packages: list[dict[str, Any]] = []
             for v in values:
                 page_rows = grouped.get(v, [])[:effective_limit]
@@ -480,8 +507,10 @@ def _create_page_by_keys_in_query(
                 # specs/021 GAP E: limit=0 must not claim a next page — the
                 # window peek-by-1 still fetches rn=offset+1, which would make
                 # ``len > effective_limit`` true with empty items.
+                # fetchAll: has_more is structurally False.
                 has_more = (
-                    effective_limit > 0
+                    not fetch_all
+                    and effective_limit > 0
                     and len(grouped.get(v, [])) > effective_limit
                 )
                 pagination = Pagination(has_more=has_more)
@@ -503,6 +532,7 @@ def _create_page_by_keys_in_query(
     func_obj.__annotations__[arg_name] = list[field_type]
     func_obj.__annotations__["limit"] = int | None
     func_obj.__annotations__["offset"] = int
+    func_obj.__annotations__["fetchAll"] = bool | None
     func_obj.__annotations__["order"] = order_enum
     func_obj.__annotations__["direction"] = Direction
     page_by_field_in.__annotations__["return"] = list[dict]
@@ -528,6 +558,10 @@ def _create_page_by_keys_in_query(
             inspect.Parameter(
                 "offset", inspect.Parameter.POSITIONAL_OR_KEYWORD,
                 default=0, annotation=int,
+            ),
+            inspect.Parameter(
+                "fetchAll", inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=None, annotation=bool | None,
             ),
         ],
         return_annotation=list[dict],
@@ -818,18 +852,25 @@ def _create_dto_by_keys_in_query(
         direction: Any = None,
         limit: int | None = None,
         offset: int = 0,
+        fetch_all: bool = False,
     ) -> list[dict]:
         if not values:
             return []
-        if limit == 0:
+        if limit == 0 and not fetch_all:
             return []
         from sqlalchemy import func
 
         # specs/021 F2: fail-fast validation, aligned with β's PageArgs — a
         # negative limit/offset used to silently produce an empty window.
+        # (2026-11 contract: PageArgs itself is only constructed on the paged
+        # branch below — the un-paged batch-root branch has no volume intent
+        # to declare — so the negative-value guards live here explicitly.)
         from nexusx.loader.pagination import PageArgs
 
-        page_args = PageArgs(limit=limit, offset=offset)
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be greater than or equal to 0")
+        if offset < 0:
+            raise ValueError("offset must be greater than or equal to 0")
         if direction is not None and direction not in ("asc", "desc"):
             raise ValueError(
                 f"Invalid direction {direction!r} for "
@@ -867,6 +908,14 @@ def _create_dto_by_keys_in_query(
             # a full, UNORDERED fetch. Falls back to full fetch only when
             # there's no order profile at all (un-paged batch roots).
             if order_terms is not None:
+                # 2026-11 contract: volume intent is mandatory on the paged
+                # branch — `limit` or `fetch_all`, no default page size;
+                # fetchAll overrides limit/offset (literal wins).
+                page_args = PageArgs(
+                    limit=None if fetch_all else limit,
+                    offset=offset,
+                    fetch_all=fetch_all,
+                )
                 effective_limit = page_args.effective_limit
                 rn_label = "_nx_rn"
                 inner_order = _build_order_expressions(base_entity, order_terms)
@@ -878,14 +927,19 @@ def _create_dto_by_keys_in_query(
                 rn_col = subq.c[rn_label]
                 fk_col_sub = subq.c[join_key]
                 # rn BETWEEN offset+1 AND offset+effective_limit (offset=0 →
-                # top-N).
-                start = offset + 1
-                end = offset + effective_limit
-                outer = (
-                    select(subq)
-                    .where(rn_col.between(start, end))
-                    .order_by(fk_col_sub, *_build_order_expressions(subq.c, order_terms))
-                )
+                # top-N). fetchAll: degenerate window [1, ∞) — no BETWEEN.
+                if fetch_all:
+                    outer = select(subq).order_by(
+                        fk_col_sub, *_build_order_expressions(subq.c, order_terms)
+                    )
+                else:
+                    start = offset + 1
+                    end = offset + effective_limit
+                    outer = (
+                        select(subq)
+                        .where(rn_col.between(start, end))
+                        .order_by(fk_col_sub, *_build_order_expressions(subq.c, order_terms))
+                    )
                 # session.execute (not .exec): SQLModel's .exec yields the
                 # first column's scalars for select(subq); .execute returns
                 # Rows with ._mapping. Suppress the "use exec" hint.
@@ -904,6 +958,21 @@ def _create_dto_by_keys_in_query(
             else:
                 stmt = select(base_entity).where(fk_col.in_(values))
                 entities = list((await session.exec(stmt)).all())
+        if fetch_all:
+            # Seatbelt: error (never truncate) past MAX_FETCH_ALL per key.
+            from collections import Counter
+
+            from nexusx.loader.pagination import MAX_FETCH_ALL
+
+            per_key = Counter(getattr(e, join_key, None) for e in entities)
+            over = [k for k, c in per_key.items() if c > MAX_FETCH_ALL]
+            if over:
+                raise ValueError(
+                    f"fetchAll exceeded max_fetch_all={MAX_FETCH_ALL} for "
+                    f"{len(over)} key(s) (e.g. {over[0]!r} with "
+                    f"{per_key[over[0]]} rows); use windowed pagination "
+                    "(limit/offset) instead"
+                )
         if not entities:
             return []
         # Build DTO instances from entity-sourced subset fields; Resolver-computed

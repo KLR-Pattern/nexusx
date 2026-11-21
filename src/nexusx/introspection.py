@@ -53,7 +53,6 @@ class IntrospectionGenerator:
         mutation_methods: dict[str, dict[str, tuple[type[SQLModel], Callable]]],
         query_description: str | None = None,
         mutation_description: str | None = None,
-        enable_pagination: bool = False,
         loader_registry: Any | None = None,
     ):
         """Initialize the introspection generator.
@@ -64,7 +63,6 @@ class IntrospectionGenerator:
             mutation_methods: Grouped mapping {entity_name: {method_name: (entity, method)}}.
             query_description: Optional custom description for Query type.
             mutation_description: Optional custom description for Mutation type.
-            enable_pagination: When True, list relationships produce Result types.
             loader_registry: ErManager for relationship introspection.
         """
         self.entities = entities
@@ -74,7 +72,6 @@ class IntrospectionGenerator:
         self._mutation_methods = mutation_methods
         self._query_description = query_description
         self._mutation_description = mutation_description
-        self._enable_pagination = enable_pagination
         self._loader_registry = loader_registry
         # Initialize converter before _collect_enum_types which uses it
         self._converter = TypeConverter(self._entity_names)
@@ -202,11 +199,10 @@ class IntrospectionGenerator:
             types_list.append(self._build_entity_type(entity))
 
         # 5. Pagination types (Pagination + Result types). Local relationships
-        # remain gated by enable_pagination; federated paginated relationships
-        # and member-side page_by_<key>_in roots are independently active.
+        # are active via their declared order_by (page_loader assembled); there
+        # is no global toggle (2026-11 contract).
         if self._loader_registry and (
-            self._enable_pagination
-            or self._has_any_paginated_relationship()
+            self._has_any_paginated_relationship()
             or self._has_any_pagination_root()
         ):
             types_list.extend(self._build_pagination_types())
@@ -795,12 +791,12 @@ class IntrospectionGenerator:
     def _has_any_paginated_relationship(self) -> bool:
         """True if any registered relationship exposes pagination in this schema."""
         return has_any_paginated_relationship(
-            self._loader_registry, self.entities, self._enable_pagination
+            self._loader_registry, self.entities
         )
 
     def _is_active_paginated_relationship(self, rel_info: Any) -> bool:
-        """Apply the local toggle without disabling explicit federation pagination."""
-        return is_active_paginated_relationship(rel_info, self._enable_pagination)
+        """True when the relationship renders as a pagination field."""
+        return is_active_paginated_relationship(rel_info)
 
     def _has_any_pagination_root(self) -> bool:
         """True if any entity has a federation pagination root."""
@@ -901,6 +897,15 @@ class IntrospectionGenerator:
                 "description": "Number of items to skip",
                 "type": {"kind": "SCALAR", "name": "Int", "ofType": None},
                 "defaultValue": "0",
+            },
+            {
+                "name": "fetchAll",
+                "description": (
+                    "Fetch the entire collection — overrides limit/offset "
+                    "(bounded by the server-side max_fetch_all cap)"
+                ),
+                "type": {"kind": "SCALAR", "name": "Boolean", "ofType": None},
+                "defaultValue": None,
             },
         ]
         capability = None

@@ -113,7 +113,6 @@ async def federation():
         base=NLReviewsBase, session_factory=_rev_sf,
         auto_query_config=AutoQueryConfig(),
         service_name="reviews",
-        enable_pagination=True,  # ← 内层本地分页开关
     )
     reviews_app = build_federable_app(reviews_handler)
     catalog_handler = GraphQLHandler(

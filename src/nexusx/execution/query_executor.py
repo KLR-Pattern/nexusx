@@ -12,7 +12,7 @@ from sqlmodel import SQLModel
 
 from nexusx.execution.argument_builder import ArgumentBuilder
 from nexusx.loader.pagination import KeyedPaginatedPackage, PaginatedPackage
-from nexusx.loader.registry import RelationshipKind
+from nexusx.loader.registry import RemoteCoalescedRelationship
 from nexusx.query_parser import (
     FieldSelection,
     ParsedOperation,
@@ -61,11 +61,9 @@ class QueryExecutor:
     def __init__(
         self,
         loader_registry: ErManager,
-        enable_pagination: bool = False,
         introspection_generator: Any | None = None,
     ):
         self._registry = loader_registry
-        self._enable_pagination = enable_pagination
         self._introspection_generator = introspection_generator
         self._argument_builder = ArgumentBuilder()
         # (id(entity), field_name) -> resolved value
@@ -595,9 +593,7 @@ class QueryExecutor:
             if sub is None or not sub.sub_fields:
                 continue
 
-            if is_active_paginated_relationship(
-                rel_info, self._enable_pagination
-            ):
+            if is_active_paginated_relationship(rel_info):
                 # Paginated relationships render as ``{Target}Result`` — the
                 # selection is a package ``{ items {...} pagination {...} }``.
                 ok = (
@@ -726,15 +722,14 @@ class QueryExecutor:
         """
         resolver = self._get_entity_resolver()
         # specs/019: inject a paged_provider closure (encapsulates gql args →
-        # Paged merge) so the Resolver stays gql-agnostic. None when pagination
-        # is off (plain relationship loads need no provider).
-        paged_provider = self._make_paged_provider() if self._enable_pagination else None
+        # Paged merge) so the Resolver stays gql-agnostic. Local pagination is
+        # declared (order_by) — there is no global toggle (2026-11 contract).
+        paged_provider = self._make_paged_provider()
         await resolver._bfs_dispatch_entity_fields(
             parents,
             entity,
             field_sel,
             store=self._store,
-            enable_pagination=self._enable_pagination,
             paged_provider=paged_provider,
         )
 
@@ -814,7 +809,7 @@ class QueryExecutor:
             rel_info = self._registry.get_relationship(type(value), field_name)
             if (
                 rel_info is not None
-                and rel_info.kind != RelationshipKind.REMOTE_COALESCED
+                and not isinstance(rel_info, RemoteCoalescedRelationship)
                 and not rel_info.is_list
                 and getattr(value, rel_info.fk_field, _CACHE_MISS) is None
             ):
@@ -984,10 +979,10 @@ def _rel_default_paged(rel_info: Any) -> Any:
 
     β (entity-first gql) has no field-level Paged default (unlike γ's
     ``__paged_fields__``), so only ``order`` is derivable — from
-    ``page_capability.default_order``. ``limit`` / ``offset`` / ``direction``
-    have no rel-level default (None / 0 / None); the page_loader's
-    ``default_page_size`` applies separately as a ``PageArgs`` boundary in the
-    Resolver.
+    ``page_capability.default_order``. ``limit`` / ``direction`` have no
+    rel-level default (the 2026-11 pagination contract made volume intent
+    mandatory: callers must declare ``limit`` or ``fetchAll``; there is no
+    default page size); ``offset`` defaults to the identity 0.
     """
     from nexusx.loader.pagination import Paged
 

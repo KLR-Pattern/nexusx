@@ -27,7 +27,6 @@ Example (GraphQL mode):
     handler = GraphQLHandler(
         base=User,
         session_factory=async_session,
-        enable_pagination=True,
     )
     ```
 
