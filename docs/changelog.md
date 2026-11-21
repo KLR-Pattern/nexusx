@@ -10,9 +10,9 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
 
-## [Unreleased] — 分页契约与关系类型变体（PR #147）
+## [Unreleased] — Pagination contract + relationship type variants (PR #147)
 
-> 语义版本建议：**major**——公开行为（schema 形状/默认数据量）与内部 API（RelationshipInfo/构造参数）双重 breaking。
+> Semver suggestion: **major** — breaking on both public behavior (schema shape / default data volume) and internal API (RelationshipInfo / constructor parameters).
 
 - breaking change:
   - **Removed `enable_pagination` (the global pagination toggle)**: The flag was a version ramp, not a policy — it only ever gated LOCAL relationships (REMOTE_PAGED / REMOTE_COALESCED ignored it), and at construction time it gated nothing but a warning (page_loader assembly already follows `order_by` declaration). Declaring `order_by` on a list relationship IS the opt-in now: the field automatically renders `{items, pagination}` + `(limit, offset, fetchAll)` args. Schemas that previously rendered ordered lists as flat `[T]!` (flag off) now render Result types — callers must declare volume intent. The parameter is removed from `GraphQLHandler` / `ErManager` / `QueryExecutor` / `SDLGenerator` / `IntrospectionGenerator` / MCP (`Application`, `create_single_app_mcp_server`, `SingleAppManager`) and every internal threading site (~64 references).
