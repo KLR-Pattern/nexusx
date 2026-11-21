@@ -103,7 +103,10 @@ class TestSDLMixedPagination:
         )
 
         parent_block = sdl.split("type MixedParent {", 1)[1].split("}", 1)[0]
-        assert "sorted_kids(limit: Int, offset: Int = 0): SortedKidResult!" in parent_block
+        assert (
+            "sorted_kids(limit: Int, offset: Int = 0, fetchAll: Boolean): "
+            "SortedKidResult!" in parent_block
+        )
 
     def test_non_paginated_list_renders_as_plain_list(self):
         """raw_kids (no order_by) → [RawKid!]! with no pagination args."""

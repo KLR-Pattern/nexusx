@@ -456,14 +456,20 @@ def build_federable_app(
         keys = payload.get("keys") or []
         # specs/016 Phase 2: order/direction/limit drive per-parent top-N in
         # the member batch root (ROW_NUMBER). Omitted (None) ⇒ full fetch
-        # (back-compat for un-paged DTOs).
+        # (back-compat for un-paged DTOs). 2026-11 contract: fetchAll rides
+        # the wire additively and overrides limit/offset at the member root.
         order = payload.get("order")
         direction = payload.get("direction")
         limit = payload.get("limit")
         offset = payload.get("offset", 0)
+        raw_fetch_all = payload.get("fetch_all")
+        if raw_fetch_all is None:
+            raw_fetch_all = payload.get("fetchAll")
+        fetch_all = bool(raw_fetch_all) if raw_fetch_all is not None else False
         try:
             rows = await batch_fn(
-                keys, order=order, direction=direction, limit=limit, offset=offset,
+                keys, order=order, direction=direction, limit=limit,
+                offset=offset, fetch_all=fetch_all,
             )
         except Exception as exc:  # noqa: BLE001 — member Resolver failure surfaces
             # spec Edge Case: member Resolver/computation failing during the

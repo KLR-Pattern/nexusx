@@ -726,7 +726,7 @@ class TestQueryExecutorPagination:
         method = _get_bound_method(SprintQuery, "get_all")
         query_methods = {"FixtureSprint": {"get_all": (FixtureSprint, method)}}
         gql = (
-            "{ FixtureSprint { get_all { id name tasks { items { id title } "
+            "{ FixtureSprint { get_all { id name tasks(limit: 5) { items { id title } "
             "pagination { total_count has_more } } } } }"
         )
         document, parsed = _parse(gql)

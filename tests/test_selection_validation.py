@@ -187,7 +187,7 @@ async def test_federation_batch_root_is_exempt():
 async def test_pagination_root_package_selection_is_valid():
     """The full three-key package {fk, items, pagination} validates and runs."""
     result = await handler.execute(
-        "{ SelectionValTeam { page_by_id_in(id_list: [1], order: PRIMARY) { "
+        "{ SelectionValTeam { page_by_id_in(id_list: [1], order: PRIMARY, limit: 10) { "
         "id items { name } pagination { has_more } } } }"
     )
 
@@ -206,7 +206,7 @@ async def test_pagination_root_omitted_order_uses_default():
     mounter, which always sends ``order`` explicitly and masked this gap.
     """
     result = await handler.execute(
-        "{ SelectionValTeam { page_by_id_in(id_list: [1]) { "
+        "{ SelectionValTeam { page_by_id_in(id_list: [1], limit: 10) { "
         "id items { name } pagination { has_more } } } }"
     )
 
@@ -221,7 +221,7 @@ async def test_pagination_root_unknown_key_names_package_type():
     wrapper type — not the entity type (which would point the agent at the
     wrong place)."""
     result = await handler.execute(
-        "{ SelectionValTeam { page_by_id_in(id_list: [1]) { itemz { id } } } }"
+        "{ SelectionValTeam { page_by_id_in(id_list: [1], limit: 10) { itemz { id } } } }"
     )
 
     assert (

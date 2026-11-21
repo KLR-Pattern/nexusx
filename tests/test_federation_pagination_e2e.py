@@ -311,15 +311,25 @@ async def test_parent_with_no_children(federation):
 
 @pytest.mark.asyncio
 async def test_default_page_size_when_no_limit(federation):
-    """Edge: client omits limit → default_page_size (20); product1's 7 all returned."""
+    """Edge(2026-11 契约重写): client omits limit → 意图缺失被拒;
+    fetchAll: true 覆盖一切量参数拿到全量 7 条。"""
     catalog_handler, _ = federation
     res = await catalog_handler.execute(
         "{ EPProduct { by_id(id: 1) { reviews { "
         "items { title } pagination { has_more total_count } } } } }"
     )
-    assert not res.get("errors"), res
-    pkg = res["data"]["EPProduct"]["by_id"]["reviews"]
-    assert len(pkg["items"]) == 7  # 7 total < default 20 → whole relation returned
+    errs = res.get("errors") or []
+    assert errs and any(
+        "pagination intent is required" in e.get("message", "") for e in errs
+    ), res
+
+    res2 = await catalog_handler.execute(
+        "{ EPProduct { by_id(id: 1) { reviews(fetchAll: true, limit: 2) { "
+        "items { title } pagination { has_more total_count } } } } }"
+    )
+    assert not res2.get("errors"), res2
+    pkg = res2["data"]["EPProduct"]["by_id"]["reviews"]
+    assert len(pkg["items"]) == 7  # fetchAll 覆盖 limit:2 → 全量
     assert pkg["pagination"]["has_more"] is False
     assert pkg["pagination"]["total_count"] == 7
 
@@ -431,17 +441,20 @@ async def test_beta_remote_paged_under_enable_pagination(federation_paginated):
 
 @pytest.mark.asyncio
 async def test_beta_variable_paged_args_never_leak_undefined(federation):
-    """GAP B: β 远程分页的 selection.arguments 变量参数必须清洗 —
+    """GAP B(2026-11 契约重写): β 远程分页的 selection.arguments 变量参数
+    必须清洗 —
     未提供变量的 $lim → Undefined 不得上 wire(修复前渲染 limit: Undefined
-    非法字面量 → member 报错); 提供变量时真值生效。"""
+    非法字面量 → member 报错)。新契约下「未提供」= 意图缺失 → 挂载侧
+    干净报错(不再是 member 默认页); 提供变量时真值生效。"""
     catalog_handler, _ = federation
     q = ("query Q($lim: Int) { EPProduct { by_id(id: 1) "
          "{ reviews(limit: $lim) { items { title } pagination { has_more } } } } }")
-    # 未提供变量 → 干净降级为 member 默认页(7 条全量)
+    # 未提供变量 → Undefined 被清洗为省略 → 意图缺失，挂载侧报错且文案给指引
     r = await catalog_handler.execute(q, variables={})
-    assert not r.get("errors"), r
-    pkg = r["data"]["EPProduct"]["by_id"]["reviews"]
-    assert len(pkg["items"]) == 7
+    errs = r.get("errors") or []
+    assert errs and any(
+        "pagination intent is required" in e.get("message", "") for e in errs
+    ), r
     # 提供变量 → limit 生效
     r2 = await catalog_handler.execute(q, variables={"lim": 3})
     assert not r2.get("errors"), r2

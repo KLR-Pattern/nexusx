@@ -142,7 +142,7 @@ async def test_sdl_renders_paginated_remote_as_result(catalog):
     # The paginated remote to-many renders as a Result field exposing
     # order (enum, default = member default_order) + direction. specs/014.
     assert (
-        "reviews(limit: Int, offset: Int = 0, "
+        "reviews(limit: Int, offset: Int = 0, fetchAll: Boolean, "
         "order: RReviewOrder = HIGHEST_RATING, direction: Direction): RReviewResult!"
     ) in sdl
     # Mounter-side order enum (values = member profile names) + shared Direction.

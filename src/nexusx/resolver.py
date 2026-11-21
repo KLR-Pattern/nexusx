@@ -117,17 +117,28 @@ def _make_page_load_commands(
 
     Shared between entity-first ``_load_entity_field_paginated`` and UseCase
     ``_batch_auto_load`` — the PageArgs + PageLoadCommand construction was
-    near-identical (duplicated verbatim). ``rel_info`` provides page-size
-    bounds; ``paged`` carries limit/offset/order/direction (None → defaults).
+    near-identical (duplicated verbatim). ``rel_info`` provides the
+    page-size bound; ``paged`` carries limit/offset/order/direction/fetch_all.
+
+    2026-11 contract: volume intent is mandatory — a paginated field reached
+    here without ``limit`` and without ``fetch_all`` fails fast with field
+    context (there is no default page size to fall back to).
     """
+
+    if paged is None or (paged.limit is None and not paged.fetch_all):
+        raise ValueError(
+            f"Field {rel_info.name!r}: pagination intent is required — provide "
+            "`limit` (window size) or `fetchAll: true`; there is no default "
+            "page size"
+        )
     page_args = PageArgs(
-        limit=paged.limit if paged is not None else None,
-        offset=paged.offset if paged is not None else 0,
-        default_page_size=rel_info.default_page_size,
+        limit=paged.limit,
+        offset=paged.offset,
         max_page_size=rel_info.max_page_size,
+        fetch_all=paged.fetch_all,
     )
-    order = paged.order if paged is not None else None
-    direction = paged.direction if paged is not None else None
+    order = paged.order
+    direction = paged.direction
     return [
         PageLoadCommand(fk_value=k, page_args=page_args, order=order, direction=direction)
         for k in keys
@@ -662,9 +673,11 @@ class Resolver:
     def _merge_paged(default: Any, caller: Any) -> Any:
         """Merge a field's Paged default with caller-context override.
 
-        Caller field non-None wins; else the default's value. Both None → None
-        (→ full fetch, back-compat). The caller override keeps omitted offset
-        distinct from an explicit ``offset=0``.
+        Caller field non-None wins; else the default's value. ``fetch_all`` is
+        OR-merged — once true it overrides limit/offset (literal wins, the
+        2026-11 pagination contract: a declared fetch-all is unambiguous
+        intent). The caller override keeps omitted offset distinct from an
+        explicit ``offset=0``.
         """
         from nexusx.loader.pagination import Paged
 
@@ -677,6 +690,7 @@ class Resolver:
             offset=c.offset if c.offset is not None else d.offset,
             order=c.order if c.order is not None else d.order,
             direction=c.direction if c.direction is not None else d.direction,
+            fetch_all=c.fetch_all or d.fetch_all,
         )
 
     # ──────────────────────────────────────────────────────

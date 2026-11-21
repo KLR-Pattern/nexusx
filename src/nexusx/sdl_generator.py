@@ -587,17 +587,19 @@ class SDLGenerator:
     ) -> str:
         """Render the ``(...)`` argument list for a paginated relationship field.
 
-        Federation REMOTE_PAGED relationships (``page_capability`` set) expose
-        ``order`` (enum, default = member ``default_order``) and ``direction``;
-        local / coalesced paginated relationships expose only ``limit``/``offset``.
-        specs/014.
+        2026-11 contract: volume intent is mandatory — callers must pass
+        ``limit`` OR ``fetchAll`` (no default page size); ``fetchAll``
+        overrides ``limit``/``offset``. Federation REMOTE_PAGED relationships
+        (``page_capability`` set) additionally expose ``order`` (enum, default
+        = member ``default_order``) and ``direction``; local / coalesced
+        paginated relationships keep just the volume trio. specs/014.
         """
         capability = getattr(rel_info, "page_capability", None)
         if capability is None:
-            return "(limit: Int, offset: Int = 0)"
+            return "(limit: Int, offset: Int = 0, fetchAll: Boolean)"
         enum_name = self._fed_order_field_name.get((entity.__name__, rel_name))
         return (
-            f"(limit: Int, offset: Int = 0, "
+            f"(limit: Int, offset: Int = 0, fetchAll: Boolean, "
             f"order: {enum_name} = {capability.default_order}, direction: Direction)"
         )
 

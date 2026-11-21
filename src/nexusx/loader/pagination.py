@@ -18,14 +18,31 @@ class Pagination(BaseModel):
     total_count: int | None = None
 
 
+# Deployment-level seatbelt for fetchAll (2026-11 pagination contract,
+# relationship-variants plan §11): a fetchAll that would exceed this cap
+# raises instead of silently truncating. Override per-call via
+# ``PageArgs(max_fetch_all=...)`` (tests / embedding apps).
+MAX_FETCH_ALL = 10_000
+
+# Chunk size the mounter-side fetchAll loop uses when draining a federation
+# member's paginated root (member keeps serving windows; wire unchanged).
+REMOTE_FETCH_ALL_CHUNK = 100
+
+
 @dataclass(frozen=True)
 class PageArgs:
-    """Pagination parameters extracted from GraphQL field arguments."""
+    """Pagination parameters for a paginated DataLoader batch.
+
+    2026-11 contract: **volume intent is mandatory** — provide ``limit`` or
+    ``fetch_all``, at least one; there is no default page size. ``fetch_all``
+    overrides ``limit``/``offset`` (literal wins: fetch everything).
+    """
 
     limit: int | None = None
     offset: int = 0
-    default_page_size: int = 20
     max_page_size: int = 100
+    fetch_all: bool = False
+    max_fetch_all: int = MAX_FETCH_ALL
 
     def __post_init__(self) -> None:
         """Validate pagination arguments early."""
@@ -33,17 +50,22 @@ class PageArgs:
             raise ValueError("limit must be greater than or equal to 0")
         if self.offset < 0:
             raise ValueError("offset must be greater than or equal to 0")
-        if self.default_page_size <= 0:
-            raise ValueError("default_page_size must be greater than 0")
         if self.max_page_size <= 0:
             raise ValueError("max_page_size must be greater than 0")
+        if self.max_fetch_all <= 0:
+            raise ValueError("max_fetch_all must be greater than 0")
+        if not self.fetch_all and self.limit is None:
+            raise ValueError(
+                "pagination intent is required: provide `limit` (window "
+                "size) or `fetchAll: true` — there is no default page size"
+            )
 
     @property
-    def effective_limit(self) -> int:
-        """Resolve the effective page size."""
-        if self.limit is not None:
-            return min(self.limit, self.max_page_size)
-        return self.default_page_size
+    def effective_limit(self) -> int | None:
+        """Resolve the effective page size. ``None`` = unbounded (fetch_all)."""
+        if self.fetch_all:
+            return None
+        return min(self.limit, self.max_page_size)
 
 
 @dataclass(frozen=True)
@@ -82,9 +104,10 @@ class Paged:
     offset: int = 0
     order: str | None = None
     direction: str | None = None
+    fetch_all: bool = False
 
     def params_key(self) -> tuple:
-        return (self.limit, self.offset, self.order, self.direction)
+        return (self.limit, self.offset, self.order, self.direction, self.fetch_all)
 
     def clamp(self, max_page_size: int | None) -> Paged:
         """Cap ``limit`` at ``max_page_size`` (mindmap #14 ⑤, defect 5).
@@ -92,10 +115,11 @@ class Paged:
         THE single clamping implementation — β/γ senders call it before the
         wire so the bound holds on every path (it used to exist only on the
         local PageArgs path, letting federation limits through unclamped).
-        ``limit=None`` stays ``None`` (remote full-fetch semantics unchanged);
-        ``max_page_size=None`` means no declared bound.
+        ``limit=None`` stays ``None``; ``max_page_size=None`` means no declared
+        bound; ``fetch_all`` is never clamped here — its seatbelt is
+        ``max_fetch_all``, enforced where the data lands (loader / loop).
         """
-        if max_page_size is None or self.limit is None:
+        if self.fetch_all or max_page_size is None or self.limit is None:
             return self
         if self.limit <= max_page_size:
             return self
@@ -104,6 +128,7 @@ class Paged:
             offset=self.offset,
             order=self.order,
             direction=self.direction,
+            fetch_all=self.fetch_all,
         )
 
 
@@ -115,6 +140,7 @@ class _PagedOverride:
     offset: int | None = None
     order: str | None = None
     direction: str | None = None
+    fetch_all: bool = False
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> _PagedOverride | None:
@@ -139,14 +165,24 @@ class _PagedOverride:
         direction = raw.get("direction")
         limit = raw.get("limit")
         offset = raw.get("offset") if "offset" in raw else None
+        fetch_all = raw.get("fetchAll")
+        if fetch_all is None:
+            fetch_all = raw.get("fetch_all")
+        fetch_all = bool(fetch_all) if fetch_all is not None else False
         order = order.value if hasattr(order, "value") else order
         direction = direction.value if hasattr(direction, "value") else direction
         limit, offset, order, direction = (
             _clean(limit), _clean(offset), _clean(order), _clean(direction),
         )
-        if limit is None and offset is None and order is None and direction is None:
+        if (
+            limit is None and offset is None and order is None and direction is None
+            and not fetch_all
+        ):
             return None
-        return cls(limit=limit, offset=offset, order=order, direction=direction)
+        return cls(
+            limit=limit, offset=offset, order=order, direction=direction,
+            fetch_all=fetch_all,
+        )
 
 
 def _build_pagination_model(pagination_selection: set[str]) -> type[BaseModel]:

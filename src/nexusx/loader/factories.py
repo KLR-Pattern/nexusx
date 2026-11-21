@@ -361,6 +361,26 @@ def _build_page_result(
     return PaginatedPackage(items=page_rows, pagination=pagination)
 
 
+def _enforce_fetch_all_cap(
+    total_counts: dict[Any, int], page_args: PageArgs
+) -> None:
+    """fetchAll seatbelt: error (never truncate) past ``max_fetch_all``.
+
+    Totals come from the window query's ``COUNT(*) OVER (PARTITION BY fk)``
+    (plus the missing-fk count fallback), so the check runs before results
+    are returned. Errors beat truncation: a silent cap would let a caller
+    believe it saw "everything".
+    """
+    cap = page_args.max_fetch_all
+    over = [fk for fk, tc in total_counts.items() if tc > cap]
+    if over:
+        raise ValueError(
+            f"fetchAll exceeded max_fetch_all={cap} for {len(over)} key(s) "
+            f"(e.g. {over[0]!r} with total_count={total_counts[over[0]]}); "
+            "narrow the query or use windowed pagination (limit/offset) instead"
+        )
+
+
 def create_page_one_to_many_loader(
     *,
     source_kls: type,
@@ -404,9 +424,17 @@ def create_page_one_to_many_loader(
             page_args: PageArgs = first_cmd.page_args
             fk_values = [cmd.fk_value for cmd in keys]
 
-            effective_limit = page_args.effective_limit
-            start = page_args.offset + 1
-            end = start + effective_limit
+            # 2026-11 contract: fetchAll = degenerate window [1, ∞) — limit/
+            # offset are overridden (literal wins); has_more is structurally
+            # False; the max_fetch_all seatbelt is checked against the
+            # COUNT(*) OVER totals below.
+            fetch_all = page_args.fetch_all
+            effective_limit: int | None = None
+            start = end = 0
+            if not fetch_all:
+                effective_limit = page_args.effective_limit
+                start = page_args.offset + 1
+                end = start + effective_limit
 
             # specs/015: profile + direction 排序(page_orders_resolved 来自
             # __pagination_orders__); order 缺省用 default_order; None → 固定
@@ -470,9 +498,9 @@ def create_page_one_to_many_loader(
                     if order_terms is not None
                     else [fk_col_sub, subq.c[sort_field], subq.c[pk_col_name]]
                 )
-                outer = select(subq).where(rn_col.between(start, end)).order_by(
-                    *outer_order
-                )
+                outer = select(subq).order_by(*outer_order)
+                if not fetch_all:
+                    outer = outer.where(rn_col.between(start, end))
                 rows = (await session.exec(outer)).all()
 
                 grouped = defaultdict(list)
@@ -497,6 +525,9 @@ def create_page_one_to_many_loader(
                     for row in (await session.exec(count_q)).all():
                         total_counts[row[0]] = row[1]
 
+                if fetch_all:
+                    _enforce_fetch_all_cap(total_counts, page_args)
+
                 return [
                     _build_page_result(
                         rows=[r for r, _ in grouped.get(cmd.fk_value, [])],
@@ -505,8 +536,12 @@ def create_page_one_to_many_loader(
                         # The peek-by-1 SQL fetches effective_limit+1 rows (rn
                         # BETWEEN start AND end is inclusive). If we got more
                         # than effective_limit back, there's a next page.
-                        has_next_page=len(grouped.get(cmd.fk_value, []))
-                        > effective_limit,
+                        # fetchAll: has_more is structurally False.
+                        has_next_page=(
+                            False
+                            if fetch_all
+                            else len(grouped.get(cmd.fk_value, [])) > effective_limit
+                        ),
                         entity_kls=target_kls,
                     )
                     for cmd in keys
@@ -567,9 +602,16 @@ def create_page_many_to_many_loader(
             page_args: PageArgs = first_cmd.page_args
             fk_values = [cmd.fk_value for cmd in keys]
 
-            effective_limit = page_args.effective_limit
-            start = page_args.offset + 1
-            end = start + effective_limit
+            # 2026-11 contract: fetchAll = degenerate window [1, ∞) — same
+            # semantics as the O2M paged loader (literal wins; has_more
+            # structurally False; seatbelt on the COUNT(*) OVER totals).
+            fetch_all = page_args.fetch_all
+            effective_limit: int | None = None
+            start = end = 0
+            if not fetch_all:
+                effective_limit = page_args.effective_limit
+                start = page_args.offset + 1
+                end = start + effective_limit
 
             order_terms = None
             if page_orders_resolved is not None:
@@ -633,9 +675,9 @@ def create_page_many_to_many_loader(
                     if order_terms is not None
                     else [sec_local_sub, subq.c[sort_field], subq.c[pk_col_name]]
                 )
-                outer = select(subq).where(rn_col.between(start, end)).order_by(
-                    *outer_order
-                )
+                outer = select(subq).order_by(*outer_order)
+                if not fetch_all:
+                    outer = outer.where(rn_col.between(start, end))
                 # Use session.execute() for subquery/aggregate queries.
                 rows = (await session.execute(outer)).all()
 
@@ -669,6 +711,9 @@ def create_page_many_to_many_loader(
                     for row in (await session.execute(count_q)).all():
                         total_counts[row[0]] = row[1]
 
+                if fetch_all:
+                    _enforce_fetch_all_cap(total_counts, page_args)
+
                 return [
                     _build_page_result(
                         rows=[r for r, _ in grouped.get(cmd.fk_value, [])],
@@ -677,8 +722,12 @@ def create_page_many_to_many_loader(
                         # The peek-by-1 SQL fetches effective_limit+1 rows (rn
                         # BETWEEN start AND end is inclusive). If we got more
                         # than effective_limit back, there's a next page.
-                        has_next_page=len(grouped.get(cmd.fk_value, []))
-                        > effective_limit,
+                        # fetchAll: has_more is structurally False.
+                        has_next_page=(
+                            False
+                            if fetch_all
+                            else len(grouped.get(cmd.fk_value, [])) > effective_limit
+                        ),
                         entity_kls=target_kls,
                     )
                     for cmd in keys

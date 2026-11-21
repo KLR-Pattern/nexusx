@@ -984,10 +984,10 @@ def _rel_default_paged(rel_info: Any) -> Any:
 
     β (entity-first gql) has no field-level Paged default (unlike γ's
     ``__paged_fields__``), so only ``order`` is derivable — from
-    ``page_capability.default_order``. ``limit`` / ``offset`` / ``direction``
-    have no rel-level default (None / 0 / None); the page_loader's
-    ``default_page_size`` applies separately as a ``PageArgs`` boundary in the
-    Resolver.
+    ``page_capability.default_order``. ``limit`` / ``direction`` have no
+    rel-level default (the 2026-11 pagination contract made volume intent
+    mandatory: callers must declare ``limit`` or ``fetchAll``; there is no
+    default page size); ``offset`` defaults to the identity 0.
     """
     from nexusx.loader.pagination import Paged
 

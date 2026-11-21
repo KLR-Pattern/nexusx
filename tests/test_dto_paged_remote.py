@@ -202,8 +202,11 @@ async def test_remote_paged_member_only_resolves_top_n(federation):
 
 @pytest.mark.asyncio
 async def test_order_without_limit_slices_ordered(federation):
-    """F1: Paged(order=...) 无 limit → 仍走 top-N 切片(默认页大小), 不再静默
-    无序 full fetch。seed 3 条 → 默认页 20 → 全量但有序(HIGHEST_RATING desc)。"""
+    """F1(2026-11 契约重写): Paged(order=...) 无 limit/fetchAll → 拒绝。
+
+    旧世界: 无 limit 静默走默认页 20。新契约: 量意图强制申报——
+    declared default 只有 order 不构成量意图, resolve 即报错且文案给指引;
+    声明 fetchAll 后全量且有序(TOP desc)。"""
     catalog_h = federation["catalog"]
     async with catalog_h.session_factory() as s:
         products = (await s.exec(select(Product))).all()
@@ -214,9 +217,20 @@ async def test_order_without_limit_slices_ordered(federation):
     ProductDTO.__paged_fields__ = {"reviews": Paged(order="TOP")}
     try:
         ResolverCls = catalog_h._er_manager.create_resolver()
+        from nexusx.federation.remote_loader import RemoteQueryError
+
+        with pytest.raises(RemoteQueryError, match="pagination intent is required"):
+            await ResolverCls().resolve(dtos)
+    finally:
+        ProductDTO.__paged_fields__ = {}
+
+    # 声明 fetch_all(量意图)后: 全量且有序
+    ProductDTO.__paged_fields__ = {"reviews": Paged(order="TOP", fetch_all=True)}
+    try:
+        ResolverCls = catalog_h._er_manager.create_resolver()
         resolved = await ResolverCls().resolve(dtos)
         ratings = [r.rating for r in resolved[0].reviews]
-        assert ratings == [5, 3, 1]  # TOP desc 有序(修复前无序 full fetch)
+        assert ratings == [5, 3, 1]  # TOP desc 有序全量
     finally:
         ProductDTO.__paged_fields__ = {}
 

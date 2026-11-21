@@ -77,7 +77,6 @@ class RelationshipInfo:
     # render the schema's `order` enum and fall back when the caller omits `order`.
     # None for local / non-paginated / coalesced relationships. specs/014.
     page_capability: Any = None
-    default_page_size: int = 20
     max_page_size: int = 100
     description: str | None = None  # documentation string surfaced in voyager/ER diagram
     # Owning service prefix for a remote (federated) relationship; None for local.

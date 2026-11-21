@@ -902,6 +902,15 @@ class IntrospectionGenerator:
                 "type": {"kind": "SCALAR", "name": "Int", "ofType": None},
                 "defaultValue": "0",
             },
+            {
+                "name": "fetchAll",
+                "description": (
+                    "Fetch the entire collection — overrides limit/offset "
+                    "(bounded by the server-side max_fetch_all cap)"
+                ),
+                "type": {"kind": "SCALAR", "name": "Boolean", "ofType": None},
+                "defaultValue": None,
+            },
         ]
         capability = None
         if entity is not None and self._loader_registry:
