@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased] — PR #147 (pagination contract + relationship variants; suggested major)
+
+### Breaking
+- `enable_pagination` removed everywhere — declaring `order_by` IS the pagination opt-in; ordered lists now render `{items, pagination}` + volume args.
+- Hidden default page size removed — paginated field queries must declare `limit` or `fetchAll` (no silent 20-item truncation).
+
+### Added
+- `fetchAll: Boolean` on paginated fields (local + federation + member roots): overrides `limit`/`offset`, bounded by `max_fetch_all` (default 10000; errors, never truncates).
+- Relationship variants: `RelationshipInfo` base + `LocalRelationship` / `RemotePlainRelationship` / `RemotePagedRelationship` / `RemoteCoalescedRelationship`; `RelationshipKind` deleted; polymorphic `can_paginate` / `is_paginated`; illegal states raise `TypeError` at construction.
+
+
 ## 6.9.1
 
 ### Fixed

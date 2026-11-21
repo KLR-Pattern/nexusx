@@ -34,7 +34,7 @@ handler = GraphQLHandler(
   User {
     get_all {
       name
-      posts(limit: 3, offset: 0) {
+      posts(limit: 3) {          # 量意图必填——没有默认页大小
         items { title }
         pagination { has_more total_count }
       }
@@ -42,6 +42,14 @@ handler = GraphQLHandler(
   }
 }
 ```
+
+显式获取全部：
+
+```graphql
+posts(fetchAll: true) { items { title } pagination { total_count } }   # 覆盖 limit/offset
+```
+
+两者都不带会触发带指引的校验错误——列表查询绝不会静默截断到某个隐藏默认值。
 
 ### 响应结构
 
