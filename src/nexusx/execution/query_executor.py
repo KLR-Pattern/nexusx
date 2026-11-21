@@ -12,7 +12,7 @@ from sqlmodel import SQLModel
 
 from nexusx.execution.argument_builder import ArgumentBuilder
 from nexusx.loader.pagination import KeyedPaginatedPackage, PaginatedPackage
-from nexusx.loader.registry import RelationshipKind
+from nexusx.loader.registry import RemoteCoalescedRelationship
 from nexusx.query_parser import (
     FieldSelection,
     ParsedOperation,
@@ -809,7 +809,7 @@ class QueryExecutor:
             rel_info = self._registry.get_relationship(type(value), field_name)
             if (
                 rel_info is not None
-                and rel_info.kind != RelationshipKind.REMOTE_COALESCED
+                and not isinstance(rel_info, RemoteCoalescedRelationship)
                 and not rel_info.is_list
                 and getattr(value, rel_info.fk_field, _CACHE_MISS) is None
             ):

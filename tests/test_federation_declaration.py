@@ -9,7 +9,7 @@ from nexusx.federation import (
     RemoteService,
     parse_qualified_name,
 )
-from nexusx.loader.registry import ErManager, RelationshipInfo
+from nexusx.loader.registry import ErManager, LocalRelationship
 from nexusx.relationship import get_custom_relationships
 
 # Remote service root — referenced by the declarations below.
@@ -114,12 +114,13 @@ def test_get_custom_relationships_returns_remote_entries(tmp_module):
 
 
 def test_target_service_default_none_on_local_relationship_info():
-    """Existing local RelationshipInfo construction is unaffected (target_service=None)."""
-    ri = RelationshipInfo(
+    """2026-11 variants: local relationships have NO target_service field at all —
+    "local with a service prefix" is unrepresentable (that's a remote variant)."""
+    ri = LocalRelationship(
         name="tags", direction="ONETOMANY", fk_field="id",
         target_entity=int, is_list=True, loader=type,
     )
-    assert ri.target_service is None
+    assert not hasattr(ri, "target_service")
 
 
 def test_ermanager_collects_pending_remote_rels(tmp_module):

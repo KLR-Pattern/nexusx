@@ -169,7 +169,10 @@ class ComposedErManager:
                     # path fetches instances via page_loader (a separate
                     # class — registering only loader would KeyError on
                     # paged queries).
-                    for _lk in (rel_info.loader, rel_info.page_loader):
+                    for _lk in (
+                        getattr(rel_info, "loader", None),
+                        getattr(rel_info, "page_loader", None),
+                    ):
                         if _lk is not None:
                             self._loader_owner[_lk] = m
 
@@ -353,7 +356,10 @@ class ComposedErManager:
             for m in self._members:
                 for _entity, rels in m.get_all_relationships().items():
                     for rel_info in rels.values():
-                        if loader_cls in (rel_info.loader, rel_info.page_loader):
+                        if loader_cls in (
+                            getattr(rel_info, "loader", None),
+                            getattr(rel_info, "page_loader", None),
+                        ):
                             owner = m
                             break
                     if owner is not None:

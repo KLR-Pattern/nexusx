@@ -16,7 +16,6 @@ from pydantic import BaseModel, create_model
 
 from nexusx.core_builder import FieldResolution, build_model
 from nexusx.loader.pagination import PaginatedPackage
-from nexusx.loader.registry import RelationshipKind
 from nexusx.query_parser import FieldSelection
 from nexusx.utils.type_utils import coerce_to_dict, get_field_type, is_list_annotation
 
@@ -61,10 +60,12 @@ class ERFieldResolver:
                 nested_shape=_list_shape(
                     bool(getattr(fed_rel, "is_list", False))
                 ),
-                is_paginated=(
-                    getattr(fed_rel, "page_loader", None) is not None
-                    or getattr(fed_rel, "kind", None) == RelationshipKind.REMOTE_PAGED
-                ),
+                # 2026-11 variants: polymorphic shape. Relationship variants
+                # carry is_paginated natively; non-relationship objects
+                # flowing here (wire fragments) report False — matching the
+                # previous getattr-default behavior. Full pipeline
+                # unification is the plan §七.1 follow-up.
+                is_paginated=bool(getattr(fed_rel, "is_paginated", False)),
             )
         # SQLAlchemy / SQLModel / annotations fallback. ``get_relation_entity``
         # also returns scalar field types (str/int, extracted from annotations),

@@ -19,32 +19,16 @@ from collections.abc import Iterable, Iterator
 from enum import Enum
 from typing import Any
 
-from nexusx.loader.registry import RelationshipKind
-
 
 def is_active_paginated_relationship(rel_info: Any) -> bool:
     """True when this relationship renders as an active pagination field.
 
-    True for: REMOTE_PAGED; a REMOTE_COALESCED relationship that is paginated
-    on the member side; a LOCAL relationship with a page_loader. There is no
-    local toggle — capability is declared (order_by), not switched
-    (2026-11 pagination contract: enable_pagination was removed).
+    Thin shell over the polymorphic ``is_paginated`` property (2026-11
+    variants): LOCAL requires assembly (page_loader), REMOTE_PAGED is always
+    active, REMOTE_COALESCED follows the member's declared shape,
+    REMOTE_PLAIN never paginates. The truth table lives in the types now.
     """
-    return (
-        rel_info is not None
-        and rel_info.is_list
-        and (
-            rel_info.kind == RelationshipKind.REMOTE_PAGED
-            or (
-                rel_info.kind == RelationshipKind.REMOTE_COALESCED
-                and getattr(rel_info, "pagination", False)
-            )
-            or (
-                rel_info.kind == RelationshipKind.LOCAL
-                and rel_info.page_loader is not None
-            )
-        )
-    )
+    return bool(rel_info is not None and rel_info.is_paginated)
 
 
 def has_any_paginated_relationship(

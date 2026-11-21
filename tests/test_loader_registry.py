@@ -5,7 +5,7 @@ from typing import Optional
 import pytest
 from sqlmodel import Field, Relationship, SQLModel
 
-from nexusx.loader.registry import ErManager
+from nexusx.loader.registry import ErManager, LocalRelationship
 from nexusx.relationship import Relationship as NxRelationship
 from tests.conftest import FixtureSprint, FixtureTask, FixtureUser, get_test_session_factory
 
@@ -383,7 +383,7 @@ class TestPaginationValidation:
         registry._loader_instances = {}
 
         # Create a fake list relationship without page_loader
-        rel_info = MagicMock(spec=RelationshipInfo)
+        rel_info = MagicMock(spec=LocalRelationship)
         rel_info.is_list = True
         rel_info.page_loader = None
         rel_info.direction = "ONETOMANY"
@@ -414,7 +414,7 @@ class TestPaginationValidation:
         registry._split_mode = False
         registry._loader_instances = {}
 
-        rel_info = MagicMock(spec=RelationshipInfo)
+        rel_info = MagicMock(spec=LocalRelationship)
         rel_info.is_list = True
         rel_info.page_loader = None
         rel_info.direction = "CUSTOM"

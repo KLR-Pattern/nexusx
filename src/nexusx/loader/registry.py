@@ -30,61 +30,117 @@ from nexusx.relationship import Relationship, get_custom_relationships
 logger = logging.getLogger(__name__)
 
 
-class RelationshipKind:
-    """Discriminator for how a relationship is loaded/resolved.
+@dataclass(kw_only=True)
+class RelationshipInfo:
+    """Base: the orthogonal facts every relationship variant shares.
 
-    Replaces the implicit ``(target_service × coalesced × pagination ×
-    page_loader × loader)`` boolean matrix with one explicit value that
-    consumers match on — see D1.
+    2026-11 variants refactor (relationship-variants plan §三): the flat
+    kind-tagged record became four typed variants — the kind discriminator
+    IS the type now, and illegal states are unrepresentable at construction
+    (e.g. a coalesced relationship cannot carry a loader: the field does not
+    exist on ``RemoteCoalescedRelationship``).
 
-    - LOCAL: a local relationship. ``loader``/``page_loader`` drive it;
-      ``page_loader`` set ⇒ local pagination.
-    - REMOTE_COALESCED: a relationship on a materialized remote type, resolved
-      by the owning service within the parent fetch (β coalescing). Not
-      BFS-traversed; the serializer reads it off the instance attribute.
-    - REMOTE_PAGED: a federation relationship where the member exposes
-      ``page_by_<key>_in`` (auto-detected from ``__pagination_orders__``,
-      specs/021 — no longer declared via ``RemoteRelationship.pagination``);
-      paged fetch via ``fetch_remote_subtree(paged=True)``.
-    - REMOTE_PLAIN: a federation relationship where the member only exposes
-      ``by_<key>_in`` (no ``page_by_``); plain fetch via ``fetch_remote_subtree()``.
+    Consumers branch via ``isinstance`` / the polymorphic ``can_paginate``
+    (static capability) and ``is_paginated`` (active pagination shape —
+    whether the schema renders ``{items, pagination}``).
     """
 
-    LOCAL = "local"
-    REMOTE_COALESCED = "remote_coalesced"
-    REMOTE_PAGED = "remote_paged"
-    REMOTE_PLAIN = "remote_plain"
-
-
-@dataclass
-class RelationshipInfo:
-    """Metadata for a single ORM relationship, including its DataLoader."""
-
     name: str  # relationship field name on the entity
-    direction: str  # MANYTOONE | ONETOMANY | MANYTOMANY
+    direction: str  # MANYTOONE | ONETOMANY | ONETOMANY_SCALAR | MANYTOMANY | CUSTOM
     fk_field: str  # FK field on the *source* entity used as loader key
     target_entity: type[SQLModel]  # target entity class
     is_list: bool  # True for one-to-many / many-to-many lists
-    # DataLoader class for this relationship. None for coalesced federated rels
-    # (resolved within the owning service's nested fetch — see
-    # fetch_remote_subtree — not loaded per-edge).
+    description: str | None = None  # surfaced in voyager/ER diagram
+
+    @property
+    def can_paginate(self) -> bool:
+        """Static capability: can this relationship's source window at all?"""
+        raise NotImplementedError
+
+    @property
+    def is_paginated(self) -> bool:
+        """Active pagination shape ({items, pagination} in the schema)."""
+        raise NotImplementedError
+
+
+@dataclass(kw_only=True)
+class LocalRelationship(RelationshipInfo):
+    """Local SQL-backed relationship — capability is constant (SQL slices
+    anytime); ``page_loader`` expresses ASSEMBLY (declared ``order_by``),
+    not capability. The two are orthogonal (plan §三, scenario 4)."""
+
     loader: type[DataLoader] | None = None
-    page_loader: type[DataLoader] | None = None  # paginated loader (list only)
+    page_loader: type[DataLoader] | None = None  # assembled iff order_by declared
     sort_field: str | None = None  # sort column for pagination
-    pagination: bool = False  # explicit remote pagination capability
-    # Member-owned pagination capability for a federation REMOTE_PAGED relationship
-    # (profile name set + default_order) — the single source the mounter uses to
-    # render the schema's `order` enum and fall back when the caller omits `order`.
-    # None for local / non-paginated / coalesced relationships. specs/014.
-    page_capability: Any = None
+    page_capability: Any = None  # local order profiles (__pagination_orders__)
     max_page_size: int = 100
-    description: str | None = None  # documentation string surfaced in voyager/ER diagram
-    # Owning service prefix for a remote (federated) relationship; None for local.
+
+    @property
+    def can_paginate(self) -> bool:
+        return True
+
+    @property
+    def is_paginated(self) -> bool:
+        return self.is_list and self.page_loader is not None
+
+
+@dataclass(kw_only=True)
+class RemotePlainRelationship(RelationshipInfo):
+    """Remote, un-paged: the member exposes only ``by_<key>_in`` — there is
+    no pagination channel on the wire. Plain fetch via fetch_remote_subtree()."""
+
+    loader: type[DataLoader] | None = None
     target_service: str | None = None
-    # Discriminator for the relationship kind — consumers match on this instead
-    # of combining target_service/pagination booleans. See RelationshipKind.
-    # Defaults to LOCAL; federation construction sets the remote variants.
-    kind: str = RelationshipKind.LOCAL
+
+    @property
+    def can_paginate(self) -> bool:
+        return False
+
+    @property
+    def is_paginated(self) -> bool:
+        return False
+
+
+@dataclass(kw_only=True)
+class RemotePagedRelationship(RelationshipInfo):
+    """Remote paged: the member exposes ``page_by_<key>_in`` (auto-detected
+    from ``__pagination_orders__``, specs/021). ``page_loader`` /
+    ``page_capability`` have NO defaults — construction IS the commitment;
+    a "declared paged remote without a loader" is unconstructible."""
+
+    loader: type[DataLoader] | None = None
+    page_loader: type[DataLoader]
+    page_capability: Any  # BatchPageCapability (specs/014)
+    target_service: str | None = None
+    max_page_size: int = 100
+
+    @property
+    def can_paginate(self) -> bool:
+        return True
+
+    @property
+    def is_paginated(self) -> bool:
+        return True
+
+
+@dataclass(kw_only=True)
+class RemoteCoalescedRelationship(RelationshipInfo):
+    """Coalesced (β): resolved inside the owning service's nested fetch and
+    read off the instance attribute — NOT loaded per-edge. There are no
+    loader fields on this type, so "coalesced with a page loader" is
+    unconstructible (TypeError at construction). ``paginated`` mirrors the
+    member's declared response shape for the nested payload."""
+
+    target_service: str | None = None
+    paginated: bool = False
+
+    @property
+    def can_paginate(self) -> bool:
+        return self.paginated
+
+    @property
+    def is_paginated(self) -> bool:
+        return self.is_list and self.paginated
 
 
 def _expect_single_pair(pairs: Any, message: str) -> tuple[Any, Any]:
@@ -427,7 +483,7 @@ def _inspect_relationships(
                 filters=_extract_extra_filters(rel, entity_kls, target_entity),
             )
             results.append(
-                RelationshipInfo(
+                LocalRelationship(
                     name=rel_name,
                     direction="MANYTOONE",
                     fk_field=fk_field,
@@ -459,7 +515,7 @@ def _inspect_relationships(
                     filters=_extract_extra_filters(rel, entity_kls, target_entity),
                 )
                 results.append(
-                    RelationshipInfo(
+                    LocalRelationship(
                         name=rel_name,
                         direction="ONETOMANY_SCALAR",
                         fk_field=fk_field,
@@ -510,7 +566,7 @@ def _inspect_relationships(
                 )
 
                 results.append(
-                    RelationshipInfo(
+                    LocalRelationship(
                         name=rel_name,
                         direction="ONETOMANY",
                         fk_field=fk_field,
@@ -590,7 +646,7 @@ def _inspect_relationships(
             )
 
             results.append(
-                RelationshipInfo(
+                LocalRelationship(
                     name=rel_name,
                     direction="MANYTOMANY",
                     fk_field=fk_field,
@@ -617,7 +673,7 @@ def _build_custom_relationship_info(rel: Relationship) -> RelationshipInfo:
     _CustomLoader.__name__ = f"CustomLoader_{rel.name}"
     _CustomLoader.__qualname__ = f"CustomLoader_{rel.name}"
 
-    return RelationshipInfo(
+    return LocalRelationship(
         name=rel.name,
         direction="CUSTOM",
         fk_field=rel.fk,
@@ -828,6 +884,8 @@ class ErManager:
         skipped = []
         for entity_kls, rels in self._registry.items():
             for rel in rels.values():
+                if not isinstance(rel, LocalRelationship):
+                    continue  # assembly warnings are a local-relationship concern
                 if not rel.is_list:
                     continue
                 if rel.page_loader is not None:

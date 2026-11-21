@@ -38,7 +38,11 @@ from nexusx.federation.remote_loader import (
     create_remote_loader,
 )
 from nexusx.federation.transport import FederationTransport
-from nexusx.loader.registry import RelationshipInfo, RelationshipKind
+from nexusx.loader.registry import (
+    RemoteCoalescedRelationship,
+    RemotePagedRelationship,
+    RemotePlainRelationship,
+)
 
 if TYPE_CHECKING:
     from nexusx.loader.registry import ErManager
@@ -256,16 +260,14 @@ async def federate(
             if not fed_registry.has(target_qn):
                 continue
             target_cls = fed_registry.get(target_qn)
-            rels_map[rel.name] = RelationshipInfo(
+            rels_map[rel.name] = RemoteCoalescedRelationship(
                 name=rel.name,
                 direction=rel.direction,
                 fk_field=rel.fk_field,
                 target_entity=target_cls,
                 is_list=rel.is_list,
-                loader=None,
                 target_service=owner,
-                pagination=rel.pagination,
-                kind=RelationshipKind.REMOTE_COALESCED,
+                paginated=rel.pagination,
             )
 
 
@@ -401,19 +403,14 @@ def _validate_and_wire_remote_relationship(
         "loader": loader_cls,
         "target_service": srv,
         "description": rrel.description,
-        "pagination": is_paged,
-        "kind": (
-            RelationshipKind.REMOTE_PAGED
-            if is_paged
-            else RelationshipKind.REMOTE_PLAIN
-        ),
     }
     if is_paged:
         # Store the member's page capability so SDL/__schema can render the
         # `order` enum + default, and bake only the default order into the
         # loader (the chosen order/direction arrive per-query). specs/014.
+        # page_loader/page_capability are REQUIRED on RemotePagedRelationship —
+        # construction IS the commitment (2026-11 variants).
         capability = _validate_page_capability(rrel.qualified_name, page_br)
-        rel_info_kwargs["page_capability"] = capability
         rel_info_kwargs["page_loader"] = create_paginated_remote_loader(
             typename=typename,
             join_remote=rrel.join_remote,
@@ -423,7 +420,11 @@ def _validate_and_wire_remote_relationship(
             arg_name=page_br.arg_name,
             default_order=capability.default_order,
         )
-    rel_info = RelationshipInfo(**rel_info_kwargs)
+        rel_info_kwargs["page_capability"] = capability
+        rel_info_cls = RemotePagedRelationship
+    else:
+        rel_info_cls = RemotePlainRelationship
+    rel_info = rel_info_cls(**rel_info_kwargs)
     er_manager._registry.setdefault(source_entity, {})[rrel.name] = rel_info
 
 

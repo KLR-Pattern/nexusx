@@ -178,20 +178,12 @@ def serialize_er_introspection(er_manager: Any) -> ERIntrospectionResponse:
                     fk_field=r_info.fk_field,
                     target_typename=r_info.target_entity.__name__,
                     is_list=r_info.is_list,
-                    pagination=r_info.is_list
-                    and (
-                        # federation 远程分页（member 暴露 page_by_，r_info.pagination）
-                        getattr(r_info, "pagination", False)
-                        and target_service is not None
-                    )
-                    # member 本地分页(本地关系, page_loader set;
-                    # 它的 RelationshipInfo.pagination=False 且 target_service=None,
-                    # 不透传则 catalog 物化层看不到这是个分页关系 → 物化成扁平 list)
-                    or (
-                        r_info.is_list
-                        and target_service is None
-                        and getattr(r_info, "page_loader", None) is not None
-                    ),
+                    # 2026-11 variants: the pagination shape IS the
+                    # polymorphic is_paginated property — remote paged /
+                    # coalesced-paginated on the member side, local
+                    # assembled (order_by declared) otherwise. The truth
+                    # table lives in the types now.
+                    pagination=r_info.is_paginated,
                     target_service=target_service,
                     target_endpoint=(
                         mounted.get(target_service) if (target_service and expose) else None
