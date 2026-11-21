@@ -1,9 +1,11 @@
-"""分页判据理想设计的可运行 Demo（mindmap #16 / 节点 65 的落地演示）.
+"""分页判据类型变体设计的可运行 Demo（mindmap #16 / 节点 65）.
 
-对比两套设计：
+2026-11 更新：设计已落地为生产代码——RelationshipInfo 平铺结构已重构为
+基类 + 四个类型变体（LocalRelationship / RemotePlain·Paged·Coalesced），
+判据内聚为多态属性 can_paginate / is_paginated，非法状态构造即 TypeError。
 
-  现状    —— RelationshipInfo 平铺字段 + kind 字符串 + 各消费点手拼判定
-  理想    —— 按 kind 拆成四个类型变体，判据内聚为多态属性
+本文件现为设计的持久导览：Part A/B/C 是设计原理（判据内聚、消费点零真值表），
+Part D/E 用真实生产变体对照冻结的旧真值表，证明「结构变了、行为没变」。
 
 运行：
 
@@ -155,76 +157,82 @@ def voyager_icon(rel: Relationship) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════
-# Part D  现状对照：真实生产代码里的判定
-# ══════════════════════════════════════════════════════════════════
+# Part D  生产对照：真实变体 + 冻结的真值表（2026-11：设计已落地）
+# ==================================================================
 
 
-def _legacy_relationship_infos() -> list[tuple[str, object, dict]]:
-    """构造与 Part E 四个变体一一对应的真实 RelationshipInfo.
+def _production_relationships() -> list[tuple[str, object, dict]]:
+    """构造与 Part E 四个演示变体一一对应的真实生产变体.
 
-    返回 (名称, RelationshipInfo, 真值表快照)——快照就是现状消费者
-    需要背的那张表：kind / pagination / page_loader.
+    返回 (名称, 变体实例, 期望快照)——快照就是旧平铺世界消费者需要背的
+    那张真值表（kind / pagination / page_loader），现已冻结为测试
+    （tests/test_relationship_variants.py）与本文档的双重记录。
     """
-    from nexusx.loader.registry import RelationshipInfo, RelationshipKind
-
-    class _L:  # 假 loader 类，只为了填字段
-        pass
+    from nexusx.loader.registry import (
+        LocalRelationship,
+        RemoteCoalescedRelationship,
+        RemotePagedRelationship,
+        RemotePlainRelationship,
+    )
 
     rows: list[tuple[str, object, dict]] = []
 
     # 1. 本地 + 装配了分页视图
-    local = RelationshipInfo(
+    rows.append(("本地(装配分页)", LocalRelationship(
         name="reviews", direction="ONETOMANY", fk_field="product_id",
-        target_entity=object, is_list=True, loader=_L, page_loader=_L,
-        kind=RelationshipKind.LOCAL,
-    )
-    rows.append(("本地(装配分页)", local,
-                 {"kind": "LOCAL", "pagination": local.pagination,
-                  "page_loader": "有"}))
+        target_entity=object, is_list=True, loader=object,
+        page_loader=object,
+    ), {"can_paginate": True, "is_paginated": True}))
 
-    # 2. 远程分页（manager.py:406 的形态：pagination 与 kind 同源派生）
-    paged = RelationshipInfo(
+    # 2. 远程分页（page_loader/page_capability 必填无默认——构造即承诺）
+    rows.append(("远程分页", RemotePagedRelationship(
         name="reviews", direction="ONETOMANY", fk_field="product_id",
-        target_entity=object, is_list=True, loader=_L, page_loader=_L,
-        pagination=True, target_service="ReviewSvc",
-        kind=RelationshipKind.REMOTE_PAGED,
-    )
-    rows.append(("远程分页", paged,
-                 {"kind": "REMOTE_PAGED", "pagination": paged.pagination,
-                  "page_loader": "有"}))
+        target_entity=object, is_list=True, loader=object,
+        page_loader=object, page_capability=object, target_service="ReviewSvc",
+    ), {"can_paginate": True, "is_paginated": True}))
 
-    # 3. 远程不分页
-    plain = RelationshipInfo(
+    # 3. 远程不分页（无 wire 通道）
+    rows.append(("远程不分页", RemotePlainRelationship(
         name="author", direction="MANYTOONE", fk_field="author_id",
-        target_entity=object, is_list=True, loader=_L,
-        target_service="UserSvc", kind=RelationshipKind.REMOTE_PLAIN,
-    )
-    rows.append(("远程不分页", plain,
-                 {"kind": "REMOTE_PLAIN", "pagination": plain.pagination,
-                  "page_loader": "无"}))
+        target_entity=object, is_list=True, loader=object,
+        target_service="UserSvc",
+    ), {"can_paginate": False, "is_paginated": False}))
 
-    # 4. 合并取回（manager.py:267 的形态：pagination 是唯一真信息）
-    coalesced = RelationshipInfo(
+    # 4. 合并取回（paginated 是唯一真信息；无 loader 字段）
+    rows.append(("合并取回(分页)", RemoteCoalescedRelationship(
         name="stats", direction="ONETOMANY", fk_field="product_id",
-        target_entity=object, is_list=True, loader=None,
-        pagination=True, target_service="StatSvc",
-        kind=RelationshipKind.REMOTE_COALESCED,
-    )
-    rows.append(("合并取回(分页)", coalesced,
-                 {"kind": "REMOTE_COALESCED", "pagination": coalesced.pagination,
-                  "page_loader": "无"}))
+        target_entity=object, is_list=True,
+        target_service="StatSvc", paginated=True,
+    ), {"can_paginate": True, "is_paginated": True}))
     return rows
 
 
-def _legacy_truth_table(rel_info: object) -> bool:
-    """现状消费者必须会背的真值表判定（is_active 的展开形态）."""
-    from nexusx.utils.pagination_schema import is_active_paginated_relationship
+def _frozen_truth_table(rel_info: object) -> tuple[bool, bool]:
+    """旧平铺世界真值表的冻结形态（kind × pagination × page_loader 手拼判定）.
 
-    # 生产代码里真实存在的共享函数（SDL/introspection 已在用）
-    return is_active_paginated_relationship(rel_info, enable_pagination=True)
+    生产代码已不再背这张表——判定内聚为多态属性 can_paginate /
+    is_paginated；这里保留字面展开作为对照记录：
+
+        LOCAL + page_loader 有        → 分页字段
+        REMOTE_PAGED                  → 分页字段（能力即形态）
+        REMOTE_PLAIN                  → 平铺
+        REMOTE_COALESCED + paginated  → 分页字段（member 声明）
+    """
+    from nexusx.loader.registry import (
+        LocalRelationship,
+        RemoteCoalescedRelationship,
+        RemotePagedRelationship,
+    )
+
+    if isinstance(rel_info, RemotePagedRelationship):
+        return True, True
+    if isinstance(rel_info, RemoteCoalescedRelationship):
+        return rel_info.paginated, rel_info.paginated
+    if isinstance(rel_info, LocalRelationship):
+        return True, rel_info.page_loader is not None
+    return False, False
 
 
-# ══════════════════════════════════════════════════════════════════
 # Part E  全景演示
 # ══════════════════════════════════════════════════════════════════
 
@@ -259,41 +267,35 @@ def main() -> None:
         print(f"  voyager 图标    : {voyager_icon(rel)}")
 
     print("\n" + "═" * 72)
-    print("场景 2  同场景对照现状（消费者需背真值表才能判定）")
+    print("场景 2  生产变体 × 冻结真值表（知识已住进类型）")
     print("═" * 72)
-    from nexusx.loader.registry import RelationshipKind  # noqa: F401
-
-    legacy = _legacy_relationship_infos()
-    for (legacy_name, legacy_rel, snapshot), (new_name, new_rel) in zip(
-        legacy, new_rels, strict=True
-    ):
-        legacy_verdict = _legacy_truth_table(legacy_rel)
-        new_verdict = execute_paginated(new_rel, enable_local=True)
-        agree = "✅一致" if legacy_verdict == new_verdict else "❌不一致"
-        print(f"\n● {legacy_name}")
-        print(f"  真值表快照      : {snapshot}")
-        print(f"  现状判定        : {legacy_verdict}")
-        print(f"  理想判定        : {new_verdict}   {agree}")
+    for name, rel, expected in _production_relationships():
+        can, active = _frozen_truth_table(rel)
+        assert (rel.can_paginate, rel.is_paginated) == (can, active) == (
+            expected["can_paginate"], expected["is_paginated"]
+        ), f"{name}: judgment mismatch!"
+        print(f"\n● {name}  ({type(rel).__name__})")
+        print(f"  冻结表判定 : can={can}, active={active}")
+        print(f"  多态属性   : can={rel.can_paginate}, active={rel.is_paginated}   ✅一致")
 
     print("\n" + "═" * 72)
     print("场景 3  矛盾状态的命运：'合并取回 + 分页加载器'")
     print("═" * 72)
+    print("\n  旧世界（平铺 RelationshipInfo + kind 字符串）：构造成功、静默存在、")
+    print("  无任何报警——这是本次重构的动因（历史记录见")
+    print("  tests/test_relationship_variants.py 的 docstring）。")
 
-    from nexusx.loader.registry import RelationshipInfo
-
-    class _L2:
-        pass
-
-    bad = RelationshipInfo(
-        name="stats", direction="ONETOMANY", fk_field="product_id",
-        target_entity=object, is_list=True, loader=_L2, page_loader=_L2,
-        pagination=True, target_service="StatSvc",
-        kind=RelationshipKind.REMOTE_COALESCED,
-    )
-    print(f"\n  现状   ：构造成功，静默存在 —— {bad!r}"[:88], "...")
-    print("          （kind=COALESCED 却带 page_loader，无任何报警）")
-
-    print("\n  理想   ：构造失败 ——")
+    print("\n  新世界：构造失败 ——")
+    from nexusx.loader.registry import RemoteCoalescedRelationship as _RC
+    try:
+        _RC(
+            name="stats", direction="ONETOMANY", fk_field="product_id",
+            target_entity=object, is_list=True,
+            target_service="StatSvc", paginated=True,
+            page_loader=object(),  # type: ignore[call-arg]
+        )
+    except TypeError as exc:
+        print(f"          生产变体 TypeError: {str(exc)[:70]}")
     try:
         # CoalescedRelationship 没有 loader/page_loader 字段
         CoalescedRelationship(
@@ -302,7 +304,7 @@ def main() -> None:
             page_loader="PagedRemote",  # type: ignore[call-arg]
         )
     except TypeError as exc:
-        print(f"          TypeError: {exc}")
+        print(f"          演示变体 TypeError: {exc}")
         print("          矛盾状态在类型层面无法表示——校验都不需要")
 
     print("\n" + "═" * 72)

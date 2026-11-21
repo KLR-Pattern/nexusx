@@ -21,7 +21,6 @@ class User(SQLModel, table=True):
 handler = GraphQLHandler(
     base=SQLModel,
     session_factory=async_session,
-    enable_pagination=True,
 )
 ```
 
@@ -98,9 +97,8 @@ handler = GraphQLHandler(
 
 ## 回顾
 
-- 在 `GraphQLHandler` 上设置 `enable_pagination=True` 启用分页
-- 列表关系必须有 `order_by`，使用 `"Entity.column"` 字符串格式
-- 在 GraphQL 查询中使用 `limit` 和 `offset` 参数
+- 列表关系必须有 `order_by`，使用 `"Entity.column"` 字符串格式——声明即开启
+- 在 GraphQL 查询中使用 `limit` 或 `fetchAll`（量意图强制，无默认页大小）
 - 每个分页关系返回 `{ items, pagination }`，包含 `has_more` 和 `total_count`
 
 ## 下一步
