@@ -21,6 +21,44 @@ if TYPE_CHECKING:
     from nexusx.standard_queries import AutoQueryConfig
 
 
+# Pagination volume contract — auto-appended to MCP server ``instructions``
+# when the schema exposes Result-wrapped fields (2026-11 pagination contract).
+# This is the SINGLE home of the contract prose: instructions carry it once,
+# globally, ahead of any tool call; tool descriptions keep only examples and
+# a pointer. Not expressible in SDL (arg-level descriptions are a separate
+# follow-up), so instructions are the earliest agent-visible channel.
+PAGINATION_CONTRACT_NOTE = (
+    "Paginated list fields return {items, pagination} and require volume "
+    "intent — pass limit: N or fetchAll: true (no default page size; "
+    "fetchAll overrides limit/offset and a server-side cap errors instead "
+    "of truncating). Prefer limit windows; fetchAll after checking "
+    "total_count."
+)
+
+
+def _merge_pagination_note(
+    instructions: str | None, *handlers: GraphQLHandler
+) -> str | None:
+    """Append the pagination contract iff any handler's schema paginates.
+
+    Detection reuses ``has_any_paginated_relationship`` — the same gate
+    SDL/introspection render under (D3: one judgment, three consumers).
+    Apps without paginated fields are untouched: ``None`` stays ``None``
+    (6.8.0's "default sends nothing" holds for them). Caller-passed
+    instructions come first; a caller who already covers the contract
+    verbatim is not duplicated.
+    """
+    from nexusx.utils.pagination_schema import has_any_paginated_relationship
+
+    if not any(
+        has_any_paginated_relationship(h.er, h.entities) for h in handlers
+    ):
+        return instructions
+    if instructions and PAGINATION_CONTRACT_NOTE in instructions:
+        return instructions
+    return "\n\n".join(p for p in (instructions, PAGINATION_CONTRACT_NOTE) if p)
+
+
 def _ensure_operations(handler: GraphQLHandler, context: str) -> None:
     """Raise ValueError if the handler discovered no GraphQL operations.
 
@@ -44,6 +82,11 @@ def create_multi_app_mcp_server(
     instructions: str | None = None,
 ) -> FastMCP:
     """Create an MCP server that exposes multiple GraphQL APIs as tools.
+
+    ``instructions`` ride the initialize handshake (the agent's first read).
+    When any mounted app's schema has paginated (Result-wrapped) fields, the
+    pagination volume contract is auto-appended after the caller's text —
+    see ``PAGINATION_CONTRACT_NOTE``.
 
     This function creates a FastMCP server with multi-app support and three-layer
     progressive disclosure:
@@ -151,7 +194,11 @@ def create_multi_app_mcp_server(
             await manager.dispose()
 
     # Create the FastMCP server (instructions ride the initialize handshake —
-    # the agent's first read; None sends nothing)
+    # the agent's first read; None sends nothing). The pagination volume
+    # contract is auto-appended when any mounted app paginates.
+    instructions = _merge_pagination_note(
+        instructions, *(res.handler for res in manager.apps.values())
+    )
     mcp = FastMCP(name, instructions=instructions, lifespan=_lifespan)
 
     # Register all multi-app tools
@@ -198,6 +245,11 @@ def create_single_app_mcp_server(
             with { items, pagination } wrapping. Default False.
         auto_query_config: Optional AutoQueryConfig for auto-generating
             by_id/by_filter queries. Default None.
+        instructions: Usage guide agents receive with the ``initialize``
+            handshake. When the schema has paginated (Result-wrapped) fields,
+            the pagination volume contract is auto-appended after this text
+            (see ``PAGINATION_CONTRACT_NOTE``); otherwise it is passed through
+            unchanged (``None`` sends nothing).
 
     Returns:
         A configured FastMCP server instance with 3-4 simplified tools.
@@ -264,7 +316,9 @@ def create_single_app_mcp_server(
     _ensure_operations(manager.handler, "create_single_app_mcp_server")
 
     # Create the FastMCP server (instructions ride the initialize handshake —
-    # the agent's first read; None sends nothing)
+    # the agent's first read; None sends nothing). The pagination volume
+    # contract is auto-appended when the schema has Result-wrapped fields.
+    instructions = _merge_pagination_note(instructions, manager.handler)
     mcp = FastMCP(name, instructions=instructions)
 
     # Register simplified tools (no app_name required)

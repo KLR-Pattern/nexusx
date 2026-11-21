@@ -355,10 +355,8 @@ def register_multi_app_tools(
         operations with list_queries and understanding their schema with
         get_query_schema.
 
-        Paginated (Result-wrapped) fields have a volume contract: pass
-        ``limit: N`` or ``fetchAll: true`` — omitting both is rejected
-        (fetchAll overrides limit/offset; use get_query_schema with
-        response_type="introspection" for per-argument details).
+        Paginated (Result-wrapped) fields require volume intent — see the
+        server instructions; e.g. ``{ User { posts(fetchAll: true) { items { id } } } }``.
 
         Args:
             query: A GraphQL query string

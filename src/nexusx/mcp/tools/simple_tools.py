@@ -56,18 +56,9 @@ def register_simple_tools(
         - ``field: [Entity!]!`` — plain list, select fields directly
         - ``field(...): EntityResult!`` — wrapped, select
           ``field { items { ... } pagination { has_more total_count } }``
-
-        Wrapped fields carry a volume contract (no default page size):
-        every call MUST pass ``limit: N`` (window) or ``fetchAll: true``
-        (whole collection) — omitting both is rejected. ``fetchAll``
-        overrides ``limit``/``offset`` and is bounded by a server-side cap
-        (errors, never silently truncates). Check ``pagination.total_count``
-        to choose between windowing and a full fetch.
-
-        Examples:
-            { User { posts(limit: 10) { items { id } } } }
-            { User { posts(fetchAll: true) { items { id }
-              pagination { total_count } } } }`
+          (volume intent is mandatory — see the server instructions).
+          E.g. ``{ User { posts(limit: 10) { items { id } } } }`` or
+          ``{ User { posts(fetchAll: true) { items ... pagination { total_count } } } }``
 
         Inside graphql_query, every call is processed as:
         - The query is validated against this schema.
@@ -103,9 +94,8 @@ def register_simple_tools(
         Use this tool to fetch data from your GraphQL API.
         First use get_schema to discover available queries and their structure.
 
-        Paginated (Result-wrapped) fields have a volume contract: pass
-        ``limit: N`` or ``fetchAll: true`` — omitting both is rejected
-        (fetchAll overrides limit/offset; see get_schema).
+        Paginated (Result-wrapped) fields require volume intent — see the
+        server instructions; e.g. ``{ User { posts(fetchAll: true) { items { id } } } }``.
 
         Args:
             query: A GraphQL query string (must be valid GraphQL syntax)
