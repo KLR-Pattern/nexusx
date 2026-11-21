@@ -265,7 +265,7 @@ class TestParseOperations:
 
     def test_same_name_group_in_different_operations_coexist(self):
         from graphql import parse
-        from nexusx.query_parser import ResponseKeyConflictError
+
 
         ops = QueryParser().parse_operations(
             parse("mutation M { S { f { id } } } query Q { S { g { id } } }")
@@ -282,6 +282,7 @@ class TestParseOperations:
 
     def test_duplicate_within_one_operation_still_conflicts(self):
         from graphql import parse
+
         from nexusx.query_parser import ResponseKeyConflictError
 
         with pytest.raises(ResponseKeyConflictError, match="conflict"):

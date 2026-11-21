@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 5.4.1."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.9.1."
 ---
 
 # Changelog
@@ -9,6 +9,268 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 - **Patch (x.y.Z)**: Bug fixes and minor improvements
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
+
+## 6.9
+
+### 6.9.1 (2026-11-18)
+
+- fix:
+  - **Auto-fit the Related Entities sub-graph**: The focused ER sub-graph in the
+    Voyager sidebar's *Related Entities* tab now scales to the container on first
+    render instead of overflowing it. d3-graphviz only honors `fit` when an explicit
+    width/height is set, so the component now mirrors `GraphUI.render()`
+    (`.width("100%").height("100%").fit(true)` plus `resetZoom()`) and re-centers
+    every time the tab or the selected entity changes.
+
+### 6.9.0 (2026-11-12)
+
+- fix:
+  - **Restore relationship overrides with `AutoLoad(origin=...)`**:
+    DTO fields can load a registered relationship with a different name.
+    For example, `owner_summary` can use `AutoLoad(origin="owner")`.
+    Type checks and manual `resolve_*` priority remain unchanged.
+  - **Preserve columns for multiple DTO projections**:
+    Fields that use one relationship now load all SQL columns their DTO types need.
+  - **Keep pagination defaults separate for aliased fields**:
+    Each field uses its own `Paged` limits and offsets, even when fields share a relationship.
+
+- tests and docs:
+  - Add coverage for overrides, default names, nested lists, scalar lists,
+    multiple DTO projections, pagination, and invalid relationship targets.
+  - Document `AutoLoad(origin=...)` in the Core API guide.
+
+## 6.8
+
+### 6.8.0 (2026-10-15)
+
+- feat:
+  - **Server `instructions` pass-through on all three MCP surfaces (#159)**:
+    MCP's initialize handshake carries an optional `instructions` field —
+    the agent's first read of the server. Clients inject it into the
+    conversation once per connection, before any tool call, which makes it
+    the right channel for a short map of the domains and how to query them.
+    All three server factories (`create_single_app_mcp_server`,
+    `create_multi_app_mcp_server`, `create_use_case_graphql_mcp_server`)
+    gain an `instructions: str | None = None` parameter forwarded to
+    FastMCP; the default sends nothing, so existing callers are unchanged.
+    Keep it short (a rough budget is ~120 tokens) — it is resident context
+    for the whole session.
+
+## 6.7
+
+### 6.7.0 (2026-10-14)
+
+- feat:
+  - **MCP tool annotations — `readOnlyHint` / `destructiveHint` (#158)**:
+    MCP tools now carry spec annotations, the "hint layer" of AI mutation
+    safety: agents and clients read them from `tools/list` for UI routing
+    and planning caution. Discovery/introspection tools are marked
+    `readOnlyHint`; execution tools (`graphql_query` / `compose_query`) get
+    `readOnlyHint` only when no reachable schema exposes a Mutation
+    operation — computed from schema content, not from the `allow_mutation`
+    flag, because the flag gates tool advertising while the handler still
+    executes whatever the schema contains. `graphql_mutation` is marked
+    `destructiveHint`. Applied uniformly on all three server surfaces
+    (entity single-app, multi-app, UseCase compose) and verified to reach
+    `tools/list`. Per the spec these are untrusted hints; enforcement is
+    the separate contract layer below.
+  - **Optional human confirmation for `compose_query` mutations (#158)**:
+    the contract layer of AI mutation safety. A new `confirm_mutations`
+    flag on `create_use_case_graphql_mcp_server` (default `False`) gates
+    mutations behind a human decision: the tool names the top-level
+    mutation fields (`Service.method` form) in an ask, and only a confirmed
+    accept executes. Handshake-era connections get a synchronous
+    `ctx.elicit()` round-trip; 2026-07-28 connections (where
+    server-initiated elicitation is unavailable) use the SEP-2322 guard
+    pattern — the ask is an `InputRequiredResult` (a legitimate result,
+    not an error), and the client re-issues the identical call carrying the
+    answer. A decline returns an errors payload without executing. Queries
+    are never gated; parse-broken mutations pass through so the executor
+    surfaces the real parse error. Clients that declared no elicitation
+    capability pass ungated — fail-open, demo scope; a spec'd contract
+    layer would fail closed and mint a nonce `request_state`
+    (the current token is a constant).
+
+## 6.6
+
+### 6.6.0 (2026-10-13)
+
+- fix:
+  - **Federated DTO rebuild on Python 3.14 (#157)**: Python 3.14 (PEP
+    649/749) no longer puts an eager `__annotations__` dict in a class-body
+    namespace — annotations live behind `__annotate_func__`. The deferred
+    `DefineSubset` rebuild at `federate()` time read the captured namespace
+    with a plain `__annotations__` lookup, so every rebuilt DTO silently
+    lost all body-declared fields: `SendTo`/`ExposeAs` overrides stopped
+    collecting, and remote-sourced instances missed relationship fields.
+    The rebuild now reads annotations through the shared 3.14-compatible
+    helper, which also gained a `FORWARDREF` fallback for names not yet
+    resolvable (mirrors the equivalent pydantic-resolve fix, PR #310).
+
+- feat:
+  - **FastMCP 4.1 and Python 3.10–3.14 support (#157)**: the `fastmcp`
+    extra jumps from the 3.1 pin to current 4.1.0 (MCP Python SDK v2
+    underneath). The v4 session-manager lifespan path was verified
+    end-to-end with a real MCP client: handshake → `list_tools` →
+    `call_tool` → session exit runs nexusx's lifespan dispose wiring.
+    `requires-python` becomes `>=3.10,<3.15`, and classifiers plus the CI
+    matrix now cover 3.13 and 3.14 (previously 3.10–3.12).
+
+- breaking change:
+  - **`fastmcp` extra requires `fastmcp>=4.1` (#157)**: installers of
+    `nexusx[fastmcp]` previously on FastMCP 3.x will see FastMCP upgraded
+    to 4.x. The MCP surface is source-compatible (full suite and the
+    in-memory client round-trip pass unchanged); if you pinned
+    `fastmcp<4`, relax the pin to `>=4.1,<5`. `requires-python` also
+    gains the `<3.15` cap (declared support is 3.10–3.14).
+
+## 6.5
+
+### 6.5.0 (2026-10-12)
+
+- feat:
+  - **Relationship conditions via native `primaryjoin`/`secondaryjoin` (#155)**:
+    "Logically only a subset" relationships — soft deletes, archived
+    records, status filtering — can now be declared with SQLAlchemy's own
+    join condition instead of hand-written loaders. Declaring
+    `primaryjoin="and_(User.id == Comment.owner_id, Comment.status ==
+    'active')"` (the exact shape of a hand-written join) makes every loading
+    path of that relationship filter automatically: entity GraphQL nesting,
+    compose DTO assembly, MCP, and the federation member side. Supported
+    forms: column-vs-constant comparisons, `IS NULL`, enum values, multiple
+    AND conditions, and `or_`/`not_` combinations kept whole (an `or_` is
+    never flattened into AND). Many-to-many conditions may reference
+    target-entity columns or the link table's own columns ("this link row
+    is valid"), on either join side. Paginated relationships count over the
+    filtered set (`total_count` is post-filter). Unconditioned relationships
+    are unchanged, and the wire contract (SDL/introspection) is untouched —
+    conditions are query semantics, not schema semantics.
+
+- behavior change:
+  - **Unexecutable join conditions fail fast at startup (#155)**: 6.4 read a
+    conditional `primaryjoin` only for its FK pair and silently ignored the
+    rest, so such relationships loaded unfiltered. 6.5 extracts the extra
+    conditions and refuses what it cannot execute: conditions referencing
+    source-entity columns, a single M2M condition spanning both the target
+    and the link table (the two-step loader would silently cross-join one
+    side), a non-equality operator on the FK pair, and function expressions
+    or subqueries all raise `ValueError` when `ErManager` is constructed,
+    with the entity, relationship, and offending column named.
+    `backref`-created reverse relationships are exempt — the reverse keeps
+    plain-FK semantics with a logged warning, while conditions declared on
+    the forward side still apply there.
+
+## 6.4
+
+### 6.4.0 (2026-9-26)
+
+- feat:
+  - **Scalar `Literal` annotations on the compose path (#151)**: DTO fields
+    and method arguments annotated with `Literal[...]` previously raised
+    `UnsupportedTypeError`. They now map to the GraphQL scalar shared by
+    their values (`Literal["a", "b"]` → `String`, `Literal[1, 2]` → `Int`).
+    A `None` member maps to a nullable type; mixed-type and enum-member
+    literals are rejected with a clear hint ("use the enum class directly").
+    Pydantic keeps enforcing the allowed values at runtime.
+  - **`Allowed values: ...` descriptions for Literal fields and arguments
+    (#151, #152)**: GraphQL has no constrained-scalar kind, so a Literal
+    constraint is invisible in the type system. Output fields, input-object
+    fields (#152), method arguments, and introspection now list the allowed
+    values in descriptions — booleans render as GraphQL literals
+    (`true`/`false`, #152) and nullable constraints gain an `(or null)` tail
+    (#152) so agents learn null is a legal input, not a violation.
+  - **Scalar `Literal` support on the entity-first path (#154)**: SDL and
+    introspection silently rendered every `Literal[...]` as `String` through
+    the lenient scalar fallback — int/bool literals got a wrong type
+    (`Literal[1, 2, 3]` → `String!`) and nullable literals were forced
+    `NON_NULL`. Literals now map through shared helpers in
+    `type_converter.py` (single source for both GraphQL paths), and
+    `ArgumentBuilder` validates scalar Literal arguments with `TypeAdapter`
+    so mistyped-but-parseable values fail loudly instead of flowing into the
+    method body (mirrors compose's `_coerce_strict`).
+
+- behavior change:
+  - **Unmappable Literals raise at schema-generation time (#154)**: On the
+    entity-first path, `Literal["a", 1]`, `Literal[SomeEnum.X]`, or an
+    all-`None` literal previously fell through to `String` silently — str
+    literals looked correct by accident, hiding the mis-typing. SDL and
+    introspection generation now raises `ValueError` for them (the compose
+    path keeps raising `UnsupportedTypeError` with identical messages).
+
+## 6.3
+
+### 6.3.1 (2026-9-18)
+
+- fix:
+  - **Enum arguments accept member names as wire values (#150)**: The compose
+    SDL renders enum members by name and GraphQL enum literals/variables carry
+    names, but argument coercion validated through Pydantic, which matches
+    enums by value. Any enum whose member names differ from their values
+    (`LOW = "low"`, `URGENT = 1` — both common Python styles) was unusable
+    over compose, and the failure surfaced as a raw Pydantic error naming a
+    value that never appears in the SDL, so agents could not self-correct.
+    `_promote_enum_names` now walks the argument annotation (`Optional`,
+    `list`, and input-object dicts included) and swaps wire names matching
+    `Enum.__members__` for member instances before validation; member values
+    keep working, so both wire conventions are accepted. Coercion errors for
+    enum arguments now list the valid member names.
+
+### 6.3.0 (2026-9-9)
+
+- feat:
+  - **`compose_query` accepts GraphQL variables**: `execute_compose_query`
+    and the MCP Layer 3 `compose_query` tool now take a `variables` dict;
+    `$var` references in arguments resolve to their values through the
+    existing `QueryParser` path (the same one `GraphQLHandler` uses).
+    Pass string arguments this way instead of inlining GraphQL literals —
+    inline strings containing quotes, backslashes or newlines are the #1
+    source of agent-authored parse errors, and variables sidesteps escaping
+    entirely. A query that declares variables fails fast with a clear
+    message naming the missing ones, instead of dying later in argument
+    coercion with a cryptic error. Variable default values
+    (`$t: String = "x"`) are not applied — they never were on any
+    execution path; an omitted defaulted variable now also fails fast,
+    with the error naming the limitation (the note appears only when the
+    query actually declares a default), instead of silently becoming
+    `Undefined`. The UseCase GraphiQL demo endpoint forwards request
+    variables too — its old 400 guard predated executor support and made
+    GraphiQL's variables pane unusable. Backward compatible: `variables`
+    is optional and inline-literal queries are unaffected.
+- refactor:
+  - **Single source for GraphQL type mapping (mindmap #13)**: The
+    Python → GraphQL type mapping had 4 parallel implementations and 3
+    scalar tables. `SCALAR_TYPE_MAP` (in `type_converter`) is now the only
+    scalar table — `compose_type_mapper` imports it; `compose_schema.
+    type_ref_to_sdl` is the public single `TypeRef` renderer (the compose
+    MCP server's verbatim copy is deleted); the introspector delegates to
+    `ComposeTypeMapper` + `type_ref_to_sdl` with a fresh mapper per call
+    (the shared instance leaked registrations across describes). Behavior
+    change: `describe` signatures now carry nullability markers consistent
+    with the compose schema (`int` → `Int!`, `datetime` → `DateTime!`,
+    `Optional[list[T]]` → `[T!]!`), and `datetime`/`UUID`/`dict` render
+    correctly instead of via class-name fallback or an invented `JSON`
+    scalar.
+  - **Single `Paged` representation across β/γ/local (mindmap #14)**: The
+    four pagination numbers (limit/offset/order/direction) changed shape
+    ~10 times across the three transports. Now `paged_from_selection()` is
+    the single dispatch-layer read of raw selection args,
+    `paged_wire_params()` the single `Paged` → wire mapping (β GraphQL
+    renderer and γ JSON body both consume it), and `Paged.clamp()` the
+    single clamping implementation, applied at the β dispatch layer
+    against the relationship's `max_page_size` — federation limits were
+    previously forwarded unclamped. Page params also join the loader split
+    key, fixing a defect where concurrent `limit=5`/`limit=10` loads of
+    the same relationship shared one loader instance and overwrote each
+    other's params. API change: `create_dto_remote_loader` drops its four
+    dead pagination kwargs (never effective in-tree).
+  - **Single-source FK detection (mindmap #15)**: The same three-line
+    "does this field carry a FK marker" check was inlined 7 times.
+    `type_utils.is_fk_field_info()` is now the single field-level
+    detector; `get_fk_fields` builds on it and the verbatim copies are
+    deleted. Behavior is byte-identical.
+- chore:
+  - tests: ruff `--fix` mechanical cleanup (unused imports, import
+    sorting); no semantic changes.
 
 ## 6.2
 
@@ -648,9 +910,8 @@ Port of pydantic-resolve v5.10.2 (`184886d`) — three `INPUT_OBJECT` correctnes
 ### 3.0.0 (2026-6-20)
 
 - breaking change:
-  - **Removed the old direct-call UseCase MCP entry points**: Introduced a new execution chain where `UseCaseService` auto-generates a **real GraphQL schema** and builds the MCP service on top (mirroring pydantic-resolve's compose). Two old direct-call use_case MCP entry points (invoke-Python-method-with-JSON-args) are hard-removed. The GraphQL/MCP-orthogonal `create_use_case_router` (FastAPI REST) and `create_use_case_voyager` (visualization) are unchanged. Removed: `create_use_case_mcp_server` (4-layer MCP, Layer 3 = `call_use_case` direct method call) → `create_use_case_mcp_server` (Layer 3 = `compose_query` taking a GraphQL string); `create_use_case_flat_server` (one-method-one-tool flat MCP) → `create_use_case_mcp_server`; `ServiceIntrospector` (SDL-style strings) → `ComposeSchema` (real introspection JSON + SDL). Migration: `docs/migrations/3.0-use-case-graphql.md`. Version: strict semver — public API removal = major (2.10.1 → 3.0.0).
+  - **Removed the old direct-call UseCase MCP entry points**: Introduced a new execution chain where `UseCaseService` auto-generates a **real GraphQL schema** and builds the MCP service on top (mirroring pydantic-resolve's compose). Two old direct-call use_case MCP entry points (invoke-Python-method-with-JSON-args) are hard-removed. The GraphQL/MCP-orthogonal `create_use_case_router` (FastAPI REST) and `create_use_case_voyager` (visualization) are unchanged. Removed: `create_use_case_mcp_server` (4-layer MCP, Layer 3 = `call_use_case` direct method call) → `create_use_case_graphql_mcp_server` (Layer 3 = `compose_query` taking a GraphQL string); `create_use_case_flat_server` (one-method-one-tool flat MCP) → `create_use_case_graphql_mcp_server`; `ServiceIntrospector` (SDL-style strings) → `ComposeSchema` (real introspection JSON + SDL). Migration: `docs/migrations/3.0-use-case-graphql.md`. Version: strict semver — public API removal = major (2.10.1 → 3.0.0).
 - feat:
-  - **UseCase GraphQL + 4-layer MCP**: New public API: `create_use_case_mcp_server(apps, name)` (4-layer progressive disclosure: `list_apps` → `describe_compose_schema` → `describe_compose_method` → `compose_query`); `build_compose_schema(app) -> ComposeSchema`; `ComposeSchema` (`render_introspection()`/`render_sdl()`/`render_method_sdl()`); `compose_introspect(schema, query)` (GraphiQL-style introspection, paired with MCP Layer 3 which rejects introspection — MCP uses progressive disclosure, HTTP GraphiQL uses full introspection); `ComposeSchemaError` and subclasses. Fixed three-layer schema (`Query` → `*ServiceQuery` → methods). Layer 3 takes a standard GraphQL string and **rejects introspection** (`__schema`/`__type`/`__typename`), returning `{data: null, errors: [...]}` to steer exploration to Layers 1/2. Execution boundary: the GraphQL layer does **not** wrap the service method's return in another `Resolver` — the method already does `Resolver().resolve(dtos)` internally; the outer layer only calls the method → field projection (`subset.build_subset_model`) → serialization.
+  - **UseCase GraphQL + 4-layer MCP**: New public API: `create_use_case_graphql_mcp_server(apps, name)` (4-layer progressive disclosure: `list_apps` → `describe_compose_schema` → `describe_compose_method` → `compose_query`); `build_compose_schema(app) -> ComposeSchema`; `ComposeSchema` (`render_introspection()`/`render_sdl()`/`render_method_sdl()`); `compose_introspect(schema, query)` (GraphiQL-style introspection, paired with MCP Layer 3 which rejects introspection — MCP uses progressive disclosure, HTTP GraphiQL uses full introspection); `ComposeSchemaError` and subclasses. Fixed three-layer schema (`Query` → `*ServiceQuery` → methods). Layer 3 takes a standard GraphQL string and **rejects introspection** (`__schema`/`__type`/`__typename`), returning `{data: null, errors: [...]}` to steer exploration to Layers 1/2. Execution boundary: the GraphQL layer does **not** wrap the service method's return in another `Resolver` — the method already does `Resolver().resolve(dtos)` internally; the outer layer only calls the method → field projection (`subset.build_subset_model`) → serialization.
 - preserved (unchanged):
   - `UseCaseService`/`BusinessMeta`/`@query`/`@mutation`/`FromContext`/`UseCaseAppConfig`, `create_use_case_router`, `create_use_case_jsonrpc_router`, `create_use_case_voyager`, and all GraphQL-mode capabilities (`GraphQLHandler`/`SDLGenerator`/existing `mcp/`).
-

@@ -26,12 +26,17 @@ from __future__ import annotations
 import dataclasses
 import enum
 import types
-from typing import Annotated, Any, Union, get_args, get_origin, get_type_hints
+from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo as PydanticFieldInfo
 
-from nexusx.type_converter import SCALAR_TYPE_MAP
+from nexusx.type_converter import (
+    SCALAR_TYPE_MAP,
+    describe_literal_values,
+    literal_allowed_values,
+    literal_scalar_type,
+)
 from nexusx.use_case.compose_schema import (
     ArgumentInfo,
     DuplicateTypeError,
@@ -45,7 +50,14 @@ from nexusx.use_case.compose_schema import (
     non_null,
 )
 
-__all__ = ["ComposeTypeMapper", "is_from_context_annotation"]
+__all__ = [
+    "ComposeTypeMapper",
+    "is_from_context_annotation",
+    # Re-exported from nexusx.type_converter (single source since nexusx
+    # #153) so existing import paths keep working.
+    "describe_literal_values",
+    "literal_allowed_values",
+]
 
 
 # Custom scalars emitted to SDL as ``scalar <Name>``. Kept aligned with the
@@ -90,6 +102,11 @@ def is_from_context_annotation(annotation: Any) -> bool:
     return any(isinstance(meta, FromContext) for meta in metadata)
 
 
+# ``literal_allowed_values`` / ``describe_literal_values`` and the Literal
+# scalar-mapping rules live in ``nexusx.type_converter`` (single source for
+# the entity-first and compose paths, nexusx #153) and are re-exported above.
+
+
 class ComposeTypeMapper:
     """Accumulates ``TypeInfo`` definitions while mapping Python types.
 
@@ -123,6 +140,11 @@ class ComposeTypeMapper:
         Wraps non-Optional / non-list types in NON_NULL (i.e. ``T`` → ``T!``).
         Callers wanting nullable semantics must pass ``Optional[T]`` or
         ``T | None``.
+
+        Scalar ``Literal`` annotations map to the GraphQL scalar type of their
+        values. All non-None values must share one Python type because GraphQL
+        fields cannot represent a union of scalar types. A ``None`` literal
+        makes the resulting type nullable.
 
         Raises:
             UnsupportedTypeError: for bytes/Decimal/Any/dict/tuple/etc.
@@ -179,6 +201,10 @@ class ComposeTypeMapper:
         if origin is list:
             return self._map_list(py_type, force_nullable=force_nullable, is_input=is_input)
 
+        # Literal["value"] / Literal["one", "two"] / Literal["value", None]
+        if origin is Literal:
+            return self._map_literal(py_type, force_nullable=force_nullable, is_input=is_input)
+
         # tuple — reject, fixed-size tuples aren't idiomatic GraphQL
         if origin is tuple:
             raise UnsupportedTypeError(
@@ -189,7 +215,7 @@ class ComposeTypeMapper:
         if origin is not None:
             raise UnsupportedTypeError(
                 f"Generic type {py_type!r} is not supported in compose schemas. "
-                "Supported containers: list[T], Optional[T]."
+                "Supported wrappers: list[T], Optional[T], Literal[value, ...]."
             )
 
         # Leaf type (scalar / enum / Pydantic)
@@ -226,6 +252,28 @@ class ComposeTypeMapper:
         list_ref = list_of(inner_ref)
         return list_ref if force_nullable else non_null(list_ref)
 
+    def _map_literal(
+        self, py_type: Any, force_nullable: bool, *, is_input: bool = False
+    ) -> TypeRef:
+        """Map a ``Literal`` to the GraphQL scalar shared by its values.
+
+        GraphQL has no literal-constraint type, so Pydantic remains
+        responsible for enforcing the allowed values during input coercion.
+        Validation rules live in ``type_converter.literal_scalar_type``;
+        ``ValueError`` is translated so this path keeps raising
+        ``UnsupportedTypeError`` with identical messages.
+        """
+        try:
+            literal_type, has_none = literal_scalar_type(py_type)
+        except ValueError as exc:
+            raise UnsupportedTypeError(str(exc)) from exc
+        assert literal_type is not None  # _map only dispatches Literal origins here
+        return self._map(
+            literal_type,
+            force_nullable=force_nullable or has_none,
+            is_input=is_input,
+        )
+
     def _map_leaf(self, py_type: Any, *, is_input: bool = False) -> TypeRef:
         """Map a leaf Python type to a TypeRef, registering TypeInfo as needed."""
         # ``None`` / ``type(None)`` should never reach here from well-formed
@@ -248,9 +296,7 @@ class ComposeTypeMapper:
 
         # Unsupported builtins
         if issubclass(py_type, _UNSUPPORTED_BUILTIN_TYPES):
-            raise UnsupportedTypeError(
-                f"{py_type.__name__} is not supported in compose schemas."
-            )
+            raise UnsupportedTypeError(f"{py_type.__name__} is not supported in compose schemas.")
 
         # SQLModel entity (table=True) — forbidden by project convention.
         # DTOs (DefineSubset subclasses) are plain BaseModel and pass.
@@ -270,15 +316,13 @@ class ComposeTypeMapper:
         # register as INPUT_OBJECT (with input_fields populated) instead of OBJECT.
         if issubclass(py_type, BaseModel):
             if is_input:
-                return TypeRef(
-                    kind="INPUT_OBJECT", name=self._register_input_object(py_type)
-                )
+                return TypeRef(kind="INPUT_OBJECT", name=self._register_input_object(py_type))
             return TypeRef(kind="OBJECT", name=self._register_object(py_type))
 
         raise UnsupportedTypeError(
             f"Type {py_type!r} is not supported in compose schemas. "
             "Supported: scalars (int/float/str/bool/UUID/datetime), enums, "
-            "Pydantic BaseModel subclasses, and list/Optional wrappers."
+            "Pydantic BaseModel subclasses, and list/Optional/Literal wrappers."
         )
 
     # ------------------------------------------------------------------
@@ -342,8 +386,7 @@ class ComposeTypeMapper:
         self._registry[name] = stub
         self._by_python_id[id(cls)] = stub
         fields = tuple(
-            self._build_field_info(fname, ftype, cls)
-            for fname, ftype in _iter_field_types(cls)
+            self._build_field_info(fname, ftype, cls) for fname, ftype in _iter_field_types(cls)
         )
         finalized = dataclasses.replace(stub, fields=fields)
         self._registry[name] = finalized
@@ -451,7 +494,10 @@ class ComposeTypeMapper:
             type_ref=self.map_python_type_as_input(field_type),
             has_default=has_default,
             default_value=default_value,
-            description=description,
+            # Same Literal surfacing as the output side (_build_field_info) —
+            # agents constructing input objects need the constraint even more
+            # than agents reading outputs.
+            description=describe_literal_values(description, field_type),
         )
 
     def _build_field_info(
@@ -469,7 +515,9 @@ class ComposeTypeMapper:
         return FieldInfo(
             name=field_name,
             type_ref=self.map_python_type(field_type),
-            description=description,
+            # Literal constraints are invisible in the GraphQL type system —
+            # surface the allowed values in the description instead.
+            description=describe_literal_values(description, field_type),
         )
 
     def _reject_sqlmodel_entity(self, py_type: type) -> None:

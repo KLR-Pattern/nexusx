@@ -41,6 +41,7 @@ def create_multi_app_mcp_server(
     apps: list[Application],
     name: str = "Multi-App nexusx API",
     allow_mutation: bool = False,
+    instructions: str | None = None,
 ) -> FastMCP:
     """Create an MCP server that exposes multiple GraphQL APIs as tools.
 
@@ -149,8 +150,9 @@ def create_multi_app_mcp_server(
         finally:
             await manager.dispose()
 
-    # Create the FastMCP server
-    mcp = FastMCP(name, lifespan=_lifespan)
+    # Create the FastMCP server (instructions ride the initialize handshake —
+    # the agent's first read; None sends nothing)
+    mcp = FastMCP(name, instructions=instructions, lifespan=_lifespan)
 
     # Register all multi-app tools
     register_multi_app_tools(mcp, manager, allow_mutation=allow_mutation)
@@ -166,6 +168,7 @@ def create_single_app_mcp_server(
     session_factory: Callable | None = None,
     enable_pagination: bool = False,
     auto_query_config: AutoQueryConfig | None = None,
+    instructions: str | None = None,
 ) -> FastMCP:
     """Create a simplified MCP server for single-app scenarios.
 
@@ -263,8 +266,9 @@ def create_single_app_mcp_server(
     )
     _ensure_operations(manager.handler, "create_single_app_mcp_server")
 
-    # Create the FastMCP server
-    mcp = FastMCP(name)
+    # Create the FastMCP server (instructions ride the initialize handshake —
+    # the agent's first read; None sends nothing)
+    mcp = FastMCP(name, instructions=instructions)
 
     # Register simplified tools (no app_name required)
     register_simple_tools(mcp, manager, allow_mutation=allow_mutation)

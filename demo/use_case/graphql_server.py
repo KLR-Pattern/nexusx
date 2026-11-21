@@ -8,7 +8,7 @@ protocol knowledge required.
 Routing inside the POST handler:
 - ``is_introspection_query(query)`` → ``compose_introspect(schema, query)``
   (services ``__schema`` / ``__type`` / ``__typename`` so GraphiQL can boot)
-- otherwise → ``execute_compose_query(app, schema, query, context)``
+- otherwise → ``execute_compose_query(app, schema, query, context, variables)``
   (real data fetch; ``__schema`` etc. are rejected here per spec FR-008,
   redirecting clients to the schema-discovery MCP layers when relevant)
 
@@ -65,24 +65,6 @@ async def graphql_endpoint(request: Request) -> JSONResponse:
     query: str = body.get("query", "")
     variables: dict[str, Any] | None = body.get("variables")
     operation_name: str | None = body.get("operationName")
-
-    # Variables aren't currently supported by execute_compose_query — inline
-    # them if you need parametrized queries. Fail loudly so callers notice.
-    if variables:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "data": None,
-                "errors": [
-                    {
-                        "message": (
-                            "Variables are not yet supported by the compose "
-                            "executor; inline arguments in the query string."
-                        )
-                    }
-                ],
-            },
-        )
     if operation_name:
         # operationName selection is silently accepted (single-op queries
         # work without it); multi-op queries aren't currently supported.
@@ -96,6 +78,7 @@ async def graphql_endpoint(request: Request) -> JSONResponse:
         schema=SCHEMA,
         query=query,
         context={},  # no FromContext params in this demo
+        variables=variables,
     )
     # ``execute_compose_query`` returns Pydantic subset-model instances inside
     # the ``data`` tree; JSONResponse can't serialize them directly. Run them

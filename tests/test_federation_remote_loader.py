@@ -301,11 +301,12 @@ class TestPagedParamsSplit:
         limit=5 / limit=10 loads (defect 1)."""
         import asyncio
 
+        from pydantic import BaseModel
+
         from nexusx.federation.remote_loader import fetch_remote_subtree
         from nexusx.loader.pagination import Paged
         from nexusx.loader.registry import ErManager
         from nexusx.query_parser import FieldSelection
-        from pydantic import BaseModel
 
         class Target(BaseModel):
             id: int
@@ -378,9 +379,10 @@ class TestPagedParamsSplit:
     def test_paged_selection_alone_yields_none_type_key(self):
         """The root cause, locked: the {items, pagination} wrapper is not a
         target-entity field set, so the selection fingerprint is None."""
+        from pydantic import BaseModel
+
         from nexusx.loader.query_meta import generate_type_key_from_selection
         from nexusx.query_parser import FieldSelection
-        from pydantic import BaseModel
 
         class Target(BaseModel):
             id: int
@@ -419,6 +421,8 @@ class TestFederationLimitClamp:
     async def test_fetch_clamps_to_rel_max_page_size(self):
         """A β fetch with limit=100000 against a relationship whose
         max_page_size is the default 100 must send limit: 100 on the wire."""
+        from pydantic import BaseModel
+
         from nexusx.federation.remote_loader import (
             create_paginated_remote_loader,
             paged_from_selection,
@@ -426,7 +430,6 @@ class TestFederationLimitClamp:
             set_remote_selection,
         )
         from nexusx.query_parser import FieldSelection
-        from pydantic import BaseModel
 
         class Target(BaseModel):
             id: int

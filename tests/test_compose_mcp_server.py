@@ -297,6 +297,88 @@ class TestLayer3ComposeQuery:
         assert data["data"] is None
         assert "Service 'Op' not found" in data["errors"][0]["message"]
 
+    async def test_variables_pass_string_with_quotes(self, mcp_server) -> None:
+        """Regression: strings with quotes/backslashes/newlines via variables.
+
+        Inline GraphQL literals with such characters are the #1 source of
+        agent-authored parse errors; variables sidestep all escaping.
+        """
+        nasty = 'He said "hi" \\ done\n(tabs\ttoo)'
+        data = await _call(
+            mcp_server,
+            "compose_query",
+            {
+                "app_name": "project",
+                "query": (
+                    "mutation($t: String!) { TaskService { create_task(title: $t) { id title } } }"
+                ),
+                "variables": {"t": nasty},
+            },
+        )
+        assert data["errors"] == []
+        assert data["data"]["TaskService"]["create_task"]["title"] == nasty
+
+    async def test_query_with_variables_but_none_provided(self, mcp_server) -> None:
+        data = await _call(
+            mcp_server,
+            "compose_query",
+            {
+                "app_name": "project",
+                "query": "mutation($t: String!) { TaskService { create_task(title: $t) { id } } }",
+            },
+        )
+        assert data["data"] is None
+        msg = data["errors"][0]["message"]
+        assert "declares variables ['t']" in msg
+        assert "'variables'" in msg  # 指路：用 variables 参数传值
+
+    async def test_partial_variables_report_missing_names(self, mcp_server) -> None:
+        data = await _call(
+            mcp_server,
+            "compose_query",
+            {
+                "app_name": "project",
+                "query": (
+                    "mutation($a: String!, $b: String!) "
+                    "{ TaskService { create_task(title: $a) { id } } }"
+                ),
+                "variables": {"a": "x"},
+            },
+        )
+        assert data["data"] is None
+        assert "Missing variables: ['b']" in data["errors"][0]["message"]
+
+    async def test_variable_default_value_names_the_limitation(self, mcp_server) -> None:
+        """Declared defaults ($t: String = "x") are required too — but the
+        error must say defaults aren't supported, not contradict the query
+        (GraphQL spec would silently apply the default; the parser never did).
+        """
+        data = await _call(
+            mcp_server,
+            "compose_query",
+            {
+                "app_name": "project",
+                "query": (
+                    'mutation($t: String = "fallback") '
+                    "{ TaskService { create_task(title: $t) { id } } }"
+                ),
+            },
+        )
+        assert data["data"] is None
+        msg = data["errors"][0]["message"]
+        assert "declares variables ['t']" in msg
+        assert "default values are not supported" in msg
+        # 反例：纯 $t: String! 漏传时不附加默认值说明（信息保持切题）
+        plain = await _call(
+            mcp_server,
+            "compose_query",
+            {
+                "app_name": "project",
+                "query": "mutation($t: String!) { TaskService { create_task(title: $t) { id } } }",
+            },
+        )
+        assert "default values" not in plain["errors"][0]["message"]
+
 
 # ──────────────────────────────────────────────────────────────────────
 # FromContext plumbing through Layer 3

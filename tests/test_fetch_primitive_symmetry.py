@@ -19,8 +19,8 @@ import inspect
 from pathlib import Path
 
 from nexusx.federation.remote_loader import (
-    prepare_dto_loader,
     fetch_remote_subtree,
+    prepare_dto_loader,
 )
 
 # fetch_remote_subtree.__module__ is the string "nexusx.federation.remote_loader"

@@ -21,7 +21,6 @@ from sqlmodel import Field, Relationship, SQLModel
 
 from nexusx import AutoQueryConfig, GraphQLHandler, query
 from nexusx.mcp import Application, create_multi_app_mcp_server, create_single_app_mcp_server
-from nexusx.mcp.application import _coerce_to_application
 from nexusx.mcp.managers.single_app_manager import SingleAppManager
 
 try:

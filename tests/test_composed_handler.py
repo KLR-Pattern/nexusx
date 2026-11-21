@@ -20,7 +20,6 @@ from nexusx import ComposedErManager, ErManager, GraphQLHandler, query
 from nexusx.loader import LoaderRegistry
 from nexusx.mcp import Application
 
-
 # ── 实体（Ch 前缀，带静态 @query，不查 db）──
 
 class ChUser(SQLModel, table=True):

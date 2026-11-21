@@ -9,7 +9,12 @@ from typing import Any, get_args, get_origin, get_type_hints
 from sqlmodel import SQLModel
 
 from nexusx.introspection import QUERY_META_PARAM  # noqa: F401
-from nexusx.type_converter import TypeConverter
+from nexusx.type_converter import (
+    SCALAR_TYPE_MAP,
+    TypeConverter,
+    describe_literal_values,
+    literal_scalar_type,
+)
 from nexusx.utils.pagination_schema import (
     federation_order_enum_layout,
     has_any_paginated_relationship,
@@ -86,6 +91,14 @@ def _python_type_to_graphql_inner(
     )
     if is_input:
         return f"{python_type.__name__}{'!' if not nullable else ''}"
+
+    # Scalar Literal — map to the scalar shared by its values; a None member
+    # makes the field nullable (single source: type_converter.literal_scalar_type).
+    literal = literal_scalar_type(python_type)
+    if literal is not None:
+        scalar, has_none = literal
+        base_type = SCALAR_TYPE_MAP[scalar]
+        return f"{base_type}{'!' if not (nullable or has_none) else ''}"
 
     # Handle basic Python types
     base_type = converter.get_scalar_type_name(python_type) or "String"
@@ -354,9 +367,14 @@ class SDLGenerator:
             # Convert type to GraphQL
             gql_type = self._input_type_to_graphql(field_type, field_info)
 
-            # Add field description if available
-            if field_info and getattr(field_info, "description", None):
-                fields.append(f'  """{field_info.description}"""')
+            # Add field description if available — Literal constraints append
+            # "Allowed values: ..." like the output side.
+            if field_info:
+                description = describe_literal_values(
+                    getattr(field_info, "description", None), field_type
+                )
+                if description:
+                    fields.append(f'  """{description}"""')
 
             fields.append(f"  {field_name}: {gql_type}")
 
@@ -404,6 +422,14 @@ class SDLGenerator:
         if entity_name:
             return entity_name if is_optional else f"{entity_name}!"
 
+        # Scalar Literal — same rule as the output side; a None member makes
+        # the input field nullable.
+        literal = literal_scalar_type(python_type)
+        if literal is not None:
+            scalar, has_none = literal
+            base_type = SCALAR_TYPE_MAP[scalar]
+            return base_type if is_optional or has_none else f"{base_type}!"
+
         # Handle basic Python types
         base_type = self._converter.get_scalar_type_name(python_type) or "String"
         return base_type if is_optional else f"{base_type}!"
@@ -427,9 +453,14 @@ class SDLGenerator:
             if field_name in registry_rels:
                 continue
             gql_type = self._field_info_to_graphql(field_info)
-            # Add field description if available
-            if field_info.description:
-                fields.append(f'  """{field_info.description}"""')
+            # Add field description if available — Literal constraints append
+            # "Allowed values: ..." (SDL has no constrained-scalar kind, the
+            # description is where the values live for agents).
+            description = describe_literal_values(
+                field_info.description, field_info.annotation
+            )
+            if description:
+                fields.append(f'  """{description}"""')
             fields.append(f"  {field_name}: {gql_type}")
 
         # Get relationship fields from type hints

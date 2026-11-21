@@ -12,8 +12,6 @@ Covers:
 
 from __future__ import annotations
 
-import warnings
-
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, SQLModel

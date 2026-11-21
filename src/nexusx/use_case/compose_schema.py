@@ -234,9 +234,7 @@ class ComposeSchema:
         Returns ``None`` when the service or method is not found, so callers
         can produce a friendly "not found" error without try/except.
         """
-        return _render_method_sdl(
-            self._registry, service_name, method_name, self._has_mutation
-        )
+        return _render_method_sdl(self._registry, service_name, method_name, self._has_mutation)
 
 
 def build_compose_schema(app: Any) -> ComposeSchema:
@@ -285,9 +283,7 @@ def build_compose_schema(app: Any) -> ComposeSchema:
     method_metas: list[tuple[type, str, str, str | None, Any, Any]] = []
     for service_cls in app.services:
         if not isinstance(service_cls, type) or not issubclass(service_cls, UseCaseService):
-            raise ComposeSchemaError(
-                f"Service {service_cls!r} is not a UseCaseService subclass."
-            )
+            raise ComposeSchemaError(f"Service {service_cls!r} is not a UseCaseService subclass.")
 
         service_name = service_cls.__name__
         if service_name in seen_service_names:
@@ -307,8 +303,7 @@ def build_compose_schema(app: Any) -> ComposeSchema:
             signature_key = (service_name, method_name)
             if signature_key in seen_method_signatures:
                 raise DuplicateMethodError(
-                    f"Method '{method_name}' appears twice on service "
-                    f"'{service_name}'."
+                    f"Method '{method_name}' appears twice on service '{service_name}'."
                 )
             seen_method_signatures.add(signature_key)
 
@@ -332,8 +327,7 @@ def build_compose_schema(app: Any) -> ComposeSchema:
     # the return annotation in ``mapper._registry`` under their bare class
     # names. The return_refs are held for the assembly step.
     return_refs: list[TypeRef] = [
-        mapper.map_python_type(return_type)
-        for (_, _, _, _, return_type, _) in method_metas
+        mapper.map_python_type(return_type) for (_, _, _, _, return_type, _) in method_metas
     ]
 
     # PHASE B — register every method's arg-side types as INPUT_OBJECT.
@@ -384,9 +378,7 @@ def build_compose_schema(app: Any) -> ComposeSchema:
             service_query_fields.append(
                 FieldInfo(
                     name=service_name,
-                    type_ref=non_null(
-                        TypeRef(kind="OBJECT", name=service_query_type.name)
-                    ),
+                    type_ref=non_null(TypeRef(kind="OBJECT", name=service_query_type.name)),
                     description=service_cls.__doc__,
                 )
             )
@@ -403,9 +395,7 @@ def build_compose_schema(app: Any) -> ComposeSchema:
             service_mutation_fields.append(
                 FieldInfo(
                     name=service_name,
-                    type_ref=non_null(
-                        TypeRef(kind="OBJECT", name=service_mutation_type.name)
-                    ),
+                    type_ref=non_null(TypeRef(kind="OBJECT", name=service_mutation_type.name)),
                     description=service_cls.__doc__,
                 )
             )
@@ -468,6 +458,10 @@ def _build_method_arguments(
     """
     sig = inspect.signature(func)
     args: list[ArgumentInfo] = []
+    # Local import keeps the mapper module out of the import graph for
+    # callers that only consume the dataclasses (mirrors build_compose_schema).
+    from nexusx.use_case.compose_type_mapper import describe_literal_values
+
     try:
         hints = get_type_hints(func, include_extras=True)
     except Exception:  # noqa: BLE001
@@ -503,7 +497,9 @@ def _build_method_arguments(
                 type_ref=type_ref,
                 has_default=has_default,
                 default_value=param.default if has_default else None,
-                description=None,
+                # Literal constraints are invisible in the GraphQL type
+                # system — surface the allowed values in the description.
+                description=describe_literal_values(None, annotation),
             )
         )
     return args
@@ -576,47 +572,51 @@ def _render_sdl(registry: dict[str, TypeInfo], has_mutation: bool) -> str:
     )
 
     for scalar in scalars:
-        lines.append(f'scalar {scalar.name}')
+        lines.append(f"scalar {scalar.name}")
         if scalar.description:
             lines.insert(-1, f'"""{scalar.description}"""')
     for en in enums:
         if en.description:
             lines.append(f'"""{en.description}"""')
-        lines.append(f'enum {en.name} {{')
+        lines.append(f"enum {en.name} {{")
         for v in en.enum_values:
-            lines.append(f'  {v.name}')
-        lines.append('}')
-        lines.append('')
+            lines.append(f"  {v.name}")
+        lines.append("}")
+        lines.append("")
     for obj in dto_types + service_types:
         if obj.description:
             lines.append(f'"""{obj.description}"""')
-        lines.append(f'type {obj.name} {{')
+        lines.append(f"type {obj.name} {{")
         for f in obj.fields:
             arg_str = ""
             if f.args:
-                arg_str = '(' + ", ".join(
-                    f"{a.name}: {_type_ref_to_sdl(a.type_ref)}"
-                    + (f" = {_sdl_literal(a.default_value)}" if a.has_default else "")
-                    for a in f.args
-                ) + ")"
-            lines.append(f'  {f.name}{arg_str}: {_type_ref_to_sdl(f.type_ref)}')
-        lines.append('}')
-        lines.append('')
+                arg_str = (
+                    "("
+                    + ", ".join(
+                        f"{a.name}: {_type_ref_to_sdl(a.type_ref)}"
+                        + (f" = {_sdl_literal(a.default_value)}" if a.has_default else "")
+                        for a in f.args
+                    )
+                    + ")"
+                )
+            lines.append(f"  {f.name}{arg_str}: {_type_ref_to_sdl(f.type_ref)}")
+        lines.append("}")
+        lines.append("")
     root_query = registry.get("Query")
     if root_query is not None:
-        lines.append('type Query {')
+        lines.append("type Query {")
         for f in root_query.fields:
-            lines.append(f'  {f.name}: {_type_ref_to_sdl(f.type_ref)}')
-        lines.append('}')
-        lines.append('')
+            lines.append(f"  {f.name}: {_type_ref_to_sdl(f.type_ref)}")
+        lines.append("}")
+        lines.append("")
     if has_mutation:
         root_mutation = registry.get("Mutation")
         if root_mutation is not None:
-            lines.append('type Mutation {')
+            lines.append("type Mutation {")
             for f in root_mutation.fields:
-                lines.append(f'  {f.name}: {_type_ref_to_sdl(f.type_ref)}')
-            lines.append('}')
-            lines.append('')
+                lines.append(f"  {f.name}: {_type_ref_to_sdl(f.type_ref)}")
+            lines.append("}")
+            lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -676,9 +676,7 @@ def _type_info_to_introspection(t: TypeInfo) -> dict[str, Any]:
         payload["interfaces"] = []
     elif t.kind == "INPUT_OBJECT":
         payload["fields"] = None
-        payload["inputFields"] = [
-            _arg_to_introspection(a) for a in t.input_fields
-        ]
+        payload["inputFields"] = [_arg_to_introspection(a) for a in t.input_fields]
         payload["enumValues"] = None
         payload["interfaces"] = []
     elif t.kind == "ENUM":
@@ -849,30 +847,34 @@ def _emit_type_sdl(t: TypeInfo, lines: list[str]) -> None:
     if t.description:
         lines.append(f'"""{t.description}"""')
     if t.kind == "SCALAR":
-        lines.append(f'scalar {t.name}')
+        lines.append(f"scalar {t.name}")
         return
     if t.kind == "ENUM":
-        lines.append(f'enum {t.name} {{')
+        lines.append(f"enum {t.name} {{")
         for v in t.enum_values:
-            lines.append(f'  {v.name}')
-        lines.append('}')
+            lines.append(f"  {v.name}")
+        lines.append("}")
         return
     keyword = "type" if t.kind == "OBJECT" else "input"
-    lines.append(f'{keyword} {t.name} {{')
+    lines.append(f"{keyword} {t.name} {{")
     if t.kind == "INPUT_OBJECT":
         # Input fields are ArgumentInfo — render ``name: Type`` with an optional
         # ``= literal`` default clause (no method-arg parenthesization here).
         for f in t.input_fields:
             tail = f" = {_sdl_literal(f.default_value)}" if f.has_default else ""
-            lines.append(f'  {f.name}: {_type_ref_to_sdl(f.type_ref)}{tail}')
+            lines.append(f"  {f.name}: {_type_ref_to_sdl(f.type_ref)}{tail}")
     else:
         for f in t.fields:
             arg_str = ""
             if f.args:
-                arg_str = '(' + ", ".join(
-                    f"{a.name}: {_type_ref_to_sdl(a.type_ref)}"
-                    + (f" = {_sdl_literal(a.default_value)}" if a.has_default else "")
-                    for a in f.args
-                ) + ")"
-            lines.append(f'  {f.name}{arg_str}: {_type_ref_to_sdl(f.type_ref)}')
-    lines.append('}')
+                arg_str = (
+                    "("
+                    + ", ".join(
+                        f"{a.name}: {_type_ref_to_sdl(a.type_ref)}"
+                        + (f" = {_sdl_literal(a.default_value)}" if a.has_default else "")
+                        for a in f.args
+                    )
+                    + ")"
+                )
+            lines.append(f"  {f.name}{arg_str}: {_type_ref_to_sdl(f.type_ref)}")
+    lines.append("}")

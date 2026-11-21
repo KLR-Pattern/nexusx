@@ -1,5 +1,25 @@
 # Changelog
 
+## 6.9.1
+
+### Fixed
+
+- Auto-fit the Related Entities sub-graph in the Voyager sidebar. d3-graphviz only
+  honors `fit` when a width/height is set, so the component now mirrors
+  `GraphUI.render()` (`.width("100%").height("100%").fit(true)` + `resetZoom()`)
+  and re-centers on every tab/entity switch. Previously the sub-graph rendered at
+  its natural size and overflowed the sidebar, requiring a manual zoom-out.
+
+## 6.9.0
+
+### Fixed
+
+- Restore `AutoLoad(origin=...)` for DTO fields whose names differ from their
+  registered relationships. Type checks and manual resolver priority remain unchanged.
+- Preserve required SQL columns when fields use one relationship with different DTO types.
+- Apply pagination defaults by DTO field name so aliases retain separate limits and offsets.
+- Add regression tests and document relationship overrides in the Core API guide.
+
 ## [Unreleased] — specs/019 可组合 ErManager（同进程多 engine 组合）
 
 新增 `ComposedErManager`：把多个自洽的 `ErManager`（各自单 engine）组合成一个

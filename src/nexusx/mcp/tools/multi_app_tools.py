@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nexusx.mcp.annotations import destructive, read_only
 from nexusx.mcp.types.errors import (
     MCPErrors,
     create_error_response,
@@ -32,8 +33,18 @@ def register_multi_app_tools(
             in list_apps. Default is False (read-only mode).
     """
 
+    # AI mutation safety (hint layer): graphql_query executes arbitrary
+    # GraphQL, so its read-only annotation must reflect whether any reachable
+    # schema actually exposes a Mutation operation — not the allow_mutation
+    # flag, which only gates which tools are advertised.
+    has_mutations = any(
+        app.tracer.list_group_operations("Mutation")
+        for app in manager.apps.values()
+    )
+    exec_annotations = destructive() if has_mutations else read_only()
+
     # Layer 0: Application discovery
-    @mcp.tool()
+    @mcp.tool(annotations=read_only())
     def list_apps() -> dict[str, Any]:
         """List all available applications.
 
@@ -99,7 +110,7 @@ def register_multi_app_tools(
             return create_error_response(str(e), MCPErrors.INTERNAL_ERROR)
 
     # Layer 1: List operations
-    @mcp.tool()
+    @mcp.tool(annotations=read_only())
     def list_queries(app_name: str) -> dict[str, Any]:
         """List all available GraphQL queries for a specific application.
 
@@ -139,7 +150,7 @@ def register_multi_app_tools(
 
     if allow_mutation:
 
-        @mcp.tool()
+        @mcp.tool(annotations=read_only())
         def list_mutations(app_name: str) -> dict[str, Any]:
             """List all available GraphQL mutations for a specific application.
 
@@ -178,7 +189,7 @@ def register_multi_app_tools(
                 return create_error_response(str(e), MCPErrors.INTERNAL_ERROR)
 
     # Layer 2: Get operation schema
-    @mcp.tool()
+    @mcp.tool(annotations=read_only())
     def get_query_schema(
         entity: str, method: str, app_name: str, response_type: str = "sdl"
     ) -> dict[str, Any]:
@@ -258,7 +269,7 @@ def register_multi_app_tools(
 
     if allow_mutation:
 
-        @mcp.tool()
+        @mcp.tool(annotations=read_only())
         def get_mutation_schema(
             entity: str, method: str, app_name: str, response_type: str = "sdl"
         ) -> dict[str, Any]:
@@ -336,7 +347,7 @@ def register_multi_app_tools(
                 return create_error_response(str(e), MCPErrors.INTERNAL_ERROR)
 
     # Layer 3: Execute operations
-    @mcp.tool()
+    @mcp.tool(annotations=exec_annotations)
     async def graphql_query(query: str, app_name: str) -> dict[str, Any]:
         """Execute a GraphQL query on a specific application.
 
@@ -406,7 +417,7 @@ def register_multi_app_tools(
 
     if allow_mutation:
 
-        @mcp.tool()
+        @mcp.tool(annotations=destructive())
         async def graphql_mutation(mutation: str, app_name: str) -> dict[str, Any]:
             """Execute a GraphQL mutation on a specific application.
 

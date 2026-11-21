@@ -6,7 +6,6 @@
 读 RelationshipInfo，运行时 isinstance(PaginatedPackage)——关系命名自由。
 """
 
-import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool

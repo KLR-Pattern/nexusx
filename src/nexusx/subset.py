@@ -219,14 +219,22 @@ def _get_namespace_annotations(namespace: dict[str, Any]) -> dict[str, Any]:
     """Extract annotations from class namespace, compatible with Python 3.14+.
 
     Python 3.14 (PEP 649/749) stores annotations lazily in __annotate_func__
-    and sets __annotations__ to None in the class body namespace.
+    and no longer puts an eager ``__annotations__`` dict in the class-body
+    namespace. If VALUE-format evaluation hits a name that is not yet
+    resolvable, fall back to FORWARDREF so field names survive (mirrors the
+    pydantic-resolve fix for the same 3.14 behavior, PR #310).
     """
     annotations = namespace.get("__annotations__")
     if isinstance(annotations, dict):
         return annotations
     annotate_func = namespace.get("__annotate_func__")
     if annotate_func is not None:
-        return annotate_func(1)
+        from annotationlib import Format
+
+        try:
+            return annotate_func(Format.VALUE) or {}
+        except NameError:
+            return annotate_func(Format.FORWARDREF) or {}
     return {}
 
 

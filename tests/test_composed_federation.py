@@ -13,7 +13,6 @@
 """
 
 import httpx
-import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -22,13 +21,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from nexusx import AutoQueryConfig, ComposedErManager, DefineSubset, ErManager
-from nexusx import GraphQLHandler
+from nexusx import AutoQueryConfig, ComposedErManager, DefineSubset, ErManager, GraphQLHandler
 from nexusx import Relationship as NxRelationship
 from nexusx.federation import RemoteRelationship, RemoteService
 from nexusx.federation.http import GraphQLTransport
 from nexusx.federation.introspect import build_federable_app
-
 
 # ── RemoteService 声明（cfreviews = composed-federation reviews）──
 cfreviews = RemoteService("cfreviews", url="http://test/cfreviews")

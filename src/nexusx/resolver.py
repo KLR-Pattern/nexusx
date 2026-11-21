@@ -49,6 +49,7 @@ from pydantic.errors import PydanticUserError
 from sqlmodel import SQLModel
 
 from nexusx.context import (
+    AutoLoadInfo,
     ICollector,
     scan_expose_fields,
     scan_send_to_fields,
@@ -690,7 +691,8 @@ class Resolver:
         A field is auto-loaded when ALL of these conditions are met:
         1. No manual resolve_* method exists for the field
         2. The field is not part of the __subset__ definition (it's an extra field)
-        3. The field name matches a registered relationship on the source entity
+        3. The field name, or AutoLoad.origin, matches a registered relationship
+           on the source entity
         4. Either:
            a. The field type is a BaseModel DTO compatible with the relationship's
               target entity, OR
@@ -732,15 +734,20 @@ class Resolver:
             if field_name in subset_field_names:
                 continue
 
-            # Field name must match a registered relationship
-            if field_name not in entity_rels:
+            rel_name = field_name
+            for metadata in field_info.metadata:
+                if isinstance(metadata, AutoLoadInfo):
+                    rel_name = metadata.origin or field_name
+                    break
+
+            if rel_name not in entity_rels:
                 continue
 
             # Field type must be a BaseModel DTO, or a scalar matching a
             # CUSTOM relationship whose raw target is the same primitive type
             # (e.g. field=list[int] vs Relationship(target=list[int])).
             dto_cls = self._extract_dto_cls(field_info)
-            rel_info = entity_rels[field_name]
+            rel_info = entity_rels[rel_name]
             # Coalesced rels are resolved within the owning service's nested
             # fetch (β) — they arrive populated on the instance, not loaded
             # per-edge here (see fetch_remote_subtree). Mirrors the executor.
@@ -748,12 +755,12 @@ class Resolver:
                 continue
             if dto_cls is None:
                 if self._is_scalar_rel_field(field_info, rel_info):
-                    results.append((field_name, field_name, rel_info, field_info))
+                    results.append((field_name, rel_name, rel_info, field_info))
                 continue
 
             # DTO must be compatible with the relationship's target entity
             if is_compatible_type(dto_cls, rel_info.target_entity):
-                results.append((field_name, field_name, rel_info, field_info))
+                results.append((field_name, rel_name, rel_info, field_info))
 
         # Also auto-load ErManager rels NOT in model_fields — but ONLY when
         # the node IS the source entity (materialized types, not DefineSubset
@@ -1568,10 +1575,11 @@ class Resolver:
 
         auto_loaded: set[tuple[int, str]] = set()
 
-        # Collect auto-load specs per node, group by (node_type, rel_name)
+        # Collect auto-load specs per node, group by (node_type, rel_name, field_name)
         groups: dict[
-            tuple[type, str], list[tuple[int, Any, str, Any, Any, type[BaseModel] | None]]
+            tuple[type, str, str], list[tuple[int, Any, str, Any, Any, type[BaseModel] | None]]
         ] = {}
+        relationship_dtos: dict[tuple[type, str], set[type[BaseModel]]] = {}
 
         for idx, ln in enumerate(level):
             item, meta, _new_ctx, _snap = ln
@@ -1582,15 +1590,17 @@ class Resolver:
 
             for field_name, rel_name, rel_info, field_info in auto_load_entries:
                 dto_cls = self._extract_dto_cls(field_info) if field_info is not None else None
-                groups.setdefault((type(node), rel_name), []).append(
+                groups.setdefault((type(node), rel_name, field_name), []).append(
                     (idx, node, field_name, rel_info, field_info, dto_cls)
                 )
+                if dto_cls is not None:
+                    relationship_dtos.setdefault((type(node), rel_name), set()).add(dto_cls)
 
         if not groups:
             return auto_loaded
 
         # Process each relationship group
-        for (_node_type, rel_name), entries in groups.items():
+        for (node_type, rel_name, group_field_name), entries in groups.items():
             first_node = entries[0][1]
             first_dto = entries[0][5]
             first_rel = entries[0][3]
@@ -1626,13 +1636,20 @@ class Resolver:
                     [ve[1] for ve in valid_entries], selection,
                 )
             else:
-                type_key = generate_type_key_from_dto(first_dto) if first_dto else None
+                projection_dtos = relationship_dtos.get((node_type, rel_name), set())
+                type_key = frozenset(
+                    field_name
+                    for dto_cls in projection_dtos
+                    for field_name in (generate_type_key_from_dto(dto_cls) or ())
+                ) or None
                 # Paged default (field Annotated metadata) is fixed — caller
                 # context no longer overrides it (declarative pagination; runtime
                 # input lives on the UseCase method signature). per-params split
                 # (params_key) keeps different field defaults in different batches
                 # (aiodataloader: one instance = one batch).
-                paged_default = getattr(type(first_node), "__paged_fields__", {}).get(rel_name)
+                paged_default = getattr(type(first_node), "__paged_fields__", {}).get(
+                    group_field_name
+                )
                 merged = paged_default
                 use_page_loader = (
                     merged is not None
@@ -1648,7 +1665,16 @@ class Resolver:
                 if loader is None:
                     continue
                 if first_dto is not None and type_key is not None:
-                    set_query_meta(loader, generate_query_meta_from_dto(first_dto))
+                    query_meta = generate_query_meta_from_dto(first_dto)
+                    for dto_cls in projection_dtos:
+                        if dto_cls is first_dto:
+                            continue
+                        other_meta = generate_query_meta_from_dto(dto_cls)
+                        query_meta['fields'] = list(dict.fromkeys(
+                            query_meta['fields'] + other_meta['fields']
+                        ))
+                        query_meta['request_types'].extend(other_meta['request_types'])
+                    set_query_meta(loader, query_meta)
                 if use_page_loader:
                     commands = _make_page_load_commands(first_rel, keys, merged)
                     results = await loader.load_many(commands)

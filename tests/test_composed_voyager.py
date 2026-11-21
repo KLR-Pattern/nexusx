@@ -351,10 +351,10 @@ class TestComposedPlusFederationStacking:
 
 # ── US3 — UseCase page clusters registered DTOs by member (FR-005) ─────
 
+from nexusx import query  # noqa: E402
 from nexusx.use_case.business import UseCaseService  # noqa: E402
 from nexusx.voyager.use_case_voyager import UseCaseVoyager  # noqa: E402
 from nexusx.voyager.voyager_context import VoyagerContext  # noqa: E402
-from nexusx import query  # noqa: E402
 
 
 class CvSummary(BaseModel):

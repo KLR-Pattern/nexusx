@@ -41,7 +41,10 @@ def test_get_source_code_supports_full_qualified_class_name():
 
 def test_builtin_object_without_source_does_not_fail_format_validation():
     ctx = _make_ctx()
-    result = ctx.get_source_code("os.path.exists")
+    # builtins.len is a C builtin — no source on every Python version.
+    # (os.path.exists gained retrievable source on 3.14, so it no longer
+    # exercises the no-source path there.)
+    result = ctx.get_source_code("builtins.len")
     assert result == {"source_code": "failed to get source"}
 
 

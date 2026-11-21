@@ -3,13 +3,18 @@
 [![pypi](https://img.shields.io/pypi/v/nexusx.svg)](https://pypi.python.org/pypi/nexusx)
 [![PyPI Downloads](https://static.pepy.tech/badge/nexusx/month)](https://pepy.tech/projects/nexusx)
 
-> **Declare your SQLModel entities once — GraphQL, REST, MCP, CLI, and a
-> TypeScript SDK all derive from that single model.**
+> **A framework for building MCP-first, Agent-first applications — declare
+> your SQLModel entities once; MCP, GraphQL, REST, CLI, and a TypeScript
+> SDK all derive from that single model.**
 
-nexusx is a Python library for SQLModel applications. You declare entities +
-relationships, `DefineSubset` DTOs, and use-case methods; nexusx derives every
-delivery protocol from that one model — sharing one DataLoader-backed query
-graph (N+1-proof) and the same typed DTOs everywhere.
+nexusx is a Python framework for building **MCP-first, Agent-first
+applications** on SQLModel. You declare entities + relationships,
+`DefineSubset` DTOs, and use-case methods; nexusx derives every delivery
+protocol from that one model — sharing one DataLoader-backed query graph
+(N+1-proof) and the same typed DTOs everywhere. Its specialty: **APIs that
+agents understand easily** — an agent can always see what data exists,
+explore the API piece by piece, and fetch only the fields it needs, so the
+context window is spent on your data, not on decoding the interface.
 
 What it removes: in a typical FastAPI + SQLModel app you re-declare the same
 data shape for each transport — response models, GraphQL types, MCP tool
@@ -23,17 +28,28 @@ schemas, CLI arguments. nexusx collapses those re-declarations into one.
 | A non-ORM async batch function | A relationship that joins the same loaders, DTOs, and ER diagrams |
 | Entity `__federation_keys__` | Cross-service federation (auto-detected + batch-fetched) |
 
+**For AI** — nexusx builds **agent-first APIs**: MCP is a first-class protocol
+with **strong typing** and **GraphQL under the hood**. Three capabilities make
+an API easy for agents to use:
+
+- **See what data exists** (field awareness) — the schema describes every
+  type, field, and relationship with exact names and types, so an agent
+  always knows what the data looks like and what it can query.
+- **Explore the API piece by piece** (progressive disclosure) — the schema is
+  revealed on demand, layer by layer (app → service → method), so an agent
+  never has to load the whole schema into its context window up front.
+- **Fetch only what is needed** (field selection) — an agent asks for the
+  exact fields it wants; one MCP call returns the whole nested result, with
+  nothing extra.
+
+In short: the agent always has enough context to understand the data, and
+only pulls back what it needs — context is spent on your business data, not
+wasted. See [MCP & context efficiency](docs/mcp-context-efficiency.md) for
+the details.
+
 **For Human** — write SQLModel entities + typed DTOs; get REST routes, GraphQL
 schema, CLI, and TS SDK without boilerplate. Change business logic once → all
 protocols update in sync.
-
-**For AI** — MCP is a first-class protocol with **strong typing** and
-**GraphQL under the hood** — the biggest win is **context efficiency**.
-Instead of dumping large, fixed-shape objects into the context window, AI agents
-**select exactly the fields they need**, with progressive disclosure on the
-schema side and DataLoader batch-loading on the data side: one MCP call returns
-a fully-nested, N+1-proof data tree — and only what was asked for. See
-[MCP & context efficiency](docs/mcp-context-efficiency.md) for the details.
 
 ## Installation
 
@@ -51,6 +67,51 @@ pip install "nexusx[cli]"         # Typer CLI generation
 ```
 
 nexusx requires Python 3.10 or newer.
+
+## Build an application with a single prompt
+
+The fastest start is not writing code at all. The
+[nexusx-4phase skill](skills/nexusx-4phase/) gives your coding agent a staged
+workflow over nexusx: first confirm the domain model, then build entities,
+GraphQL, and use-case APIs (REST / MCP / CLI), with an optional TypeScript
+SDK at the end. Install it with the open skills CLI (works with Claude Code,
+Codex, Cursor, and more):
+
+```bash
+npx skills add KLR-Pattern/nexusx -s nexusx-4phase -a claude-code
+```
+
+Then describe the application you want. The prompt below is the actual
+prompt that kicked off
+[MindMap X](https://github.com/allmonday/mindmap-x) (translated from the
+original Chinese):
+
+```text
+/nexusx-4phase
+
+Core requirements:
+
+- A mind map / tree editor
+- Humans can edit directly in a graphical interface
+- Agents can read and modify the same tree
+- Human and agent edits are visible to each other immediately
+- Self-hosted
+- Can be started or invoked directly from agent environments
+  like Claude Code or Codex
+
+Ideal state: start it with one command inside the agent, then let the agent
+reason about and modify the mind map while the human keeps editing in the
+browser at the same time.
+```
+
+The result is a complete, self-hosted application: a browser canvas for
+humans, an MCP server for agents — Claude Code joins the same tree with one
+command (`claude mcp add --transport http mindmap http://localhost:8740/mcp`)
+— plus CLI and REST on the same operations, all derived from one nexusx
+model. Humans and agents co-edit one tree and see each other's changes in
+real time. See the
+[MindMap X repository](https://github.com/allmonday/mindmap-x) for the full
+source.
 
 ## Why nexusx
 
@@ -660,12 +721,8 @@ Start with the layer your application needs:
 | Compose engines in one process | [ComposedErManager](docs/advanced/composed_er_manager.md) |
 
 For complete runnable examples, see [`demo/`](demo/). For the progressive
-Schema-to-SDK development workflow, install the [4-phase skill](skills/nexusx-4phase/)
-with the open skills CLI (works with Claude Code, Codex, Cursor, and more):
-
-```bash
-npx skills add KLR-Pattern/nexusx -s nexusx-4phase -a claude-code
-```
+Schema-to-SDK development workflow, see
+[Build an application with a single prompt](#build-an-application-with-a-single-prompt).
 
 ## Project
 

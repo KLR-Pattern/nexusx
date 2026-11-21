@@ -2,26 +2,27 @@
 template: home.html
 home:
   hero:
-    badge: "Next-Gen Business Modeling · AI-Native · SQLModel"
+    badge: "MCP-First · Agent-First · SQLModel"
     title: "Model your business once —<br>for humans and AI alike."
-    subtitle: "Model your business entities, relationships, and use cases once — GraphQL, REST, MCP, CLI, and TS SDK all derive from it. Data is a graph; tools are just its projections."
+    subtitle: "A Python framework for building MCP-first, Agent-first applications: model entities, relationships, and use cases once — MCP, GraphQL, REST, CLI, and TS SDK all derive from it. Its specialty: APIs that agents understand easily — agents always have enough context to know what the data looks like, and fetch only the fields they need."
     install: "pip install nexusx"
     primary: {label: "Get Started", ref: "guide/quick_start"}
-    secondary: {label: "GitHub", url: "https://github.com/allmonday/nexusx"}
+    secondary: {label: "GitHub", url: "https://github.com/KLR-Pattern/nexusx"}
   sections:
     # ── AI-native integration ──
     - type: cards
       muted: true
       two: true
-      title: "AI-native integration — not bolted on"
+      title: "Agent-first — not bolted on"
       subtitle: "The same typed business model serves AI agents and developers as first-class consumers."
       cards:
         - icon: "🤖"
-          title: "For AI — first-class"
-          text: "MCP is a native protocol: strongly typed, GraphQL under the hood."
+          title: "For AI — APIs agents understand"
+          text: "MCP is a first-class protocol: strongly typed, GraphQL under the hood. Three capabilities make an API agent-friendly:"
           bullets:
-            - text: "<strong>Context efficiency</strong> — agents select exactly the fields they need; one call returns a nested, N+1-proof tree with only what was asked."
-            - text: "<strong>Progressive disclosure</strong> — list_apps → describe_compose_schema → describe_compose_method → compose_query; the schema enters context piece by piece, never whole."
+            - text: "<strong>See what data exists</strong> (field awareness) — the schema describes every type, field, and relationship with exact names and types, so an agent always knows what the data looks like and what it can query"
+            - text: "<strong>Explore the API piece by piece</strong> (progressive disclosure) — list_apps → describe_compose_schema → describe_compose_method → compose_query; the schema enters context slice by slice, never as one dump"
+            - text: "<strong>Fetch only what is needed</strong> (field selection) — an agent picks the exact fields; one call returns the full nested data tree with only what was asked"
             - {label: "MCP & context efficiency →", ref: "mcp-context-efficiency"}
         - icon: "🧑‍💻"
           title: "For Human — same model"
@@ -177,13 +178,21 @@ home:
 
     # ── Build with an agent ──
     - type: cards
-      title: "Skip the API manual — build with an agent"
-      subtitle: "Install the 4-phase skill into your coding agent — Claude Code, Codex, Cursor, and more — then describe your app in plain words. The agent drives the workflow; you review the model."
+      title: "Build an application with a single prompt"
+      subtitle: "Install the 4-phase skill into your coding agent — Claude Code, Codex, Cursor, and more — then describe your app in plain words. The agent drives the staged workflow; you review the model."
       command: "npx skills add KLR-Pattern/nexusx -s nexusx-4phase -a claude-code"
       cards:
         - {icon: "🗺️", title: "Phase 0 — model the domain", text: "Confirm the domain model and persistence strategy with you before any code is written."}
         - {icon: "🏗️", title: "Phase 1–3 — build the layers", text: "Entities and relationships, GraphQL helper surface, then UseCase REST / MCP / CLI deliveries."}
         - {icon: "🚀", title: "Phase 4 — generate the SDK", text: "Optionally emit a typed TypeScript SDK from the compose schema."}
+        - icon: "🧠"
+          title: "Real case — MindMap X"
+          text: "The original prompt that built <a href='https://github.com/allmonday/mindmap-x'>MindMap X</a> was one line — <code>/nexusx-4phase</code> — plus a requirement list:"
+          bullets:
+            - text: "A mind map / tree editor"
+            - text: "Humans edit in a graphical interface; agents read and modify the same tree, with edits visible to both sides immediately"
+            - text: "Self-hosted, launchable directly from agent environments like Claude Code or Codex"
+            - text: "The result: a complete self-hosted app — browser canvas + MCP server + CLI + REST, all derived from one nexusx model"
 
     # ── Integrations ──
     - type: integrations
@@ -202,17 +211,17 @@ home:
       title: "Start from entities, not boilerplate"
       subtitle: "Declare the model once — the data graph, response DTOs, and every delivery follow."
       primary: {label: "Read the Guide", ref: "guide/quick_start"}
-      secondary: {label: "View on GitHub", url: "https://github.com/allmonday/nexusx"}
+      secondary: {label: "View on GitHub", url: "https://github.com/KLR-Pattern/nexusx"}
 ---
 
 
 # nexusx
 
-**nexusx** is a next-generation business modeling tool with deep AI integration.
-Model your business entities, relationships, and use cases once — GraphQL,
-REST, MCP, CLI, and TS SDK all derive from that single model, sharing one
-DataLoader-backed query graph (N+1-proof) and one set of typed DTOs
-(`DefineSubset`): semantic-level isomorphism, not transport-level wrapping.
+**nexusx** is a Python framework for building MCP-first, Agent-first
+applications. Model your business entities, relationships, and use cases
+once — MCP, GraphQL, REST, CLI, and TS SDK all derive from that single model,
+sharing one DataLoader-backed query graph (N+1-proof) and one set of typed
+DTOs (`DefineSubset`): semantic-level isomorphism, not transport-level wrapping.
 
 ## Run It in 60 Seconds
 

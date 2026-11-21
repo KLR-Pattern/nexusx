@@ -2,26 +2,27 @@
 template: home.html
 home:
   hero:
-    badge: "次世代业务建模工具 · AI 原生 · SQLModel"
+    badge: "MCP 优先 · Agent 优先 · SQLModel"
     title: "一次业务建模，<br>人与 AI 共享。"
-    subtitle: "把业务实体、关系与用例建模一次，GraphQL、REST、MCP、CLI 与 TS SDK 全部派生。数据是一张图，工具只是它的投影视图。"
+    subtitle: "构建 MCP 优先、Agent 优先应用的 Python 框架：实体、关系与用例建模一次，MCP、GraphQL、REST、CLI 与 TS SDK 全部派生。特色：高效构建 Agent 容易理解的 API——Agent 有充分上下文了解数据，也只取所需字段。"
     install: "pip install nexusx"
     primary: {label: "快速开始", ref: "guide/quick_start"}
-    secondary: {label: "GitHub", url: "https://github.com/allmonday/nexusx"}
+    secondary: {label: "GitHub", url: "https://github.com/KLR-Pattern/nexusx"}
   sections:
     # ── AI 原生集成 ──
     - type: cards
       muted: true
       two: true
-      title: "AI 原生集成，而非外挂"
+      title: "Agent 优先，而非外挂"
       subtitle: "同一份类型化业务模型，AI 代理与开发者都是一级消费者。"
       cards:
         - icon: "🤖"
-          title: "面向 AI —— 一等公民"
-          text: "MCP 是原生协议：强类型，底层是 GraphQL。"
+          title: "面向 AI —— Agent 容易理解的 API"
+          text: "MCP 是一等公民协议：强类型，底层是 GraphQL。三个能力让 API 对 Agent 友好："
           bullets:
-            - text: "<strong>Context 效率</strong> —— agent 按需选字段，一次调用返回无 N+1 的嵌套数据树，且只要所求内容"
-            - text: "<strong>渐进披露</strong> —— list_apps → describe_compose_schema → describe_compose_method → compose_query，schema 按需分片进入上下文"
+            - text: "<strong>看得见有什么数据</strong>（字段信息感知）—— schema 精确描述每个类型、字段与关系，Agent 始终知道数据长什么样、能查什么"
+            - text: "<strong>一步步摸清 API</strong>（渐进披露）—— list_apps → describe_compose_schema → describe_compose_method → compose_query，schema 按需分片进入上下文，不必一次性全量加载"
+            - text: "<strong>要什么取什么</strong>（字段选择）—— Agent 指定所需字段，一次调用返回完整嵌套的数据树，且只要所求内容"
             - {label: "MCP 与 context 效率 →", ref: "mcp-context-efficiency"}
         - icon: "🧑‍💻"
           title: "面向人类 —— 同一模型"
@@ -177,13 +178,21 @@ home:
 
     # ── Agent 陪建 ──
     - type: cards
-      title: "不用啃 API 文档 —— 让 Agent 陪你建模"
-      subtitle: "把 4-phase skill 装进你的编码 Agent（Claude Code、Codex、Cursor 等），用自然语言描述你的应用。Agent 驱动流程，你只需审视模型。"
+      title: "用一句 prompt 构建应用"
+      subtitle: "把 4-phase skill 装进你的编码 Agent（Claude Code、Codex、Cursor 等），然后用自然语言描述你想要的应用。Agent 驱动分阶段工作流，你只需审视模型。"
       command: "npx skills add KLR-Pattern/nexusx -s nexusx-4phase -a claude-code"
       cards:
         - {icon: "🗺️", title: "Phase 0 —— 领域建模", text: "先和你确认领域模型与持久化策略，再动代码。"}
         - {icon: "🏗️", title: "Phase 1–3 —— 逐层实现", text: "实体与关系、GraphQL 辅助接口、UseCase 的 REST / MCP / CLI 交付。"}
         - {icon: "🚀", title: "Phase 4 —— 生成 SDK", text: "可选从 compose schema 生成类型化 TypeScript SDK。"}
+        - icon: "🧠"
+          title: "真实案例 —— MindMap X"
+          text: "构建 <a href='https://github.com/allmonday/mindmap-x'>MindMap X</a> 的原始 prompt，就是一句 <code>/nexusx-4phase</code> 加一张需求清单："
+          bullets:
+            - text: "脑图 / 树状结构编辑器"
+            - text: "人类在图形界面直接编辑；Agent 读写同一棵树，双方修改即时可见"
+            - text: "支持 self-hosted，可从 Claude Code、Codex 这类 Agent 环境直接启动唤起"
+            - text: "成果是一个完整自托管应用：浏览器画布 + MCP 服务 + CLI + REST，全部派生自同一个 nexusx 模型"
 
     # ── 技术栈 ──
     - type: integrations
@@ -202,13 +211,13 @@ home:
       title: "从实体开始，而不是样板代码"
       subtitle: "声明一次模型 —— 数据图、响应 DTO 与所有交付随之而来。"
       primary: {label: "阅读指南", ref: "guide/quick_start"}
-      secondary: {label: "查看 GitHub", url: "https://github.com/allmonday/nexusx"}
+      secondary: {label: "查看 GitHub", url: "https://github.com/KLR-Pattern/nexusx"}
 ---
 
 
 # nexusx
 
-**nexusx** 是一款深度集成 AI 的次世代业务建模工具。把业务实体、关系与用例建模一次，GraphQL、REST、MCP、CLI 与 TS SDK 全部由此派生，共享同一个 DataLoader 批量加载的查询图（无 N+1）和一套类型化 DTO（`DefineSubset`）：语义级同构，而非传输层包装。
+**nexusx** 是一个构建 MCP 优先、Agent 优先应用的 Python 框架。把业务实体、关系与用例建模一次，MCP、GraphQL、REST、CLI 与 TS SDK 全部由此派生，共享同一个 DataLoader 批量加载的查询图（无 N+1）和一套类型化 DTO（`DefineSubset`）：语义级同构，而非传输层包装。
 
 ## 60 秒运行起来
 
