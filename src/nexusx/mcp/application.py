@@ -15,10 +15,10 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
-    AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from nexusx.handler import GraphQLHandler
 from nexusx.mcp.builders.type_tracer import TypeTracer
@@ -118,6 +118,10 @@ class Application:
                 if engine_kwargs:
                     kwargs.update(engine_kwargs)
                 self._engine = create_async_engine(url, **kwargs)
+                # sqlmodel's AsyncSession (subclass) — loaders and
+                # standard queries call ``session.exec``; the plain
+                # sqlalchemy class has no ``.exec`` (AttributeError on every
+                # relationship load — pre-existing, surfaced by the MCP E2E)
                 self._session_factory = async_sessionmaker(
                     self._engine,
                     class_=AsyncSession,
