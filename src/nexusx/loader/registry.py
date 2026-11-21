@@ -30,7 +30,7 @@ from nexusx.relationship import Relationship, get_custom_relationships
 logger = logging.getLogger(__name__)
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, frozen=True)
 class RelationshipInfo:
     """Base: the orthogonal facts every relationship variant shares.
 
@@ -63,7 +63,7 @@ class RelationshipInfo:
         raise NotImplementedError
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, frozen=True)
 class LocalRelationship(RelationshipInfo):
     """Local SQL-backed relationship — capability is constant (SQL slices
     anytime); ``page_loader`` expresses ASSEMBLY (declared ``order_by``),
@@ -84,7 +84,7 @@ class LocalRelationship(RelationshipInfo):
         return self.is_list and self.page_loader is not None
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, frozen=True)
 class RemotePlainRelationship(RelationshipInfo):
     """Remote, un-paged: the member exposes only ``by_<key>_in`` — there is
     no pagination channel on the wire. Plain fetch via fetch_remote_subtree()."""
@@ -101,7 +101,7 @@ class RemotePlainRelationship(RelationshipInfo):
         return False
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, frozen=True)
 class RemotePagedRelationship(RelationshipInfo):
     """Remote paged: the member exposes ``page_by_<key>_in`` (auto-detected
     from ``__pagination_orders__``, specs/021). ``page_loader`` /
@@ -123,7 +123,7 @@ class RemotePagedRelationship(RelationshipInfo):
         return True
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, frozen=True)
 class RemoteCoalescedRelationship(RelationshipInfo):
     """Coalesced (β): resolved inside the owning service's nested fetch and
     read off the instance attribute — NOT loaded per-edge. There are no
@@ -1083,6 +1083,10 @@ class ErManager:
             )
 
         _, rel_info = matches[0]
+        # Coalesced rels carry no loader (resolved inside the member's
+        # nested fetch) — the bare ``.loader`` read below would AttributeError.
+        if isinstance(rel_info, RemoteCoalescedRelationship):
+            return None
         return self.get_loader(rel_info.loader, type_key=type_key)
 
     def get_loader_for_entity(
@@ -1100,6 +1104,10 @@ class ErManager:
             return None
         rel_info = entity_rels.get(rel_name)
         if rel_info is None:
+            return None
+        # Coalesced rels carry no loader — return None instead of crashing
+        # on the field that does not exist on that variant.
+        if isinstance(rel_info, RemoteCoalescedRelationship):
             return None
         return self.get_loader(rel_info.loader, type_key=type_key)
 

@@ -167,3 +167,29 @@ class TestTaxonomy:
         """「本地关系带服务前缀」不可表示——那是远程变体的事。"""
         rel = _local()
         assert not hasattr(rel, "target_service")
+
+
+class TestImmutability:
+    """Frozen variants — the smuggling channel is sealed (review 2026-11).
+
+    A mutable dataclass would let ``coalesced.page_loader = X`` succeed
+    silently; guarded readers (``getattr(rel_info, "page_loader", None)``)
+    would then see the smuggled state and bypass the type discrimination —
+    illegal states would become representable again. Frozen kills that at
+    the only place it could start.
+    """
+
+    def test_all_variants_are_frozen(self):
+        rel = _local()
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            rel.page_loader = object()  # type: ignore[misc]
+
+    def test_smuggling_a_page_loader_onto_coalesced_is_frozenerror(self):
+        """The exact channel P1 sealed: setattr on a loader-less variant."""
+        rel = RemoteCoalescedRelationship(
+            name="reviews", direction="ONETOMANY", fk_field="product_id",
+            target_entity=object, is_list=True,
+            target_service="ProductSvc", paginated=True,
+        )
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            rel.page_loader = object()  # type: ignore[misc]
