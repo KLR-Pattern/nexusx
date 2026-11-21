@@ -152,13 +152,12 @@ async def test_sdl_renders_paginated_remote_as_result(catalog):
     assert "type RReviewResult {" in sdl
     assert "items: [RReview!]!" in sdl
     assert "pagination: Pagination!" in sdl
-    # A local ordered relationship stays non-paginated while the global toggle
-    # is off; the remote paginated relationship must not activate it, and a
-    # federation-paginated relationship does NOT turn on local order/direction
-    # for local rels (notes keeps no args).
-    assert "notes: [RProductNote!]!" in sdl
-    assert "notes(limit:" not in sdl
-    assert "type RProductNoteResult {" not in sdl
+    # 2026-11 契约：本地有序关系(声明 order_by)自动成为分页字段 — 无全局
+    # 开关。notes 有 order_by → Result 形态 + 量参数；联邦分页关系不会给
+    # 本地关系引入 order/direction 枚举参数(那是 member 能力专属)。
+    assert "notes(limit: Int, offset: Int = 0, fetchAll: Boolean): RProductNoteResult!" in sdl
+    assert "notes(order:" not in sdl  # order/direction 是 member 能力专属，本地关系不带
+    assert "type RProductNoteResult {" in sdl  # 2026-11：本地有序关系也是分页字段
 
 
 @pytest.mark.asyncio
@@ -182,6 +181,6 @@ async def test_introspection_renders_paginated_remote_as_result(catalog):
     assert _unwrap_type_name(arg_by_name["direction"]["type"]) == "Direction"
     assert _unwrap_type_name(reviews_field["type"]) == "RReviewResult"
     notes_field = next(f for f in product["fields"] if f["name"] == "notes")
-    assert notes_field["args"] == []
-    assert _unwrap_type_name(notes_field["type"]) == "RProductNote"
-    assert "RProductNoteResult" not in types
+    assert [a["name"] for a in notes_field["args"]] == ["limit", "offset", "fetchAll"]
+    assert _unwrap_type_name(notes_field["type"]) == "RProductNoteResult"  # 2026-11：本地有序关系
+    assert "RProductNoteResult" in types  # 2026-11：本地有序关系也是分页字段

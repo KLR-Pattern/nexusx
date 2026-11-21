@@ -56,7 +56,6 @@ def _make_registry() -> ErManager:
     return ErManager(
         entities=LPO_ENTITIES,
         session_factory=get_test_session_factory(),
-        enable_pagination=True,
     )
 
 
@@ -64,7 +63,7 @@ def test_sdl_renders_order_enum_and_direction():
     """配 __pagination_orders__ 的本地分页关系 → SDL 含 order enum + direction。"""
     registry = _make_registry()
     sdl = SDLGenerator(LPO_ENTITIES).generate(
-        enable_pagination=True, loader_registry=registry
+        loader_registry=registry
     )
     review_block = sdl.split("type LPOReview {", 1)[1].split("}", 1)[0]
     # 字段签名: order enum(默认=default_order) + direction

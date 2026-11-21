@@ -166,7 +166,6 @@ def create_single_app_mcp_server(
     desc: str | None = None,
     allow_mutation: bool = False,
     session_factory: Callable | None = None,
-    enable_pagination: bool = False,
     auto_query_config: AutoQueryConfig | None = None,
     instructions: str | None = None,
 ) -> FastMCP:
@@ -196,7 +195,6 @@ def create_single_app_mcp_server(
             Mutation type in schema. Default is False (read-only mode).
         session_factory: Async session factory for DataLoader relationship
             loading. Required if queries return entities with relationships.
-        enable_pagination: When True, list relationships return Result types
             with { items, pagination } wrapping. Default False.
         auto_query_config: Optional AutoQueryConfig for auto-generating
             by_id/by_filter queries. Default None.
@@ -261,7 +259,6 @@ def create_single_app_mcp_server(
         base=base,
         description=desc,
         session_factory=session_factory,
-        enable_pagination=enable_pagination,
         auto_query_config=auto_query_config,
     )
     _ensure_operations(manager.handler, "create_single_app_mcp_server")

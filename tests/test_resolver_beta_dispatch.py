@@ -32,7 +32,7 @@ from tests.conftest import (
 )
 
 
-def _make_resolver(entities=None, session_factory=None, enable_pagination=False):
+def _make_resolver(entities=None, session_factory=None):
     """Build a real ErManager-backed Resolver (for migrated edge-case tests)."""
     if entities is None:
         entities = [FixtureUser, FixtureSprint, FixtureTask]
@@ -41,7 +41,6 @@ def _make_resolver(entities=None, session_factory=None, enable_pagination=False)
     registry = ErManager(
         entities=entities,
         session_factory=session_factory,
-        enable_pagination=enable_pagination,
     )
     return registry.create_resolver()()
 
@@ -95,7 +94,6 @@ class TestBuildEntityFieldJobsEdgeCases:
             [FixtureTask(id=1, title="T", sprint_id=1, owner_id=1)],
             FixtureTask,
             FieldSelection(name="root", sub_fields={"owner": child_sel}),
-            enable_pagination=False,
         )
         assert jobs == []
 
@@ -114,14 +112,13 @@ class TestBuildEntityFieldJobsEdgeCases:
                     )
                 },
             ),
-            enable_pagination=False,
         )
         assert jobs == []
 
     def test_pagination_items_without_sub_fields_produces_job(self):
         """Paginated field with only pagination selected still produces a job
         because child_sel.sub_fields is non-empty (has 'pagination')."""
-        resolver = _make_resolver(enable_pagination=True)
+        resolver = _make_resolver()
         child_sel = FieldSelection(
             name="tasks", sub_fields={"pagination": FieldSelection(name="pagination")},
         )
@@ -129,7 +126,6 @@ class TestBuildEntityFieldJobsEdgeCases:
             [FixtureSprint(id=1, name="S1")],
             FixtureSprint,
             FieldSelection(name="root", sub_fields={"tasks": child_sel}),
-            enable_pagination=True,
         )
         assert len(jobs) == 1
 
@@ -149,7 +145,7 @@ class TestBuildEntityFieldJobsEdgeCases:
             },
         )
         jobs = resolver._build_entity_field_jobs(
-            [SimpleNamespace(x_id=1)], type("P", (), {}), sel, enable_pagination=False,
+            [SimpleNamespace(x_id=1)], type("P", (), {}), sel,
         )
         assert jobs == []
 

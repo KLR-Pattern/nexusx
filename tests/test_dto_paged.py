@@ -92,7 +92,6 @@ async def handler() -> GraphQLHandler:
         base=DPBase,
         session_factory=_sf,
         auto_query_config=AutoQueryConfig(),
-        enable_pagination=True,
     )
     await h.er.initialize()
     return h

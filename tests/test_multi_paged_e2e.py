@@ -120,7 +120,6 @@ async def test_multi_paged_fields_distinct_limits(seeded):
         base=MPBase,
         session_factory=_sf,
         auto_query_config=AutoQueryConfig(),
-        enable_pagination=True,
     )
     q = (
         "{ MPUser { by_filter { id "
@@ -160,7 +159,6 @@ async def test_multi_paged_fields_one_silent(seeded):
         base=MPBase,
         session_factory=_sf,
         auto_query_config=AutoQueryConfig(),
-        enable_pagination=True,
     )
     q = (
         "{ MPUser { by_filter { id "
@@ -205,7 +203,6 @@ async def test_nested_paged_fields_provider_handoff(seeded):
         base=MPBase,
         session_factory=_sf,
         auto_query_config=AutoQueryConfig(),
-        enable_pagination=True,
     )
     q = (
         "{ MPUser { by_filter { id "

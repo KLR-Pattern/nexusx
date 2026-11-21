@@ -1052,7 +1052,7 @@ class TestSchemaShapeUnchanged:
             list(_COND_ENTITIES), query_description=None, mutation_description=None
         )
         return g.generate(
-            include_mutations=False, loader_registry=None, enable_pagination=False
+            include_mutations=False, loader_registry=None
         )
 
     def test_condition_field_types_match_unconditioned(self):
@@ -1092,16 +1092,21 @@ class TestGraphQLEndToEnd:
         handler = GraphQLHandler(
             base=CondBase, session_factory=sf, auto_query_config=cfg
         )
+        # 2026-11 契约：comments 系列声明了 order_by → 分页字段（量意图
+        # 强制），条件过滤语义不变，仅形态改为 {items, pagination}。
         result = await handler.execute(
             "{ CondUser { by_id(id: %d) { name"
-            " active_comments { body } comments { body } } } }"
+            " active_comments(fetchAll: true) { items { body } }"
+            " comments(fetchAll: true) { items { body } } } } }"
             % cond_db["alice_id"]
         )
         assert not result.get("errors"), result
         node = result["data"]["CondUser"]["by_id"]
         assert node["name"] == "alice"
-        assert sorted(c["body"] for c in node["active_comments"]) == ["c1", "c3"]
-        assert sorted(c["body"] for c in node["comments"]) == ["c1", "c2", "c3"]
+        active = [c["body"] for c in node["active_comments"]["items"]]
+        all_c = [c["body"] for c in node["comments"]["items"]]
+        assert sorted(active) == ["c1", "c3"]
+        assert sorted(all_c) == ["c1", "c2", "c3"]
 
 
 async def _load(loader_cls, key):

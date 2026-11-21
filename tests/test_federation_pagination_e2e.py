@@ -412,7 +412,6 @@ async def federation_paginated():
     catalog_handler = GraphQLHandler(
         base=EPCatalogBase, session_factory=_cat_sf,
         auto_query_config=AutoQueryConfig(), service_name="catalog",
-        enable_pagination=True,
     )
     composite = Starlette(routes=[Mount("/reviews", app=reviews_app)])
     client = httpx.AsyncClient(

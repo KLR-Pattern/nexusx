@@ -61,11 +61,9 @@ class QueryExecutor:
     def __init__(
         self,
         loader_registry: ErManager,
-        enable_pagination: bool = False,
         introspection_generator: Any | None = None,
     ):
         self._registry = loader_registry
-        self._enable_pagination = enable_pagination
         self._introspection_generator = introspection_generator
         self._argument_builder = ArgumentBuilder()
         # (id(entity), field_name) -> resolved value
@@ -595,9 +593,7 @@ class QueryExecutor:
             if sub is None or not sub.sub_fields:
                 continue
 
-            if is_active_paginated_relationship(
-                rel_info, self._enable_pagination
-            ):
+            if is_active_paginated_relationship(rel_info):
                 # Paginated relationships render as ``{Target}Result`` — the
                 # selection is a package ``{ items {...} pagination {...} }``.
                 ok = (
@@ -726,15 +722,14 @@ class QueryExecutor:
         """
         resolver = self._get_entity_resolver()
         # specs/019: inject a paged_provider closure (encapsulates gql args →
-        # Paged merge) so the Resolver stays gql-agnostic. None when pagination
-        # is off (plain relationship loads need no provider).
-        paged_provider = self._make_paged_provider() if self._enable_pagination else None
+        # Paged merge) so the Resolver stays gql-agnostic. Local pagination is
+        # declared (order_by) — there is no global toggle (2026-11 contract).
+        paged_provider = self._make_paged_provider()
         await resolver._bfs_dispatch_entity_fields(
             parents,
             entity,
             field_sel,
             store=self._store,
-            enable_pagination=self._enable_pagination,
             paged_provider=paged_provider,
         )
 

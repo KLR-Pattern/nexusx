@@ -64,7 +64,7 @@ def paged_from_selection(selection: Any) -> Any:
 
     The SINGLE dispatch-layer read of raw pagination args: ``fetch_remote_
     subtree`` calls this once when no merged ``Paged`` arrived (the non-
-    ``enable_pagination`` path). The loader itself never re-reads raw args —
+    paged path). The loader itself never re-reads raw args —
     the former in-loader GAP B fallback was a second parse of the same
     intent on a second layer.
     """
@@ -166,7 +166,7 @@ async def fetch_remote_subtree(
     # still share an instance, so batching is preserved.
     #
     # Mindmap #14 修复①: when no merged Paged arrived (the non-
-    # enable_pagination path), resolve the raw selection args ONCE here —
+    # paged path), resolve the raw selection args ONCE here —
     # the dispatch layer — so the loader never re-parses raw args (the
     # former GAP B in-loader fallback). Resolved params also join the split
     # key, so fallback-args isolation matches the merged-params isolation.
@@ -184,7 +184,7 @@ async def fetch_remote_subtree(
         params_key=page_params.params_key(),
     )
     set_remote_selection(loader, selection)
-    # Merged Paged from the executor's paged_provider (enable_pagination
+    # Merged Paged from the executor's paged_provider (the paged
     # path) or the dispatch-layer fallback above — batch_load_fn reads this
     # instead of raw selection.arguments (specs/021 GAP A).
     set_remote_page_params(loader, page_params)
@@ -763,7 +763,7 @@ def create_paginated_remote_loader(
                     },
                 )
             # Caller params: the Paged side-channelled by fetch_remote_subtree
-            # (merged params on the enable_pagination path, or the dispatch-
+            # (merged params on the paged path, or the dispatch-
             # layer fallback resolved from raw args — mindmap #14 ①). The
             # loader itself NEVER re-reads raw selection.arguments: the
             # former GAP B in-loader fallback was a second parse of the same

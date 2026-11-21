@@ -184,7 +184,6 @@ class TestErManagerPagination:
             registry = ErManager(
                 entities=[_PagParent, _PagChild],
                 session_factory=get_test_session_factory(),
-                enable_pagination=True,
             )
 
         # Did not raise, and the no-order_by list falls back to regular loader.
@@ -207,7 +206,6 @@ class TestErManagerPagination:
             ErManager(
                 entities=[FixtureUser, FixtureSprint, FixtureTask],
                 session_factory=get_test_session_factory(),
-                enable_pagination=True,
             )
 
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
@@ -381,7 +379,6 @@ class TestPaginationValidation:
 
         registry = ErManager.__new__(ErManager)
         registry._session_factory = get_test_session_factory()
-        registry._enable_pagination = True
         registry._split_mode = False
         registry._loader_instances = {}
 
@@ -414,7 +411,6 @@ class TestPaginationValidation:
 
         registry = ErManager.__new__(ErManager)
         registry._session_factory = get_test_session_factory()
-        registry._enable_pagination = True
         registry._split_mode = False
         registry._loader_instances = {}
 

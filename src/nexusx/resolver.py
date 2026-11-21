@@ -153,7 +153,7 @@ async def _dispatch_beta_remote(
 
     Shared between entity-first ``_load_entity_field_batch`` (REMOTE_PAGED /
     REMOTE_PLAIN), ``_load_entity_field_paginated`` (REMOTE_PAGED under
-    enable_pagination) and UseCase ``_batch_auto_load``. ``paged=True`` routes
+    the paged path) and UseCase ``_batch_auto_load``. ``paged=True`` routes
     to the member's ``page_by_<key>_in`` root; ``paged=False`` to
     ``by_<key>_in``. ``page_params`` (merged Paged) is side-channelled onto the
     loader when the caller already merged gql args (specs/021 GAP A).
@@ -1767,7 +1767,6 @@ class Resolver:
         field_sel: FieldSelection,
         *,
         store: Callable[[Any, str, Any], None],
-        enable_pagination: bool = False,
         paged_provider: Callable[..., Any] | None = None,
     ) -> None:
         """Level-by-level BFS relationship resolution using DataLoaders.
@@ -1784,17 +1783,18 @@ class Resolver:
 
         Paged detection uses ``rel_info.page_loader`` (not model metadata);
         paged values come from the ``paged_provider`` closure (specs/019,
-        per-call). ``enable_pagination`` mirrors ``QueryExecutor._enable_pagination``.
+        per-call). Local pagination is declared (order_by) — there is no
+        global toggle (2026-11 contract).
         """
         queue: list[_EntityFieldJob] = self._build_entity_field_jobs(
-            parents, parent_entity, field_sel, enable_pagination, paged_provider,
+            parents, parent_entity, field_sel, paged_provider,
         )
 
         while queue:
             # Concurrent load all fields in this level
             load_results = await asyncio.gather(
                 *(
-                    self._load_entity_field(job, store, enable_pagination)
+                    self._load_entity_field(job, store)
                     for job in queue
                 )
             )
@@ -1807,7 +1807,6 @@ class Resolver:
                         children,
                         job.rel_info.target_entity,
                         job.child_sel,
-                        enable_pagination,
                         paged_provider,
                     )
                 )
@@ -1818,7 +1817,6 @@ class Resolver:
         parents: list,
         parent_entity: type[SQLModel],
         field_sel: FieldSelection,
-        enable_pagination: bool,
         paged_provider: Callable[..., Any] | None = None,
     ) -> list[_EntityFieldJob]:
         """Extract relationship fields that need loading and build jobs."""
@@ -1842,8 +1840,7 @@ class Resolver:
             # Paginated: use items sub-selection for deeper resolution
             effective_sel = child_sel
             if (
-                enable_pagination
-                and rel_info.is_list
+                rel_info.is_list
                 and rel_info.page_loader is not None
             ):
                 items_sel = (
@@ -1879,7 +1876,6 @@ class Resolver:
             paged = None
             if (
                 paged_provider is not None
-                and enable_pagination
                 and rel_info.is_list
                 and rel_info.page_loader is not None
             ):
@@ -1899,15 +1895,13 @@ class Resolver:
         self,
         job: _EntityFieldJob,
         store: Callable[[Any, str, Any], None],
-        enable_pagination: bool,
     ) -> list:
         """Load a single field's relationship data and store results.
 
         Returns a flat list of all loaded child entities for the next BFS level.
         """
         if (
-            enable_pagination
-            and job.rel_info.is_list
+            job.rel_info.is_list
             and job.rel_info.page_loader is not None
         ):
             return await self._load_entity_field_paginated(job, store)
@@ -2004,7 +1998,7 @@ class Resolver:
             # β paginated path: the member's page_by_<key>_in root. The merged
             # Paged travels as page_params — NOT as PageLoadCommand objects,
             # which the remote loader can't unwrap (specs/021 GAP A: this
-            # branch used to send commands and crash under enable_pagination).
+            # branch used to send commands and crash on the paged path).
             results = await _dispatch_beta_remote(
                 self._registry, rel_info, job.parents, child_sel,
                 paged=True, page_params=paged,

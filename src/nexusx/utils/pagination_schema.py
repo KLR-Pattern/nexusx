@@ -22,12 +22,13 @@ from typing import Any
 from nexusx.loader.registry import RelationshipKind
 
 
-def is_active_paginated_relationship(rel_info: Any, enable_pagination: bool) -> bool:
-    """Apply the local toggle without disabling explicit federation pagination.
+def is_active_paginated_relationship(rel_info: Any) -> bool:
+    """True when this relationship renders as an active pagination field.
 
     True for: REMOTE_PAGED; a REMOTE_COALESCED relationship that is paginated
-    on the member side; a LOCAL relationship with a page_loader when the local
-    pagination toggle is on.
+    on the member side; a LOCAL relationship with a page_loader. There is no
+    local toggle — capability is declared (order_by), not switched
+    (2026-11 pagination contract: enable_pagination was removed).
     """
     return (
         rel_info is not None
@@ -41,21 +42,20 @@ def is_active_paginated_relationship(rel_info: Any, enable_pagination: bool) -> 
             or (
                 rel_info.kind == RelationshipKind.LOCAL
                 and rel_info.page_loader is not None
-                and enable_pagination
             )
         )
     )
 
 
 def has_any_paginated_relationship(
-    loader_registry: Any, entities: Iterable, enable_pagination: bool
+    loader_registry: Any, entities: Iterable
 ) -> bool:
     """True if any registered relationship is an active paginated one."""
     if not loader_registry:
         return False
     for entity in entities:
         for rel in loader_registry.get_relationships(entity).values():
-            if is_active_paginated_relationship(rel, enable_pagination):
+            if is_active_paginated_relationship(rel):
                 return True
     return False
 

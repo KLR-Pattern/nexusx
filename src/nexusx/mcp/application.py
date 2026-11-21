@@ -74,7 +74,6 @@ class Application:
         mutation_description: str | None = None,
         aliases: list[str] | None = None,
         engine_kwargs: dict[str, Any] | None = None,
-        enable_pagination: bool = False,
         auto_query_config: AutoQueryConfig | None = None,
         er_manager: Any = None,
         entities: list[type] | None = None,
@@ -143,7 +142,6 @@ class Application:
         self._query_description = query_description
         self._mutation_description = mutation_description
         self._aliases: list[str] = self._validate_aliases(aliases, name)
-        self._enable_pagination = enable_pagination
         self._auto_query_config = auto_query_config
 
         # ── eager 构造 AppResources（全同步） ───────────────────────────
@@ -245,7 +243,6 @@ class Application:
             session_factory=self._session_factory,
             query_description=self._query_description,
             mutation_description=self._mutation_description,
-            enable_pagination=self._enable_pagination,
             auto_query_config=self._auto_query_config,
         )
         introspection_data = handler.get_introspection_data()

@@ -184,7 +184,7 @@ def serialize_er_introspection(er_manager: Any) -> ERIntrospectionResponse:
                         getattr(r_info, "pagination", False)
                         and target_service is not None
                     )
-                    # member 本地分页(enable_pagination: 本地关系, page_loader set;
+                    # member 本地分页(本地关系, page_loader set;
                     # 它的 RelationshipInfo.pagination=False 且 target_service=None,
                     # 不透传则 catalog 物化层看不到这是个分页关系 → 物化成扁平 list)
                     or (

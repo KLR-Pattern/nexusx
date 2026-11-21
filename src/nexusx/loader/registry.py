@@ -646,7 +646,6 @@ class ErManager:
         session_factory: Callable,
         base: type | None = None,
         entities: list[type[SQLModel]] | None = None,
-        enable_pagination: bool = False,
         split_loader_by_type: bool = False,
         service_name: str | None = None,
         expose_mounted_endpoints: bool = False,
@@ -663,7 +662,6 @@ class ErManager:
             entities = EntityDiscovery(base).discover(include_all=True)
 
         self._session_factory = session_factory
-        self._enable_pagination = enable_pagination
         self._split_mode = split_loader_by_type
         # Federation state (no-op when federation is unused).
         self.service_name: str | None = service_name
@@ -737,8 +735,7 @@ class ErManager:
                 else:
                     entity_rels[rel.name] = _build_custom_relationship_info(rel)
 
-        if enable_pagination:
-            self._validate_pagination()
+        self._validate_pagination()
 
     def add_virtual_entities(self, entities: list[type[BaseModel]]) -> None:
         """Register plain ``BaseModel`` subclasses as non-SQLModel virtual entities.
@@ -840,10 +837,10 @@ class ErManager:
                 skipped.append(f"  {entity_kls.__name__}.{rel.name}")
         if skipped:
             logger.warning(
-                "enable_pagination=True but the following list relationships "
-                "have no order_by — they will fall back to non-paginated "
-                "loaders:\n%s\nSet order_by on the SQLModel Relationship to "
-                "enable pagination for these lists.",
+                "The following list relationships have no order_by — they "
+                "will fall back to non-paginated loaders:\n%s\nSet "
+                "order_by on the SQLModel Relationship to enable pagination "
+                "for these lists.",
                 "\n".join(skipped),
             )
 
