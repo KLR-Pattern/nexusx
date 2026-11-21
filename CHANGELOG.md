@@ -8,7 +8,7 @@
 
 ### Added
 - `fetchAll: Boolean` on paginated fields (local + federation + member roots): overrides `limit`/`offset`, bounded by `max_fetch_all` (default 10000; errors, never truncates).
-- Relationship variants: `RelationshipInfo` base + `LocalRelationship` / `RemotePlainRelationship` / `RemotePagedRelationship` / `RemoteCoalescedRelationship`; `RelationshipKind` deleted; polymorphic `can_paginate` / `is_paginated`; illegal states raise `TypeError` at construction.
+- Relationship variants: `RelationshipInfo` base + `LocalRelationship` / `RemotePlainRelationship` / `RemotePagedRelationship` / `RemoteCoalescedRelationship`; `RelationshipKind` deleted; polymorphic `can_paginate` / `is_paginated`; illegal states raise `TypeError` at construction. All variants are frozen — mutating one (e.g. smuggling a `page_loader` onto a coalesced rel) raises `FrozenInstanceError`.
 
 
 ## 6.9.1
