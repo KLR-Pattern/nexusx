@@ -5,7 +5,7 @@ from typing import Optional
 import pytest
 from sqlmodel import Field, Relationship, SQLModel
 
-from nexusx.loader.registry import ErManager
+from nexusx.loader.registry import ErManager, LocalRelationship
 from nexusx.relationship import Relationship as NxRelationship
 from tests.conftest import FixtureSprint, FixtureTask, FixtureUser, get_test_session_factory
 
@@ -184,7 +184,6 @@ class TestErManagerPagination:
             registry = ErManager(
                 entities=[_PagParent, _PagChild],
                 session_factory=get_test_session_factory(),
-                enable_pagination=True,
             )
 
         # Did not raise, and the no-order_by list falls back to regular loader.
@@ -207,7 +206,6 @@ class TestErManagerPagination:
             ErManager(
                 entities=[FixtureUser, FixtureSprint, FixtureTask],
                 session_factory=get_test_session_factory(),
-                enable_pagination=True,
             )
 
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
@@ -381,12 +379,11 @@ class TestPaginationValidation:
 
         registry = ErManager.__new__(ErManager)
         registry._session_factory = get_test_session_factory()
-        registry._enable_pagination = True
         registry._split_mode = False
         registry._loader_instances = {}
 
         # Create a fake list relationship without page_loader
-        rel_info = MagicMock(spec=RelationshipInfo)
+        rel_info = MagicMock(spec=LocalRelationship)
         rel_info.is_list = True
         rel_info.page_loader = None
         rel_info.direction = "ONETOMANY"
@@ -414,11 +411,10 @@ class TestPaginationValidation:
 
         registry = ErManager.__new__(ErManager)
         registry._session_factory = get_test_session_factory()
-        registry._enable_pagination = True
         registry._split_mode = False
         registry._loader_instances = {}
 
-        rel_info = MagicMock(spec=RelationshipInfo)
+        rel_info = MagicMock(spec=LocalRelationship)
         rel_info.is_list = True
         rel_info.page_loader = None
         rel_info.direction = "CUSTOM"

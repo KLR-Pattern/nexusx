@@ -26,7 +26,6 @@ mcp = create_single_app_mcp_server(
 | `desc` | `str \| None` | No | Query and mutation schema description |
 | `allow_mutation` | `bool` | No | Register mutation support; defaults to `False` |
 | `session_factory` | `Callable \| None` | No | Async session factory for database-backed loaders |
-| `enable_pagination` | `bool` | No | Wrap list relationships with pagination metadata |
 | `auto_query_config` | `AutoQueryConfig \| None` | No | Generate standard `by_id` / `by_filter` queries |
 
 !!! tip

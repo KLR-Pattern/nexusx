@@ -12,7 +12,6 @@ from nexusx import GraphQLHandler
 handler = GraphQLHandler(
     base=SQLModel,                    # SQLModel 基类（自动发现实体）
     session_factory=async_session,    # 异步 session 工厂（必需）
-    enable_pagination=False,          # 启用列表关系分页
     auto_query_config=None,           # AutoQueryConfig 自动查询
 )
 ```
@@ -23,7 +22,6 @@ handler = GraphQLHandler(
 |------|------|--------|------|
 | `base` | `type` | — | SQLModel 基类，用于自动发现实体 |
 | `session_factory` | `Callable` | — | 异步 session 工厂函数 |
-| `enable_pagination` | `bool` | `False` | 启用列表关系分页 |
 | `auto_query_config` | `AutoQueryConfig` | `None` | 自动查询配置 |
 
 !!! warning

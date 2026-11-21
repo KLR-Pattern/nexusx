@@ -513,7 +513,6 @@ class TestPaginationIntrospection:
         return GraphQLHandler(
             base=PagBase,
             session_factory=_DummySessionFactory(),
-            enable_pagination=True,
         )
 
     def test_pagination_type_present(self, handler: GraphQLHandler) -> None:
@@ -610,21 +609,24 @@ class TestPaginationIntrospection:
         assert "offset" in arg_names
 
     def test_non_paginated_handler_no_pagination_types(self) -> None:
-        """When enable_pagination=False, no Pagination/Result types."""
+        """2026-11 契约重写：无 order_by 声明 → 无 Pagination/Result 类型。
+
+        PagUser.posts 声明了 order_by → 它是分页字段（Pagination 类型存在）；
+        无 order_by 的关系保持平铺。全局开关已删除，能力=声明。
+        """
         handler = GraphQLHandler(base=PagBase, session_factory=_DummySessionFactory())
         schema = handler._introspection_generator.generate()
         type_names = [t["name"] for t in schema["types"]]
-        assert "Pagination" not in type_names
-        assert "PagPostResult" not in type_names
+        assert "Pagination" in type_names  # PagUser.posts 有 order_by
+        assert "PagPostResult" in type_names
         author_type = next(t for t in schema["types"] if t["name"] == "PagAuthor")
         posts_field = next(f for f in author_type["fields"] if f["name"] == "posts")
-        assert posts_field["args"] == []
-        assert posts_field["type"]["ofType"]["kind"] == "LIST"
+        assert [a["name"] for a in posts_field["args"]] == ["limit", "offset", "fetchAll"]
+        assert posts_field["type"]["ofType"]["name"] == "PagPostResult"
 
         sdl = handler.get_sdl()
-        assert "posts: [PagPost!]!" in sdl
-        assert "posts(limit:" not in sdl
-        assert "type Pagination" not in sdl
+        assert "posts(limit: Int, offset: Int = 0, fetchAll: Boolean): PagPostResult!" in sdl
+        assert "type Pagination" in sdl
 
     def test_fk_fields_excluded_in_paginated_entities(
         self, handler: GraphQLHandler,

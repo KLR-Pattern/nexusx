@@ -176,7 +176,7 @@ def test_introspection_suppresses_target_endpoint_unless_exposed():
     from aiodataloader import DataLoader
 
     from nexusx.federation.introspect import serialize_er_introspection
-    from nexusx.loader.registry import ErManager, RelationshipInfo
+    from nexusx.loader.registry import ErManager, RemotePlainRelationship
 
     class _L(DataLoader):
         async def batch_load_fn(self, keys):
@@ -188,7 +188,7 @@ def test_introspection_suppresses_target_endpoint_unless_exposed():
 
     er = ErManager(entities=[E], session_factory=lambda: None, service_name="svc")
     er._mounted_services = {"users": "http://secret-users:8020"}
-    er._registry[E]["author"] = RelationshipInfo(
+    er._registry[E]["author"] = RemotePlainRelationship(
         name="author", direction="MANYTOONE", fk_field="author_id",
         target_entity=E, is_list=False, loader=_L, target_service="users",
     )

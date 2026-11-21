@@ -471,10 +471,9 @@ class TestSDLGeneratorExtras:
         registry = ErManager(
             entities=[FixtureSprint, FixtureTask, FixtureUser],
             session_factory=lambda: None,
-            enable_pagination=True,
         )
         generator = SDLGenerator([FixtureSprint, FixtureTask, FixtureUser])
-        sdl = generator.generate(enable_pagination=True, loader_registry=registry)
+        sdl = generator.generate(loader_registry=registry)
 
         assert "type Pagination" in sdl
         assert "has_more: Boolean!" in sdl

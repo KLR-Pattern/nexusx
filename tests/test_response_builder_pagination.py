@@ -53,9 +53,14 @@ def test_paginated_package_field_renders_result_type_shape():
     # 模拟 posts 是分页关系；model 仍只承载 {items, pagination} 形状。
     def resolver(entity, field_name):
         if field_name == "posts":
-            return SimpleNamespace(
+            # 2026-11 variants: response_builder reads the polymorphic
+            # is_paginated property — use a real LocalRelationship (assembled).
+            from nexusx.loader.registry import LocalRelationship
+
+            return LocalRelationship(
+                name="posts", direction="ONETOMANY", fk_field="id",
                 target_entity=RB2Post, is_list=True,
-                page_loader=object(), kind="local",
+                page_loader=object(),
             )
         return None
 

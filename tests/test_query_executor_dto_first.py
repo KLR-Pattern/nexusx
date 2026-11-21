@@ -92,16 +92,18 @@ async def _seed() -> None:
         s.add(US1Post(id=2, author_id=1, title="A2"))
         s.add(US1Post(id=3, author_id=2, title="B1"))
         s.add(US1NullableChild(id=1, parent_id=None))
+        s.add(US1NullableParent(id=1, name="P1"))
+        s.add(US1NullableChild(id=2, parent_id=1, name="C2"))
+        s.add(US1NullableChild(id=3, parent_id=1, name="C3"))
         await s.commit()
     _seeded = True
 
 
-def _make_handler(*, enable_pagination: bool = False) -> GraphQLHandler:
+def _make_handler() -> GraphQLHandler:
     return GraphQLHandler(
         base=US1Base,
         session_factory=_sf,
         auto_query_config=AutoQueryConfig(),
-        enable_pagination=enable_pagination,
     )
 
 
@@ -128,13 +130,17 @@ async def test_scalar_fields(seeded):
 
 @pytest.mark.asyncio
 async def test_nested_to_many(seeded):
-    """(a) nested to-many (non-paginated) via response_builder."""
+    """(a) nested to-many (non-paginated) via response_builder.
+
+    2026-11 契约：US1User.posts 声明了 order_by → 是分页字段（见 (b)）；
+    平铺路径用 US1NullableParent.children 验证（刻意无 order_by）。
+    """
     h = _make_handler()
-    q = "{ US1User { by_filter { id name posts { id title } } } }"
+    q = "{ US1NullableParent { by_filter { id children { id parent_id } } } }"
     r = await h.execute(q)
-    users = {u["id"]: u for u in r["data"]["US1User"]["by_filter"]}
-    assert [p["title"] for p in users[1]["posts"]] == ["A1", "A2"]
-    assert [p["title"] for p in users[2]["posts"]] == ["B1"]
+    assert not r.get("errors"), r
+    parents = {p["id"]: p for p in r["data"]["US1NullableParent"]["by_filter"]}
+    assert [c["id"] for c in parents[1]["children"]] == [2, 3]
 
 
 @pytest.mark.asyncio
@@ -157,9 +163,10 @@ async def test_nullable_to_one_serializes_none_without_lazy_loading(seeded):
     r = await h.execute(q)
 
     assert "errors" not in r
-    assert r["data"]["US1NullableChild"]["by_filter"] == [
-        {"id": 1, "parent": None},
-    ]
+    rows = r["data"]["US1NullableChild"]["by_filter"]
+    # 2026-11：seed 新增 C2/C3(带 parent)供平铺 to-many 测试；本测试只关心
+    # child 1 的 null FK 不触发 lazy load —— 精确断言它的形态即可。
+    assert {"id": 1, "parent": None} in rows
 
 
 # ──────────────────────────────────────────────────────────
@@ -170,7 +177,7 @@ async def test_nullable_to_one_serializes_none_without_lazy_loading(seeded):
 @pytest.mark.asyncio
 async def test_paginated_relationship(seeded):
     """(b) paginated package {items, pagination} via response_builder."""
-    h = _make_handler(enable_pagination=True)
+    h = _make_handler()
     q = (
         "{ US1User { by_filter { id "
         "posts(limit: 2) { items { title } pagination { has_more } } "

@@ -64,7 +64,7 @@ def paged_from_selection(selection: Any) -> Any:
 
     The SINGLE dispatch-layer read of raw pagination args: ``fetch_remote_
     subtree`` calls this once when no merged ``Paged`` arrived (the non-
-    ``enable_pagination`` path). The loader itself never re-reads raw args —
+    paged path). The loader itself never re-reads raw args —
     the former in-loader GAP B fallback was a second parse of the same
     intent on a second layer.
     """
@@ -79,6 +79,7 @@ def paged_from_selection(selection: Any) -> Any:
         offset=ov.offset if ov.offset is not None else 0,
         order=ov.order,
         direction=ov.direction,
+        fetch_all=ov.fetch_all,
     )
 
 
@@ -100,6 +101,12 @@ def paged_wire_params(p: Any) -> dict[str, Any]:
     if p.limit is not None:
         out["limit"] = p.limit
     out["offset"] = p.offset
+    # 2026-11 contract: fetchAll rides the wire additively (member roots
+    # treat it as an override — literal wins). The β mounter drains via its
+    # own loop instead, so this mostly serves the γ JSON codec (whose wire
+    # response carries no has_more, making a mounter-side drain impossible).
+    if getattr(p, "fetch_all", False):
+        out["fetchAll"] = True
     return out
 
 
@@ -159,7 +166,7 @@ async def fetch_remote_subtree(
     # still share an instance, so batching is preserved.
     #
     # Mindmap #14 修复①: when no merged Paged arrived (the non-
-    # enable_pagination path), resolve the raw selection args ONCE here —
+    # paged path), resolve the raw selection args ONCE here —
     # the dispatch layer — so the loader never re-parses raw args (the
     # former GAP B in-loader fallback). Resolved params also join the split
     # key, so fallback-args isolation matches the merged-params isolation.
@@ -177,7 +184,7 @@ async def fetch_remote_subtree(
         params_key=page_params.params_key(),
     )
     set_remote_selection(loader, selection)
-    # Merged Paged from the executor's paged_provider (enable_pagination
+    # Merged Paged from the executor's paged_provider (the paged
     # path) or the dispatch-layer fallback above — batch_load_fn reads this
     # instead of raw selection.arguments (specs/021 GAP A).
     set_remote_page_params(loader, page_params)
@@ -621,6 +628,10 @@ def create_dto_remote_loader(
             p = getattr(self, "_dto_page_params", None)
             if p is not None:
                 body.update(paged_wire_params(p))
+                # γ member root takes a snake_case ``fetch_all`` parameter;
+                # the wire dict carries the camelCase form (SDL-canonical).
+                if "fetchAll" in body:
+                    body["fetch_all"] = body.pop("fetchAll")
             resp = await transport.post_json(url, body)
             if not isinstance(resp, dict):
                 raise RemoteQueryError(
@@ -752,18 +763,183 @@ def create_paginated_remote_loader(
                     },
                 )
             # Caller params: the Paged side-channelled by fetch_remote_subtree
-            # (merged params on the enable_pagination path, or the dispatch-
+            # (merged params on the paged path, or the dispatch-
             # layer fallback resolved from raw args — mindmap #14 ①). The
             # loader itself NEVER re-reads raw selection.arguments: the
             # former GAP B in-loader fallback was a second parse of the same
             # intent on a second layer.
-            from nexusx.loader.pagination import Paged, PaginatedPackage
+            from nexusx.loader.pagination import (
+                MAX_FETCH_ALL,
+                REMOTE_FETCH_ALL_CHUNK,
+                Paged,
+                PaginatedPackage,
+            )
 
             p = getattr(self, "_remote_page_params", None) or Paged()
+            # 2026-11 contract: volume intent is mandatory — there is no
+            # default page size (the old limit=None remote full-fetch died
+            # with it). Enforce mounter-side so the member never receives an
+            # intent-less paginated request.
+            if p.limit is None and not p.fetch_all:
+                raise ValueError(
+                    f"{typename}.{join_remote}: pagination intent is required "
+                    "— provide `limit` or `fetchAll: true` on the relationship "
+                    "field; there is no default page size"
+                )
+            expected_keys = {_normalize_join_key(key) for key in keys}
+
+            def _parse_packages(packages: list[Any]) -> dict[Any, Any]:
+                """Validate one member page into per-key package dicts."""
+                page_buckets: dict[Any, Any] = {}
+                for pkg in packages:
+                    pkg_d = coerce_to_dict(pkg, mode="json")
+                    if not isinstance(pkg_d, dict):
+                        raise RemoteQueryError(
+                            typename,
+                            [{"message": f"Expected packages in {entry} to be objects"}],
+                        )
+                    if join_remote not in pkg_d:
+                        raise RemoteQueryError(
+                            typename,
+                            [{"message": f"Package in {entry} is missing {join_remote!r}"}],
+                        )
+                    fk = _normalize_join_key(pkg_d[join_remote])
+                    if fk not in expected_keys:
+                        raise RemoteQueryError(
+                            typename,
+                            [{"message": f"Package in {entry} has unexpected key {fk!r}"}],
+                        )
+                    if fk in page_buckets:
+                        raise RemoteQueryError(
+                            typename,
+                            [{"message": f"Package in {entry} repeats key {fk!r}"}],
+                        )
+                    items = pkg_d.get("items")
+                    if not isinstance(items, list):
+                        raise RemoteQueryError(
+                            typename,
+                            [{"message": f"Package {fk!r} has non-list 'items'"}],
+                        )
+                    pagination = pkg_d.get("pagination")
+                    if not isinstance(pagination, dict):
+                        raise RemoteQueryError(
+                            typename,
+                            [{"message": f"Package {fk!r} has non-object 'pagination'"}],
+                        )
+                    has_more = pagination.get("has_more")
+                    if not isinstance(has_more, bool):
+                        raise RemoteQueryError(
+                            typename,
+                            [{"message": f"Package {fk!r} has invalid pagination.has_more"}],
+                        )
+                    if want_tc:
+                        total_count = pagination.get("total_count")
+                        if (
+                            not isinstance(total_count, int)
+                            or isinstance(total_count, bool)
+                            or total_count < 0
+                        ):
+                            raise RemoteQueryError(
+                                typename,
+                                [{
+                                    "message": (
+                                        f"Package {fk!r} has invalid "
+                                        "pagination.total_count"
+                                    )
+                                }],
+                            )
+                    page_buckets[fk] = pkg_d
+                return page_buckets
+
+            async def _page_query(
+                page_limit: int, page_offset: int, force_total_count: bool,
+            ) -> dict[Any, Any]:
+                """Execute one windowed member page and validate it."""
+                wire = paged_wire_params(p)
+                # order is always sent — fall back to the member default when
+                # the caller omits it; direction is forwarded only when
+                # supplied. specs/014.
+                query = build_paginated_gql_query(
+                    typename=typename, entry=entry, arg_name=arg_name,
+                    join_remote=join_remote, keys=list(keys), items_sel=items_sel,
+                    order=wire.get("order") or default_order,
+                    direction=wire.get("direction"),
+                    limit=page_limit,
+                    offset=page_offset,
+                    want_total_count=force_total_count,
+                )
+                resp = await transport.post_json(gql_url, {"query": query})
+                packages = _unwrap_gql_response(resp, typename, entry)
+                return _parse_packages(packages)
+
+            if p.fetch_all:
+                # fetchAll on a federation relationship = mounter-side drain
+                # loop (2026-11 contract): the member keeps serving windows,
+                # we merge pages until has_more=false everywhere — wire
+                # unchanged. Seatbelt: member-reported total_count vs
+                # MAX_FETCH_ALL — error, never truncate.
+                collected: dict[Any, list] = {fk: [] for fk in expected_keys}
+                totals: dict[Any, int] = {}
+                page_offset = 0
+                max_pages = MAX_FETCH_ALL // REMOTE_FETCH_ALL_CHUNK + 2
+                for _page in range(max_pages):
+                    page = await _page_query(
+                        REMOTE_FETCH_ALL_CHUNK, page_offset,
+                        force_total_count=True,
+                    )
+                    any_more = False
+                    for fk, pkg_d in page.items():
+                        collected[fk].extend(pkg_d.get("items") or [])
+                        pagination = pkg_d.get("pagination") or {}
+                        if pagination.get("has_more"):
+                            any_more = True
+                        total = pagination.get("total_count")
+                        if (
+                            isinstance(total, int)
+                            and not isinstance(total, bool)
+                            and total >= 0
+                        ):
+                            totals[fk] = total
+                    over = [
+                        fk for fk, t in totals.items() if t > MAX_FETCH_ALL
+                    ]
+                    if over:
+                        raise ValueError(
+                            f"fetchAll exceeded max_fetch_all={MAX_FETCH_ALL} "
+                            f"for {len(over)} key(s) (e.g. {over[0]!r} with "
+                            f"total_count={totals[over[0]]}); use windowed "
+                            "pagination (limit/offset) instead"
+                        )
+                    if not any_more:
+                        break
+                    page_offset += REMOTE_FETCH_ALL_CHUNK
+                else:
+                    raise RemoteQueryError(
+                        typename,
+                        [{
+                            "message": (
+                                f"{entry}: fetchAll drain exceeded {max_pages} "
+                                "pages — member never reports has_more=false"
+                            )
+                        }],
+                    )
+                drained: list[Any] = []
+                for key in keys:
+                    fk = _normalize_join_key(key)
+                    items = [
+                        target_cls.model_validate(coerce_to_dict(r, mode="json"))
+                        for r in collected.get(fk, [])
+                    ]
+                    drain_pagination: dict[str, Any] = {"has_more": False}
+                    if want_tc:
+                        drain_pagination["total_count"] = totals.get(fk, len(items))
+                    drained.append(PaginatedPackage(
+                        items=items,
+                        pagination=drain_pagination,
+                    ))
+                return drained
+
             wire = paged_wire_params(p)
-            # order is always sent — fall back to the member default when the
-            # caller omits it; direction is forwarded only when supplied.
-            # specs/014.
             query = build_paginated_gql_query(
                 typename=typename, entry=entry, arg_name=arg_name,
                 join_remote=join_remote, keys=list(keys), items_sel=items_sel,
@@ -774,66 +950,7 @@ def create_paginated_remote_loader(
             )
             resp = await transport.post_json(gql_url, {"query": query})
             packages = _unwrap_gql_response(resp, typename, entry)
-            buckets: dict[Any, Any] = {}
-            expected_keys = {_normalize_join_key(key) for key in keys}
-            for pkg in packages:
-                pkg_d = coerce_to_dict(pkg, mode="json")
-                if not isinstance(pkg_d, dict):
-                    raise RemoteQueryError(
-                        typename,
-                        [{"message": f"Expected packages in {entry} to be objects"}],
-                    )
-                if join_remote not in pkg_d:
-                    raise RemoteQueryError(
-                        typename,
-                        [{"message": f"Package in {entry} is missing {join_remote!r}"}],
-                    )
-                fk = _normalize_join_key(pkg_d[join_remote])
-                if fk not in expected_keys:
-                    raise RemoteQueryError(
-                        typename,
-                        [{"message": f"Package in {entry} has unexpected key {fk!r}"}],
-                    )
-                if fk in buckets:
-                    raise RemoteQueryError(
-                        typename,
-                        [{"message": f"Package in {entry} repeats key {fk!r}"}],
-                    )
-                items = pkg_d.get("items")
-                if not isinstance(items, list):
-                    raise RemoteQueryError(
-                        typename,
-                        [{"message": f"Package {fk!r} has non-list 'items'"}],
-                    )
-                pagination = pkg_d.get("pagination")
-                if not isinstance(pagination, dict):
-                    raise RemoteQueryError(
-                        typename,
-                        [{"message": f"Package {fk!r} has non-object 'pagination'"}],
-                    )
-                has_more = pagination.get("has_more")
-                if not isinstance(has_more, bool):
-                    raise RemoteQueryError(
-                        typename,
-                        [{"message": f"Package {fk!r} has invalid pagination.has_more"}],
-                    )
-                if want_tc:
-                    total_count = pagination.get("total_count")
-                    if (
-                        not isinstance(total_count, int)
-                        or isinstance(total_count, bool)
-                        or total_count < 0
-                    ):
-                        raise RemoteQueryError(
-                            typename,
-                            [{
-                                "message": (
-                                    f"Package {fk!r} has invalid "
-                                    "pagination.total_count"
-                                )
-                            }],
-                        )
-                buckets[fk] = pkg_d
+            buckets: dict[Any, Any] = _parse_packages(packages)
             aligned: list[Any] = []
             for key in keys:
                 pkg_d = buckets.get(_normalize_join_key(key))

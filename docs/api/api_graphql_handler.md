@@ -12,7 +12,6 @@ from nexusx import GraphQLHandler
 handler = GraphQLHandler(
     base=SQLModel,                    # SQLModel base class (auto-discover entities)
     session_factory=async_session,    # Async session factory (required)
-    enable_pagination=False,          # Enable list relationship pagination
     auto_query_config=None,           # AutoQueryConfig for auto queries
 )
 ```
@@ -23,7 +22,6 @@ handler = GraphQLHandler(
 |-----------|------|---------|-------------|
 | `base` | `type` | — | SQLModel base class for auto-discovering entities |
 | `session_factory` | `Callable` | — | Async session factory function |
-| `enable_pagination` | `bool` | `False` | Enable list relationship pagination |
 | `auto_query_config` | `AutoQueryConfig` | `None` | Auto query configuration |
 
 !!! warning

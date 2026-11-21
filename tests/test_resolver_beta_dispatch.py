@@ -21,7 +21,13 @@ from unittest.mock import AsyncMock
 import pytest
 
 from nexusx.loader import query_meta as qm
-from nexusx.loader.registry import ErManager, RelationshipKind
+from nexusx.loader.registry import (
+    ErManager,
+    LocalRelationship,
+    RemoteCoalescedRelationship,
+    RemotePagedRelationship,
+    RemotePlainRelationship,
+)
 from nexusx.query_parser import FieldSelection
 from nexusx.resolver import Resolver, _EntityFieldJob
 from tests.conftest import (
@@ -32,7 +38,7 @@ from tests.conftest import (
 )
 
 
-def _make_resolver(entities=None, session_factory=None, enable_pagination=False):
+def _make_resolver(entities=None, session_factory=None):
     """Build a real ErManager-backed Resolver (for migrated edge-case tests)."""
     if entities is None:
         entities = [FixtureUser, FixtureSprint, FixtureTask]
@@ -41,27 +47,30 @@ def _make_resolver(entities=None, session_factory=None, enable_pagination=False)
     registry = ErManager(
         entities=entities,
         session_factory=session_factory,
-        enable_pagination=enable_pagination,
     )
     return registry.create_resolver()()
 
 
-def _fake_rel(kind, **over):
-    """A RelationshipInfo-shaped SimpleNamespace for routing tests (duck typed)."""
+def _fake_rel(variant, **over):
+    """A real relationship-variant instance for routing tests (2026-11 variants:
+    routing branches on isinstance, so fakes must be the real dataclasses)."""
     base = dict(
-        kind=kind,
-        is_list=False,
-        page_loader=None,
+        name="rel",
+        direction="ONETOMANY",
         fk_field="x_id",
         target_entity=type("Target", (), {}),
-        name="rel",
-        loader=object(),
-        default_page_size=None,
-        max_page_size=None,
-        page_capability=None,
+        is_list=False,
     )
+    if variant is RemotePagedRelationship:
+        base.update(loader=object(), page_loader=object(), page_capability=object())
+    elif variant is RemotePlainRelationship:
+        base.update(loader=object(), target_service="svc")
+    elif variant is RemoteCoalescedRelationship:
+        base.update(target_service="svc", paginated=False)
+    else:
+        base.update(loader=object())
     base.update(over)
-    return SimpleNamespace(**base)
+    return variant(**base)
 
 
 # ── Migrated from test_query_executor.py (methods moved into Resolver) ──
@@ -95,7 +104,6 @@ class TestBuildEntityFieldJobsEdgeCases:
             [FixtureTask(id=1, title="T", sprint_id=1, owner_id=1)],
             FixtureTask,
             FieldSelection(name="root", sub_fields={"owner": child_sel}),
-            enable_pagination=False,
         )
         assert jobs == []
 
@@ -114,14 +122,13 @@ class TestBuildEntityFieldJobsEdgeCases:
                     )
                 },
             ),
-            enable_pagination=False,
         )
         assert jobs == []
 
     def test_pagination_items_without_sub_fields_produces_job(self):
         """Paginated field with only pagination selected still produces a job
         because child_sel.sub_fields is non-empty (has 'pagination')."""
-        resolver = _make_resolver(enable_pagination=True)
+        resolver = _make_resolver()
         child_sel = FieldSelection(
             name="tasks", sub_fields={"pagination": FieldSelection(name="pagination")},
         )
@@ -129,14 +136,13 @@ class TestBuildEntityFieldJobsEdgeCases:
             [FixtureSprint(id=1, name="S1")],
             FixtureSprint,
             FieldSelection(name="root", sub_fields={"tasks": child_sel}),
-            enable_pagination=True,
         )
         assert len(jobs) == 1
 
     def test_coalesced_remote_is_skipped(self):
         """(c) REMOTE_COALESCED produces no job — data already on the instance,
         resolved by the owning service within the parent fetch."""
-        coalesced = _fake_rel(RelationshipKind.REMOTE_COALESCED, name="coalesced_rel")
+        coalesced = _fake_rel(RemoteCoalescedRelationship, name="coalesced_rel")
         registry = SimpleNamespace(get_relationship=lambda e, f: coalesced)
         resolver = Resolver(loader_registry=registry)
         sel = FieldSelection(
@@ -149,7 +155,7 @@ class TestBuildEntityFieldJobsEdgeCases:
             },
         )
         jobs = resolver._build_entity_field_jobs(
-            [SimpleNamespace(x_id=1)], type("P", (), {}), sel, enable_pagination=False,
+            [SimpleNamespace(x_id=1)], type("P", (), {}), sel,
         )
         assert jobs == []
 
@@ -182,7 +188,7 @@ class TestEntityFieldBatchRouting:
         monkeypatch.setattr(qm, "merge_query_meta", lambda *a, **k: None)
 
         loader = SimpleNamespace(load_many=AsyncMock(return_value=[{"id": 1}]))
-        rel = _fake_rel(RelationshipKind.LOCAL, name="local_rel")
+        rel = _fake_rel(LocalRelationship, name="local_rel")
         registry = SimpleNamespace(
             get_relationship=lambda e, f: rel,
             get_relationships=lambda e: {},
@@ -219,13 +225,13 @@ class TestEntityFieldBatchRouting:
                 *, registry, rel_info, parents, selection,
                 paged=False, page_params=None,
             ):
-            captured["kind"] = rel_info.kind
+            captured["rel_info"] = rel_info
             captured["paged"] = paged
             return [[SimpleNamespace(id=1)]]
 
         monkeypatch.setattr(rl, "fetch_remote_subtree", spy_fetch)
 
-        rel = _fake_rel(RelationshipKind.REMOTE_PLAIN, name="beta_rel", is_list=True)
+        rel = _fake_rel(RemotePlainRelationship, name="beta_rel", is_list=True)
         registry = SimpleNamespace(get_relationship=lambda e, f: rel)
         resolver = Resolver(loader_registry=registry)
 
@@ -242,7 +248,7 @@ class TestEntityFieldBatchRouting:
             job, lambda p, n, v: store.append((n, v))
         )
 
-        assert captured["kind"] == RelationshipKind.REMOTE_PLAIN
+        assert isinstance(captured["rel_info"], RemotePlainRelationship)
         assert captured["paged"] is False
 
     @pytest.mark.asyncio
@@ -263,7 +269,7 @@ class TestEntityFieldBatchRouting:
 
         monkeypatch.setattr(rl, "fetch_remote_subtree", spy_fetch)
 
-        rel = _fake_rel(RelationshipKind.REMOTE_PAGED, name="beta_paged_rel", is_list=True)
+        rel = _fake_rel(RemotePagedRelationship, name="beta_paged_rel", is_list=True)
         registry = SimpleNamespace(get_relationship=lambda e, f: rel)
         resolver = Resolver(loader_registry=registry)
 

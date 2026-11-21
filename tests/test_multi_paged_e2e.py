@@ -120,7 +120,6 @@ async def test_multi_paged_fields_distinct_limits(seeded):
         base=MPBase,
         session_factory=_sf,
         auto_query_config=AutoQueryConfig(),
-        enable_pagination=True,
     )
     q = (
         "{ MPUser { by_filter { id "
@@ -150,16 +149,16 @@ async def test_multi_paged_fields_distinct_limits(seeded):
 
 @pytest.mark.asyncio
 async def test_multi_paged_fields_one_silent(seeded):
-    """一个 paged 字段带 limit、另一个不带(走 rel default),互不影响。
+    """一个 paged 字段带 limit、另一个不带 → 无意图者被拒（2026-11 契约）。
 
-    posts(limit:1) 显式;comments 不带 limit(走 default_page_size)。验证多 paged
-    字段各自独立解析 args,不因一个带 args 影响另一个。
+    posts(limit:1) 显式；comments 不带 limit。旧世界 comments 静默走
+    default_page_size；新契约下量意图强制申报——无意图的分页字段报错且
+    错误信息含指引，不影响同查询中已申报的字段语义。
     """
     h = GraphQLHandler(
         base=MPBase,
         session_factory=_sf,
         auto_query_config=AutoQueryConfig(),
-        enable_pagination=True,
     )
     q = (
         "{ MPUser { by_filter { id "
@@ -168,16 +167,26 @@ async def test_multi_paged_fields_one_silent(seeded):
         "} } }"
     )
     r = await h.execute(q)
-    assert "errors" not in r, f"errors: {r.get('errors')}"
-    alice = next(u for u in r["data"]["MPUser"]["by_filter"] if u["id"] == 1)
+    # 契约：无意图的分页字段被拒，错误信息给出两条出路
+    errs = r.get("errors") or []
+    assert errs, "intent-less paginated field must be rejected"
+    assert any(
+        "pagination intent is required" in e.get("message", "")
+        and "fetchAll" in e.get("message", "")
+        for e in errs
+    ), errs
 
-    # posts(limit:1): 显式 → 1 item (A1), has_more True
-    assert [it["title"] for it in alice["posts"]["items"]] == ["A1"]
-    assert alice["posts"]["pagination"]["has_more"] is True
-    assert alice["posts"]["pagination"]["total_count"] == 3
-
-    # comments(无 limit): 走 default_page_size, 返 Alice 全部 4 comments(默认足够大)
+    # 对照：同字段声明 fetchAll 后成功且拿到全量（fetchAll 覆盖语义的地基）
+    q2 = (
+        "{ MPUser { by_filter { id "
+        "comments(fetchAll: true) { items { content } pagination { has_more total_count } } "
+        "} } }"
+    )
+    r2 = await h.execute(q2)
+    assert "errors" not in r2, f"errors: {r2.get('errors')}"
+    alice = next(u for u in r2["data"]["MPUser"]["by_filter"] if u["id"] == 1)
     assert len(alice["comments"]["items"]) == 4
+    assert alice["comments"]["pagination"]["has_more"] is False
     assert alice["comments"]["pagination"]["total_count"] == 4
 
 
@@ -194,7 +203,6 @@ async def test_nested_paged_fields_provider_handoff(seeded):
         base=MPBase,
         session_factory=_sf,
         auto_query_config=AutoQueryConfig(),
-        enable_pagination=True,
     )
     q = (
         "{ MPUser { by_filter { id "

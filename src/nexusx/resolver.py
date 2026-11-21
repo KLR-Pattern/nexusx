@@ -55,7 +55,11 @@ from nexusx.context import (
     scan_send_to_fields,
 )
 from nexusx.loader.pagination import PageArgs, PageLoadCommand, PaginatedPackage
-from nexusx.loader.registry import RelationshipKind
+from nexusx.loader.registry import (
+    RemoteCoalescedRelationship,
+    RemotePagedRelationship,
+    RemotePlainRelationship,
+)
 from nexusx.query_parser import FieldSelection
 
 T = TypeVar("T", bound=BaseModel | list[BaseModel] | tuple[BaseModel, ...])
@@ -117,17 +121,28 @@ def _make_page_load_commands(
 
     Shared between entity-first ``_load_entity_field_paginated`` and UseCase
     ``_batch_auto_load`` — the PageArgs + PageLoadCommand construction was
-    near-identical (duplicated verbatim). ``rel_info`` provides page-size
-    bounds; ``paged`` carries limit/offset/order/direction (None → defaults).
+    near-identical (duplicated verbatim). ``rel_info`` provides the
+    page-size bound; ``paged`` carries limit/offset/order/direction/fetch_all.
+
+    2026-11 contract: volume intent is mandatory — a paginated field reached
+    here without ``limit`` and without ``fetch_all`` fails fast with field
+    context (there is no default page size to fall back to).
     """
+
+    if paged is None or (paged.limit is None and not paged.fetch_all):
+        raise ValueError(
+            f"Field {rel_info.name!r}: pagination intent is required — provide "
+            "`limit` (window size) or `fetchAll: true`; there is no default "
+            "page size"
+        )
     page_args = PageArgs(
-        limit=paged.limit if paged is not None else None,
-        offset=paged.offset if paged is not None else 0,
-        default_page_size=rel_info.default_page_size,
+        limit=paged.limit,
+        offset=paged.offset,
         max_page_size=rel_info.max_page_size,
+        fetch_all=paged.fetch_all,
     )
-    order = paged.order if paged is not None else None
-    direction = paged.direction if paged is not None else None
+    order = paged.order
+    direction = paged.direction
     return [
         PageLoadCommand(fk_value=k, page_args=page_args, order=order, direction=direction)
         for k in keys
@@ -142,7 +157,7 @@ async def _dispatch_beta_remote(
 
     Shared between entity-first ``_load_entity_field_batch`` (REMOTE_PAGED /
     REMOTE_PLAIN), ``_load_entity_field_paginated`` (REMOTE_PAGED under
-    enable_pagination) and UseCase ``_batch_auto_load``. ``paged=True`` routes
+    the paged path) and UseCase ``_batch_auto_load``. ``paged=True`` routes
     to the member's ``page_by_<key>_in`` root; ``paged=False`` to
     ``by_<key>_in``. ``page_params`` (merged Paged) is side-channelled onto the
     loader when the caller already merged gql args (specs/021 GAP A).
@@ -662,9 +677,11 @@ class Resolver:
     def _merge_paged(default: Any, caller: Any) -> Any:
         """Merge a field's Paged default with caller-context override.
 
-        Caller field non-None wins; else the default's value. Both None → None
-        (→ full fetch, back-compat). The caller override keeps omitted offset
-        distinct from an explicit ``offset=0``.
+        Caller field non-None wins; else the default's value. ``fetch_all`` is
+        OR-merged — once true it overrides limit/offset (literal wins, the
+        2026-11 pagination contract: a declared fetch-all is unambiguous
+        intent). The caller override keeps omitted offset distinct from an
+        explicit ``offset=0``.
         """
         from nexusx.loader.pagination import Paged
 
@@ -677,6 +694,7 @@ class Resolver:
             offset=c.offset if c.offset is not None else d.offset,
             order=c.order if c.order is not None else d.order,
             direction=c.direction if c.direction is not None else d.direction,
+            fetch_all=c.fetch_all or d.fetch_all,
         )
 
     # ──────────────────────────────────────────────────────
@@ -751,7 +769,7 @@ class Resolver:
             # Coalesced rels are resolved within the owning service's nested
             # fetch (β) — they arrive populated on the instance, not loaded
             # per-edge here (see fetch_remote_subtree). Mirrors the executor.
-            if rel_info.kind == RelationshipKind.REMOTE_COALESCED:
+            if isinstance(rel_info, RemoteCoalescedRelationship):
                 continue
             if dto_cls is None:
                 if self._is_scalar_rel_field(field_info, rel_info):
@@ -769,7 +787,7 @@ class Resolver:
         # so the Resolver must discover them here.
         if source_entity is node_type:
             for rel_name, rel_info in entity_rels.items():
-                if rel_info.kind == RelationshipKind.REMOTE_COALESCED:
+                if isinstance(rel_info, RemoteCoalescedRelationship):
                     continue  # populated by the parent fetch's nested selection
                 if rel_name in node_type.model_fields:
                     continue  # already handled above
@@ -1611,8 +1629,8 @@ class Resolver:
             # A non-coalesced service-boundary rel: fetch the whole sub-tree via
             # the shared β primitive (one nested gql to the owning service; the
             # member resolves its local edges + further cross-service hops).
-            is_remote_entry = first_rel.kind in (
-                RelationshipKind.REMOTE_PAGED, RelationshipKind.REMOTE_PLAIN
+            is_remote_entry = isinstance(
+                first_rel, (RemotePagedRelationship, RemotePlainRelationship)
             )
 
             # Collect FK/PK values + valid entries (shared by both paths).
@@ -1651,13 +1669,13 @@ class Resolver:
                     group_field_name
                 )
                 merged = paged_default
+                first_page_loader = getattr(first_rel, "page_loader", None)
                 use_page_loader = (
-                    merged is not None
-                    and first_rel.page_loader is not None
+                    merged is not None and first_page_loader is not None
                 )
                 if use_page_loader:
                     loader = self._registry.get_loader(
-                        first_rel.page_loader, type_key=type_key,
+                        first_page_loader, type_key=type_key,
                         params_key=merged.params_key(),
                     )
                 else:
@@ -1753,7 +1771,6 @@ class Resolver:
         field_sel: FieldSelection,
         *,
         store: Callable[[Any, str, Any], None],
-        enable_pagination: bool = False,
         paged_provider: Callable[..., Any] | None = None,
     ) -> None:
         """Level-by-level BFS relationship resolution using DataLoaders.
@@ -1770,17 +1787,18 @@ class Resolver:
 
         Paged detection uses ``rel_info.page_loader`` (not model metadata);
         paged values come from the ``paged_provider`` closure (specs/019,
-        per-call). ``enable_pagination`` mirrors ``QueryExecutor._enable_pagination``.
+        per-call). Local pagination is declared (order_by) — there is no
+        global toggle (2026-11 contract).
         """
         queue: list[_EntityFieldJob] = self._build_entity_field_jobs(
-            parents, parent_entity, field_sel, enable_pagination, paged_provider,
+            parents, parent_entity, field_sel, paged_provider,
         )
 
         while queue:
             # Concurrent load all fields in this level
             load_results = await asyncio.gather(
                 *(
-                    self._load_entity_field(job, store, enable_pagination)
+                    self._load_entity_field(job, store)
                     for job in queue
                 )
             )
@@ -1793,7 +1811,6 @@ class Resolver:
                         children,
                         job.rel_info.target_entity,
                         job.child_sel,
-                        enable_pagination,
                         paged_provider,
                     )
                 )
@@ -1804,7 +1821,6 @@ class Resolver:
         parents: list,
         parent_entity: type[SQLModel],
         field_sel: FieldSelection,
-        enable_pagination: bool,
         paged_provider: Callable[..., Any] | None = None,
     ) -> list[_EntityFieldJob]:
         """Extract relationship fields that need loading and build jobs."""
@@ -1819,7 +1835,7 @@ class Resolver:
 
             # Coalesced (β): data already resolved by the owning service within
             # the parent fetch and preserved on the instance — no BFS job.
-            if rel_info.kind == RelationshipKind.REMOTE_COALESCED:
+            if isinstance(rel_info, RemoteCoalescedRelationship):
                 continue
 
             if not child_sel.sub_fields:
@@ -1827,11 +1843,7 @@ class Resolver:
 
             # Paginated: use items sub-selection for deeper resolution
             effective_sel = child_sel
-            if (
-                enable_pagination
-                and rel_info.is_list
-                and rel_info.page_loader is not None
-            ):
+            if rel_info.is_paginated:
                 items_sel = (
                     child_sel.sub_fields.get("items")
                     if child_sel.sub_fields
@@ -1845,7 +1857,7 @@ class Resolver:
                 if (
                     items_sel
                     and items_sel.sub_fields
-                    and rel_info.kind != RelationshipKind.REMOTE_PAGED
+                    and not isinstance(rel_info, RemotePagedRelationship)
                 ):
                     effective_sel = items_sel
 
@@ -1865,9 +1877,7 @@ class Resolver:
             paged = None
             if (
                 paged_provider is not None
-                and enable_pagination
-                and rel_info.is_list
-                and rel_info.page_loader is not None
+                and rel_info.is_paginated
             ):
                 paged = paged_provider(rel_info, field_sel, field_name)
             jobs.append(
@@ -1885,17 +1895,12 @@ class Resolver:
         self,
         job: _EntityFieldJob,
         store: Callable[[Any, str, Any], None],
-        enable_pagination: bool,
     ) -> list:
         """Load a single field's relationship data and store results.
 
         Returns a flat list of all loaded child entities for the next BFS level.
         """
-        if (
-            enable_pagination
-            and job.rel_info.is_list
-            and job.rel_info.page_loader is not None
-        ):
+        if job.rel_info.is_paginated:
             return await self._load_entity_field_paginated(job, store)
         return await self._load_entity_field_batch(job, store)
 
@@ -1915,10 +1920,10 @@ class Resolver:
         rel_info = job.rel_info
         child_sel = job.child_sel
 
-        is_remote = rel_info.kind in (
-            RelationshipKind.REMOTE_PAGED, RelationshipKind.REMOTE_PLAIN
+        is_remote = isinstance(
+            rel_info, (RemotePagedRelationship, RemotePlainRelationship)
         )
-        is_paged_remote = rel_info.kind == RelationshipKind.REMOTE_PAGED
+        is_paged_remote = isinstance(rel_info, RemotePagedRelationship)
         if is_paged_remote:
             # β paginated path: member's page_by_<key>_in root.
             results = await _dispatch_beta_remote(
@@ -1986,11 +1991,11 @@ class Resolver:
         child_sel = job.child_sel
         paged = job.paged  # specs/019: effective Paged (default + gql merge via paged_provider)
 
-        if rel_info.kind == RelationshipKind.REMOTE_PAGED:
+        if isinstance(rel_info, RemotePagedRelationship):
             # β paginated path: the member's page_by_<key>_in root. The merged
             # Paged travels as page_params — NOT as PageLoadCommand objects,
             # which the remote loader can't unwrap (specs/021 GAP A: this
-            # branch used to send commands and crash under enable_pagination).
+            # branch used to send commands and crash on the paged path).
             results = await _dispatch_beta_remote(
                 self._registry, rel_info, job.parents, child_sel,
                 paged=True, page_params=paged,
