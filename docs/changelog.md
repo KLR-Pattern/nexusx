@@ -1,5 +1,5 @@
 ---
-description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 6.9.1."
+description: "Release-by-release changelog for nexusx, following semver — major for breaking changes, minor for new features, patch for bug fixes. Most recent: 7.0.0."
 ---
 
 # Changelog
@@ -10,7 +10,9 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
 
-## [Unreleased] — Pagination contract + relationship type variants (PR #147)
+## 7.0.0
+
+### 7.0.0 (2026-11-21)
 
 > Semver suggestion: **major** — breaking on both public behavior (schema shape / default data volume) and internal API (RelationshipInfo / constructor parameters).
 

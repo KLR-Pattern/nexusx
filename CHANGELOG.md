@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] — PR #147 (pagination contract + relationship variants; suggested major)
+## 7.0.0
 
 ### Breaking
 - `enable_pagination` removed everywhere — declaring `order_by` IS the pagination opt-in; ordered lists now render `{items, pagination}` + volume args.
@@ -32,7 +32,9 @@
 - Apply pagination defaults by DTO field name so aliases retain separate limits and offsets.
 - Add regression tests and document relationship overrides in the Core API guide.
 
-## [Unreleased] — specs/019 可组合 ErManager（同进程多 engine 组合）
+### Also in this release
+
+**specs/019 可组合 ErManager（同进程多 engine 组合）**
 
 新增 `ComposedErManager`：把多个自洽的 `ErManager`（各自单 engine）组合成一个
 「按 entity 委托的查询代理 + 跨边界关系叠加层」，满足 `LoaderRegistry` 协议。
@@ -59,7 +61,7 @@
   物化的 remote type 经组合体委托可见。`get_loader` 动态查找 federate 后新增的 loader
   （如 `RemoteLoader`）——US5 测试矩阵兜住的组合性漏洞。
 
-## [Unreleased] — specs/018 DTO-first gql execution
+**specs/018 DTO-first gql execution**
 
 把 entity-first gql 的 serialize 统一到 `response_builder` 心智模型(从 gql
 selection 动态构建 DTO schema → Resolver 解析),删除 legacy dict-based
