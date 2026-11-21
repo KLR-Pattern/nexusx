@@ -24,10 +24,12 @@ Then open **http://localhost:8000/graphql** in your browser. You'll see the Grap
     id
     name
     email
-    posts {
-      id
-      title
-      content
+    posts(limit: 5) {
+      items {
+        id
+        title
+        content
+      }
     }
   }
 }
@@ -46,10 +48,12 @@ Then open **http://localhost:8000/graphql** in your browser. You'll see the Grap
       name
       email
     }
-    comments {
-      content
-      author {
-        name
+    comments(limit: 3) {
+      items {
+        content
+        author {
+          name
+        }
       }
     }
   }

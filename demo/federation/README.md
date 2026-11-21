@@ -54,7 +54,9 @@ deep chain:
         items {
           title
           rating
-          comments { text author { name config { theme } } }
+          comments(limit: 2) {
+            items { text author { name config { theme } } }
+          }
         }
         pagination { has_more total_count }
       }

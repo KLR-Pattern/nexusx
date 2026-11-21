@@ -31,7 +31,8 @@ class Sprint(SQLModel, table=True):
         sa_relationship_kwargs={"order_by": "Task.id"},
     )
     # specs/020: tasks order profile lives on Task (the sorted object); a DTO
-    # field `Annotated[list[TaskDTO], Paged(order="NEWEST")]` picks from it.
+    # field `Annotated[list[TaskDTO], Paged(limit=2, order="NEWEST")]` picks
+    # from it (volume intent is mandatory — order-only Paged is rejected).
 
     @query
     async def get_sprints(cls, limit: int = 10) -> list["Sprint"]:

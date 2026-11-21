@@ -1,8 +1,11 @@
 """
 GraphQL Demo with Pagination — FastAPI Application
 
-Identical to demo/app.py but with enable_pagination=True.
-Lists are wrapped in { items, pagination { has_more, total_count } } types.
+Same blog models as demo/blog/app.py, exercising the paginated fields:
+list relationships that declare ``order_by`` render as
+``{ items, pagination { has_more, total_count } }`` with volume args —
+``limit`` (window) or ``fetchAll: true`` (whole collection); there is no
+default page size, and no global toggle.
 """
 
 from contextlib import asynccontextmanager
@@ -27,13 +30,13 @@ class GraphQLRequest(BaseModel):
     operation_name: str | None = None
 
 
-# Pagination enabled — all list relationships return Page types
+# Ordered list relationships (models.py declares order_by) render as
+# paginated fields automatically — capability is declared, not switched
 config = AutoQueryConfig(default_limit=20)
 handler = GraphQLHandler(
     base=BaseEntity,
     session_factory=async_session,
     auto_query_config=config,
-    enable_pagination=True,
 )
 
 
@@ -47,7 +50,6 @@ mcp_server = create_single_app_mcp_server(
     desc="Blog system — query users/posts/comments (paginated GraphQL)",
     allow_mutation=True,
     session_factory=async_session,
-    enable_pagination=True,
     auto_query_config=config,
 )
 mcp_app = mcp_server.http_app()
@@ -63,7 +65,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="nexusx Demo (Paginated)",
-    description="Demo with enable_pagination=True — lists wrapped in Page types",
+    description=(
+        "Blog demo — ordered list relationships render as paginated fields "
+        "({items, pagination}) with mandatory volume intent (limit/fetchAll)"
+    ),
     version="1.0.0",
     lifespan=lifespan,
 )

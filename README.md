@@ -384,13 +384,15 @@ entity now has `by_id` and `by_filter` query roots:
     by_filter(limit: 10) {
       id
       name
-      tasks {
-        id
-        title
-        done
-        owner {
+      tasks(limit: 5) {
+        items {
           id
-          name
+          title
+          done
+          owner {
+            id
+            name
+          }
         }
       }
     }

@@ -71,8 +71,8 @@ class Review(ReviewsBase, table=True):
     rating: int
     created_at: int  # epoch seconds — backs the NEWEST order profile
     comments: list[Comment] = Relationship(
-        # order_by is required for local pagination (enable_pagination below):
-        # Review.comments becomes comments(limit, offset) on the member side.
+        # order_by declares the assembly: Review.comments renders as
+        # comments(limit, offset) { items pagination } on the member side.
         sa_relationship_kwargs={"order_by": "Comment.id"},
     )
     # specs/020: Review's own sort — how its rows order when federated via
@@ -145,10 +145,6 @@ handler = GraphQLHandler(
     # services (users) and root services (catalog) don't need this. In production
     # also guard /nexusx/er-introspection with auth (build_federable_app(dependencies=...)).
     expose_mounted_endpoints=True,
-    # Member-side local pagination: Review.comments renders as
-    # comments(limit, offset) { items pagination }. Composes with catalog's
-    # federation pagination on Product.reviews (supported since 5.0.1).
-    enable_pagination=True,
 )
 
 
