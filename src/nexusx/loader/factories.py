@@ -528,6 +528,9 @@ def create_page_one_to_many_loader(
                 if fetch_all:
                     _enforce_fetch_all_cap(total_counts, page_args)
 
+                # ``peek_limit`` is only read on the non-fetchAll branch; 0
+                # there (fetchAll) is unreachable because of the short-circuit.
+                peek_limit: int = effective_limit if effective_limit is not None else 0
                 return [
                     _build_page_result(
                         rows=[r for r, _ in grouped.get(cmd.fk_value, [])],
@@ -545,8 +548,8 @@ def create_page_one_to_many_loader(
                         has_next_page=(
                             False
                             if fetch_all
-                            else effective_limit > 0
-                            and len(grouped.get(cmd.fk_value, [])) > effective_limit
+                            else peek_limit > 0
+                            and len(grouped.get(cmd.fk_value, [])) > peek_limit
                         ),
                         entity_kls=target_kls,
                     )
@@ -720,6 +723,9 @@ def create_page_many_to_many_loader(
                 if fetch_all:
                     _enforce_fetch_all_cap(total_counts, page_args)
 
+                # ``peek_limit`` is only read on the non-fetchAll branch; 0
+                # there (fetchAll) is unreachable because of the short-circuit.
+                peek_limit: int = effective_limit if effective_limit is not None else 0
                 return [
                     _build_page_result(
                         rows=[r for r, _ in grouped.get(cmd.fk_value, [])],
@@ -734,8 +740,8 @@ def create_page_many_to_many_loader(
                         has_next_page=(
                             False
                             if fetch_all
-                            else effective_limit > 0
-                            and len(grouped.get(cmd.fk_value, [])) > effective_limit
+                            else peek_limit > 0
+                            and len(grouped.get(cmd.fk_value, [])) > peek_limit
                         ),
                         entity_kls=target_kls,
                     )

@@ -380,11 +380,13 @@ _class_meta_cache: weakref.WeakKeyDictionary[type, _ClassMeta] = weakref.WeakKey
 # a class-keyed cache let the FIRST registry's answer poison the second. Each
 # registry gets its own bucket, held weakly so it dies with the registry;
 # ``registry=None`` shares one bucket.
-_registry_caches: weakref.WeakKeyDictionary[Any, dict[str, dict]] = weakref.WeakKeyDictionary()
-_NO_REGISTRY = object()
+_registry_caches: weakref.WeakKeyDictionary[Any, dict[str, dict[Any, Any]]] = (
+    weakref.WeakKeyDictionary()
+)
+_NO_REGISTRY: Any = object()
 
 
-def _registry_cache(registry: Any, name: str) -> dict | None:
+def _registry_cache(registry: Any, name: str) -> dict[Any, Any] | None:
     """Per-(registry, name) dict cache; None when the registry cannot be a weak key."""
     bucket = registry if registry is not None else _NO_REGISTRY
     try:
@@ -433,11 +435,10 @@ def _compute_should_traverse(kls: type, registry: Any = None) -> bool:
     """
     meta = _get_class_meta(kls)
 
-    cache = _registry_cache(registry, "should_traverse")
+    cache: dict[type, bool] | None = _registry_cache(registry, "should_traverse")
+    if cache is not None and kls in cache:
+        return cache[kls]
     if cache is not None:
-        cached = cache.get(kls)
-        if cached is not None:
-            return cached
         # Sentinel: mark as True to handle cycles (self-referencing types).
         cache[kls] = True
 
@@ -1321,11 +1322,11 @@ class Resolver:
         flagged the prior inline check that only recognized bare ``list[X]``
         and bare ``X``.
         """
-        cache = _registry_cache(self._registry, "traversable_fields")
-        if cache is not None:
-            cached = cache.get(node_type, _MISSING)
-            if cached is not _MISSING:
-                return cached
+        cache: dict[type, list[tuple[str, bool]]] | None = _registry_cache(
+            self._registry, "traversable_fields"
+        )
+        if cache is not None and node_type in cache:
+            return cache[node_type]
 
         result: list[tuple[str, bool]] = []
         for field_name, field_info in node_type.model_fields.items():
