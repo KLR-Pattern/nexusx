@@ -9,8 +9,10 @@ def query(func: Callable) -> classmethod:
     """Mark a method as a GraphQL query.
 
     This decorator automatically converts the method to a classmethod.
-    The GraphQL field name is generated as: `{entityName}{methodName}`.
-    The description is taken from the method's docstring.
+    The method name is used **verbatim** as the GraphQL field name (no
+    camelCase, no entity prefix); the field lives on the entity's
+    ``{Entity}Query`` group type, which the root ``Query`` mounts as one
+    field per entity. The description is taken from the method's docstring.
 
     Args:
         func: The method to decorate.
@@ -40,11 +42,15 @@ def query(func: Callable) -> classmethod:
 
     This generates the following GraphQL Schema:
         ```graphql
-        type Query {
+        type UserQuery {
             \"\"\"Get all users with optional limit.\"\"\"
-            userGetAll(limit: Int): [User!]!
+            get_all(limit: Int): [User!]!
             \"\"\"Get a user by ID.\"\"\"
-            userGetById(id: Int!): User
+            get_by_id(id: Int!): User
+        }
+
+        type Query {
+            User: UserQuery!
         }
         ```
     """
@@ -57,8 +63,10 @@ def mutation(func: Callable) -> classmethod:
     """Mark a method as a GraphQL mutation.
 
     This decorator automatically converts the method to a classmethod.
-    The GraphQL field name is generated as: `{entityName}{methodName}`.
-    The description is taken from the method's docstring.
+    The method name is used **verbatim** as the GraphQL field name (no
+    camelCase, no entity prefix); the field lives on the entity's
+    ``{Entity}Mutation`` group type, which the root ``Mutation`` mounts as
+    one field per entity. The description is taken from the method's docstring.
 
     Args:
         func: The method to decorate.
@@ -89,11 +97,15 @@ def mutation(func: Callable) -> classmethod:
 
     This generates the following GraphQL Schema:
         ```graphql
-        type Mutation {
+        type UserMutation {
             \"\"\"Create a new user.\"\"\"
-            userCreate(name: String!, email: String!): User!
+            create(name: String!, email: String!): User!
             \"\"\"Update user's email.\"\"\"
-            userUpdateEmail(id: Int!, email: String!): User!
+            update_email(id: Int!, email: String!): User!
+        }
+
+        type Mutation {
+            User: UserMutation!
         }
         ```
     """

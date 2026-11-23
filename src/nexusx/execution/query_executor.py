@@ -907,9 +907,11 @@ class QueryExecutor:
 
         Entity-shaped results route through ``response_builder`` (specs/018 US1
         + Phase 7 T028 — the legacy dict-based loop is removed); scalar / dict
-        / paginated-package returns use the dedicated branches below. Failures
-        on the response_builder path propagate — no fallback (spec clarify Q3:
-        fail-fast prevents hidden issues).
+        / paginated-package returns use the dedicated branches below. The
+        builder itself catches ``model_validate`` failures and returns the raw
+        filtered data with a logged warning (see
+        ``response_builder._validate_and_dump``); this method adds no further
+        fallback or retry on top of that.
         """
         if result is None:
             return None

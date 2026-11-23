@@ -16,7 +16,12 @@ Example (GraphQL mode):
     class User(SQLModel, table=True):
         id: int = Field(primary_key=True)
         name: str
-        posts: list["Post"] = Relationship(back_populates="author", order_by="id")
+        posts: list["Post"] = Relationship(
+            back_populates="author",
+            # order_by on a list relationship opts it into pagination
+            # ({items, pagination} + limit/offset/fetchAll args).
+            sa_relationship_kwargs={"order_by": "Post.id"},
+        )
 
         @query
         async def get_users(cls, limit: int = 10) -> list['User']:

@@ -92,27 +92,24 @@ SQLModel Entity  →  GraphQL Schema (SDL)
 #### 转换逻辑
 
 ```
-Python 方法                    →    GraphQL Field
-─────────────────────────────────────────────────────
-@query(name='users')           →    Query.users
-@mutation(name='createUser')   →    Mutation.createUser
+Python 方法                         →    GraphQL Field（按实体分组）
+──────────────────────────────────────────────────────────────────────
+User.get_all  +  @query             →    type UserQuery { get_all(...): ... }
+                                         type Query { User: UserQuery! }
+User.create   +  @mutation          →    type UserMutation { create(...): ... }
+                                         type Mutation { User: UserMutation! }
 ```
 
-#### 支持的装饰器风格
+#### 装饰器用法
 
 ```python
-# 风格1: 无参数
 @query
-def get_all(cls) -> list['User']: ...
-
-# 风格2: 带名称
-@query(name='users')
-def get_all(cls) -> list['User']: ...
-
-# 风格3: 带名称和描述
-@query(name='users', description='Get all users')
-def get_all(cls) -> list['User']: ...
+async def get_all(cls, limit: int = 10) -> list['User']: ...
 ```
+
+- 只有一种风格：`@query` / `@mutation` 直接装饰 classmethod，不带参数。
+- 方法名**原样**作为字段名（不做 camelCase、不加实体前缀）；描述取自 docstring。
+- 同一实体的方法挂在 `{Entity}Query` / `{Entity}Mutation` 分组类型上，根 `Query` 每个实体一个挂载字段。
 
 ---
 
@@ -175,21 +172,26 @@ GraphQL Query
        │  parse()
        ↓
 {
-  'users': FieldSelection(
-    name='users',
-    arguments={'limit': 5},
+  'User': FieldSelection(
+    name='User',
     sub_fields={
-      'id': FieldSelection(name='id'),
-      'name': FieldSelection(name='name'),
-      'posts': FieldSelection(
-        name='posts',
-        arguments={'limit': 3},
+      'get_all': FieldSelection(
+        name='get_all',
+        arguments={'limit': 5},
         sub_fields={
-          'items': FieldSelection(
-            sub_fields={'title': FieldSelection(name='title')}
-          ),
-          'pagination': FieldSelection(
-            sub_fields={'has_more': ..., 'total_count': ...}
+          'id': FieldSelection(name='id'),
+          'name': FieldSelection(name='name'),
+          'posts': FieldSelection(
+            name='posts',
+            arguments={'limit': 3},
+            sub_fields={
+              'items': FieldSelection(
+                sub_fields={'title': FieldSelection(name='title')}
+              ),
+              'pagination': FieldSelection(
+                sub_fields={'has_more': ..., 'total_count': ...}
+              )
+            }
           )
         }
       )
@@ -214,17 +216,21 @@ loader/
 └── pagination.py     # 分页类型定义
 ```
 
-#### LoaderRegistry
+#### ErManager（关系注册表）
 
 ```python
-class LoaderRegistry:
+class ErManager:
     """检查 ORM 元数据，为每个关系创建 DataLoader。"""
 
-    def __init__(self, entities, session_factory, enable_pagination):
+    def __init__(self, session_factory, *, base=None, entities=None, ...):
+        # base= 自动发现子类；entities= 显式列表（二者互斥）
         for entity in entities:
             rels = _inspect_relationships(entity, all_entities, session_factory)
             # rels 包含 MANYTOONE, ONETOMANY, MANYTOMANY 关系信息
 ```
+
+分页能力是**声明**出来的：关系上写了 `order_by`（`sa_relationship_kwargs={"order_by": ...}`）
+即装配 `page_loader`，没有全局开关。
 
 #### 关系发现
 
@@ -235,11 +241,11 @@ SQLModel Entity (通过 sqlalchemy.inspect)
        │
        ├── ONETOMANY
        │   ├── 列表关系 → create_one_to_many_loader
-       │   │            + create_page_one_to_many_loader (如启用分页)
+       │   │            + create_page_one_to_many_loader (声明 order_by 时)
        │   └── 标量关系 → create_many_to_one_loader
        │
        └── MANYTOMANY → create_many_to_many_loader
-                      + create_page_many_to_many_loader (如启用分页)
+                      + create_page_many_to_many_loader (声明 order_by 时)
 ```
 
 ---
@@ -305,17 +311,19 @@ GraphQL Query String
 ─────────────────────────────────────────────────────────────
 POST /graphql
 {
-  "query": "{ userGetAll(limit: 2) { id name posts(limit: 3) { items { title } } } }"
+  "query": "{ User { get_all(limit: 2) { id name posts(limit: 3) { items { title } } } } }"
 }
 
 2. QueryParser 解析选择树
 ─────────────────────────────────────────────────────────────
 {
-  'userGetAll': FieldSelection(
+  'User': FieldSelection(
     sub_fields={
-      'id': ..., 'name': ...,
-      'posts': FieldSelection(arguments={'limit': 3}, sub_fields={
-        'items': FieldSelection(sub_fields={'title': ...})
+      'get_all': FieldSelection(arguments={'limit': 2}, sub_fields={
+        'id': ..., 'name': ...,
+        'posts': FieldSelection(arguments={'limit': 3}, sub_fields={
+          'items': FieldSelection(sub_fields={'title': ...})
+        })
       })
     }
   )
@@ -337,7 +345,7 @@ fk_values = [user.id for user in users]  # [1, 2]
 loader = get_loader(Post_O2M_loader)
 # SQL: SELECT post.* FROM post WHERE post.author_id IN (1, 2)
 
-# 分页（启用时使用 ROW_NUMBER）
+# 分页（关系声明了 order_by 时使用 ROW_NUMBER）
 page_loader = get_loader(Post_PO2M_loader)
 # SQL: SELECT * FROM (
 #   SELECT *, ROW_NUMBER() OVER (PARTITION BY author_id ORDER BY id) AS _rn
@@ -348,10 +356,12 @@ page_loader = get_loader(Post_PO2M_loader)
 ─────────────────────────────────────────────────────────────
 {
   "data": {
-    "userGetAll": [
-      {"id": 1, "name": "Alice", "posts": {"items": [{"title": "Hello"}]}},
-      {"id": 2, "name": "Bob", "posts": {"items": [{"title": "Tips"}]}}
-    ]
+    "User": {
+      "get_all": [
+        {"id": 1, "name": "Alice", "posts": {"items": [{"title": "Hello"}]}},
+        {"id": 2, "name": "Bob", "posts": {"items": [{"title": "Tips"}]}}
+      ]
+    }
   }
 }
 ```
@@ -378,7 +388,7 @@ page_loader = get_loader(Post_PO2M_loader)
 └────────────────────────────────────────────────────────────┘
 ```
 
-### 分页 Result 类型（enable_pagination=True 时）
+### 分页 Result 类型（关系声明 order_by 时）
 
 ```graphql
 type Pagination {
@@ -392,7 +402,8 @@ type PostResult {
 }
 ```
 
-列表关系字段在启用分页后变为 `EntityResult!` 类型，并接受 `limit`、`offset` 参数。
+声明了 `order_by` 的列表关系字段渲染为 `EntityResult!` 类型，并接受 `limit`、`offset`、`fetchAll` 参数。
+量意图是必填的：必须传 `limit` 或 `fetchAll: true`（没有默认页大小；`fetchAll` 覆盖 `limit`/`offset`）。
 
 ---
 
