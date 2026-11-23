@@ -240,9 +240,6 @@ class _ClassMeta:
     # (key_fn, n, dict-valued aggregator, ...) instead of being silently
     # downgraded to a base Collector. (pydantic-resolve #293 equivalent.)
     collector_instances: dict[str, ICollector] = field(default_factory=dict)
-    # Whether this class or any descendant needs traversal.
-    # None = not yet computed; True/False = computed result.
-    should_traverse: bool | None = None
     # Cached scans of ExposeAs / SendTo annotations on this class. Hoisted
     # out of the per-node hot path; lookup once per class, not per instance.
     expose_map: dict[str, str] = field(default_factory=dict)
@@ -373,9 +370,37 @@ def _build_class_meta(kls: type) -> _ClassMeta:
 _class_meta_cache: weakref.WeakKeyDictionary[type, _ClassMeta] = weakref.WeakKeyDictionary()
 
 
+# Registry-scoped caches (issue #160 BUG_2).
+#
+# ``_compute_should_traverse`` and ``Resolver._get_traversable_fields`` both
+# consult the registry's relationship table (materialized remote types and
+# ``__relationships__`` rels live only there), so their results are a property
+# of (class, registry) — never of the class alone. Two ErManagers in one
+# process (ComposedErManager, multi-app, federation tests) share DTO classes;
+# a class-keyed cache let the FIRST registry's answer poison the second. Each
+# registry gets its own bucket, held weakly so it dies with the registry;
+# ``registry=None`` shares one bucket.
+_registry_caches: weakref.WeakKeyDictionary[Any, dict[str, dict]] = weakref.WeakKeyDictionary()
+_NO_REGISTRY = object()
+
+
+def _registry_cache(registry: Any, name: str) -> dict | None:
+    """Per-(registry, name) dict cache; None when the registry cannot be a weak key."""
+    bucket = registry if registry is not None else _NO_REGISTRY
+    try:
+        caches = _registry_caches.get(bucket)
+        if caches is None:
+            caches = {}
+            _registry_caches[bucket] = caches
+    except TypeError:  # unhashable / not weak-referenceable: skip caching
+        return None
+    return caches.setdefault(name, {})
+
+
 def _clear_resolver_caches() -> None:
     """Clear all resolver-level caches. For testing only."""
     _class_meta_cache.clear()
+    _registry_caches.clear()
 
 
 def _get_class_meta(kls: type) -> _ClassMeta:
@@ -399,19 +424,22 @@ def _compute_should_traverse(kls: type, registry: Any = None) -> bool:
     A class needs traversal if it has resolve/post methods, ExposeAs/SendTo
     annotations, Collector parameters, or any descendant that does.
     Handles self-referencing types by using a sentinel value.
-    Result is cached in ``_ClassMeta.should_traverse``.
 
     When ``registry`` (an ErManager) is provided, ALSO checks ErManager-
     registered relationships — so materialized remote types (which have rels
     in the ErManager but not as model_fields) are recognized as traversable.
+    The result is therefore a property of (class, registry) and is cached
+    per registry in ``_registry_caches`` — never on the class alone.
     """
     meta = _get_class_meta(kls)
 
-    if meta.should_traverse is not None:
-        return meta.should_traverse
-
-    # Sentinel: mark as True to handle cycles (self-referencing types).
-    meta.should_traverse = True
+    cache = _registry_cache(registry, "should_traverse")
+    if cache is not None:
+        cached = cache.get(kls)
+        if cached is not None:
+            return cached
+        # Sentinel: mark as True to handle cycles (self-referencing types).
+        cache[kls] = True
 
     # Check own configuration
     if (meta.resolve_methods or meta.post_methods or meta.collector_instances
@@ -430,7 +458,8 @@ def _compute_should_traverse(kls: type, registry: Any = None) -> bool:
         if hasattr(registry, 'get_relationships') and registry.get_relationships(kls):
             return True
 
-    meta.should_traverse = False
+    if cache is not None:
+        cache[kls] = False
     return False
 
 
@@ -469,12 +498,13 @@ class Resolver:
     # Class-level caches shared across Resolver instances. Both depend only
     # on type identity (annotation objects / model classes), not on the
     # per-instance registry or context, so sharing is safe and avoids
-    # re-computing on every Resolver() construction.
+    # re-computing on every Resolver() construction. (Registry-dependent
+    # results — should_traverse / traversable fields — live in the
+    # registry-scoped ``_registry_caches`` instead; issue #160 BUG_2.)
     #
     # Sentinel ``_MISSING`` distinguishes "not yet computed" from cached
     # None / empty-list results (issue #77 B4).
     _dto_cls_cache: dict[Any, Any] = {}
-    _traversable_fields_cache: dict[type, Any] = {}
 
     def __init__(
         self,
@@ -1280,7 +1310,10 @@ class Resolver:
         Returns list of (field_name, is_list). Empty list means the type was
         already scanned and has no traversable fields — caller iterates
         harmlessly. Sentinel ``_MISSING`` (issue #77 B4) distinguishes
-        "not computed" from "computed to empty".
+        "not computed" from "computed to empty". Cached per (type, registry):
+        the ErManager-relationship tail below reads the registry, so a
+        class-only key would leak one registry's answer into another
+        (issue #160 BUG_2).
 
         Shares the typing-unwrap logic with auto-load (``_extract_dto_cls``)
         so ``Optional[X]``, ``X | None``, ``list[X] | None``, and
@@ -1288,9 +1321,11 @@ class Resolver:
         flagged the prior inline check that only recognized bare ``list[X]``
         and bare ``X``.
         """
-        cached = self._traversable_fields_cache.get(node_type, _MISSING)
-        if cached is not _MISSING:
-            return cached
+        cache = _registry_cache(self._registry, "traversable_fields")
+        if cache is not None:
+            cached = cache.get(node_type, _MISSING)
+            if cached is not _MISSING:
+                return cached
 
         result: list[tuple[str, bool]] = []
         for field_name, field_info in node_type.model_fields.items():
@@ -1313,7 +1348,8 @@ class Resolver:
                     if rel_name not in node_type.model_fields:
                         result.append((rel_name, rel_info.is_list))
 
-        self._traversable_fields_cache[node_type] = result
+        if cache is not None:
+            cache[node_type] = result
         return result
 
     def _build_nested_selection(
