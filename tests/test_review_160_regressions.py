@@ -221,3 +221,18 @@ class TestPaginationIntentValidation:
         assert "errors" not in ok_limit and "errors" not in ok_fetch_all
         assert len(_page(ok_fetch_all, "posts")["items"]) == 3
         assert GET_ALL_CALLS == [1, 1]
+
+
+# ──────────────────────────────────────────────────────────
+# SIG_15 — every error path carries extensions.code
+# ──────────────────────────────────────────────────────────
+
+
+class TestGenericErrorCode:
+    async def test_unhandled_errors_carry_a_machine_readable_code(self):
+        """ALIAS_CONFLICT / RESOLVER_ERROR / SKIPPED_PRIOR_FAILURE /
+        BARE_GROUP_FIELD / PAGINATION_INTENT_REQUIRED all carry a code; the
+        top-level catch-all must too, so agents can branch on it."""
+        result = await handler.execute("{ R160Author { get_all { id")
+        assert result["errors"][0]["extensions"]["code"] == "INTERNAL_ERROR"
+        assert result["errors"][0]["message"]
