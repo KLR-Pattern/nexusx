@@ -20,6 +20,9 @@ from nexusx import GraphQLHandler, query
 # ──────────────────────────────────────────────────────────
 
 
+GET_ALL_CALLS: list[int] = []  # execution probe for BUG_3
+
+
 class R160Base(SQLModel):
     pass
 
@@ -66,6 +69,7 @@ class R160Author(R160Base, table=True):
 
     @query
     async def get_all(cls) -> list["R160Author"]:
+        GET_ALL_CALLS.append(1)
         async with SESSION_FACTORY() as session:
             return list((await session.exec(select(cls))).all())
 
@@ -179,3 +183,41 @@ class TestCrossRegistryCache:
             [R160Parent(id=2, children=[R160Child(id=2)])]
         )
         assert out[0].children[0].toys == [R160Toy(id=200, child_id=2)]
+
+
+# ──────────────────────────────────────────────────────────
+# BUG_3 — pagination intent is validated before execution
+# ──────────────────────────────────────────────────────────
+
+class TestPaginationIntentValidation:
+    async def test_paginated_field_without_limit_or_fetch_all_is_rejected_before_execution(self):
+        """SDL advertises limit/offset/fetchAll as optional, but volume intent is
+        mandatory (2026-11 contract). The mismatch must surface as a pre-execution
+        validation error with a machine-readable code — not as a RESOLVER_ERROR
+        raised from inside the loader after the user's method already ran."""
+        GET_ALL_CALLS.clear()
+        result = await handler.execute(
+            "{ R160Author { get_all { id posts { items { id } } } } }"
+        )
+        errors = result["errors"]
+        assert len(errors) == 1
+        assert errors[0]["extensions"]["code"] == "PAGINATION_INTENT_REQUIRED"
+        assert errors[0]["path"] == ["R160Author", "get_all", "posts"]
+        assert "posts" in errors[0]["message"]
+        assert "limit" in errors[0]["message"] and "fetchAll" in errors[0]["message"]
+        # Same shape as the existing unknown-field validation path: the method key is
+        # not populated at all.
+        assert result["data"]["R160Author"].get("get_all") is None
+        assert GET_ALL_CALLS == []  # never reached the user's method
+
+    async def test_explicit_limit_or_fetch_all_pass_validation(self):
+        GET_ALL_CALLS.clear()
+        ok_limit = await handler.execute(
+            "{ R160Author { get_all { id posts(limit: 1) { items { id } } } } }"
+        )
+        ok_fetch_all = await handler.execute(
+            "{ R160Author { get_all { id posts(fetchAll: true) { items { id } } } } }"
+        )
+        assert "errors" not in ok_limit and "errors" not in ok_fetch_all
+        assert len(_page(ok_fetch_all, "posts")["items"]) == 3
+        assert GET_ALL_CALLS == [1, 1]

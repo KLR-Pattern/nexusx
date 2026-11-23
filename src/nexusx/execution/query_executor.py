@@ -45,6 +45,48 @@ def _node_key(node: FieldNode) -> str:
     return node.alias.value if node.alias else node.name.value
 
 
+PAGINATION_INTENT_REQUIRED = "PAGINATION_INTENT_REQUIRED"
+
+
+def _has_volume_intent(arguments: dict[str, Any] | None) -> bool:
+    """True when a paginated selection's arguments declare volume intent.
+
+    Mirrors ``_PagedOverride.from_dict``: ``limit`` counts when it is an int
+    or str; ``fetchAll`` (or its snake_case alias) counts when truthy; anything
+    else — notably graphql's ``Undefined`` for an unresolved variable — counts
+    as omitted.
+    """
+    args = arguments or {}
+    limit = args.get("limit")
+    if isinstance(limit, (int, str)) and not isinstance(limit, bool):
+        return True
+    fetch_all = args.get("fetchAll")
+    if fetch_all is None:
+        fetch_all = args.get("fetch_all")
+    return bool(fetch_all)
+
+
+def _pagination_intent_error(field_name: str, path: list[str]) -> dict[str, Any]:
+    """Pre-execution error for a paginated selection without volume intent.
+
+    The SDL advertises ``limit`` / ``offset`` / ``fetchAll`` as optional, but
+    the 2026-11 pagination contract makes intent mandatory. Checking it here
+    (before the user's method runs) keeps the schema honest: the query is
+    rejected with a machine-readable code instead of surfacing as a
+    ``RESOLVER_ERROR`` from inside the loader (issue #160 BUG_3). Wording
+    matches the loader-side and mounter-side guards so all three agree.
+    """
+    return {
+        "message": (
+            f"Field '{field_name}': pagination intent is required — provide "
+            "`limit` (window size) or `fetchAll: true`; there is no default "
+            "page size"
+        ),
+        "path": list(path),
+        "extensions": {"code": PAGINATION_INTENT_REQUIRED},
+    }
+
+
 class QueryExecutor:
     """Executes GraphQL queries using DataLoader for relationship resolution.
 
@@ -523,8 +565,16 @@ class QueryExecutor:
         (its keys are filtered per request at serialization, not entity
         fields); ``items`` recurses into entity fields; any other key is
         rejected naming the wrapper type.
+
+        Volume intent (``limit`` or ``fetchAll``) is checked here because both
+        shapes carry their pagination arguments on this very selection — the
+        relationship field's args and the root method's args alike.
         """
-        ok = True
+        ok = _has_volume_intent(sel.arguments)
+        if not ok:
+            errors.append(
+                _pagination_intent_error(path[-1] if path else type_label, path)
+            )
         for key, child in sel.sub_fields.items():
             if key == "pagination":
                 continue
