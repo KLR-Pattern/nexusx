@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased] — issue #160 M1 (suggested minor; spec 026)
+
+### Changed (internal, behaviour-preserving)
+- One leaf module `nexusx.annotation_utils` for every `Optional` / `list` / `Annotated` / `Mapped` unwrapping (`is_optional`, `unwrap_optional`, `unwrap_optional_strict`, `is_union`, `is_list`, `is_list_annotation`, `list_inner`, `strip_annotated`, `is_mapped_wrapper`, `unwrap_mapped`, `core_types`, `is_pydantic`, `safe_issubclass`, `unwrap_func`, `map_annotation`); the 20+ private copies are gone. `introspector._collect_core_types` used to keep `NoneType` in its result — the skip-`None` rule is now the only one.
+- One `dir(entity)` scan (`scanning.method_scanner.iter_entity_callables` / `iter_operations`) shared by `MethodScanner`, `SDLGenerator`, `EntityDiscovery`, `pagination_schema` and voyager.
+- `utils.naming.{pascal_case, snake_case}` and `use_case.context.{is_from_context_annotation, unwrap_from_context}` replace their copies. **Fix on the way:** the CLI used to unwrap *any* subscripted annotation (a `list[int]` parameter became `int` for Typer); only the `Annotated` shell is stripped now.
+- `RelationshipInfo` is an `ABC` (instantiating it raises `TypeError`), `direction` is a `Literal` with the same five values, `loader` is **required** on the three loading variants, every variant has `loader_classes()`, and `plain_loader_of()` / `page_capability_of()` replace the 20 `getattr(rel_info, …)` reads. `BatchPageCapability` / `PageOrderDescriptor` are defined in `loader.pagination` (federation wire unchanged; `federation.contract` re-exports). `Relationship` and `RemoteRelationship` share `RelationshipBase`.
+- `compose_schema.FieldInfo` → `ComposeField`, `voyager.type.FieldInfo` → `VoyagerField` (old names are aliases until 8.0).
+- `response_builder`'s process-level model cache is keyed by the registry; `context` annotation caches are weak; `subset.py` imports `federation.remote_ref` / `loader.pagination` directly.
+
+### Added
+- `Decimal` is a named custom scalar on both GraphQL paths (compose used to reject it generically; entity-first silently mapped it to `String`). Wire value unchanged (string).
+- `ErManager.session_factory`, `ErManager.dto_batch_roots`, `ErManager.register_dto_batch_roots()`; `nexusx.use_case.create_use_case_router` export.
+- `mypy --strict` is enforced in CI (`scripts/check-mypy.sh`) for the cleared modules: `annotation_utils`, `decorator`, `relationship`, `context`, `discovery`, `scanning`, `utils/*`, `loader/*`. Whole-package errors 487 → 132.
+
+### Deprecated (removal in 8.0)
+- `QueryParser.parse_document` (merged-operations hazard — use `parse_operations` / `parse`), `QueryParser.validate_no_aliases`, `utils.naming.to_camel_case`, one-argument `ErManager.get_dto_loader(<field_name>)`, the `FieldInfo` aliases above.
+- `UseCaseService` now logs a warning (instead of silently skipping) for a sync `@query` / `@mutation` method.
+
+### Removed (dead code)
+- `execution.FieldTreeBuilder`, `utils.schema_helpers.collect_enum_types`, `utils.type_utils.get_return_entity_type`, `QueryParser(entity_field_names=)` (never read), two empty `if TYPE_CHECKING: pass` blocks, two wrapper layers around `is_active_paginated_relationship`.
+
 ## [Unreleased] — issue #160 M0 (suggested patch)
 
 ### Fixed
