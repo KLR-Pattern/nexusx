@@ -18,6 +18,7 @@ from sqlmodel import SQLModel, select
 
 from nexusx.annotation_utils import unwrap_func, unwrap_optional_strict
 from nexusx.decorator import query
+from nexusx.utils.naming import pascal_case
 from nexusx.utils.type_utils import get_fk_fields
 
 _ORDER_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
@@ -343,7 +344,7 @@ def _create_page_by_keys_in_query(
     arg_name = f"{field_name}_list"
     method_name = f"page_by_{field_name}_in"
     resolved_orders = _resolve_page_orders(entity, page_config)
-    enum_name = f"{entity.__name__}{_pascal_case(field_name)}PageOrder"
+    enum_name = f"{entity.__name__}{pascal_case(field_name)}PageOrder"
     order_enum = Enum(enum_name, {name: name for name in resolved_orders})
     capability = BatchPageCapability(
         default_order=page_config.default_order,
@@ -557,7 +558,7 @@ def _create_page_by_keys_in_query(
         return_annotation=list[dict],
     )
     func_obj.__name__ = method_name
-    package_name = f"{entity.__name__}{_pascal_case(field_name)}PagePackage"
+    package_name = f"{entity.__name__}{pascal_case(field_name)}PagePackage"
     func_obj._pagination_root = PaginationRootMeta(
         entity=entity,
         fk_field=field_name,
@@ -567,10 +568,6 @@ def _create_page_by_keys_in_query(
         page_capability=capability,
     )
     return page_by_field_in
-
-
-def _pascal_case(value: str) -> str:
-    return "".join(part[:1].upper() + part[1:] for part in value.split("_") if part)
 
 
 def _column_name_from_term(entity: type[SQLModel], field: Any) -> str:

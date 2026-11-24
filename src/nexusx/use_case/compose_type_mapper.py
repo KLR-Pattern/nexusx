@@ -50,6 +50,7 @@ from nexusx.use_case.compose_schema import (
     list_of,
     non_null,
 )
+from nexusx.use_case.context import is_from_context_annotation as _is_from_context_annotation
 
 __all__ = [
     "ComposeTypeMapper",
@@ -89,18 +90,11 @@ _UNSUPPORTED_BUILTIN_TYPES: tuple[type, ...] = (bytes,)
 def is_from_context_annotation(annotation: Any) -> bool:
     """Return ``True`` when ``annotation`` is ``Annotated[T, FromContext(...)]``.
 
-    Migrated from the legacy ``use_case/server.py`` inline check. Kept as a
-    standalone helper so the schema builder and the executor share one source
-    of truth for the ``FromContext`` detection rule.
+    Canonical implementation lives in :mod:`nexusx.use_case.context` (shared
+    with the REST router and the CLI — spec 026 R6); kept here as the name the
+    compose schema builder / executor import.
     """
-    # Local import keeps the marker class out of the module-import graph for
-    # callers that only want scalar mapping.
-    from nexusx.use_case.context import FromContext
-
-    if get_origin(annotation) is not Annotated:
-        return False
-    metadata = get_args(annotation)[1:]
-    return any(isinstance(meta, FromContext) for meta in metadata)
+    return _is_from_context_annotation(annotation)
 
 
 # ``literal_allowed_values`` / ``describe_literal_values`` and the Literal

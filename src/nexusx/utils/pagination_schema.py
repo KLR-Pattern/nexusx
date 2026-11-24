@@ -20,6 +20,7 @@ from enum import Enum
 from typing import Any
 
 from nexusx.scanning.method_scanner import iter_entity_callables
+from nexusx.utils.naming import pascal_case
 
 
 def is_active_paginated_relationship(rel_info: Any) -> bool:
@@ -69,11 +70,6 @@ def has_any_pagination_root(entities: Iterable) -> bool:
     for _ in iter_pagination_roots(entities):
         return True
     return False
-
-
-def _pascal(name: str) -> str:
-    """``snake_case`` → ``PascalCase`` (for synthetic enum-name disambiguation)."""
-    return "".join(p[:1].upper() + p[1:] for p in name.split("_") if p)
 
 
 def federation_order_enum_layout(
@@ -129,7 +125,7 @@ def federation_order_enum_layout(
                 elif existing != values:
                     # Same target, different order set (two join keys) —
                     # disambiguate so both enums render under distinct names.
-                    enum_name = f"{target_name}{_pascal(rel_name)}Order"
+                    enum_name = f"{target_name}{pascal_case(rel_name)}Order"
                     name_values[enum_name] = values
                 if enum_name not in enums:
                     enums[enum_name] = Enum(enum_name, {v: v for v in values})
