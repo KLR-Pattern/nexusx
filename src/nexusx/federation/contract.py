@@ -10,7 +10,6 @@ Voyager/executor, not GraphQL SDL.
 from __future__ import annotations
 
 import re
-from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -22,19 +21,23 @@ class FieldDescriptor(BaseModel):
     type_name: str
 
 
-class PageOrderDescriptor(BaseModel):
-    """One semantic order profile exposed by a member."""
+# PageOrderDescriptor / BatchPageCapability are defined in
+# ``nexusx.loader.pagination`` (spec 026) and re-exported here so the wire
+# module keeps exposing them under their historical import path. The JSON
+# shape (BatchRoot.page, RelDescriptor.page) is unchanged.
+from nexusx.loader.pagination import BatchPageCapability, PageOrderDescriptor  # noqa: E402,F401
 
-    name: str
-    description: str | None = None
-
-
-class BatchPageCapability(BaseModel):
-    """Member-owned pagination protocol and semantic order profiles."""
-
-    protocol: Literal["offset-v1"] = "offset-v1"
-    default_order: str
-    orders: list[PageOrderDescriptor]
+__all__ = [
+    "FieldDescriptor",
+    "PageOrderDescriptor",
+    "BatchPageCapability",
+    "BatchRoot",
+    "RelDescriptor",
+    "EntityFragment",
+    "DTOFragment",
+    "ERIntrospectionResponse",
+    "DTOIntrospectionResponse",
+]
 
 
 class BatchRoot(BaseModel):

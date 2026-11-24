@@ -26,6 +26,7 @@ from nexusx.loader.factories import (
     create_page_many_to_many_loader,
     create_page_one_to_many_loader,
 )
+from nexusx.loader.pagination import BatchPageCapability, PageOrderDescriptor
 from nexusx.relationship import Relationship, get_custom_relationships
 
 logger = logging.getLogger(__name__)
@@ -111,7 +112,7 @@ class RemotePagedRelationship(RelationshipInfo):
 
     loader: type[DataLoader] | None = None
     page_loader: type[DataLoader]
-    page_capability: Any  # BatchPageCapability (specs/014)
+    page_capability: BatchPageCapability  # specs/014
     target_service: str | None = None
     max_page_size: int = 100
 
@@ -202,7 +203,6 @@ def _resolve_local_page_capability(
     cfg = getattr(target_entity, "__pagination_orders__", None)
     if cfg is None:
         return None, None
-    from nexusx.federation.contract import BatchPageCapability, PageOrderDescriptor
     from nexusx.standard_queries import _resolve_page_orders
 
     resolved = _resolve_page_orders(target_entity, cfg)

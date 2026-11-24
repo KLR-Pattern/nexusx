@@ -18,6 +18,7 @@ from sqlmodel import SQLModel, select
 
 from nexusx.annotation_utils import unwrap_func, unwrap_optional_strict
 from nexusx.decorator import query
+from nexusx.loader.pagination import BatchPageCapability, PageOrderDescriptor
 from nexusx.utils.naming import pascal_case
 from nexusx.utils.type_utils import get_fk_fields
 
@@ -52,7 +53,7 @@ class PaginationRootMeta:
     fk_type: type
     package_name: str
     order_enum: type
-    page_capability: Any  # BatchPageCapability
+    page_capability: BatchPageCapability
 
 
 @dataclass(frozen=True)
@@ -336,11 +337,6 @@ def _create_page_by_keys_in_query(
     The executor injects the selected pagination field names as private runtime
     metadata; that metadata is not part of this root's public GraphQL signature.
     """
-    from nexusx.federation.contract import (
-        BatchPageCapability,
-        PageOrderDescriptor,
-    )
-
     arg_name = f"{field_name}_list"
     method_name = f"page_by_{field_name}_in"
     resolved_orders = _resolve_page_orders(entity, page_config)

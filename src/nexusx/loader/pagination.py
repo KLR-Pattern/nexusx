@@ -6,7 +6,7 @@ Adapted from pydantic-resolve's graphql.pagination.types module.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
@@ -16,6 +16,31 @@ class Pagination(BaseModel):
 
     has_more: bool = False
     total_count: int | None = None
+
+
+# ──────────────────────────────────────────────────────────
+# Pagination capability descriptors (specs/014 / 020)
+#
+# Definitions live here (spec 026 / issue #160 DESIGN_5) so the loader layer
+# can type ``page_capability`` without importing federation; the wire module
+# ``federation.contract`` re-exports them — the fragment JSON is unchanged
+# (constitution §二.2).
+# ──────────────────────────────────────────────────────────
+
+
+class PageOrderDescriptor(BaseModel):
+    """One semantic order profile exposed by a member."""
+
+    name: str
+    description: str | None = None
+
+
+class BatchPageCapability(BaseModel):
+    """Member-owned pagination protocol and semantic order profiles."""
+
+    protocol: Literal["offset-v1"] = "offset-v1"
+    default_order: str
+    orders: list[PageOrderDescriptor]
 
 
 # Deployment-level seatbelt for fetchAll (2026-11 pagination contract,
