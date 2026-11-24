@@ -10,6 +10,7 @@ import typing
 from nexusx.federation.relationship import parse_qualified_name
 from nexusx.loader.registry import ErManager, RelationshipInfo
 from nexusx.relationship import is_virtual_entity
+from nexusx.scanning.method_scanner import iter_entity_callables
 from nexusx.voyager.render import DiagramRenderer
 from nexusx.voyager.styling import (
     member_service_colors,
@@ -54,24 +55,15 @@ def _discover_methods(entity_kls: type) -> tuple[list[MethodInfo], list[MethodIn
     """Scan entity for @query/@mutation methods, return (queries, mutations)."""
     queries: list[MethodInfo] = []
     mutations: list[MethodInfo] = []
-    for attr_name in dir(entity_kls):
-        try:
-            attr = getattr(entity_kls, attr_name)
-        except Exception:
+    for ec in iter_entity_callables(entity_kls):
+        kind = ec.kind
+        if kind is None:
             continue
-        if not callable(attr):
-            continue
-        func = getattr(attr, '__func__', attr)
-        if getattr(attr, '_graphql_query', False):
-            queries.append(MethodInfo(
-                name=func.__name__,
-                return_type=_get_return_type_name(func),
-            ))
-        elif getattr(attr, '_graphql_mutation', False):
-            mutations.append(MethodInfo(
-                name=func.__name__,
-                return_type=_get_return_type_name(func),
-            ))
+        info = MethodInfo(
+            name=ec.func.__name__,
+            return_type=_get_return_type_name(ec.func),
+        )
+        (queries if kind == "query" else mutations).append(info)
     return queries, mutations
 
 

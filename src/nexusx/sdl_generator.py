@@ -10,6 +10,7 @@ from sqlmodel import SQLModel
 
 from nexusx.annotation_utils import unwrap_func
 from nexusx.introspection import QUERY_META_PARAM  # noqa: F401
+from nexusx.scanning.method_scanner import iter_entity_callables
 from nexusx.type_converter import (
     SCALAR_TYPE_MAP,
     TypeConverter,
@@ -216,15 +217,9 @@ class SDLGenerator:
                 # that get_type_hints can't resolve from module globals.
                 hints = {}
             root_types.extend(hints.values())
-            for attr_name in dir(entity):
-                try:
-                    attr = getattr(entity, attr_name)
-                except Exception:
-                    continue
-                if not callable(attr):
-                    continue
-                func = unwrap_func(attr)
-                if hasattr(func, "_graphql_query") or hasattr(func, "_graphql_mutation"):
+            for ec in iter_entity_callables(entity):
+                func = ec.func
+                if ec.kind is not None:
                     try:
                         method_hints = get_type_hints(func)
                     except Exception:
@@ -294,13 +289,9 @@ class SDLGenerator:
 
         # Scan all query and mutation methods
         for entity in self.entities:
-            for name in dir(entity):
+            for ec in iter_entity_callables(entity):
+                name, func = ec.name, ec.func
                 try:
-                    attr = getattr(entity, name)
-                    if not callable(attr):
-                        continue
-                    func = unwrap_func(attr)
-
                     # Check if method has a pre-defined filter input type
                     if hasattr(func, "_filter_input_type"):
                         filter_input_type = func._filter_input_type
@@ -316,7 +307,7 @@ class SDLGenerator:
                                 pass
 
                     # Check for @query or @mutation
-                    if hasattr(func, "_graphql_query") or hasattr(func, "_graphql_mutation"):
+                    if ec.kind is not None:
                         sig = inspect.signature(func)
                         try:
                             globalns = getattr(func, "__globals__", {})
@@ -695,22 +686,9 @@ class SDLGenerator:
 
         for entity in self.entities:
             method_fields: list[str] = []
-            for attr_name in dir(entity):
-                try:
-                    attr = getattr(entity, attr_name)
-                except (AttributeError, NameError):
-                    continue
-                except Exception:
-                    logger.warning(
-                        "Unexpected error collecting %s from %s.%s",
-                        group_suffix.lower(), entity.__name__, attr_name, exc_info=True,
-                    )
-                    continue
-                if not callable(attr):
-                    continue
-                func = unwrap_func(attr)
-                if hasattr(func, decorator_attr):
-                    field_def = self._method_to_graphql_field(attr, entity, func.__name__)
+            for ec in iter_entity_callables(entity):
+                if hasattr(ec.func, decorator_attr):
+                    field_def = self._method_to_graphql_field(ec.attr, entity, ec.func.__name__)
                     method_fields.append(f"  {field_def}")
 
             if not method_fields:
@@ -869,15 +847,9 @@ class SDLGenerator:
         for entity in self.entities:
             if entity.__name__ != entity_name:
                 continue
-            for name in dir(entity):
-                try:
-                    attr = getattr(entity, name)
-                    if callable(attr) and hasattr(attr, decorator_attr):
-                        func = unwrap_func(attr)
-                        if func.__name__ == method_name:
-                            return (attr, entity)
-                except (AttributeError, NameError):
-                    continue
+            for ec in iter_entity_callables(entity):
+                if hasattr(ec.attr, decorator_attr) and ec.func.__name__ == method_name:
+                    return (ec.attr, entity)
 
         return None
 
