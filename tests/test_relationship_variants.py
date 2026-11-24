@@ -19,10 +19,12 @@ import pytest
 
 from nexusx.loader.registry import (
     LocalRelationship,
+    RelationshipInfo,
     RemoteCoalescedRelationship,
     RemotePagedRelationship,
     RemotePlainRelationship,
-    RelationshipInfo,
+    page_capability_of,
+    plain_loader_of,
 )
 
 
@@ -133,14 +135,95 @@ class TestIllegalStatesUnrepresentable:
                 page_loader=object(),
             )
 
-    def test_base_is_abstract_by_convention(self):
-        """The base carries no judgment — consumers must hold a variant."""
-        rel = RelationshipInfo(
-            name="x", direction="ONETOMANY", fk_field="x_id",
-            target_entity=object, is_list=True,
+    def test_base_is_an_abc(self):
+        """The base carries no judgment — it cannot even be instantiated
+        (spec 026 / issue #160 DESIGN_5: abstract by type, not by convention)."""
+        with pytest.raises(TypeError, match="abstract"):
+            RelationshipInfo(
+                name="x", direction="ONETOMANY", fk_field="x_id",
+                target_entity=object, is_list=True,
+            )
+
+    def test_loading_variants_require_a_loader(self):
+        """``loader`` is a required field on the three loading variants."""
+        for cls in (LocalRelationship, RemotePlainRelationship, RemotePagedRelationship):
+            extra = (
+                {"page_loader": object, "page_capability": _capability()}
+                if cls is RemotePagedRelationship
+                else {}
+            )
+            with pytest.raises(TypeError):  # loader missing
+                cls(
+                    name="x", direction="ONETOMANY", fk_field="x_id",
+                    target_entity=object, is_list=True, **extra,
+                )
+
+
+def _capability():
+    from nexusx.loader.pagination import BatchPageCapability
+
+    return BatchPageCapability(default_order="PRIMARY", orders=[])
+
+
+class TestLoaderAccessors:
+    """loader_classes() / plain_loader_of() / page_capability_of() replace the
+    20 ``getattr(rel, "loader", None)`` reads the review found (#160 DESIGN_5)."""
+
+    def test_loader_classes_expectation_table(self):
+        local_plain = LocalRelationship(
+            name="a", direction="ONETOMANY", fk_field="id", target_entity=object,
+            is_list=True, loader=int,
         )
-        with pytest.raises(NotImplementedError):
-            rel.can_paginate
+        local_paged = LocalRelationship(
+            name="a", direction="ONETOMANY", fk_field="id", target_entity=object,
+            is_list=True, loader=int, page_loader=str, sort_field="id",
+        )
+        remote_plain = RemotePlainRelationship(
+            name="a", direction="MANYTOONE", fk_field="id", target_entity=object,
+            is_list=False, loader=int,
+        )
+        remote_paged = RemotePagedRelationship(
+            name="a", direction="ONETOMANY", fk_field="id", target_entity=object,
+            is_list=True, loader=int, page_loader=str, page_capability=_capability(),
+        )
+        coalesced = RemoteCoalescedRelationship(
+            name="a", direction="ONETOMANY", fk_field="id", target_entity=object,
+            is_list=True,
+        )
+        assert local_plain.loader_classes() == (int,)
+        assert local_paged.loader_classes() == (int, str)
+        assert remote_plain.loader_classes() == (int,)
+        assert remote_paged.loader_classes() == (int, str)
+        assert coalesced.loader_classes() == ()
+
+        assert plain_loader_of(local_paged) is int
+        assert plain_loader_of(remote_paged) is int
+        assert plain_loader_of(coalesced) is None
+
+        assert page_capability_of(remote_paged) is remote_paged.page_capability
+        assert page_capability_of(local_paged) is None
+        assert page_capability_of(coalesced) is None
+        assert page_capability_of(remote_plain) is None
+
+    def test_batch_page_capability_keeps_its_wire_import_path(self):
+        """federation.contract re-exports the class that now lives next to
+        the loaders; the fragment JSON must not notice the move (§二.2)."""
+        from nexusx.federation.contract import BatchPageCapability as ViaContract
+        from nexusx.loader.pagination import BatchPageCapability
+
+        assert ViaContract is BatchPageCapability
+        assert BatchPageCapability.model_json_schema()["properties"].keys() == {
+            "protocol", "default_order", "orders",
+        }
+
+    def test_direction_is_a_literal_with_the_historical_values(self):
+        from typing import get_args
+
+        from nexusx.loader.registry import RelationshipDirection
+
+        assert set(get_args(RelationshipDirection)) == {
+            "MANYTOONE", "ONETOMANY", "ONETOMANY_SCALAR", "MANYTOMANY", "CUSTOM",
+        }
 
 
 # ---------------------------------------------------------------------------

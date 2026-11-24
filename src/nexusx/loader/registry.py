@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import logging
 import warnings
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from aiodataloader import DataLoader
 from pydantic import BaseModel
@@ -31,9 +32,20 @@ from nexusx.relationship import Relationship, get_custom_relationships
 
 logger = logging.getLogger(__name__)
 
+# The direction is a closed set; ``Literal`` (spec 026 / issue #160 DESIGN_5)
+# replaces the free ``str`` with the same runtime values, so equality checks
+# and the ER diagram keep working while mypy can flag typos.
+RelationshipDirection = Literal[
+    "MANYTOONE",  # FK on the source side points at the target
+    "ONETOMANY",  # list: target rows carry a FK back to the source
+    "ONETOMANY_SCALAR",  # reverse one-to-one (uselist=False)
+    "MANYTOMANY",  # list through a secondary table
+    "CUSTOM",  # user-declared ``__relationships__`` entry (non-ORM)
+]
+
 
 @dataclass(kw_only=True, frozen=True)
-class RelationshipInfo:
+class RelationshipInfo(ABC):
     """Base: the orthogonal facts every relationship variant shares.
 
     2026-11 variants refactor (relationship-variants plan §三): the flat
@@ -42,27 +54,36 @@ class RelationshipInfo:
     (e.g. a coalesced relationship cannot carry a loader: the field does not
     exist on ``RemoteCoalescedRelationship``).
 
-    Consumers branch via ``isinstance`` / the polymorphic ``can_paginate``
-    (static capability) and ``is_paginated`` (active pagination shape —
-    whether the schema renders ``{items, pagination}``).
+    2026-11 / spec 026: an explicit ``ABC`` (instantiating the base raises
+    ``TypeError``), a ``Literal`` direction, and — on the three variants that
+    load — a **required** ``loader``. Consumers branch via ``isinstance`` or
+    the polymorphic ``can_paginate`` (static capability) / ``is_paginated``
+    (active pagination shape) and read loaders through ``loader_classes()``,
+    :func:`plain_loader_of` or :func:`page_capability_of` instead of
+    ``getattr(rel, "loader", None)`` — which the type system could not see
+    and which silently returned ``None`` for a mis-wired variant.
     """
 
     name: str  # relationship field name on the entity
-    direction: str  # MANYTOONE | ONETOMANY | ONETOMANY_SCALAR | MANYTOMANY | CUSTOM
+    direction: RelationshipDirection
     fk_field: str  # FK field on the *source* entity used as loader key
     target_entity: type[SQLModel]  # target entity class
     is_list: bool  # True for one-to-many / many-to-many lists
     description: str | None = None  # surfaced in voyager/ER diagram
 
     @property
+    @abstractmethod
     def can_paginate(self) -> bool:
         """Static capability: can this relationship's source window at all?"""
-        raise NotImplementedError
 
     @property
+    @abstractmethod
     def is_paginated(self) -> bool:
         """Active pagination shape ({items, pagination} in the schema)."""
-        raise NotImplementedError
+
+    def loader_classes(self) -> tuple[type[DataLoader], ...]:
+        """Every DataLoader class this variant carries (empty for coalesced)."""
+        return ()
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -71,10 +92,10 @@ class LocalRelationship(RelationshipInfo):
     anytime); ``page_loader`` expresses ASSEMBLY (declared ``order_by``),
     not capability. The two are orthogonal (plan §三, scenario 4)."""
 
-    loader: type[DataLoader] | None = None
+    loader: type[DataLoader]  # every local rel is built with a loader
     page_loader: type[DataLoader] | None = None  # assembled iff order_by declared
     sort_field: str | None = None  # sort column for pagination
-    page_capability: Any = None  # local order profiles (__pagination_orders__)
+    page_capability: BatchPageCapability | None = None  # local order profiles
     max_page_size: int = 100
 
     @property
@@ -85,13 +106,16 @@ class LocalRelationship(RelationshipInfo):
     def is_paginated(self) -> bool:
         return self.is_list and self.page_loader is not None
 
+    def loader_classes(self) -> tuple[type[DataLoader], ...]:
+        return (self.loader, self.page_loader) if self.page_loader else (self.loader,)
+
 
 @dataclass(kw_only=True, frozen=True)
 class RemotePlainRelationship(RelationshipInfo):
     """Remote, un-paged: the member exposes only ``by_<key>_in`` — there is
     no pagination channel on the wire. Plain fetch via fetch_remote_subtree()."""
 
-    loader: type[DataLoader] | None = None
+    loader: type[DataLoader]
     target_service: str | None = None
 
     @property
@@ -102,6 +126,9 @@ class RemotePlainRelationship(RelationshipInfo):
     def is_paginated(self) -> bool:
         return False
 
+    def loader_classes(self) -> tuple[type[DataLoader], ...]:
+        return (self.loader,)
+
 
 @dataclass(kw_only=True, frozen=True)
 class RemotePagedRelationship(RelationshipInfo):
@@ -110,7 +137,7 @@ class RemotePagedRelationship(RelationshipInfo):
     ``page_capability`` have NO defaults — construction IS the commitment;
     a "declared paged remote without a loader" is unconstructible."""
 
-    loader: type[DataLoader] | None = None
+    loader: type[DataLoader]
     page_loader: type[DataLoader]
     page_capability: BatchPageCapability  # specs/014
     target_service: str | None = None
@@ -123,6 +150,9 @@ class RemotePagedRelationship(RelationshipInfo):
     @property
     def is_paginated(self) -> bool:
         return True
+
+    def loader_classes(self) -> tuple[type[DataLoader], ...]:
+        return (self.loader, self.page_loader)
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -143,6 +173,29 @@ class RemoteCoalescedRelationship(RelationshipInfo):
     @property
     def is_paginated(self) -> bool:
         return self.is_list and self.paginated
+
+
+# The three loading variants — the only ones with a ``loader`` field.
+_LoadingRelationship = (LocalRelationship, RemotePlainRelationship, RemotePagedRelationship)
+
+
+def plain_loader_of(rel: RelationshipInfo) -> type[DataLoader] | None:
+    """The variant's non-paged loader class; ``None`` for coalesced.
+
+    The one place that knows which variants carry a loader, so lookups stop
+    reading ``rel.loader`` off the base type (an ``attr-defined`` mypy could
+    not see through and an ``AttributeError`` at runtime for coalesced).
+    """
+    if isinstance(rel, _LoadingRelationship):
+        return rel.loader
+    return None
+
+
+def page_capability_of(rel: RelationshipInfo) -> BatchPageCapability | None:
+    """The declared order profiles, for the variants that can have them."""
+    if isinstance(rel, (LocalRelationship, RemotePagedRelationship)):
+        return rel.page_capability
+    return None
 
 
 def _expect_single_pair(pairs: Any, message: str) -> tuple[Any, Any]:

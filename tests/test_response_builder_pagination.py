@@ -60,7 +60,7 @@ def test_paginated_package_field_renders_result_type_shape():
             return LocalRelationship(
                 name="posts", direction="ONETOMANY", fk_field="id",
                 target_entity=RB2Post, is_list=True,
-                page_loader=object(),
+                loader=object(), page_loader=object(),
             )
         return None
 
