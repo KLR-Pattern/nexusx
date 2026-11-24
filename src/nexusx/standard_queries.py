@@ -824,7 +824,7 @@ def _create_dto_by_keys_in_query(
     data owner. The mounter receives finished DTO trees, never raw rows.
 
     Registered as a plain async function (NOT a ``@query``) on
-    ``er_manager._dto_batch_roots`` — served by the dedicated DTO batch HTTP
+    ``er_manager.dto_batch_roots`` — served by the dedicated DTO batch HTTP
     endpoint, not the β GraphQL surface (FR-008: β 不动).
     """
     subset_fields = list(getattr(dto_cls, "__subset_fields__", []) or [])
@@ -986,7 +986,8 @@ def add_dto_batch_roots(er_manager: Any) -> None:
     For every ``er_manager.get_public_dtos()`` entry (SubsetConfig
     ``federation_public=True``), read its join_key + base entity, fail-fast
     validate the join_key is a column on the base entity, and store
-    ``(by_<join_key>_in, join_key)`` under ``er_manager._dto_batch_roots[dto_name]``.
+    ``(by_<join_key>_in, join_key)`` under ``er_manager.dto_batch_roots[dto_name]``
+    (written through ``ErManager.register_dto_batch_roots``).
 
     Called from ``GraphQLHandler.__init__`` (symmetric to ``add_standard_queries``)
     so the batch roots exist at app startup. They're served at query time by the
@@ -1000,7 +1001,7 @@ def add_dto_batch_roots(er_manager: Any) -> None:
     from nexusx.federation.manager import _SUPPORTED_JOIN_TYPES, _normalize_join_type
     from nexusx.subset import get_subset_source
 
-    session_factory = er_manager._session_factory
+    session_factory = er_manager.session_factory
     batch_roots: dict[str, tuple[Any, str]] = {}
     for dto_cls in er_manager.get_public_dtos():
         join_key = getattr(dto_cls, "__federation_join_key__", None)
@@ -1056,4 +1057,4 @@ def add_dto_batch_roots(er_manager: Any) -> None:
             ),
             join_key,
         )
-    er_manager._dto_batch_roots = batch_roots
+    er_manager.register_dto_batch_roots(batch_roots)

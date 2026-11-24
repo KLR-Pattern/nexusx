@@ -422,7 +422,7 @@ def build_federable_app(
         # already-resolved DTO tree. Independent from /graphql (β) — the β
         # surface is untouched.
         dto_name = payload.get("dto")
-        roots = getattr(handler._er_manager, "_dto_batch_roots", {}) or {}
+        roots = getattr(handler._er_manager, "dto_batch_roots", {}) or {}
         entry = roots.get(dto_name)
         if entry is None:
             return {

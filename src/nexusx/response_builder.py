@@ -560,66 +560,49 @@ def get_relation_entity(
     Returns:
         Target entity class or None if not found.
     """
-    # Federation registry lookup (source of truth for __relationships__ fields).
+    # 1. Registry (source of truth for registered entities: custom
+    #    ``__relationships__`` and federation-materialized fields never appear
+    #    on the SQLAlchemy mapper). The resolver returns a RelationshipInfo
+    #    (callers want its target type) or, by contract, a bare class.
     if relation_entity_resolver is not None:
         try:
             resolved = relation_entity_resolver(entity, field_name)
         except Exception:
             resolved = None
         if resolved is not None:
-            # The resolver returns a RelationshipInfo (callers want its target
-            # type) or, by contract, a bare class (specs/018 T002b).
             if isinstance(resolved, RelationshipInfo):
                 return resolved.target_entity
             if isinstance(resolved, type):
                 return resolved
             return None
 
-    # Check SQLAlchemy relationships first (more reliable for actual entity types)
+    # 2. SQLAlchemy mapper (local ORM relationships of entities not registered
+    #    anywhere — e.g. EntityDiscovery runs before a registry exists).
     try:
         from sqlalchemy import inspect as sa_inspect
 
         mapper = sa_inspect(entity)
         if mapper and hasattr(mapper, "relationships"):
             if field_name in mapper.relationships:
-                rel = mapper.relationships[field_name]
-                return rel.mapper.class_
+                return mapper.relationships[field_name].mapper.class_
     except Exception:
         pass
 
-    # Check SQLModel relationships
-    if hasattr(entity, "__sqlmodel_relationships__"):
-        rel_info = entity.__sqlmodel_relationships__.get(field_name)
-        if rel_info is not None and hasattr(entity, "__annotations__"):
-            annotation = entity.__annotations__.get(field_name)
-            if annotation:
-                result = _extract_entity_from_annotation(
-                    annotation, all_subclasses, federation_namespace=federation_namespace
-                )
-                if result:
-                    return result
-                # Handle string forward references
-                if isinstance(annotation, str) and all_subclasses:
-                    return _resolve_forward_reference(
-                        annotation, all_subclasses,
-                        federation_namespace=federation_namespace,
-                    )
-
-    # Fallback: try to get from annotations
-    if hasattr(entity, "__annotations__"):
-        annotation = entity.__annotations__.get(field_name)
-        if annotation:
-            result = _extract_entity_from_annotation(
-                annotation, all_subclasses, federation_namespace=federation_namespace
+    # 3. Annotations (SQLModel's ``__sqlmodel_relationships__`` and plain
+    #    ``__annotations__`` name the same annotation — one lookup serves both;
+    #    the former two copies of this block were identical).
+    annotation = getattr(entity, "__annotations__", {}).get(field_name)
+    if annotation:
+        result = _extract_entity_from_annotation(
+            annotation, all_subclasses, federation_namespace=federation_namespace
+        )
+        if result:
+            return result
+        if isinstance(annotation, str) and all_subclasses:
+            return _resolve_forward_reference(
+                annotation, all_subclasses,
+                federation_namespace=federation_namespace,
             )
-            if result:
-                return result
-            # Handle string forward references
-            if isinstance(annotation, str) and all_subclasses:
-                return _resolve_forward_reference(
-                    annotation, all_subclasses,
-                    federation_namespace=federation_namespace,
-                )
 
     return None
 

@@ -1015,6 +1015,25 @@ class ErManager:
                 dtos.append(d)
         return dtos
 
+    @property
+    def session_factory(self) -> Callable:
+        """The async session factory loaders (and member batch roots) use."""
+        return self._session_factory
+
+    @property
+    def dto_batch_roots(self) -> dict[str, tuple[Any, str]]:
+        """γ-path member batch roots: DTO name → (by_<join_key>_in, join_key)."""
+        return self._dto_batch_roots
+
+    def register_dto_batch_roots(
+        self, batch_roots: dict[str, tuple[Any, str]]
+    ) -> None:
+        """Set the member's γ-path DTO batch roots (``add_dto_batch_roots`` does
+        the discovery; this is the write side so that function stops touching
+        private attributes — issue #160 SIG_11). Replaces any previous set, so
+        it is idempotent across repeated calls."""
+        self._dto_batch_roots = batch_roots
+
     def register_dto_loader(
         self,
         owner_dto: type,
