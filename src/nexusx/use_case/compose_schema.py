@@ -23,6 +23,8 @@ import inspect
 from dataclasses import dataclass, field
 from typing import Any, Literal, get_type_hints
 
+from nexusx.annotation_utils import unwrap_func
+
 __all__ = [
     "TypeRef",
     "TypeInfo",
@@ -298,7 +300,7 @@ def build_compose_schema(app: Any) -> ComposeSchema:
             kind = meta.get("kind", "query")
             method = meta["method"]
             unwrapped = inspect.unwrap(method)
-            func = unwrapped.__func__ if hasattr(unwrapped, "__func__") else unwrapped
+            func = unwrap_func(unwrapped)
 
             signature_key = (service_name, method_name)
             if signature_key in seen_method_signatures:

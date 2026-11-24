@@ -10,6 +10,7 @@ from graphql import DocumentNode, FieldNode, OperationDefinitionNode
 from pydantic import BaseModel, TypeAdapter
 from sqlmodel import SQLModel
 
+from nexusx.annotation_utils import unwrap_func
 from nexusx.execution.argument_builder import ArgumentBuilder
 from nexusx.loader.pagination import KeyedPaginatedPackage, PaginatedPackage
 from nexusx.loader.registry import RemoteCoalescedRelationship
@@ -343,7 +344,7 @@ class QueryExecutor:
                     else None
                 )
 
-                func = method.__func__ if hasattr(method, "__func__") else method
+                func = unwrap_func(method)
                 pag_root = getattr(func, "_pagination_root", None)
                 is_pagination_root = pag_root is not None
                 # ``by_<key>_in`` batch roots are federation machine-facing:

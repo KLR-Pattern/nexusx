@@ -10,6 +10,7 @@ from typing import Any, Literal, get_args, get_origin, get_type_hints
 from graphql.utilities import value_from_ast_untyped
 from pydantic import AwareDatetime, TypeAdapter, ValidationError
 
+from nexusx.annotation_utils import unwrap_func
 from nexusx.type_converter import TypeConverter
 
 _DATETIME_ADAPTER = TypeAdapter(AwareDatetime)
@@ -153,7 +154,7 @@ class ArgumentBuilder:
             return args
 
         # Get method signature and type hints
-        func = method.__func__ if hasattr(method, "__func__") else method
+        func = unwrap_func(method)
         sig = inspect.signature(func)
 
         try:

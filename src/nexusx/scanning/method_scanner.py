@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from nexusx.annotation_utils import unwrap_func
 from nexusx.scanning.errors import (
     DuplicateEntityError,
     DuplicateMethodError,
@@ -74,11 +75,11 @@ class MethodScanner:
                     continue
 
                 if hasattr(attr, "_graphql_query"):
-                    func = attr.__func__ if hasattr(attr, "__func__") else attr
+                    func = unwrap_func(attr)
                     query_methods.append((attr, func.__name__))
 
                 if hasattr(attr, "_graphql_mutation"):
-                    func = attr.__func__ if hasattr(attr, "__func__") else attr
+                    func = unwrap_func(attr)
                     mutation_methods.append((attr, func.__name__))
 
             # Entities without any GraphQL method produce no group — skip them

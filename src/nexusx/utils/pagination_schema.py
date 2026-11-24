@@ -19,6 +19,8 @@ from collections.abc import Iterable, Iterator
 from enum import Enum
 from typing import Any
 
+from nexusx.annotation_utils import unwrap_func
+
 
 def is_active_paginated_relationship(rel_info: Any) -> bool:
     """True when this relationship renders as an active pagination field.
@@ -59,7 +61,7 @@ def iter_pagination_roots(entities: Iterable) -> Iterator[tuple[Any, Any]]:
                 continue
             if not callable(attr):
                 continue
-            func = attr.__func__ if hasattr(attr, "__func__") else attr
+            func = unwrap_func(attr)
             pag_root = getattr(func, "_pagination_root", None)
             if not pag_root:
                 continue

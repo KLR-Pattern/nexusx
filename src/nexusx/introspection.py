@@ -12,6 +12,7 @@ from graphql import FieldNode, OperationDefinitionNode, parse
 from graphql.utilities import value_from_ast_untyped
 from sqlmodel import SQLModel
 
+from nexusx.annotation_utils import unwrap_func
 from nexusx.type_converter import (
     SCALAR_TYPE_MAP,
     TypeConverter,
@@ -455,7 +456,7 @@ class IntrospectionGenerator:
 
     def _build_method_field(self, field_name: str, method: Callable) -> dict:
         """Build introspection data for a query/mutation field."""
-        func = method.__func__ if hasattr(method, "__func__") else method
+        func = unwrap_func(method)
 
         # Get description from docstring
         description = func.__doc__.strip() if func.__doc__ else None
@@ -685,7 +686,7 @@ class IntrospectionGenerator:
         for methods in [self._query_methods, self._mutation_methods]:
             for _group in methods.values():
                 for _name, (_, method) in _group.items():
-                    func = method.__func__ if hasattr(method, "__func__") else method
+                    func = unwrap_func(method)
                     try:
                         hints = get_type_hints(func)
                     except Exception:
@@ -721,7 +722,7 @@ class IntrospectionGenerator:
         for methods in [self._query_methods, self._mutation_methods]:
             for _group in methods.values():
                 for _name, (_, method) in _group.items():
-                    func = method.__func__ if hasattr(method, "__func__") else method
+                    func = unwrap_func(method)
                     sig = inspect.signature(func)
                     try:
                         hints = get_type_hints(func)

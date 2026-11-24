@@ -16,7 +16,7 @@ from typing import Any, Literal
 from pydantic import Field, create_model
 from sqlmodel import SQLModel, select
 
-from nexusx.annotation_utils import unwrap_optional_strict
+from nexusx.annotation_utils import unwrap_func, unwrap_optional_strict
 from nexusx.decorator import query
 from nexusx.utils.type_utils import get_fk_fields
 
@@ -202,7 +202,7 @@ def _create_by_id_query(entity: type[SQLModel], session_factory: Any) -> Any:
             result = await session.exec(stmt)
             return result.first()
 
-    func = by_id.__func__ if hasattr(by_id, "__func__") else by_id
+    func = unwrap_func(by_id)
     func.__annotations__[primary_key_name] = primary_key_type
     by_id.__annotations__["return"] = entity | None
     func.__signature__ = inspect.Signature(
@@ -264,7 +264,7 @@ def _create_by_filter_query(
             result = await session.exec(stmt)
             return list(result.all())
 
-    func = by_filter.__func__ if hasattr(by_filter, "__func__") else by_filter
+    func = unwrap_func(by_filter)
     func.__annotations__["filter"] = filter_input_type
     by_filter.__annotations__["return"] = list[entity]
     func._filter_input_type = filter_input_type
@@ -296,7 +296,7 @@ def _create_by_keys_in_query(
             result = await session.exec(stmt)
             return list(result.all())
 
-    func = by_field_in.__func__ if hasattr(by_field_in, "__func__") else by_field_in
+    func = unwrap_func(by_field_in)
     # Machine-facing root: selections arrive from mounters' remote loaders and
     # may include DTO-side computed fields the entity never serves (dropped by
     # design, recomputed mounter-side). The executor exempts these roots from

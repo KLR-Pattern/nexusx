@@ -8,6 +8,7 @@ from typing import Any, get_args, get_origin, get_type_hints
 
 from sqlmodel import SQLModel
 
+from nexusx.annotation_utils import unwrap_func
 from nexusx.introspection import QUERY_META_PARAM  # noqa: F401
 from nexusx.type_converter import (
     SCALAR_TYPE_MAP,
@@ -222,7 +223,7 @@ class SDLGenerator:
                     continue
                 if not callable(attr):
                     continue
-                func = attr.__func__ if hasattr(attr, "__func__") else attr
+                func = unwrap_func(attr)
                 if hasattr(func, "_graphql_query") or hasattr(func, "_graphql_mutation"):
                     try:
                         method_hints = get_type_hints(func)
@@ -298,7 +299,7 @@ class SDLGenerator:
                     attr = getattr(entity, name)
                     if not callable(attr):
                         continue
-                    func = attr.__func__ if hasattr(attr, "__func__") else attr
+                    func = unwrap_func(attr)
 
                     # Check if method has a pre-defined filter input type
                     if hasattr(func, "_filter_input_type"):
@@ -707,7 +708,7 @@ class SDLGenerator:
                     continue
                 if not callable(attr):
                     continue
-                func = attr.__func__ if hasattr(attr, "__func__") else attr
+                func = unwrap_func(attr)
                 if hasattr(func, decorator_attr):
                     field_def = self._method_to_graphql_field(attr, entity, func.__name__)
                     method_fields.append(f"  {field_def}")
@@ -735,7 +736,7 @@ class SDLGenerator:
         parent group.
         """
         # Get the underlying function from classmethod
-        func = method.__func__ if hasattr(method, "__func__") else method
+        func = unwrap_func(method)
 
         # Get description from docstring
         description = func.__doc__
@@ -872,7 +873,7 @@ class SDLGenerator:
                 try:
                     attr = getattr(entity, name)
                     if callable(attr) and hasattr(attr, decorator_attr):
-                        func = attr.__func__ if hasattr(attr, "__func__") else attr
+                        func = unwrap_func(attr)
                         if func.__name__ == method_name:
                             return (attr, entity)
                 except (AttributeError, NameError):
@@ -908,7 +909,7 @@ class SDLGenerator:
         method, entity = result
 
         # Get return type to collect related entities
-        func = method.__func__ if hasattr(method, "__func__") else method
+        func = unwrap_func(method)
         try:
             globalns = getattr(func, "__globals__", {})
             localns = {e.__name__: e for e in self.entities}
