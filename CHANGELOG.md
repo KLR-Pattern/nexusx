@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased] — issue #160 M0 (suggested patch)
+
+### Fixed
+- `limit: 0` on a local paginated relationship (O2M and M2M) no longer reports `has_more: true` — the peek-by-1 window still fetched one row and `1 > 0` claimed a next page for an empty one. The member-side `page_by_<key>_in` root already had this guard (specs/021 GAP E); the two local loaders now match it.
+- `Resolver` caches that read the registry (`should_traverse`, traversable fields) are now scoped per `ErManager` instead of per class. With two ErManagers in one process (ComposedErManager, multi-app, federation tests), the first registry's answer used to freeze in a class-keyed cache and the second registry's relationships were never traversed.
+- A paginated field (or `page_by_<key>_in` root) queried without `limit` or `fetchAll` is rejected **before** execution with `extensions.code = "PAGINATION_INTENT_REQUIRED"` and a path pointing at the field — previously the user's method ran and the loader's `ValueError` surfaced as `RESOLVER_ERROR`. The SDL advertises the three args as optional; this check keeps schema and execution honest.
+- `GraphQLHandler.execute`'s top-level catch-all now returns `extensions.code = "INTERNAL_ERROR"` like every other error path, so agents never hit a `KeyError` on `extensions`.
+
+### Docs
+- `decorator.py` / `how_it_works.md` / `llms-full.txt` / package docstring synced with the 7.0 contract: verbatim method names on `{Entity}Query` group types (no `{entityName}{methodName}`), `sa_relationship_kwargs={"order_by": ...}` as the pagination opt-in (SQLModel's `Relationship` has no `order_by` kwarg), no `enable_pagination`, `limit`-or-`fetchAll` intent rule.
+
 ## 7.0.0
 
 ### Breaking

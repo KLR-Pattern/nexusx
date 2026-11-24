@@ -349,4 +349,12 @@ class GraphQLHandler:
             }
         except Exception as e:
             logger.exception("GraphQL execution error")
-            return {"errors": [{"message": str(e)}]}
+            # Every other error path carries a machine-readable code
+            # (ALIAS_CONFLICT, RESOLVER_ERROR, SKIPPED_PRIOR_FAILURE,
+            # BARE_GROUP_FIELD, PAGINATION_INTENT_REQUIRED); the catch-all
+            # must too so agents can branch on it (issue #160 SIG_15).
+            return {
+                "errors": [
+                    {"message": str(e), "extensions": {"code": "INTERNAL_ERROR"}}
+                ]
+            }

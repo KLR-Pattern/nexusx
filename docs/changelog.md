@@ -10,6 +10,20 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
 
+## 7.0.1 (unreleased)
+
+### 7.0.1 — issue #160 milestone M0
+
+> Semver suggestion: **patch** — behaviour fixes only; no public API change.
+
+- fix:
+  - **`limit: 0` claimed a next page on local relationships**: `posts(limit: 0)` returned `items=[]` with `has_more: true` on both the one-to-many and many-to-many paged loaders. The peek-by-1 window (`rn BETWEEN offset+1 AND offset+1+limit`) still fetches one row, and `len(rows) > effective_limit` evaluated `1 > 0`. The member-side `page_by_<key>_in` root already carried the `effective_limit > 0` guard (specs/021 GAP E); the two local loaders now match it. Locked by `tests/test_review_160_regressions.py`.
+  - **Registry-dependent Resolver caches were keyed by class alone**: `_compute_should_traverse` and `Resolver._get_traversable_fields` both consult the registry's relationship table, yet cached their result on the class (`_ClassMeta.should_traverse`, `Resolver._traversable_fields_cache`). Two ErManagers in one process — `ComposedErManager`, multi-app, federation tests — share DTO classes, so the first registry's answer poisoned the second and its relationships were silently never traversed. Both caches now live in a `WeakKeyDictionary` keyed by the registry object (shared across that registry's Resolvers, released with it); `_ClassMeta.should_traverse` is removed.
+  - **Pagination intent is validated before execution**: a paginated relationship field or `page_by_<key>_in` root queried without `limit` or `fetchAll` now fails in `_validate_paginated_package` with `extensions.code = "PAGINATION_INTENT_REQUIRED"` and a path pointing at the field; the user's method no longer runs. Previously the loader's `ValueError` surfaced as `RESOLVER_ERROR` after execution. The loader-side and mounter-side guards remain as defence in depth.
+  - **Machine-readable code on the top-level catch-all**: `GraphQLHandler.execute`'s generic `except` returned a bare `{message}`; it now carries `extensions.code = "INTERNAL_ERROR"` like `ALIAS_CONFLICT` / `RESOLVER_ERROR` / `SKIPPED_PRIOR_FAILURE` / `BARE_GROUP_FIELD`.
+- docs:
+  - `decorator.py`, `how_it_works.md`, `llms-full.txt` and the package docstring describe the 7.0 contract: verbatim method names on `{Entity}Query` group types (not `{entityName}{methodName}`), `sa_relationship_kwargs={"order_by": ...}` as the pagination opt-in (SQLModel's `Relationship` has no `order_by` kwarg), no `enable_pagination`, `limit`-or-`fetchAll` intent rule. `QueryExecutor._serialize`'s docstring no longer claims "no fallback" (the builder does fall back, with a warning).
+
 ## 7.0.0
 
 ### 7.0.0 (2026-11-21)

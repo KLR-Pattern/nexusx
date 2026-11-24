@@ -528,6 +528,9 @@ def create_page_one_to_many_loader(
                 if fetch_all:
                     _enforce_fetch_all_cap(total_counts, page_args)
 
+                # ``peek_limit`` is only read on the non-fetchAll branch; 0
+                # there (fetchAll) is unreachable because of the short-circuit.
+                peek_limit: int = effective_limit if effective_limit is not None else 0
                 return [
                     _build_page_result(
                         rows=[r for r, _ in grouped.get(cmd.fk_value, [])],
@@ -536,11 +539,17 @@ def create_page_one_to_many_loader(
                         # The peek-by-1 SQL fetches effective_limit+1 rows (rn
                         # BETWEEN start AND end is inclusive). If we got more
                         # than effective_limit back, there's a next page.
-                        # fetchAll: has_more is structurally False.
+                        # ``effective_limit > 0`` guards ``limit=0``: the window
+                        # still peeks rn=offset+1, which would otherwise claim
+                        # a next page for an empty one (issue #160 BUG_1 —
+                        # same rule as the member-side page_by_<key>_in root,
+                        # specs/021 GAP E). fetchAll: has_more is structurally
+                        # False.
                         has_next_page=(
                             False
                             if fetch_all
-                            else len(grouped.get(cmd.fk_value, [])) > effective_limit
+                            else peek_limit > 0
+                            and len(grouped.get(cmd.fk_value, [])) > peek_limit
                         ),
                         entity_kls=target_kls,
                     )
@@ -714,6 +723,9 @@ def create_page_many_to_many_loader(
                 if fetch_all:
                     _enforce_fetch_all_cap(total_counts, page_args)
 
+                # ``peek_limit`` is only read on the non-fetchAll branch; 0
+                # there (fetchAll) is unreachable because of the short-circuit.
+                peek_limit: int = effective_limit if effective_limit is not None else 0
                 return [
                     _build_page_result(
                         rows=[r for r, _ in grouped.get(cmd.fk_value, [])],
@@ -722,11 +734,14 @@ def create_page_many_to_many_loader(
                         # The peek-by-1 SQL fetches effective_limit+1 rows (rn
                         # BETWEEN start AND end is inclusive). If we got more
                         # than effective_limit back, there's a next page.
-                        # fetchAll: has_more is structurally False.
+                        # ``effective_limit > 0`` guards ``limit=0`` (issue #160
+                        # BUG_1, specs/021 GAP E). fetchAll: has_more is
+                        # structurally False.
                         has_next_page=(
                             False
                             if fetch_all
-                            else len(grouped.get(cmd.fk_value, [])) > effective_limit
+                            else peek_limit > 0
+                            and len(grouped.get(cmd.fk_value, [])) > peek_limit
                         ),
                         entity_kls=target_kls,
                     )

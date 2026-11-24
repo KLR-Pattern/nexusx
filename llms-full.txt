@@ -3,7 +3,7 @@
 > nexusx：从 SQLModel 类自动生成 GraphQL API；为 API 响应组装提供声明式 DTO + 关系加载；并把业务服务层暴露为 MCP / REST / JSON-RPC / CLI。
 > 渐进式框架 — ER Diagram → GraphQL API → 声明式响应组装 → 业务服务层。
 
-版本：**3.1.1** | Python >= 3.10 | 许可证：MIT
+版本：**3.1.1**（内容停留在 3.1.x，尚未按 7.0 更新；与代码冲突时以代码为准） | Python >= 3.10 | 许可证：MIT
 
 > 本文件是 AI 可独立读写的权威参考。每个 API 都带"何时用 + 签名 + 可运行示例"。
 > 来源权威：`src/nexusx/__init__.py` 的 `__all__` 与 `CHANGELOG.md`。任何与此文件冲突的代码以代码为准。
@@ -195,7 +195,7 @@ from nexusx import GraphQLHandler, AutoQueryConfig
 handler = GraphQLHandler(
     base=BaseEntity,                      # 必填：实体发现基类
     session_factory=async_session,        # 关系加载必需
-    enable_pagination=True,               # 列表关系分页（默认 False）
+    # 分页无需开关：关系上声明 order_by 即启用（7.0 起 enable_pagination 已删除）
     auto_query_config=AutoQueryConfig(    # 可选：自动 by_id / by_filter
         session_factory=async_session,
         default_limit=20,
@@ -211,7 +211,7 @@ handler = GraphQLHandler(
 |------|------|------|------|
 | `base` | `type` | 是 | SQLModel 基类，用于实体发现 |
 | `session_factory` | `Callable | None` | 否 | 异步 session 工厂；实体有 Relationship 时**必需**。若提供 `auto_query_config`，可省略（fallback 到其 session_factory） |
-| `enable_pagination` | `bool` | 否 | 列表关系返回 `{items, pagination}` 包装（默认 False） |
+| （分页） | — | — | 无全局开关；关系声明 `order_by` 即返回 `{items, pagination}` 包装，查询须传 `limit` 或 `fetchAll` |
 | `auto_query_config` | `AutoQueryConfig | None` | 否 | 自动生成 `entityById` / `entityByFilter` |
 | `query_description` / `mutation_description` | `str | None` | 否 | SDL 中 Query/Mutation 类型描述 |
 
@@ -273,9 +273,9 @@ class Post(BaseEntity, table=True):
 
 关系通过 DataLoader 自动批量加载，**无需手动 eager loading**。每层收集所有 FK 值，发一次批量 SQL。
 
-### 4.6 分页（`enable_pagination=True`）
+### 4.6 分页（关系声明 `order_by` 时）
 
-启用后，列表关系自动包装为 Result 类型：
+声明了 `order_by` 的列表关系自动包装为 Result 类型（无全局开关，`enable_pagination` 已在 7.0 删除）：
 
 ```graphql
 type PostResult { items: [Post!]!, pagination: Pagination! }
@@ -428,7 +428,7 @@ result = await resolver.resolve(dtos)   # dtos: 单个 DTO 或 list[DTO]
 | `base` | `type \| None` | 二选一 | SQLModel 基类，自动发现子类 |
 | `entities` | `list[type] \| None` | 二选一 | 显式实体列表（与 `base` 互斥） |
 | `session_factory` | `Callable` | 是 | 异步 session 工厂 |
-| `enable_pagination` | `bool` | 否 | 启用列表关系分页（默认 False） |
+| （分页） | — | — | 无全局开关；关系声明 `order_by` 即启用分页 |
 | `split_loader_by_type` | `bool` | 否 | 按 DTO 类型拆分 Loader 实例（默认 False） |
 
 **ErManager 方法：**
@@ -1106,7 +1106,7 @@ erDiagram
 | `Enum` 子类 | `EnumName!` |
 | `SQLModel` 子类（在方法参数中） | `InputName!` |
 
-### 9.2 分页 Result 类型（`enable_pagination=True`）
+### 9.2 分页 Result 类型（关系声明 `order_by` 时）
 
 ```graphql
 type PostResult { items: [Post!]!, pagination: Pagination! }
