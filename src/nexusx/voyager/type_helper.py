@@ -10,6 +10,7 @@ from typing import Annotated, Any, ForwardRef, Generic, Union, get_args, get_ori
 
 from pydantic import BaseModel
 
+from nexusx import annotation_utils as au
 from nexusx.context import AutoLoadInfo, ExposeInfo, ICollector, SendToInfo
 from nexusx.voyager.type import FieldInfo
 
@@ -25,7 +26,8 @@ except Exception:
 
 
 def is_list(annotation):
-    return getattr(annotation, "__origin__", None) is list
+    """Strict ``list[X]`` check — the shared leaf implementation (spec 026 R1)."""
+    return au.is_list(annotation)
 
 
 def full_class_name(cls):

@@ -36,6 +36,7 @@ from pydantic import BaseModel, create_model, model_validator
 from pydantic.fields import FieldInfo
 from sqlmodel import SQLModel
 
+from nexusx import annotation_utils as au
 from nexusx.resolver import POST_PREFIX, RESOLVE_PREFIX  # noqa: F401
 from nexusx.utils.type_utils import is_fk_field_info
 
@@ -281,41 +282,26 @@ def _extract_methods(namespace: dict[str, Any]) -> dict[str, Any]:
 def _unwrap_annotation(anno: Any) -> type | None:
     """Unwrap Optional / list / Annotated to the innermost concrete type.
 
-    Returns the innermost type if it's a real class, otherwise None.
+    Returns the innermost type if it's a real class, otherwise None (string
+    annotations, real multi-arm unions, non-type leaves).
     """
-    import typing
-
-    # Resolve string annotations lazily — can't resolve here
     if isinstance(anno, str):
         return None
 
-    origin = get_origin(anno)
-
-    # Unwrap Annotated[X, ...] → X
-    if origin is typing.Annotated:
-        args = get_args(anno)
-        if args:
-            return _unwrap_annotation(args[0])
-        return None
-
-    # Unwrap Union / Optional[X, None] → X
-    if origin is type(None):
-        return None
-    args = get_args(anno)
-    if args:
-        non_none = [a for a in args if a is not type(None)]
-        if non_none and len(non_none) == 1 and len(args) > 1:
-            return _unwrap_annotation(non_none[0])
+    anno = au.strip_annotated(anno)
 
     # Unwrap list[X] → X
-    if origin is list:
+    if au.is_list(anno):
         args = get_args(anno)
-        if args:
-            return _unwrap_annotation(args[0])
+        return _unwrap_annotation(args[0]) if args else None
+
+    # Unwrap Optional[X] → X (a real union has no single inner type → None)
+    if au.is_union(anno):
+        inner = au.unwrap_optional_strict(anno)
+        return None if inner is anno else _unwrap_annotation(inner)
 
     # Base case: concrete type
-    if isinstance(anno, type):
-        return anno
+    return anno if isinstance(anno, type) else None
 
     return None
 

@@ -11,7 +11,7 @@ import asyncio
 import inspect
 from typing import Any, get_type_hints
 
-from nexusx.utils.type_utils import map_annotation
+from nexusx.annotation_utils import map_annotation
 
 USE_CASE_METHODS_ATTR = "__use_case_methods__"
 

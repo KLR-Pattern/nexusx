@@ -37,17 +37,17 @@ from __future__ import annotations
 import asyncio
 import copy
 import inspect
-import typing
 import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, TypeVar, get_args, get_origin
+from typing import Any, TypeVar, get_args
 
 from aiodataloader import DataLoader
 from pydantic import BaseModel
 from pydantic.errors import PydanticUserError
 from sqlmodel import SQLModel
 
+from nexusx import annotation_utils
 from nexusx.context import (
     AutoLoadInfo,
     ICollector,
@@ -880,25 +880,15 @@ class Resolver:
             return None
 
         # Unwrap Annotated[X, ...] → X
-        origin = get_origin(anno)
-        if origin is typing.Annotated:
-            anno = get_args(anno)[0]
-            origin = get_origin(anno)
+        anno = annotation_utils.strip_annotated(anno)
 
-        # Unwrap Optional / Union[X, None] → X when exactly one non-None arm.
-        # ``origin is not list`` guards against misinterpreting ``list[X]``'s
-        # own __args__ as a union.
-        args = get_args(anno)
-        if args and origin is not list:
-            non_none = [a for a in args if a is not type(None)]
-            if len(non_none) == 1 and len(args) > 1:
-                anno = non_none[0]
-                origin = get_origin(anno)
+        # Unwrap Optional / Union[X, None] → X when exactly one non-None arm
+        # (a real union stays and falls through to ``None`` below).
+        anno = annotation_utils.unwrap_optional_strict(anno)
 
         # Unwrap list[X] → X, remember cardinality
-        is_list = False
-        if origin is list:
-            is_list = True
+        is_list = annotation_utils.is_list(anno)
+        if is_list:
             args = get_args(anno)
             if args:
                 anno = args[0]

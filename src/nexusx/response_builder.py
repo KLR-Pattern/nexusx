@@ -14,10 +14,11 @@ from typing import Any, ForwardRef, get_args, get_origin
 
 from pydantic import BaseModel, create_model
 
+from nexusx.annotation_utils import is_list_annotation
 from nexusx.core_builder import FieldResolution, build_model
 from nexusx.loader.pagination import PaginatedPackage
 from nexusx.query_parser import FieldSelection
-from nexusx.utils.type_utils import coerce_to_dict, get_field_type, is_list_annotation
+from nexusx.utils.type_utils import coerce_to_dict, get_field_type
 
 logger = logging.getLogger(__name__)
 

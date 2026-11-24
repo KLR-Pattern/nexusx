@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import inspect
 import re
-import types
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Literal, Union, get_args, get_origin
+from typing import Any, Literal
 
 from pydantic import Field, create_model
 from sqlmodel import SQLModel, select
 
+from nexusx.annotation_utils import unwrap_optional_strict
 from nexusx.decorator import query
 from nexusx.utils.type_utils import get_fk_fields
 
@@ -132,16 +132,6 @@ async def _create_session_context(session_factory: Any) -> Any:
     return session_context
 
 
-def _unwrap_optional_type(annotation: Any) -> Any:
-    """Unwrap Optional[T] to T."""
-    origin = get_origin(annotation)
-    if origin in (types.UnionType, Union):
-        args = [arg for arg in get_args(annotation) if arg is not type(None)]
-        if len(args) == 1:
-            return args[0]
-    return annotation
-
-
 def _get_primary_key_fields(entity: type[SQLModel]) -> list[tuple[str, Any]]:
     """Get primary key fields from an entity."""
     primary_keys: list[tuple[str, Any]] = []
@@ -168,7 +158,7 @@ def _get_primary_key_fields(entity: type[SQLModel]) -> list[tuple[str, Any]]:
                     break
 
         if has_primary_key and not has_foreign_key:
-            primary_keys.append((field_name, _unwrap_optional_type(field_info.annotation)))
+            primary_keys.append((field_name, unwrap_optional_strict(field_info.annotation)))
 
     return primary_keys
 
@@ -790,7 +780,7 @@ def add_standard_queries(
                     f"is not a column on {entity.__name__}"
                 )
                 raise ValueError(msg)
-            field_type = _unwrap_optional_type(
+            field_type = unwrap_optional_strict(
                 entity.model_fields[field_name].annotation
             )
             method_name = f"by_{field_name}_in"

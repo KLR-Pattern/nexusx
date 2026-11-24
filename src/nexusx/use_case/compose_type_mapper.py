@@ -31,6 +31,7 @@ from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_typ
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo as PydanticFieldInfo
 
+from nexusx.annotation_utils import strip_annotated
 from nexusx.type_converter import (
     SCALAR_TYPE_MAP,
     describe_literal_values,
@@ -190,7 +191,7 @@ class ComposeTypeMapper:
         registers as INPUT_OBJECT instead of OBJECT (use this for method-arg
         type refs, not return types). Scalars and enums are unaffected.
         """
-        py_type = _strip_annotated(py_type)
+        py_type = strip_annotated(py_type)
         origin = get_origin(py_type)
 
         # Optional[T] / T | None  (PEP 604 union or typing.Union[T, None])
@@ -546,13 +547,6 @@ class ComposeTypeMapper:
 # ---------------------------------------------------------------------------
 # Module-private helpers
 # ---------------------------------------------------------------------------
-
-
-def _strip_annotated(py_type: Any) -> Any:
-    """Peel one layer of ``Annotated[T, ...]`` if present."""
-    if get_origin(py_type) is Annotated:
-        return get_args(py_type)[0]
-    return py_type
 
 
 def _iter_field_types(cls: type[BaseModel]) -> list[tuple[str, Any]]:

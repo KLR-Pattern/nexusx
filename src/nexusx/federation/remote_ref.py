@@ -26,7 +26,7 @@ import types
 import typing
 from typing import Any
 
-from nexusx.utils.type_utils import map_annotation
+from nexusx.annotation_utils import map_annotation
 
 logger = logging.getLogger(__name__)
 

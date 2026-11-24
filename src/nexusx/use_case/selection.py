@@ -9,19 +9,17 @@ response building behavior such as relationships, pagination, and FK fields.
 from __future__ import annotations
 
 import inspect
-import typing
 from functools import partial
-from types import UnionType as _UnionType
-from typing import Any, get_args, get_origin
+from typing import Any
 
 from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_core import PydanticUndefined
 
+from nexusx import annotation_utils as au
+from nexusx.annotation_utils import map_annotation
 from nexusx.core_builder import FieldResolution, SelectionError, build_model
 from nexusx.query_parser import FieldSelection, QueryParser, find_nested_alias
-from nexusx.utils.type_utils import map_annotation
 
-_UNION_ORIGINS = (typing.Union, _UnionType)
 _RESULT_FIELD = "__result"
 
 
@@ -219,53 +217,14 @@ def _get_pydantic_core_type(annotation: Any) -> type[BaseModel] | None:
     """Extract the Pydantic BaseModel type from a possibly-wrapped annotation."""
     if annotation is None or annotation is inspect.Parameter.empty:
         return None
-    core_types = _get_core_types(annotation)
-    pydantic_types = [tp for tp in core_types if _safe_issubclass(tp, BaseModel)]
+    pydantic_types = [tp for tp in au.core_types(annotation) if au.safe_issubclass(tp, BaseModel)]
     if len(pydantic_types) == 1:
         return pydantic_types[0]
     return None
 
 
-def _get_core_types(tp: Any) -> list[type]:
-    """Extract all concrete types from a possibly-wrapped annotation."""
-    if tp is None or tp is inspect.Parameter.empty:
-        return []
-    if isinstance(tp, str):
-        return []
-    if isinstance(tp, type):
-        return [tp]
-
-    origin = get_origin(tp)
-
-    # Annotated[X, ...]
-    if origin is typing.Annotated:
-        args = get_args(tp)
-        return _get_core_types(args[0]) if args else []
-
-    # list[X]
-    if origin is list:
-        args = get_args(tp)
-        return _get_core_types(args[0]) if args else []
-
-    # Union / Optional
-    if origin in _UNION_ORIGINS:
-        results: list[type] = []
-        for arg in get_args(tp):
-            results.extend(_get_core_types(arg))
-        return results
-
-    return [tp] if isinstance(tp, type) else []
-
-
-def _safe_issubclass(kls: Any, classinfo: type) -> bool:
-    try:
-        return issubclass(kls, classinfo)
-    except TypeError:
-        return False
-
-
 def _replace_model_type(annotation: Any, nested_model: type[BaseModel]) -> Any:
-    annotation = _strip_annotated(annotation)
+    annotation = au.strip_annotated(annotation)
 
     if annotation is None or annotation is inspect.Parameter.empty:
         return nested_model
@@ -275,8 +234,8 @@ def _replace_model_type(annotation: Any, nested_model: type[BaseModel]) -> Any:
         # list / union nodes are rebuilt by map_annotation, not replaced.
         if (
             _get_pydantic_core_type(a) is not None
-            and not _is_list_annotation(a)
-            and get_origin(a) not in _UNION_ORIGINS
+            and not au.is_list(a)
+            and not au.is_union(a)
         ):
             return nested_model
         return a
@@ -295,16 +254,3 @@ def _field_default(field_info: Any) -> Any:
         return Field(default=..., description=description)
 
     return Field(default=default, description=description)
-
-
-def _strip_annotated(annotation: Any) -> Any:
-    while get_origin(annotation) is typing.Annotated:
-        args = get_args(annotation)
-        if not args:
-            break
-        annotation = args[0]
-    return annotation
-
-
-def _is_list_annotation(annotation: Any) -> bool:
-    return get_origin(annotation) is list
