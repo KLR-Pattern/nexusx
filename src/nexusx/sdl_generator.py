@@ -9,7 +9,7 @@ from typing import Any, get_args, get_origin, get_type_hints
 from sqlmodel import SQLModel
 
 from nexusx.annotation_utils import unwrap_func
-from nexusx.introspection import QUERY_META_PARAM  # noqa: F401
+from nexusx.introspection import QUERY_META_PARAM
 from nexusx.scanning.method_scanner import iter_entity_callables
 from nexusx.type_converter import (
     SCALAR_TYPE_MAP,
@@ -493,7 +493,7 @@ class SDLGenerator:
                 if target_entity is None or not hasattr(target_entity, "__name__"):
                     continue
                 target = target_entity.__name__
-                if self._is_active_paginated_relationship(rel_info):
+                if is_active_paginated_relationship(rel_info):
                     # Federated/local paginated to-many via the registry path —
                     # render as {Target}Result. Federation REMOTE_PAGED rels
                     # (page_capability set) also expose order/direction; local
@@ -557,17 +557,13 @@ class SDLGenerator:
         if not self._loader_registry:
             return False
         rel_info = self._loader_registry.get_relationship(entity, field_name)
-        return self._is_active_paginated_relationship(rel_info)
+        return is_active_paginated_relationship(rel_info)
 
     def _has_any_paginated_relationship(self) -> bool:
         """True if any registered relationship exposes pagination in this schema."""
         return has_any_paginated_relationship(
             self._loader_registry, self.entities
         )
-
-    def _is_active_paginated_relationship(self, rel_info: Any) -> bool:
-        """True when the relationship renders as a pagination field."""
-        return is_active_paginated_relationship(rel_info)
 
     def _paginated_field_args(
         self, entity: type[SQLModel], rel_name: str, rel_info: Any
@@ -642,7 +638,7 @@ class SDLGenerator:
         for entity in self.entities:
             rels = self._loader_registry.get_relationships(entity)
             for _rel_name, rel_info in rels.items():
-                if self._is_active_paginated_relationship(rel_info):
+                if is_active_paginated_relationship(rel_info):
                     target_name = rel_info.target_entity.__name__
                     result_type_name = f"{target_name}Result"
                     if result_type_name not in result_type_names:

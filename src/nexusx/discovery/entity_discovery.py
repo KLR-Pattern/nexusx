@@ -7,16 +7,12 @@ that have @query/@mutation decorators, and traverse relationships to find relate
 from __future__ import annotations
 
 from collections import deque
-from typing import TYPE_CHECKING
 
 from nexusx.response_builder import (
     get_relation_entity,
     get_relationship_names,
 )
 from nexusx.scanning.method_scanner import iter_entity_callables
-
-if TYPE_CHECKING:
-    pass
 
 
 class EntityDiscovery:

@@ -6,7 +6,7 @@ import inspect
 import json
 from collections.abc import Callable
 from enum import Enum
-from typing import TYPE_CHECKING, Any, get_type_hints
+from typing import Any, get_type_hints
 
 from graphql import FieldNode, OperationDefinitionNode, parse
 from graphql.utilities import value_from_ast_untyped
@@ -36,8 +36,6 @@ from nexusx.utils.type_utils import is_fk_field_info
 
 QUERY_META_PARAM = "query_meta"
 
-if TYPE_CHECKING:
-    pass
 
 
 class IntrospectionGenerator:
@@ -781,7 +779,7 @@ class IntrospectionGenerator:
         if not self._loader_registry:
             return False
         rel_info = self._loader_registry.get_relationship(entity, field_name)
-        if not self._is_active_paginated_relationship(rel_info):
+        if not is_active_paginated_relationship(rel_info):
             return False
         # Must be a list type — unwrap Mapped first
         unwrapped = python_type
@@ -794,10 +792,6 @@ class IntrospectionGenerator:
         return has_any_paginated_relationship(
             self._loader_registry, self.entities
         )
-
-    def _is_active_paginated_relationship(self, rel_info: Any) -> bool:
-        """True when the relationship renders as a pagination field."""
-        return is_active_paginated_relationship(rel_info)
 
     def _has_any_pagination_root(self) -> bool:
         """True if any entity has a federation pagination root."""
@@ -975,7 +969,7 @@ class IntrospectionGenerator:
         for entity in self.entities:
             rels = self._loader_registry.get_relationships(entity)
             for _rel_name, rel_info in rels.items():
-                if self._is_active_paginated_relationship(rel_info):
+                if is_active_paginated_relationship(rel_info):
                     target_name = rel_info.target_entity.__name__
                     result_type_name = f"{target_name}Result"
                     if result_type_name not in result_type_names:
