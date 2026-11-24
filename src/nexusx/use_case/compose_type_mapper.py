@@ -40,9 +40,9 @@ from nexusx.type_converter import (
 )
 from nexusx.use_case.compose_schema import (
     ArgumentInfo,
+    ComposeField,
     DuplicateTypeError,
     EnumValueInfo,
-    FieldInfo,
     SQLModelInDtoFieldError,
     TypeInfo,
     TypeRef,
@@ -497,7 +497,7 @@ class ComposeTypeMapper:
 
     def _build_field_info(
         self, field_name: str, field_type: Any, cls: type[BaseModel]
-    ) -> FieldInfo:
+    ) -> ComposeField:
         # Description can come from two sources in Pydantic v2:
         #   - Annotated metadata: ``x: Annotated[int, Field(description="...")]``
         #   - Default value FieldInfo: ``x: int = Field(description="...")``
@@ -507,7 +507,7 @@ class ComposeTypeMapper:
             pydantic_field = cls.model_fields.get(field_name)
             if pydantic_field is not None and pydantic_field.description:
                 description = pydantic_field.description
-        return FieldInfo(
+        return ComposeField(
             name=field_name,
             type_ref=self.map_python_type(field_type),
             # Literal constraints are invisible in the GraphQL type system —

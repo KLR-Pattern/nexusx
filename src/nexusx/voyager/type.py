@@ -12,7 +12,7 @@ class NodeBase:
     name: str
 
 @dataclass
-class FieldInfo:
+class VoyagerField:
     name: str
     type_name: str
     from_base: bool = False
@@ -56,7 +56,7 @@ class ModuleRoute:
 @dataclass
 class SchemaNode(NodeBase):
     module: str
-    fields: list[FieldInfo] = field(default_factory=list)
+    fields: list[VoyagerField] = field(default_factory=list)
     is_entity: bool = False
     is_virtual: bool = False
     # Materialized remote (federated) type — a REAL entity owned by another
@@ -113,3 +113,6 @@ class CoreData:
     # ER diagram path so the UseCase page and core-data re-render path stay
     # visually consistent. None when federation is absent (back-compat).
     federated_modules: set[str] | None = None
+
+# Backward-compatible name (pre-026); removed in 8.0.
+FieldInfo = VoyagerField

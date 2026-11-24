@@ -28,7 +28,8 @@ from nexusx.annotation_utils import unwrap_func
 __all__ = [
     "TypeRef",
     "TypeInfo",
-    "FieldInfo",
+    "ComposeField",
+    "FieldInfo",  # deprecated alias of ComposeField (8.0 removes it)
     "ArgumentInfo",
     "EnumValueInfo",
     "ComposeSchema",
@@ -102,13 +103,17 @@ class ArgumentInfo:
 
 
 @dataclass(frozen=True, slots=True)
-class FieldInfo:
+class ComposeField:
     """A GraphQL OBJECT field.
 
     For UseCase compose schemas, fields are either:
     - Root Query/Mutation service entry points (e.g. ``TaskService: TaskServiceQuery!``)
     - Service-type method entry points (e.g. ``list_tasks: [TaskSummary!]!``)
     - DTO data fields (e.g. ``id: Int!``)
+
+    Named ``ComposeField`` (spec 026 R7) so modules that need both this and
+    ``pydantic.fields.FieldInfo`` stop colliding; ``FieldInfo`` remains as an
+    alias until 8.0.
     """
 
     name: str
@@ -116,6 +121,10 @@ class FieldInfo:
     description: str | None = None
     args: tuple[ArgumentInfo, ...] = field(default_factory=tuple)
     deprecation_reason: str | None = None
+
+
+# Backward-compatible name (pre-026); removed in 8.0.
+FieldInfo = ComposeField
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,7 +143,7 @@ class TypeInfo:
     name: str
     kind: LeafKind
     description: str | None = None
-    fields: tuple[FieldInfo, ...] = field(default_factory=tuple)
+    fields: tuple[ComposeField, ...] = field(default_factory=tuple)
     enum_values: tuple[EnumValueInfo, ...] = field(default_factory=tuple)
     input_fields: tuple[ArgumentInfo, ...] = field(default_factory=tuple)
     specified_by_url: str | None = None
@@ -341,17 +350,17 @@ def build_compose_schema(app: Any) -> ComposeSchema:
         for (_, _, _, _, _, func) in method_metas
     ]
 
-    # PHASE C — assemble FieldInfo per method and group by service.
-    service_query_fields: list[FieldInfo] = []
-    service_mutation_fields: list[FieldInfo] = []
+    # PHASE C — assemble ComposeField per method and group by service.
+    service_query_fields: list[ComposeField] = []
+    service_mutation_fields: list[ComposeField] = []
     has_mutation = False
 
-    query_by_service: dict[str, list[FieldInfo]] = {}
-    mutation_by_service: dict[str, list[FieldInfo]] = {}
+    query_by_service: dict[str, list[ComposeField]] = {}
+    mutation_by_service: dict[str, list[ComposeField]] = {}
 
     for meta, return_ref, args in zip(method_metas, return_refs, arg_lists, strict=True):
         service_cls, method_name, kind, description, _, _ = meta
-        field_info = FieldInfo(
+        field_info = ComposeField(
             name=method_name,
             type_ref=return_ref,
             description=description,
@@ -378,7 +387,7 @@ def build_compose_schema(app: Any) -> ComposeSchema:
             )
             mapper._registry[service_query_type.name] = service_query_type
             service_query_fields.append(
-                FieldInfo(
+                ComposeField(
                     name=service_name,
                     type_ref=non_null(TypeRef(kind="OBJECT", name=service_query_type.name)),
                     description=service_cls.__doc__,
@@ -395,7 +404,7 @@ def build_compose_schema(app: Any) -> ComposeSchema:
             )
             mapper._registry[service_mutation_type.name] = service_mutation_type
             service_mutation_fields.append(
-                FieldInfo(
+                ComposeField(
                     name=service_name,
                     type_ref=non_null(TypeRef(kind="OBJECT", name=service_mutation_type.name)),
                     description=service_cls.__doc__,
@@ -702,7 +711,7 @@ def _type_info_to_introspection(t: TypeInfo) -> dict[str, Any]:
     return payload
 
 
-def _field_to_introspection(f: FieldInfo) -> dict[str, Any]:
+def _field_to_introspection(f: ComposeField) -> dict[str, Any]:
     return {
         "name": f.name,
         "description": f.description,
@@ -755,7 +764,7 @@ def _render_method_sdl(
     query_type_name = f"{service_name}Query"
     mutation_type_name = f"{service_name}Mutation"
 
-    method_field: FieldInfo | None = None
+    method_field: ComposeField | None = None
     owning_type_name: str | None = None
 
     query_type = registry.get(query_type_name)

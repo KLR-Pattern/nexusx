@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from nexusx import annotation_utils as au
 from nexusx.context import AutoLoadInfo, ExposeInfo, ICollector, SendToInfo
-from nexusx.voyager.type import FieldInfo
+from nexusx.voyager.type import VoyagerField
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +166,7 @@ def analysis_pydantic_resolve_fields(schema: type[BaseModel], field_name: str) -
 
     Checks for resolve_*, post_*, ExposeAs, SendTo, AutoLoad, and Collector.
 
-    Returns a dict with keys matching FieldInfo resolve attributes.
+    Returns a dict with keys matching VoyagerField resolve attributes.
     """
     is_resolve = hasattr(schema, f'resolve_{field_name}')
     is_post = hasattr(schema, f'post_{field_name}')
@@ -206,17 +206,17 @@ def analysis_pydantic_resolve_fields(schema: type[BaseModel], field_name: str) -
     }
 
 
-def get_pydantic_fields(schema: type[BaseModel], bases_fields: set[str]) -> list[FieldInfo]:
+def get_pydantic_fields(schema: type[BaseModel], bases_fields: set[str]) -> list[VoyagerField]:
     """Extract pydantic model fields with metadata."""
     def _is_object(anno):
         _types = get_core_types(anno)
         return any(is_inheritance_of_pydantic_base(t) for t in _types if t)
 
-    fields: list[FieldInfo] = []
+    fields: list[VoyagerField] = []
     for k, v in schema.model_fields.items():
         anno = v.annotation
         resolve_meta = analysis_pydantic_resolve_fields(schema, k)
-        fields.append(FieldInfo(
+        fields.append(VoyagerField(
             is_object=_is_object(anno),
             name=k,
             from_base=k in bases_fields,

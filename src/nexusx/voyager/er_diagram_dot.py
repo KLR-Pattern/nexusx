@@ -19,11 +19,11 @@ from nexusx.voyager.styling import (
 )
 from nexusx.voyager.type import (
     PK,
-    FieldInfo,
     FieldType,
     Link,
     MethodInfo,
     SchemaNode,
+    VoyagerField,
 )
 from nexusx.voyager.type_helper import (
     full_class_name,
@@ -169,20 +169,20 @@ class ErDiagramDotBuilder:
             )
         return full_name
 
-    def _get_entity_fields(self, entity_kls: type) -> list[FieldInfo]:
+    def _get_entity_fields(self, entity_kls: type) -> list[VoyagerField]:
         """Extract fields from an entity class's model_fields and relationships."""
         full_name = full_class_name(entity_kls)
         rels = self.rel_name_set.get(full_name, {})
         rel_names = set(rels.keys())
 
-        fields: list[FieldInfo] = []
+        fields: list[VoyagerField] = []
 
         # 1. Add regular model fields (skip relationship field names)
         for k, v in entity_kls.model_fields.items():
             if k in rel_names:
                 continue
             anno = v.annotation
-            fields.append(FieldInfo(
+            fields.append(VoyagerField(
                 is_object=False,
                 name=k,
                 from_base=False,
@@ -197,7 +197,7 @@ class ErDiagramDotBuilder:
                 continue
             target_type = rel_info.target_entity.__name__
             type_name = f'list[{target_type}]' if rel_info.is_list else target_type
-            fields.append(FieldInfo(
+            fields.append(VoyagerField(
                 is_object=True,
                 name=rel_name,
                 from_base=False,
