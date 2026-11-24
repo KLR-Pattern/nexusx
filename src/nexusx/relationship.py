@@ -21,10 +21,18 @@ Usage:
         ]
         id: int | None = Field(default=None, primary_key=True)
         title: str
+
+``federation.RemoteRelationship`` shares the same vocabulary through
+:class:`RelationshipBase` (spec 026 / issue #160 DESIGN_7): every
+``__relationships__`` entry — local or remote — has ``fk`` / ``target`` /
+``name`` / ``description`` and the ``list[...]`` to-many convention, so
+:func:`get_custom_relationships` accepts the base class and nothing here
+needs to know about federation.
 """
 
 from __future__ import annotations
 
+from abc import ABC
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, get_args, get_origin
@@ -48,8 +56,36 @@ def is_virtual_entity(cls: Any) -> bool:
     return isinstance(cls, type) and issubclass(cls, BaseModel) and not issubclass(cls, SQLModel)
 
 
+class RelationshipBase(ABC):
+    """Shared surface of every ``__relationships__`` entry.
+
+    ``target`` follows one convention everywhere: a bare ``X`` is to-one,
+    ``list[X]`` is to-many. ``is_list`` and ``target_entity`` are derived from
+    it here — once — instead of once per subclass.
+    """
+
+    fk: str
+    target: Any
+    name: str
+    description: str | None
+
+    @property
+    def is_list(self) -> bool:
+        """True if target is ``list[Entity]`` (one-to-many relationship)."""
+        return get_origin(self.target) is list
+
+    @property
+    def target_entity(self) -> Any:
+        """The bare target, stripping the ``list[...]`` wrapper."""
+        if self.is_list:
+            args = get_args(self.target)
+            if args:
+                return args[0]
+        return self.target
+
+
 @dataclass
-class Relationship:
+class Relationship(RelationshipBase):
     """Defines a custom (non-ORM) relationship for a SQLModel entity.
 
     Args:
@@ -74,43 +110,13 @@ class Relationship:
     loader: Callable
     description: str | None = None
 
-    @property
-    def is_list(self) -> bool:
-        """True if target is ``list[Entity]`` (one-to-many relationship)."""
-        return get_origin(self.target) is list
 
-    @property
-    def target_entity(self) -> type:
-        """Extract the bare entity class, stripping ``list[...]`` wrapper."""
-        if self.is_list:
-            args = get_args(self.target)
-            if args:
-                return args[0]
-        return self.target
-
-
-# Lazily-resolved RemoteRelationship class. Imported lazily (and cached) to
-# avoid a top-level dependency cycle — federation.relationship does not import
-# this module, but importing it at module load would still couple import order.
-_REMOTE_RELATIONSHIP_CLS: type | None = None
-
-
-def _remote_relationship_cls() -> type:
-    global _REMOTE_RELATIONSHIP_CLS
-    if _REMOTE_RELATIONSHIP_CLS is None:
-        from nexusx.federation.relationship import RemoteRelationship
-
-        _REMOTE_RELATIONSHIP_CLS = RemoteRelationship
-    return _REMOTE_RELATIONSHIP_CLS
-
-
-def get_custom_relationships(entity: type) -> list[Relationship]:
+def get_custom_relationships(entity: type) -> list[RelationshipBase]:
     """Read __relationships__ from an entity class.
 
-    Accepts any class — SQLModel entities today, plain BaseModel classes
-    registered via ``ErManager.add_virtual_entities()`` tomorrow. The
-    function body is shape-agnostic: it just reads the ``__relationships__``
-    attribute and validates each entry is a Relationship instance.
+    Accepts any class — SQLModel entities or plain BaseModel classes registered
+    via ``ErManager.add_virtual_entities()``. Validates each entry is a
+    :class:`RelationshipBase` (``Relationship`` or ``federation.RemoteRelationship``).
 
     Returns an empty list if __relationships__ is not defined.
     """
@@ -122,9 +128,8 @@ def get_custom_relationships(entity: type) -> list[Relationship]:
             f"{entity.__name__}.__relationships__ must be a list of Relationship, "
             f"got {type(raw).__name__}"
         )
-    remote_relationship_cls = _remote_relationship_cls()
     for i, item in enumerate(raw):
-        if not isinstance(item, Relationship | remote_relationship_cls):
+        if not isinstance(item, RelationshipBase):
             raise TypeError(
                 f"{entity.__name__}.__relationships__[{i}] must be a Relationship or "
                 f"RemoteRelationship, got {type(item).__name__}"
