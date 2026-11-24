@@ -37,6 +37,8 @@ from pydantic.fields import FieldInfo
 from sqlmodel import SQLModel
 
 from nexusx import annotation_utils as au
+from nexusx.federation.remote_ref import RemoteRef, _contains_remote_ref, register_pending_subset
+from nexusx.loader.pagination import Paged
 from nexusx.resolver import POST_PREFIX, RESOLVE_PREFIX  # noqa: F401
 from nexusx.utils.type_utils import is_fk_field_info
 
@@ -577,15 +579,11 @@ def _build_config_overrides(config: SubsetConfig) -> dict[str, Any]:
 def _is_remote_ref(obj: Any) -> bool:
     """True if ``obj`` is a ``RemoteRef`` (a deferred remote-type reference).
 
-    Prefers ``isinstance`` (precise) when federation is importable; falls back
-    to a name-based check so subset.py keeps working if federation is not
-    installed. Replaces a bare ``type(obj).__name__ == "RemoteRef"`` check that
-    any unrelated class named ``RemoteRef`` would trip.
+    ``nexusx.federation`` is importable without the ``httpx`` extra (the
+    transport imports it lazily), so this is a plain isinstance — the former
+    ``try/except ImportError`` was an import-cycle workaround, not optional-
+    dependency handling (spec 026 R10).
     """
-    try:
-        from nexusx.federation.remote_ref import RemoteRef
-    except ImportError:
-        return type(obj).__name__ == "RemoteRef"
     return isinstance(obj, RemoteRef)
 
 
@@ -598,10 +596,6 @@ def _annotation_remote_ref(anno: Any) -> Any:
     DTO (specs/016 γ-path). SubsetMeta resolves string annotations before
     calling this helper.
     """
-    try:
-        from nexusx.federation.remote_ref import _contains_remote_ref
-    except ImportError:
-        return None
     return _contains_remote_ref(anno)
 
 
@@ -614,10 +608,6 @@ def _annotation_paged(anno: Any) -> Any:
     """
     metadata = getattr(anno, "__metadata__", None)
     if not metadata:
-        return None
-    try:
-        from nexusx.loader.pagination import Paged
-    except ImportError:
         return None
     for meta in metadata:
         if isinstance(meta, Paged):
@@ -721,13 +711,7 @@ class SubsetMeta(type):
         from pydantic import ConfigDict
 
         # Register for later resolution.
-        try:
-            from nexusx.federation.remote_ref import register_pending_subset
-            register_pending_subset(
-                name, None, source_ref, list(field_names), dict(namespace),
-            )
-        except ImportError:
-            pass  # federation not installed; class stays as placeholder
+        register_pending_subset(name, None, source_ref, list(field_names), dict(namespace))
 
         # Build placeholder: body fields only, RemoteRef → Any.
         annotations = _get_namespace_annotations(namespace)
