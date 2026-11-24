@@ -28,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import abc
+import weakref
 from dataclasses import dataclass
 from typing import Any
 
@@ -136,8 +137,14 @@ class Collector(ICollector):
 # Metadata scanning helpers (cached per class)
 # ──────────────────────────────────────────────────────────
 
-_expose_cache: dict[type, dict[str, str]] = {}
-_send_to_cache: dict[type, dict[str, tuple[str, ...]]] = {}
+# Keyed weakly so dynamically created DTO classes (tests, federation
+# materialization) can be collected instead of leaking (issue #160 DESIGN_6).
+_expose_cache: weakref.WeakKeyDictionary[type, dict[str, str]] = (
+    weakref.WeakKeyDictionary()
+)
+_send_to_cache: weakref.WeakKeyDictionary[type, dict[str, tuple[str, ...]]] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 def scan_expose_fields(kls: type[BaseModel]) -> dict[str, str]:

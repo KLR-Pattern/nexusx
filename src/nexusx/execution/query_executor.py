@@ -884,6 +884,10 @@ class QueryExecutor:
             value_accessor=accessor,
             relation_entity_resolver=resolver,
             _selection=field_sel,
+            # The built model depends on this registry's relationship table;
+            # scope the process-level LRU so another ErManager in the same
+            # process never gets served this one's shapes (issue #160 DESIGN_6).
+            _cache_scope=self._registry,
         )
 
     def _get_federation_namespace(self) -> dict[str, type] | None:

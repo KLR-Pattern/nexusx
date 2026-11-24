@@ -19,6 +19,7 @@ from nexusx.use_case.compose_schema import (
 from nexusx.use_case.context import FromContext
 from nexusx.use_case.jsonrpc import create_use_case_jsonrpc_router
 from nexusx.use_case.router import create_router
+from nexusx.use_case.router import create_router as create_use_case_router
 from nexusx.use_case.selection import SelectionError
 from nexusx.use_case.types import UseCaseAppConfig
 
@@ -33,6 +34,7 @@ __all__ = [
     "create_use_case_cli",
     "create_use_case_jsonrpc_router",
     "create_router",
+    "create_use_case_router",  # same function; the top-level nexusx name (issue #160 SIG_3)
     # Service / config / annotations
     "UseCaseService",
     "UseCaseAppConfig",

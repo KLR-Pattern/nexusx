@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from typing import Any, get_type_hints
 
 from nexusx.annotation_utils import map_annotation
 
 USE_CASE_METHODS_ATTR = "__use_case_methods__"
+
+logger = logging.getLogger(__name__)
 
 
 def get_return_type(method: Any, *, include_extras: bool = False) -> Any:
@@ -125,6 +128,12 @@ class BusinessMeta(type):
                 continue
 
             if not asyncio.iscoroutinefunction(func):
+                # Skipped, but no longer silently (issue #160 API_3_7).
+                logger.warning(
+                    "UseCaseService.%s.%s is decorated with @%s but is not async; "
+                    "it will NOT be exposed. Make it `async def`.",
+                    name, attr_name, kind,
+                )
                 continue
 
             methods[attr_name] = {
