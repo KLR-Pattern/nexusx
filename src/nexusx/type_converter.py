@@ -5,6 +5,7 @@ from __future__ import annotations
 import types
 import uuid
 from datetime import date, datetime, time
+from decimal import Decimal
 from enum import Enum
 from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
@@ -22,6 +23,11 @@ SCALAR_TYPE_MAP: dict[Any, str] = {
     date: "Date",
     time: "Time",
     uuid.UUID: "UUID",
+    # spec 026 / issue #160 DESIGN_1: a named custom scalar on BOTH paths.
+    # Compose used to reject Decimal with a generic UnsupportedTypeError while
+    # entity-first silently mapped it to String. Wire value is unchanged —
+    # pydantic's model_dump(mode="json") already serialised Decimal as a string.
+    Decimal: "Decimal",
 }
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import uuid
 from datetime import date, datetime, time, timezone
+from decimal import Decimal
 from typing import Any, Literal, get_args, get_origin, get_type_hints
 
 from graphql.utilities import value_from_ast_untyped
@@ -114,6 +115,8 @@ class ArgumentBuilder:
             return time.fromisoformat(value)
         if target_type is uuid.UUID and isinstance(value, str):
             return uuid.UUID(value)
+        if target_type is Decimal and isinstance(value, (str, int, float)):
+            return Decimal(str(value))
 
         return value
 

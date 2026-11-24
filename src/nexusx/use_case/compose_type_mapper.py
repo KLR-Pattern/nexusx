@@ -78,6 +78,7 @@ _SCALAR_DESCRIPTIONS: dict[str, str] = {
     "DateTime": "ISO-8601 datetime scalar.",
     "Date": "ISO-8601 date scalar.",
     "Time": "ISO-8601 time scalar.",
+    "Decimal": "Exact decimal scalar (serialized as a string, e.g. \"19.99\").",
 }
 
 # Built-in types we deliberately refuse to map. ``bytes`` / ``Decimal`` /
@@ -316,7 +317,7 @@ class ComposeTypeMapper:
 
         raise UnsupportedTypeError(
             f"Type {py_type!r} is not supported in compose schemas. "
-            "Supported: scalars (int/float/str/bool/UUID/datetime), enums, "
+            "Supported: scalars (int/float/str/bool/UUID/Decimal/datetime/date/time), enums, "
             "Pydantic BaseModel subclasses, and list/Optional/Literal wrappers."
         )
 
