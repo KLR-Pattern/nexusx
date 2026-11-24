@@ -1,10 +1,10 @@
-"""DataLoader factory functions for SQLModel relationships.
+"""DataLoader[Any, Any] factory functions for SQLModel relationships.
 
 Adapted from pydantic-resolve's integration.sqlalchemy.loader module.
 Simplified for nexusx where SQLModel serves as both ORM and DTO.
 
 All factory functions use closure captures for configuration parameters,
-keeping the DataLoader classes clean. Only ``_query_meta`` is set on
+keeping the DataLoader[Any, Any] classes clean. Only ``_query_meta`` is set on
 instances dynamically (by query_meta.py) for SQL column pruning.
 """
 
@@ -16,9 +16,11 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from aiodataloader import DataLoader
+from pydantic import BaseModel
+from sqlmodel import SQLModel
 
 if TYPE_CHECKING:
-    from nexusx.loader.pagination import PageArgs
+    from nexusx.loader.pagination import PageArgs, PaginatedPackage
 
 
 def _normalize_identifier(value: str) -> str:
@@ -34,7 +36,9 @@ def _build_loader_identity(source_kls: type, rel_name: str, suffix: str) -> str:
     return f"{source_name}_{rel_part}_{suffix}"
 
 
-def _finalize_loader_class(cls: type[DataLoader], identity: str) -> type[DataLoader]:
+def _finalize_loader_class(
+    cls: type[DataLoader[Any, Any]], identity: str
+) -> type[DataLoader[Any, Any]]:
     class_name = f"SG_{identity}"
     cls.__name__ = class_name
     cls.__qualname__ = class_name
@@ -61,7 +65,7 @@ def _iter_condition_columns(expr: Any) -> list[Any]:
     Shared with registry's build-time validation so both classify a
     condition's referenced columns identically.
     """
-    from sqlalchemy.sql.schema import ColumnClause
+    from sqlalchemy.sql.elements import ColumnClause
     from sqlalchemy.sql.visitors import iterate
 
     return [n for n in iterate(expr) if isinstance(n, ColumnClause)]
@@ -104,14 +108,14 @@ def _dedupe_fields(fields: list[str]) -> list[str]:
     return result
 
 
-def _get_default_fields(target_kls: type) -> list[str]:
+def _get_default_fields(target_kls: type[BaseModel]) -> list[str]:
     """Get all model fields as fallback when _query_meta is not set."""
     return list(target_kls.model_fields.keys())
 
 
 def _get_effective_query_fields(
     loader: Any,
-    target_kls: type,
+    target_kls: type[SQLModel],
     extra_fields: list[str] | None = None,
 ) -> list[str] | None:
     """Determine which SQL columns to SELECT based on _query_meta.
@@ -127,11 +131,11 @@ def _get_effective_query_fields(
     return _dedupe_fields([*query_meta["fields"], *(extra_fields or [])])
 
 
-def _apply_load_only(stmt: Any, target_kls: type, fields: list[str]) -> Any:
+def _apply_load_only(stmt: Any, target_kls: type[BaseModel], fields: list[str]) -> Any:
     from sqlalchemy import inspect as sa_inspect
     from sqlalchemy.orm import load_only
 
-    mapper = sa_inspect(target_kls)
+    mapper: Any = sa_inspect(target_kls)
     rel_keys = {rel.key for rel in mapper.relationships}
     attrs = [
         getattr(target_kls, field)
@@ -152,18 +156,18 @@ def create_many_to_one_loader(
     *,
     source_kls: type,
     rel_name: str,
-    target_kls: type,
+    target_kls: type[SQLModel],
     target_remote_col_name: str,
-    session_factory: Callable,
+    session_factory: Callable[..., Any],
     filters: list[Any] | None = None,
-) -> type[DataLoader]:
-    """Create a DataLoader for many-to-one relationships.
+) -> type[DataLoader[Any, Any]]:
+    """Create a DataLoader[Any, Any] for many-to-one relationships.
 
     Batch-loads target entities by their primary key (remote column).
     """
 
-    class _Loader(DataLoader):
-        async def batch_load_fn(self, keys):
+    class _Loader(DataLoader[Any, Any]):
+        async def batch_load_fn(self, keys: list[Any]) -> list[Any]:
             from sqlmodel import select
 
             effective_fields = _get_effective_query_fields(
@@ -172,7 +176,7 @@ def create_many_to_one_loader(
             )
 
             async with session_factory() as session:
-                stmt = select(target_kls)
+                stmt: Any = select(target_kls)
                 if effective_fields is not None:
                     stmt = _apply_load_only(stmt, target_kls, effective_fields)
                 stmt = stmt.where(
@@ -181,7 +185,7 @@ def create_many_to_one_loader(
                 stmt = _apply_filters(stmt, filters)
                 rows = (await session.exec(stmt)).all()
 
-            lookup = {getattr(row, target_remote_col_name): row for row in rows}
+            lookup: dict[Any, Any] = {getattr(row, target_remote_col_name): row for row in rows}
             return [lookup.get(k) for k in keys]
 
     return _finalize_loader_class(
@@ -199,18 +203,18 @@ def create_one_to_many_loader(
     *,
     source_kls: type,
     rel_name: str,
-    target_kls: type,
+    target_kls: type[SQLModel],
     target_fk_col_name: str,
-    session_factory: Callable,
+    session_factory: Callable[..., Any],
     filters: list[Any] | None = None,
-) -> type[DataLoader]:
-    """Create a DataLoader for one-to-many relationships.
+) -> type[DataLoader[Any, Any]]:
+    """Create a DataLoader[Any, Any] for one-to-many relationships.
 
     Batch-loads lists of target entities by the FK column on the target side.
     """
 
-    class _Loader(DataLoader):
-        async def batch_load_fn(self, keys):
+    class _Loader(DataLoader[Any, Any]):
+        async def batch_load_fn(self, keys: list[Any]) -> list[Any]:
             from sqlmodel import select
 
             effective_fields = _get_effective_query_fields(
@@ -219,7 +223,7 @@ def create_one_to_many_loader(
             )
 
             async with session_factory() as session:
-                stmt = select(target_kls)
+                stmt: Any = select(target_kls)
                 if effective_fields is not None:
                     stmt = _apply_load_only(stmt, target_kls, effective_fields)
                 stmt = stmt.where(
@@ -249,22 +253,22 @@ def create_many_to_many_loader(
     *,
     source_kls: type,
     rel_name: str,
-    target_kls: type,
+    target_kls: type[SQLModel],
     secondary_table: Any,
     secondary_local_col_name: str,
     secondary_remote_col_name: str,
     target_match_col_name: str,
-    session_factory: Callable,
+    session_factory: Callable[..., Any],
     filters: list[Any] | None = None,
-) -> type[DataLoader]:
-    """Create a DataLoader for many-to-many relationships through a secondary table."""
+) -> type[DataLoader[Any, Any]]:
+    """Create a DataLoader[Any, Any] for many-to-many relationships through a secondary table."""
 
     # specs/025: split once at build time — link-table columns constrain the
     # link query, target columns the target query (see _split_by_table).
     join_filters, target_filters = _split_by_table(filters, secondary_table)
 
-    class _Loader(DataLoader):
-        async def batch_load_fn(self, keys):
+    class _Loader(DataLoader[Any, Any]):
+        async def batch_load_fn(self, keys: list[Any]) -> list[Any]:
             from sqlmodel import select
 
             effective_fields = _get_effective_query_fields(
@@ -273,7 +277,7 @@ def create_many_to_many_loader(
             )
 
             async with session_factory() as session:
-                join_stmt = select(secondary_table).where(
+                join_stmt: Any = select(secondary_table).where(
                     getattr(secondary_table.c, secondary_local_col_name).in_(keys)
                 )
                 join_stmt = _apply_filters(join_stmt, join_filters)
@@ -288,7 +292,7 @@ def create_many_to_many_loader(
                 if not target_keys:
                     return [[] for _ in keys]
 
-                target_stmt = select(target_kls)
+                target_stmt: Any = select(target_kls)
                 if effective_fields is not None:
                     target_stmt = _apply_load_only(target_stmt, target_kls, effective_fields)
                 target_stmt = target_stmt.where(
@@ -321,13 +325,13 @@ def create_many_to_many_loader(
 
 
 def _build_page_result(
-    rows: list,
+    rows: list[Any],
     page_args: PageArgs,
     total_count: int | None,
     has_next_page: bool,
-    entity_kls: type | None = None,
-) -> dict:
-    """Build a Page result dict from queried rows.
+    entity_kls: type[BaseModel] | None = None,
+) -> PaginatedPackage:
+    """Build a Page result (PaginatedPackage) from queried rows.
 
     If entity_kls is provided, RowMapping objects are converted to entity instances.
     """
@@ -338,7 +342,7 @@ def _build_page_result(
 
     # Convert RowMapping objects to entity instances if needed
     if entity_kls is not None:
-        converted = []
+        converted: list[Any] = []
         entity_fields = set(entity_kls.model_fields.keys())
         for row in page_rows:
             if hasattr(row, "_mapping"):
@@ -385,15 +389,15 @@ def create_page_one_to_many_loader(
     *,
     source_kls: type,
     rel_name: str,
-    target_kls: type,
+    target_kls: type[SQLModel],
     target_fk_col_name: str,
     sort_field: str = "id",
     pk_col_name: str = "id",
-    session_factory: Callable,
+    session_factory: Callable[..., Any],
     filters: list[Any] | None = None,
-    page_orders_resolved: dict | None = None,
+    page_orders_resolved: dict[str, Any] | None = None,
     default_order: str | None = None,
-) -> type[DataLoader]:
+) -> type[DataLoader[Any, Any]]:
     """Create a loader that paginates per-parent using ROW_NUMBER().
 
     SQL strategy:
@@ -406,8 +410,8 @@ def create_page_one_to_many_loader(
         ) sub WHERE __rn BETWEEN :start AND :end
     """
 
-    class _Loader(DataLoader):
-        async def batch_load_fn(self, keys):
+    class _Loader(DataLoader[Any, Any]):
+        async def batch_load_fn(self, keys: list[Any]) -> list[Any]:
             from sqlalchemy import func, select
 
             from nexusx.standard_queries import (
@@ -432,7 +436,7 @@ def create_page_one_to_many_loader(
             effective_limit: int | None = None
             start = end = 0
             if not fetch_all:
-                effective_limit = page_args.effective_limit
+                effective_limit = page_args.effective_limit or 0
                 start = page_args.offset + 1
                 end = start + effective_limit
 
@@ -503,7 +507,7 @@ def create_page_one_to_many_loader(
                     outer = outer.where(rn_col.between(start, end))
                 rows = (await session.exec(outer)).all()
 
-                grouped = defaultdict(list)
+                grouped: dict[Any, list[Any]] = defaultdict(list)
                 total_counts: dict[Any, int] = {}
                 for row in rows:
                     row_dict = row._mapping
@@ -571,18 +575,18 @@ def create_page_many_to_many_loader(
     *,
     source_kls: type,
     rel_name: str,
-    target_kls: type,
+    target_kls: type[SQLModel],
     secondary_table: Any,
     secondary_local_col_name: str,
     secondary_remote_col_name: str,
     target_match_col_name: str,
     sort_field: str = "id",
     pk_col_name: str = "id",
-    session_factory: Callable,
+    session_factory: Callable[..., Any],
     filters: list[Any] | None = None,
-    page_orders_resolved: dict | None = None,
+    page_orders_resolved: dict[str, Any] | None = None,
     default_order: str | None = None,
-) -> type[DataLoader]:
+) -> type[DataLoader[Any, Any]]:
     """Create a loader that paginates per-parent for M2M using ROW_NUMBER().
 
     Like create_page_one_to_many_loader but works through a secondary
@@ -593,8 +597,8 @@ def create_page_many_to_many_loader(
     # it; only the fallback count query needs the per-table split.
     _join_filters, _target_filters = _split_by_table(filters, secondary_table)
 
-    class _Loader(DataLoader):
-        async def batch_load_fn(self, keys):
+    class _Loader(DataLoader[Any, Any]):
+        async def batch_load_fn(self, keys: list[Any]) -> list[Any]:
             from sqlalchemy import func, select
 
             from nexusx.standard_queries import (
@@ -618,7 +622,7 @@ def create_page_many_to_many_loader(
             effective_limit: int | None = None
             start = end = 0
             if not fetch_all:
-                effective_limit = page_args.effective_limit
+                effective_limit = page_args.effective_limit or 0
                 start = page_args.offset + 1
                 end = start + effective_limit
 
@@ -690,7 +694,7 @@ def create_page_many_to_many_loader(
                 # Use session.execute() for subquery/aggregate queries.
                 rows = (await session.execute(outer)).all()
 
-                grouped = defaultdict(list)
+                grouped: dict[Any, list[Any]] = defaultdict(list)
                 total_counts: dict[Any, int] = {}
                 for row in rows:
                     row_dict = row._mapping

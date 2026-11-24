@@ -22,7 +22,7 @@ from __future__ import annotations
 import types
 import typing
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 __all__ = [
     "is_union",
@@ -229,7 +229,7 @@ def unwrap_func(obj: Any) -> Callable[..., Any]:
     else is returned as-is. Replaces the 21 inline
     ``x.__func__ if hasattr(x, "__func__") else x`` sites."""
     func = getattr(obj, "__func__", None)
-    return func if func is not None else obj
+    return cast(Callable[..., Any], func) if func is not None else cast(Callable[..., Any], obj)
 
 
 # ──────────────────────────────────────────────────────────
@@ -264,13 +264,14 @@ def map_annotation(annotation: Any, leaf_fn: Callable[[Any], Any]) -> Any:
         return annotation
 
     if origin is list and len(new_args) == 1:
-        return list[new_args[0]]
+        return cast(Any, list)[new_args[0]]
     if origin is types.UnionType:
         result = new_args[0]
         for a in new_args[1:]:
             result = result | a
         return result
+    origin_alias = cast(Any, origin)
     try:
-        return origin[new_args] if len(new_args) > 1 else origin[new_args[0]]
+        return origin_alias[new_args] if len(new_args) > 1 else origin_alias[new_args[0]]
     except Exception:
         return annotation

@@ -7,7 +7,6 @@ dispatch 用 ``rel_info.page_loader``,值经 ``paged_provider`` 注入(见
 注入相关的旧断言已随 020 删除(model 不再携带 paged 信息)。
 """
 
-from types import SimpleNamespace
 from typing import Optional
 
 from sqlmodel import Field, Relationship, SQLModel
@@ -60,7 +59,7 @@ def test_paginated_package_field_renders_result_type_shape():
             return LocalRelationship(
                 name="posts", direction="ONETOMANY", fk_field="id",
                 target_entity=RB2Post, is_list=True,
-                page_loader=object(),
+                loader=object(), page_loader=object(),
             )
         return None
 

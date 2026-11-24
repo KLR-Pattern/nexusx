@@ -18,10 +18,11 @@ dotted name is not a valid Python identifier).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import get_args, get_origin
 
 from nexusx.federation.remote_ref import RemoteRef
+from nexusx.relationship import RelationshipBase
 
 
 def _unwrap_target(target: object, owner: str) -> tuple[RemoteRef, bool]:
@@ -48,7 +49,7 @@ def _unwrap_target(target: object, owner: str) -> tuple[RemoteRef, bool]:
 
 
 @dataclass
-class RemoteRelationship:
+class RemoteRelationship(RelationshipBase):
     """A cross-service relationship declared on the mounting side.
 
     Shape mirrors :class:`nexusx.Relationship` — same ``fk``/``target``/``name``
@@ -80,8 +81,9 @@ class RemoteRelationship:
     name: str
     join_remote: str
     description: str | None = None
-    # Derived from `target` (list[...] => True); not passed by callers.
-    is_list: bool = field(default=False, init=False)
+    # ``is_list`` / ``target_entity`` are derived from ``target`` by
+    # ``RelationshipBase`` (the ``list[...]`` convention is shared with
+    # ``nexusx.Relationship``).
 
     def __post_init__(self) -> None:
         # `target_url`/`target_color` are derived from the RemoteRef (so
@@ -89,8 +91,7 @@ class RemoteRelationship:
         # `qualified_name` exposes the "srv.typename" marker downstream parses.
         # `target` itself stays the caller-supplied RemoteRef/list[RemoteRef] —
         # input type and stored address are no longer smeared across one field.
-        ref, is_list = _unwrap_target(self.target, "RemoteRelationship")
-        self.is_list = is_list
+        ref, _is_list = _unwrap_target(self.target, "RemoteRelationship")
         self.target_url = getattr(ref, "url", None)
         # Optional voyager cluster color, carried the same way as target_url.
         self.target_color = getattr(ref, "color", None)

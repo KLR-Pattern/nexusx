@@ -7,9 +7,8 @@ and ``None`` (default) must send nothing.
 
 from __future__ import annotations
 
-from pydantic import BaseModel
-
 from fastmcp import Client
+from pydantic import BaseModel
 
 from nexusx import query
 from nexusx.decorator import mutation
@@ -44,11 +43,11 @@ try:
         id: int | None = Field(default=None, primary_key=True)
 
         @query
-        async def get_all(cls) -> list["_InstEntity"]:
+        async def get_all(cls) -> list[_InstEntity]:
             return []
 
         @mutation
-        async def create(cls) -> "_InstEntity":
+        async def create(cls) -> _InstEntity:
             return _InstEntity(id=1)
 
     _HAS_SQLMODEL = True

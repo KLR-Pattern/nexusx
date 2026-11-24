@@ -375,7 +375,6 @@ class TestPaginationValidation:
         import logging
         from unittest.mock import MagicMock
 
-        from nexusx.loader.registry import RelationshipInfo
 
         registry = ErManager.__new__(ErManager)
         registry._session_factory = get_test_session_factory()
@@ -407,7 +406,6 @@ class TestPaginationValidation:
         import logging
         from unittest.mock import MagicMock
 
-        from nexusx.loader.registry import RelationshipInfo
 
         registry = ErManager.__new__(ErManager)
         registry._session_factory = get_test_session_factory()

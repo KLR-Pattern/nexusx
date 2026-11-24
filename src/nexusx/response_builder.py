@@ -17,6 +17,7 @@ from pydantic import BaseModel, create_model
 from nexusx.annotation_utils import is_list_annotation
 from nexusx.core_builder import FieldResolution, build_model
 from nexusx.loader.pagination import PaginatedPackage
+from nexusx.loader.registry import RelationshipInfo
 from nexusx.query_parser import FieldSelection
 from nexusx.utils.type_utils import coerce_to_dict, get_field_type
 
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 # on the entity's SQLAlchemy mapper / __annotations__). Returns a duck-typed
 # RelationshipInfo-like object with ``.target_entity`` (type) and ``.is_list``
 # (bool); None when no federation relationship matches. specs/018 T002b.
-RelationshipEntityResolver = Callable[[type, str], Any]
+RelationshipEntityResolver = Callable[[type, str], RelationshipInfo | type | None]
 
 
 class ERFieldResolver:
@@ -54,19 +55,13 @@ class ERFieldResolver:
             if self._rel_resolver is not None
             else None
         )
-        if fed_rel is not None:
+        if isinstance(fed_rel, RelationshipInfo):
             return FieldResolution(
                 annotation=get_field_type(entity, field_name),
-                nested_type=getattr(fed_rel, "target_entity", None),
-                nested_shape=_list_shape(
-                    bool(getattr(fed_rel, "is_list", False))
-                ),
-                # 2026-11 variants: polymorphic shape. Relationship variants
-                # carry is_paginated natively; non-relationship objects
-                # flowing here (wire fragments) report False — matching the
-                # previous getattr-default behavior. Full pipeline
-                # unification is the plan §七.1 follow-up.
-                is_paginated=bool(getattr(fed_rel, "is_paginated", False)),
+                nested_type=fed_rel.target_entity,
+                nested_shape=_list_shape(fed_rel.is_list),
+                # 2026-11 variants: polymorphic shape — the variant knows.
+                is_paginated=fed_rel.is_paginated,
             )
         # SQLAlchemy / SQLModel / annotations fallback. ``get_relation_entity``
         # also returns scalar field types (str/int, extracted from annotations),
@@ -565,67 +560,49 @@ def get_relation_entity(
     Returns:
         Target entity class or None if not found.
     """
-    # Federation registry lookup (source of truth for __relationships__ fields).
+    # 1. Registry (source of truth for registered entities: custom
+    #    ``__relationships__`` and federation-materialized fields never appear
+    #    on the SQLAlchemy mapper). The resolver returns a RelationshipInfo
+    #    (callers want its target type) or, by contract, a bare class.
     if relation_entity_resolver is not None:
         try:
             resolved = relation_entity_resolver(entity, field_name)
         except Exception:
             resolved = None
         if resolved is not None:
-            # Resolver returns a RelationshipInfo-like object; callers of this
-            # function want the target type. Unwrap defensively (specs/018 T002b).
-            target = getattr(resolved, "target_entity", None)
-            if target is not None:
-                return target
+            if isinstance(resolved, RelationshipInfo):
+                return resolved.target_entity
             if isinstance(resolved, type):
                 return resolved
             return None
 
-    # Check SQLAlchemy relationships first (more reliable for actual entity types)
+    # 2. SQLAlchemy mapper (local ORM relationships of entities not registered
+    #    anywhere — e.g. EntityDiscovery runs before a registry exists).
     try:
         from sqlalchemy import inspect as sa_inspect
 
         mapper = sa_inspect(entity)
         if mapper and hasattr(mapper, "relationships"):
             if field_name in mapper.relationships:
-                rel = mapper.relationships[field_name]
-                return rel.mapper.class_
+                return mapper.relationships[field_name].mapper.class_
     except Exception:
         pass
 
-    # Check SQLModel relationships
-    if hasattr(entity, "__sqlmodel_relationships__"):
-        rel_info = entity.__sqlmodel_relationships__.get(field_name)
-        if rel_info is not None and hasattr(entity, "__annotations__"):
-            annotation = entity.__annotations__.get(field_name)
-            if annotation:
-                result = _extract_entity_from_annotation(
-                    annotation, all_subclasses, federation_namespace=federation_namespace
-                )
-                if result:
-                    return result
-                # Handle string forward references
-                if isinstance(annotation, str) and all_subclasses:
-                    return _resolve_forward_reference(
-                        annotation, all_subclasses,
-                        federation_namespace=federation_namespace,
-                    )
-
-    # Fallback: try to get from annotations
-    if hasattr(entity, "__annotations__"):
-        annotation = entity.__annotations__.get(field_name)
-        if annotation:
-            result = _extract_entity_from_annotation(
-                annotation, all_subclasses, federation_namespace=federation_namespace
+    # 3. Annotations (SQLModel's ``__sqlmodel_relationships__`` and plain
+    #    ``__annotations__`` name the same annotation — one lookup serves both;
+    #    the former two copies of this block were identical).
+    annotation = getattr(entity, "__annotations__", {}).get(field_name)
+    if annotation:
+        result = _extract_entity_from_annotation(
+            annotation, all_subclasses, federation_namespace=federation_namespace
+        )
+        if result:
+            return result
+        if isinstance(annotation, str) and all_subclasses:
+            return _resolve_forward_reference(
+                annotation, all_subclasses,
+                federation_namespace=federation_namespace,
             )
-            if result:
-                return result
-            # Handle string forward references
-            if isinstance(annotation, str) and all_subclasses:
-                return _resolve_forward_reference(
-                    annotation, all_subclasses,
-                    federation_namespace=federation_namespace,
-                )
 
     return None
 

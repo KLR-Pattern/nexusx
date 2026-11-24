@@ -23,12 +23,14 @@ from typing import Any, Union
 
 from nexusx.annotation_utils import unwrap_func
 from nexusx.federation.contract import (
+    BatchPageCapability,
     BatchRoot,
     DTOFragment,
     DTOIntrospectionResponse,
     EntityFragment,
     ERIntrospectionResponse,
     FieldDescriptor,
+    PageOrderDescriptor,
     RelDescriptor,
 )
 from nexusx.federation.transport import FederationTransport
@@ -308,10 +310,6 @@ def serialize_dto_introspection(er_manager: Any) -> DTOIntrospectionResponse:
         # _resolve_page_orders, so an order field that isn't a column fails fast.
         cfg = getattr(source, "__pagination_orders__", None) if source is not None else None
         if cfg is not None:
-            from nexusx.federation.contract import (
-                BatchPageCapability,
-                PageOrderDescriptor,
-            )
             from nexusx.standard_queries import _resolve_page_orders
 
             resolved = _resolve_page_orders(source, cfg)
@@ -424,7 +422,7 @@ def build_federable_app(
         # already-resolved DTO tree. Independent from /graphql (β) — the β
         # surface is untouched.
         dto_name = payload.get("dto")
-        roots = getattr(handler._er_manager, "_dto_batch_roots", {}) or {}
+        roots = getattr(handler._er_manager, "dto_batch_roots", {}) or {}
         entry = roots.get(dto_name)
         if entry is None:
             return {

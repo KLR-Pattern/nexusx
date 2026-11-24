@@ -17,8 +17,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
+from nexusx.loader.registry import page_capability_of
 from nexusx.scanning.method_scanner import iter_entity_callables
 from nexusx.utils.naming import pascal_case
 
@@ -35,7 +36,7 @@ def is_active_paginated_relationship(rel_info: Any) -> bool:
 
 
 def has_any_paginated_relationship(
-    loader_registry: Any, entities: Iterable
+    loader_registry: Any, entities: Iterable[type]
 ) -> bool:
     """True if any registered relationship is an active paginated one."""
     if not loader_registry:
@@ -47,7 +48,7 @@ def has_any_paginated_relationship(
     return False
 
 
-def iter_pagination_roots(entities: Iterable) -> Iterator[tuple[Any, Any]]:
+def iter_pagination_roots(entities: Iterable[type]) -> Iterator[tuple[Any, Any]]:
     """Yield ``(entity, PaginationRootMeta)`` for every ``page_by_<key>_in`` root.
 
     Dedups by ``package_name`` within the call. The entity is yielded alongside
@@ -65,7 +66,7 @@ def iter_pagination_roots(entities: Iterable) -> Iterator[tuple[Any, Any]]:
             yield entity, pag_root
 
 
-def has_any_pagination_root(entities: Iterable) -> bool:
+def has_any_pagination_root(entities: Iterable[type]) -> bool:
     """True if any entity exposes a federation pagination root."""
     for _ in iter_pagination_roots(entities):
         return True
@@ -73,7 +74,7 @@ def has_any_pagination_root(entities: Iterable) -> bool:
 
 
 def federation_order_enum_layout(
-    loader_registry: Any, entities: Iterable
+    loader_registry: Any, entities: Iterable[type]
 ) -> tuple[dict[str, type[Enum]], dict[tuple[str, str], str]]:
     """Single source for mounter-side federation order-enum rendering. specs/014.
 
@@ -112,7 +113,7 @@ def federation_order_enum_layout(
         for entity in entities:
             ent_name = entity.__name__
             for rel_name, rel_info in loader_registry.get_relationships(entity).items():
-                capability = getattr(rel_info, "page_capability", None)
+                capability = page_capability_of(rel_info)
                 if capability is None:
                     continue
                 has_fed_paged = True
@@ -128,7 +129,7 @@ def federation_order_enum_layout(
                     enum_name = f"{target_name}{pascal_case(rel_name)}Order"
                     name_values[enum_name] = values
                 if enum_name not in enums:
-                    enums[enum_name] = Enum(enum_name, {v: v for v in values})
+                    enums[enum_name] = cast(type[Enum], Enum(enum_name, {v: v for v in values}))
                 field_name[(ent_name, rel_name)] = enum_name
 
     if has_fed_paged:

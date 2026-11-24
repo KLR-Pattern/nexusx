@@ -13,6 +13,7 @@ from graphql.utilities import value_from_ast_untyped
 from sqlmodel import SQLModel
 
 from nexusx.annotation_utils import unwrap_func
+from nexusx.loader.registry import page_capability_of
 from nexusx.type_converter import (
     SCALAR_TYPE_MAP,
     TypeConverter,
@@ -291,10 +292,7 @@ class IntrospectionGenerator:
             for rel_name, rel_info in self._loader_registry.get_relationships(entity).items():
                 if rel_name in rel_names_done:
                     continue
-                target_entity = getattr(rel_info, "target_entity", None)
-                if target_entity is None or not hasattr(target_entity, "__name__"):
-                    continue
-                synth = list[target_entity] if rel_info.is_list else target_entity
+                synth = list[rel_info.target_entity] if rel_info.is_list else rel_info.target_entity
                 all_fields.append((rel_name, synth, None))
 
         # Group fields by type (scalar vs object)
@@ -909,7 +907,7 @@ class IntrospectionGenerator:
         capability = None
         if entity is not None and self._loader_registry:
             rel_info = self._loader_registry.get_relationship(entity, field_name)
-            capability = getattr(rel_info, "page_capability", None) if rel_info else None
+            capability = page_capability_of(rel_info) if rel_info else None
         if capability is not None:
             enum_name = self._fed_order_field_name.get((entity.__name__, field_name))
             args.append(

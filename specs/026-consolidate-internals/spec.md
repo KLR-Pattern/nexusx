@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-24
 
-**Status**: Draft
+**Status**: Implemented (PR #162 + PR B; 2026-11-25)
 
 **Input**: Issue #160 路线图 M1（"Consolidate"）。来源：7.0.0 全面 review（`review/review_7.0.0.md`，R1–R10 / DESIGN_5 / DESIGN_6 / DESIGN_7 / DEAD / SIG_3 / SIG_9 / SIG_11 / API_3_7 / BUG_4 起步）。
 
@@ -86,12 +86,12 @@
 
 | 指标 | 7.0.1 基线 | M1 目标 |
 |---|---|---|
-| 函数内 lazy `from nexusx.` 导入（行） | 108 | ≤ 60 |
-| `.__func__ if hasattr(` 站点 | 21 | 1 |
-| `for … in dir(entity)` 装饰器扫描 | 8 | 1 |
-| `getattr(rel_info\|…, "loader"\|…)` 鸭子读 | 20 | 0 |
+| 函数内 lazy `from nexusx.` 导入（行） | 108 | ≤ 60 → **实际 99**（余下为真实环，归 M3 ARCH_1） |
+| `.__func__ if hasattr(` 站点 | 21 | 1 → **实际 0** |
+| `for … in dir(entity)` 装饰器扫描 | 8 | 1 → **实际 1**（另 1 处是 `by_<key>_in` 名字模式查找，非标记扫描） |
+| `getattr(rel_info\|…, "loader"\|…)` 鸭子读 | 20 | 0 → **实际 0** |
 | 同包 `try/except ImportError` 文件数 | 1（subset.py，4 处） | 0 |
-| 死代码项 | 11 | 0（公共项已弃用） |
-| `mypy --strict` 清零并强制的模块 | — | decorator / context / relationship / discovery / scanning / utils / loader/pagination / loader/query_meta（+ factories 尽力） |
+| 死代码项 | 11 | 0（公共项已弃用） → **实际达成** |
+| `mypy --strict` 清零并强制的模块 | — | decorator / context / relationship / discovery / scanning / utils / loader/*（含 registry 52→0、factories 37→0、composed 23→0）→ **实际全部达成，CI 强制** |
 | 测试 | 1863 passed | ≥ 1863 − (删除的死代码测试) ，0 failed |
 | SDL / `__schema` 输出 | — | 与基线逐字节一致（除 `Decimal` 字段：String → Decimal） |

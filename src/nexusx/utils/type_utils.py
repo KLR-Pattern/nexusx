@@ -7,7 +7,7 @@ every path shares (spec 026 R1).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 
 def is_fk_field_info(field_info: Any) -> bool:
@@ -82,10 +82,10 @@ def get_field_type(entity: type, field_name: str) -> type:
     if hasattr(entity, "model_fields"):
         field_info = entity.model_fields.get(field_name)
         if field_info and field_info.annotation:
-            return field_info.annotation
+            return cast(type, field_info.annotation)
 
     # Fallback to annotations
     if hasattr(entity, "__annotations__"):
-        return entity.__annotations__.get(field_name, Any)
+        return cast(type, entity.__annotations__.get(field_name, Any))
 
     return Any

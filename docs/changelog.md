@@ -10,6 +10,23 @@ description: "Release-by-release changelog for nexusx, following semver — majo
 
 > Pre-3.0 history is not included here. See `git log` and the historical tags for changes before 3.0.0.
 
+## 7.1.0 (unreleased)
+
+### 7.1.0 — issue #160 milestone M1（spec 026 内部收敛）
+
+> Semver suggestion: **minor** — no public behaviour change except two documented corrections (CLI list-parameter typing; `Decimal` fields render as `Decimal` instead of `String`); `RelationshipInfo` becomes an ABC (it was never meant to be instantiated — its own 7.0.0 docstring said so).
+
+- refactor:
+  - **一个叶子模块收编全部类型解包**：`nexusx.annotation_utils`（`is_optional` / `unwrap_optional` / `unwrap_optional_strict` / `is_union` / `is_list` / `is_list_annotation` / `list_inner` / `strip_annotated` / `is_mapped_wrapper` / `unwrap_mapped` / `core_types` / `is_pydantic` / `safe_issubclass` / `unwrap_func` / `map_annotation`），删除 20+ 份私有副本；两个 Optional 解包器有意区分（取首个非 None 臂 vs 仅单一臂）。`tests/test_annotation_utils.py` 用改动前实现推导的对照表锁定行为。
+  - **一次 `dir(entity)` 扫描**：`scanning.method_scanner.iter_entity_callables` / `iter_operations`，SDL / 内省 / 实体发现 / 分页根 / voyager 共用（8 → 2，剩余一处是 `by_<key>_in` 名字模式查找）。
+  - **变体在类型层可辨别**：`RelationshipInfo` 为 ABC；`direction` 为 `Literal`；三个带 loader 的变体 `loader` 必填；`loader_classes()`；`plain_loader_of()` / `page_capability_of()` 替代 20 处 `getattr` 鸭子读。`BatchPageCapability` / `PageOrderDescriptor` 定义移到 `loader.pagination`，`federation.contract` 原地 re-export（wire 不变）。`Relationship` 与 `RemoteRelationship` 共享 `RelationshipBase`。
+  - 命名：`compose_schema.FieldInfo → ComposeField`、`voyager.type.FieldInfo → VoyagerField`（旧名保留为别名）。`response_builder` 模型缓存按 registry 分桶；`context` 注解缓存弱引用。
+  - **mypy 强制**：`scripts/check-mypy.sh` 在 CI 对清零模块开启 strict（loader/*、utils/*、scanning、discovery、decorator、relationship、context、annotation_utils），全包错误 487 → 132。pyproject 不再全局声称 strict。
+- fix:
+  - CLI 参数解包：`list[int]` 参数曾因解包任意下标注解而变成 `int`；现在只剥 `Annotated` 外壳。
+  - `Decimal` 在两条 GraphQL 路径上都是具名标量 `Decimal`（compose 原来泛化拒绝，entity-first 静默映射为 String）；wire 值不变。
+- deprecated（8.0 删除）：`QueryParser.parse_document` / `validate_no_aliases`、`utils.naming.to_camel_case`、一参 `get_dto_loader`、`FieldInfo` 别名；`UseCaseService` 上的同步 `@query` 方法被跳过时现在会打 warning。
+
 ## 7.0.1 (unreleased)
 
 ### 7.0.1 — issue #160 milestone M0

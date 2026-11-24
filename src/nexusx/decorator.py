@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 
-def query(func: Callable) -> classmethod:
+def query(func: Callable[..., Any]) -> classmethod[Any, Any, Any]:
     """Mark a method as a GraphQL query.
 
     This decorator automatically converts the method to a classmethod.
@@ -59,7 +60,7 @@ def query(func: Callable) -> classmethod:
     return classmethod(func)
 
 
-def mutation(func: Callable) -> classmethod:
+def mutation(func: Callable[..., Any]) -> classmethod[Any, Any, Any]:
     """Mark a method as a GraphQL mutation.
 
     This decorator automatically converts the method to a classmethod.

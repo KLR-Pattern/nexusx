@@ -33,7 +33,7 @@ def generate_query_meta_from_dto(dto_class: type[BaseModel]) -> LoaderQueryMeta:
 
 def generate_query_meta_from_selection(
     field_selection: Any,
-    entity_kls: type,
+    entity_kls: type[BaseModel],
     fk_lookup: dict[str, str] | None = None,
 ) -> LoaderQueryMeta:
     """Generate query_meta from a GraphQL FieldSelection + entity class.
@@ -105,7 +105,7 @@ def set_query_meta(loader: Any, meta: LoaderQueryMeta) -> None:
 
 def generate_type_key_from_selection(
     field_selection: Any,
-    entity_kls: type,
+    entity_kls: type[BaseModel],
     fk_lookup: dict[str, str] | None = None,
 ) -> frozenset[str] | None:
     """Generate a hashable type_key from a GraphQL FieldSelection.
@@ -139,7 +139,7 @@ def generate_type_key_from_selection(
 
 def generate_type_key_from_dto(
     dto_class: type[BaseModel],
-    entity_kls: type | None = None,
+    entity_kls: type[BaseModel] | None = None,
 ) -> frozenset[str] | None:
     """Generate a hashable type_key from a DefineSubset DTO.
 
