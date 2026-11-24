@@ -236,3 +236,32 @@ class TestGenericErrorCode:
         result = await handler.execute("{ R160Author { get_all { id")
         assert result["errors"][0]["extensions"]["code"] == "INTERNAL_ERROR"
         assert result["errors"][0]["message"]
+
+
+# ──────────────────────────────────────────────────────────
+# M1 small items: SIG_3 export, SIG_9 deprecation, API_3_7 warning
+# ──────────────────────────────────────────────────────────
+
+
+import nexusx  # noqa: E402
+import nexusx.use_case as use_case_pkg  # noqa: E402
+from nexusx.use_case.business import UseCaseService  # noqa: E402
+
+
+class TestM1SmallItems:
+    def test_create_use_case_router_is_exported_from_use_case_package(self):
+        assert use_case_pkg.create_use_case_router is nexusx.create_use_case_router
+
+    def test_one_argument_get_dto_loader_warns(self):
+        er = ErManager(entities=[R160Parent], session_factory=_no_session)
+        with pytest.warns(DeprecationWarning, match="get_dto_loader"):
+            assert er.get_dto_loader("anything") is None
+
+    def test_sync_query_method_on_service_warns_instead_of_vanishing(self, caplog):
+        class SyncService(UseCaseService):
+            @query
+            def not_async(cls) -> str:  # type: ignore[misc] — deliberately sync
+                return "x"
+
+        assert "not_async" not in SyncService.__use_case_methods__
+        assert any("not async" in r.message for r in caplog.records), caplog.records

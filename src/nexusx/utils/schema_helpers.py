@@ -1,63 +1,28 @@
 """Shared helper functions for GraphQL schema generation.
 
 This module provides common utilities used by both SDLGenerator and IntrospectionGenerator
-to eliminate code duplication.
+to eliminate code duplication. Structural annotation helpers live in
+:mod:`nexusx.annotation_utils` (``core_types`` replaces the former
+``get_core_types`` here — spec 026 R1).
 """
 
 from __future__ import annotations
 
-import types
 from collections.abc import Iterable
 from enum import Enum
-from typing import Any, Union, get_args, get_origin, get_type_hints
+from typing import Any, get_type_hints
 
 from pydantic import BaseModel
 from sqlmodel import SQLModel
 
+from nexusx.annotation_utils import (
+    core_types as get_core_types,  # noqa: F401  (re-export for the two generators)
+)
 
-def get_core_types(python_type: Any) -> list[type]:
-    """Extract core types from a type hint, unwrapping Optional, Union, list, etc.
-
-    Args:
-        python_type: A Python type hint (can be Optional, Union, list, etc.)
-
-    Returns:
-        List of base types extracted from the type hint.
-
-    Examples:
-        >>> get_core_types(Optional[int])
-        [<class 'int'>]
-        >>> get_core_types(Union[int, str])
-        [<class 'int'>, <class 'str'>]
-        >>> get_core_types(list[int])
-        [<class 'int'>]
-    """
-    origin = get_origin(python_type)
-
-    # Handle Union (including Optional)
-    if origin is Union or origin is types.UnionType:
-        args = get_args(python_type)
-        result = []
-        for arg in args:
-            if arg is not type(None):
-                result.extend(get_core_types(arg))
-        return result
-
-    # Handle list
-    if origin is list:
-        args = get_args(python_type)
-        if args:
-            return get_core_types(args[0])
-        return []
-
-    # Base type
-    if isinstance(python_type, type):
-        return [python_type]
-
-    return []
+__all__ = ["get_core_types", "is_input_type", "collect_reachable_enum_types"]
 
 
-def is_input_type(python_type: type) -> bool:
+def is_input_type(python_type: Any) -> bool:
     """Check if a type should be treated as a GraphQL Input type.
 
     Input types are SQLModel or BaseModel subclasses that are NOT in the entity list
@@ -86,41 +51,6 @@ def is_input_type(python_type: type) -> bool:
     except TypeError:
         pass
     return False
-
-
-def collect_enum_types(
-    entities: list[type[SQLModel]],
-    type_converter: Any,  # TypeConverter type hint would cause circular import
-) -> dict[str, type[Enum]]:
-    """Collect all enum types used in entities.
-
-    Args:
-        entities: List of SQLModel entity classes.
-        type_converter: TypeConverter instance for type inspection.
-
-    Returns:
-        Dictionary mapping enum name to enum class.
-
-    Examples:
-        >>> from enum import Enum
-        >>> class Status(Enum):
-        ...     ACTIVE = "active"
-        >>> class User(SQLModel):
-        ...     status: Status
-        >>> enums = collect_enum_types([User], converter)
-        >>> "Status" in enums
-        True
-    """
-    root_types: list[Any] = []
-
-    for entity in entities:
-        try:
-            hints = get_type_hints(entity)
-        except Exception:
-            continue
-        root_types.extend(hints.values())
-
-    return collect_reachable_enum_types(root_types, type_converter)
 
 
 def collect_reachable_enum_types(

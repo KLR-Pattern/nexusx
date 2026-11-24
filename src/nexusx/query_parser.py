@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -116,31 +117,15 @@ class ParsedOperation:
 class QueryParser:
     """Parses GraphQL queries to extract field selections and arguments."""
 
-    def __init__(self, entity_field_names: set[str] | None = None):
-        """Initialize the parser.
-
-        Args:
-            entity_field_names: Set of field names that represent entity types
-                               (used to distinguish relationships from scalar fields).
-        """
-        self.entity_field_names = entity_field_names or set()
-
     def parse(
         self, query: str, variables: dict[str, Any] | None = None
     ) -> dict[str, FieldSelection]:
-        """Parse a GraphQL query and return FieldSelection for each operation.
+        """Parse a **single-operation** GraphQL document into a flat selection dict.
 
-        Args:
-            query: GraphQL query string.
-            variables: Optional variables dict — when provided, query
-                variables in arguments are resolved to their values (otherwise
-                they surface as graphql's ``Undefined`` and must not reach
-                argument consumers).
-
-        Returns:
-            Dictionary mapping operation name to FieldSelection.
+        For documents with several operations use :meth:`parse_operations` —
+        every executor in nexusx does. Args / Returns as :meth:`parse_operations`.
         """
-        return self.parse_document(parse(query), variables)
+        return self._merge_operations(self.parse_operations(parse(query), variables))
 
     def parse_operations(
         self, document: DocumentNode, variables: dict[str, Any] | None = None
@@ -198,8 +183,13 @@ class QueryParser:
     ) -> dict[str, FieldSelection]:
         """Extract FieldSelection tree from an already-parsed DocumentNode.
 
-        Use this when the caller has already parsed the query string (e.g. to
-        share the AST with the executor) to avoid a second ``parse()`` pass.
+        .. deprecated::
+            The flat view merges ALL operations' groups into one dict, so
+            same-name groups across operations conflict (raise) rather than
+            coexist (issue #142). Use :meth:`parse_operations` (what every
+            built-in executor does) or, for a single-operation document,
+            :meth:`parse`. Removal is scheduled for 8.0 (issue #160 M4).
+
         ``variables`` resolves query variables in arguments (specs/021
         hardening: without it, a variable argument becomes ``Undefined`` and
         pagination params crash downstream).
@@ -207,14 +197,22 @@ class QueryParser:
         specs/023: dict keys are RESPONSE keys (``alias or field_name``);
         ``FieldSelection.name`` keeps the original field name for lookups.
         Duplicate response keys at any level raise ``ValueError``.
-
-        CAUTION (issue #142): this flat view merges ALL operations' groups
-        into one dict, so same-name groups across operations conflict
-        (raise) rather than coexist. Callers that execute per operation
-        (the built-in executors) use ``parse_operations`` instead.
         """
+        warnings.warn(
+            "QueryParser.parse_document merges every operation into one dict and "
+            "is deprecated; use parse_operations (or parse for a single-operation "
+            "document). Removal in 8.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._merge_operations(self.parse_operations(document, variables))
+
+    def _merge_operations(
+        self, operations: list[ParsedOperation]
+    ) -> dict[str, FieldSelection]:
+        """Flat response-key → FieldSelection view across all operations."""
         result: dict[str, FieldSelection] = {}
-        for op in self.parse_operations(document, variables):
+        for op in operations:
             for key, meta in op.selections.items():
                 if key in result:
                     raise ResponseKeyConflictError(
@@ -226,11 +224,18 @@ class QueryParser:
     def validate_no_aliases(self, query: str) -> None:
         """Reject GraphQL aliases explicitly.
 
-        Optional user-side guard. Since specs/023 the built-in executors
-        SUPPORT method-level aliases (response keys become the aliases), so
-        nexusx no longer calls this internally — keep it for custom handlers
-        that want to forbid aliases on their own surfaces.
+        .. deprecated::
+            Since specs/023 the built-in executors SUPPORT method-level aliases
+            (response keys become the aliases), so nexusx no longer calls this.
+            Kept for custom handlers that want to forbid aliases on their own
+            surfaces; removal is scheduled for 8.0 (issue #160 M4).
         """
+        warnings.warn(
+            "QueryParser.validate_no_aliases is deprecated; the built-in executors "
+            "support method-level aliases since specs/023. Removal in 8.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         document = parse(query)
 
         for definition in document.definitions:

@@ -8,7 +8,9 @@ from typing import Any, get_args, get_origin, get_type_hints
 
 from sqlmodel import SQLModel
 
-from nexusx.introspection import QUERY_META_PARAM  # noqa: F401
+from nexusx.annotation_utils import unwrap_func
+from nexusx.introspection import QUERY_META_PARAM
+from nexusx.scanning.method_scanner import iter_entity_callables
 from nexusx.type_converter import (
     SCALAR_TYPE_MAP,
     TypeConverter,
@@ -215,15 +217,9 @@ class SDLGenerator:
                 # that get_type_hints can't resolve from module globals.
                 hints = {}
             root_types.extend(hints.values())
-            for attr_name in dir(entity):
-                try:
-                    attr = getattr(entity, attr_name)
-                except Exception:
-                    continue
-                if not callable(attr):
-                    continue
-                func = attr.__func__ if hasattr(attr, "__func__") else attr
-                if hasattr(func, "_graphql_query") or hasattr(func, "_graphql_mutation"):
+            for ec in iter_entity_callables(entity):
+                func = ec.func
+                if ec.kind is not None:
                     try:
                         method_hints = get_type_hints(func)
                     except Exception:
@@ -293,13 +289,9 @@ class SDLGenerator:
 
         # Scan all query and mutation methods
         for entity in self.entities:
-            for name in dir(entity):
+            for ec in iter_entity_callables(entity):
+                name, func = ec.name, ec.func
                 try:
-                    attr = getattr(entity, name)
-                    if not callable(attr):
-                        continue
-                    func = attr.__func__ if hasattr(attr, "__func__") else attr
-
                     # Check if method has a pre-defined filter input type
                     if hasattr(func, "_filter_input_type"):
                         filter_input_type = func._filter_input_type
@@ -315,7 +307,7 @@ class SDLGenerator:
                                 pass
 
                     # Check for @query or @mutation
-                    if hasattr(func, "_graphql_query") or hasattr(func, "_graphql_mutation"):
+                    if ec.kind is not None:
                         sig = inspect.signature(func)
                         try:
                             globalns = getattr(func, "__globals__", {})
@@ -501,7 +493,7 @@ class SDLGenerator:
                 if target_entity is None or not hasattr(target_entity, "__name__"):
                     continue
                 target = target_entity.__name__
-                if self._is_active_paginated_relationship(rel_info):
+                if is_active_paginated_relationship(rel_info):
                     # Federated/local paginated to-many via the registry path —
                     # render as {Target}Result. Federation REMOTE_PAGED rels
                     # (page_capability set) also expose order/direction; local
@@ -565,17 +557,13 @@ class SDLGenerator:
         if not self._loader_registry:
             return False
         rel_info = self._loader_registry.get_relationship(entity, field_name)
-        return self._is_active_paginated_relationship(rel_info)
+        return is_active_paginated_relationship(rel_info)
 
     def _has_any_paginated_relationship(self) -> bool:
         """True if any registered relationship exposes pagination in this schema."""
         return has_any_paginated_relationship(
             self._loader_registry, self.entities
         )
-
-    def _is_active_paginated_relationship(self, rel_info: Any) -> bool:
-        """True when the relationship renders as a pagination field."""
-        return is_active_paginated_relationship(rel_info)
 
     def _paginated_field_args(
         self, entity: type[SQLModel], rel_name: str, rel_info: Any
@@ -650,7 +638,7 @@ class SDLGenerator:
         for entity in self.entities:
             rels = self._loader_registry.get_relationships(entity)
             for _rel_name, rel_info in rels.items():
-                if self._is_active_paginated_relationship(rel_info):
+                if is_active_paginated_relationship(rel_info):
                     target_name = rel_info.target_entity.__name__
                     result_type_name = f"{target_name}Result"
                     if result_type_name not in result_type_names:
@@ -694,22 +682,9 @@ class SDLGenerator:
 
         for entity in self.entities:
             method_fields: list[str] = []
-            for attr_name in dir(entity):
-                try:
-                    attr = getattr(entity, attr_name)
-                except (AttributeError, NameError):
-                    continue
-                except Exception:
-                    logger.warning(
-                        "Unexpected error collecting %s from %s.%s",
-                        group_suffix.lower(), entity.__name__, attr_name, exc_info=True,
-                    )
-                    continue
-                if not callable(attr):
-                    continue
-                func = attr.__func__ if hasattr(attr, "__func__") else attr
-                if hasattr(func, decorator_attr):
-                    field_def = self._method_to_graphql_field(attr, entity, func.__name__)
+            for ec in iter_entity_callables(entity):
+                if hasattr(ec.func, decorator_attr):
+                    field_def = self._method_to_graphql_field(ec.attr, entity, ec.func.__name__)
                     method_fields.append(f"  {field_def}")
 
             if not method_fields:
@@ -735,7 +710,7 @@ class SDLGenerator:
         parent group.
         """
         # Get the underlying function from classmethod
-        func = method.__func__ if hasattr(method, "__func__") else method
+        func = unwrap_func(method)
 
         # Get description from docstring
         description = func.__doc__
@@ -868,15 +843,9 @@ class SDLGenerator:
         for entity in self.entities:
             if entity.__name__ != entity_name:
                 continue
-            for name in dir(entity):
-                try:
-                    attr = getattr(entity, name)
-                    if callable(attr) and hasattr(attr, decorator_attr):
-                        func = attr.__func__ if hasattr(attr, "__func__") else attr
-                        if func.__name__ == method_name:
-                            return (attr, entity)
-                except (AttributeError, NameError):
-                    continue
+            for ec in iter_entity_callables(entity):
+                if hasattr(ec.attr, decorator_attr) and ec.func.__name__ == method_name:
+                    return (ec.attr, entity)
 
         return None
 
@@ -908,7 +877,7 @@ class SDLGenerator:
         method, entity = result
 
         # Get return type to collect related entities
-        func = method.__func__ if hasattr(method, "__func__") else method
+        func = unwrap_func(method)
         try:
             globalns = getattr(func, "__globals__", {})
             localns = {e.__name__: e for e in self.entities}

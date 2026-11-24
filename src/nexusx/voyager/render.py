@@ -12,7 +12,6 @@ from nexusx.voyager.module import build_module_route_tree, build_module_schema_t
 from nexusx.voyager.render_style import RenderConfig, text_color_for
 from nexusx.voyager.type import (
     PK,
-    FieldInfo,
     FieldType,
     Link,
     MethodInfo,
@@ -21,6 +20,7 @@ from nexusx.voyager.type import (
     Route,
     SchemaNode,
     Tag,
+    VoyagerField,
 )
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,7 @@ class Renderer:
 
         self.template_renderer = TemplateRenderer()
 
-    def _render_pydantic_meta_parts(self, field: FieldInfo) -> list[str]:
+    def _render_pydantic_meta_parts(self, field: VoyagerField) -> list[str]:
         """Render pydantic-resolve metadata as HTML parts."""
         if not self.show_pydantic_resolve_meta:
             return []
@@ -137,7 +137,7 @@ class Renderer:
 
     def _render_schema_field(
         self,
-        field: FieldInfo,
+        field: VoyagerField,
         max_type_length: int | None = None
     ) -> str:
         """Render a single schema field."""
@@ -197,7 +197,7 @@ class Renderer:
             content=content
         )
 
-    def _get_filtered_fields(self, node: SchemaNode) -> list[FieldInfo]:
+    def _get_filtered_fields(self, node: SchemaNode) -> list[VoyagerField]:
         """Get fields filtered by show_fields setting."""
         if self.show_pydantic_resolve_meta:
             fields = [n for n in node.fields if n.has_pydantic_resolve_meta or not n.from_base]

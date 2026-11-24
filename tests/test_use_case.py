@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from sqlmodel import Field as SQLField
 from sqlmodel import SQLModel
 
+from nexusx.annotation_utils import core_types
 from nexusx.decorator import mutation, query
 from nexusx.subset import DefineSubset
 from nexusx.use_case.business import UseCaseService
@@ -26,7 +27,6 @@ from nexusx.use_case.introspector import (
     ServiceIntrospector,
     _auto_summary,
     _build_selection_example,
-    _collect_core_types,
     _collect_dto_types,
     _generate_dto_sdl,
     _get_selection_model,
@@ -613,10 +613,11 @@ class TestSelectionHelpers:
         assert _get_selection_model(UserDTO | TaskDTO) is None
 
     def test_collect_core_types_list_and_union(self):
-        assert _collect_core_types(list[int]) == [int]
-        assert _collect_core_types(int | str) == [int, str]
-        assert _collect_core_types(Annotated[int, "m"]) == [int]
-        assert _collect_core_types("UserDTO") == []
+        # introspector delegates to the shared leaf (spec 026 R1)
+        assert core_types(list[int]) == [int]
+        assert core_types(int | str) == [int, str]
+        assert core_types(Annotated[int, "m"]) == [int]
+        assert core_types("UserDTO") == []
 
     def test_example_two_scalars_picks_first_two(self):
         class TwoScalars(BaseModel):

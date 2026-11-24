@@ -21,6 +21,7 @@ from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Union
 
+from nexusx.annotation_utils import unwrap_func
 from nexusx.federation.contract import (
     BatchRoot,
     DTOFragment,
@@ -118,7 +119,7 @@ def _batch_roots(entity: type) -> list[BatchRoot]:
         attr = getattr(entity, attr_name, None)
         if not callable(attr):
             continue
-        func = attr.__func__ if hasattr(attr, "__func__") else attr
+        func = unwrap_func(attr)
         pagination_root = getattr(func, "_pagination_root", None)
         arg_name, arg_type = _batch_root_arg(attr)
         roots.append(

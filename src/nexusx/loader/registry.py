@@ -8,6 +8,7 @@ or explicit entity list, auto-discovers relationships, and provides
 from __future__ import annotations
 
 import logging
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
@@ -983,11 +984,19 @@ class ErManager:
         """Look up a γ DTO RemoteLoader.
 
         The two-argument form is the precise runtime API. The one-argument
-        field-name form remains for compatibility and succeeds only when the
-        name is unambiguous across all owner DTOs.
+        field-name form (``owner_dto`` given as a ``str``) is deprecated
+        (issue #160 SIG_9): it succeeds only when the name is unambiguous
+        across all owner DTOs and will be removed in 8.0.
         """
         if field_name is not None:
             return self._dto_loaders.get((owner_dto, field_name))
+        warnings.warn(
+            "ErManager.get_dto_loader(<field_name>) is deprecated; pass the owner "
+            "DTO class and the field name — get_dto_loader(owner_dto, field_name). "
+            "Removal in 8.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         matches = [
             loader_cls
             for (_owner, name), loader_cls in self._dto_loaders.items()

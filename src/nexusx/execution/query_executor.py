@@ -10,6 +10,7 @@ from graphql import DocumentNode, FieldNode, OperationDefinitionNode
 from pydantic import BaseModel, TypeAdapter
 from sqlmodel import SQLModel
 
+from nexusx.annotation_utils import unwrap_func
 from nexusx.execution.argument_builder import ArgumentBuilder
 from nexusx.loader.pagination import KeyedPaginatedPackage, PaginatedPackage
 from nexusx.loader.registry import RemoteCoalescedRelationship
@@ -343,7 +344,7 @@ class QueryExecutor:
                     else None
                 )
 
-                func = method.__func__ if hasattr(method, "__func__") else method
+                func = unwrap_func(method)
                 pag_root = getattr(func, "_pagination_root", None)
                 is_pagination_root = pag_root is not None
                 # ``by_<key>_in`` batch roots are federation machine-facing:
@@ -883,6 +884,10 @@ class QueryExecutor:
             value_accessor=accessor,
             relation_entity_resolver=resolver,
             _selection=field_sel,
+            # The built model depends on this registry's relationship table;
+            # scope the process-level LRU so another ErManager in the same
+            # process never gets served this one's shapes (issue #160 DESIGN_6).
+            _cache_scope=self._registry,
         )
 
     def _get_federation_namespace(self) -> dict[str, type] | None:

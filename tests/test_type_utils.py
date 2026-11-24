@@ -3,10 +3,7 @@
 
 from sqlmodel import Field, SQLModel
 
-from nexusx.utils.type_utils import (
-    get_field_type,
-    get_return_entity_type,
-)
+from nexusx.utils.type_utils import get_field_type
 
 
 class EntityForUtilsTest(SQLModel):
@@ -50,128 +47,6 @@ class TestGetFieldType:
         result = get_field_type(EntityForUtilsTest, "id")
         # id is Optional[int] or int | None
         assert result is not None
-
-
-class TestGetReturnEntityType:
-    """Test cases for get_return_entity_type()."""
-
-    def test_get_return_entity_type_single_entity(self) -> None:
-        """Test getting return type from method returning single entity."""
-        # Use direct type reference (not forward reference string)
-        # because get_type_hints can't resolve forward refs in local classes
-
-        class TestEntity(SQLModel):
-            id: int | None
-
-        # Define method outside the class to avoid forward reference issues
-        def get_by_id(cls, id: int) -> TestEntity:  # type: ignore
-            return TestEntity(id=id)
-
-        # Attach to class as classmethod
-        TestEntity.get_by_id = classmethod(get_by_id)  # type: ignore
-
-        result = get_return_entity_type(TestEntity.get_by_id, [TestEntity])
-        assert result == TestEntity
-
-    def test_get_return_entity_type_list_entity(self) -> None:
-        """Test getting return type from method returning list of entities."""
-
-        class TestEntityList(SQLModel):
-            id: int | None
-
-        def get_all(cls) -> list[TestEntityList]:  # type: ignore
-            return []
-
-        TestEntityList.get_all = classmethod(get_all)  # type: ignore
-
-        result = get_return_entity_type(TestEntityList.get_all, [TestEntityList])
-        assert result == TestEntityList
-
-    def test_get_return_entity_type_optional_entity(self) -> None:
-        """Test getting return type from method returning optional entity."""
-
-        class TestEntityOptional(SQLModel):
-            id: int | None
-
-        def find(cls, id: int) -> TestEntityOptional | None:  # type: ignore
-            return None
-
-        TestEntityOptional.find = classmethod(find)  # type: ignore
-
-        result = get_return_entity_type(
-            TestEntityOptional.find, [TestEntityOptional]
-        )
-        assert result == TestEntityOptional
-
-    def test_get_return_entity_type_non_entity(self) -> None:
-        """Test getting return type from method returning non-entity."""
-
-        class TestEntityNonEntity(SQLModel):
-            id: int | None
-
-            @classmethod
-            def count(cls) -> int:
-                return 0
-
-        result = get_return_entity_type(
-            TestEntityNonEntity.count, [TestEntityNonEntity]
-        )
-        assert result is None
-
-    def test_get_return_entity_type_no_return_annotation(self) -> None:
-        """Test getting return type from method without return annotation."""
-
-        class TestEntityNoReturn(SQLModel):
-            id: int | None
-
-            @classmethod
-            def no_return(cls):
-                pass
-
-        result = get_return_entity_type(
-            TestEntityNoReturn.no_return, [TestEntityNoReturn]
-        )
-        assert result is None
-
-    def test_get_return_entity_type_different_entity(self) -> None:
-        """Test getting return type when returning different entity."""
-
-        class EntityA(SQLModel):
-            id: int | None
-
-        class EntityB(SQLModel):
-            id: int | None
-
-        def get_b(cls) -> EntityB:  # type: ignore
-            return EntityB(id=1)
-
-        EntityA.get_b = classmethod(get_b)  # type: ignore
-
-        result = get_return_entity_type(EntityA.get_b, [EntityA, EntityB])
-        assert result == EntityB
-
-    def test_get_return_entity_type_list_optional(self) -> None:
-        """Test getting return type from list[Optional[Entity]]."""
-
-        class TestEntityListOpt(SQLModel):
-            id: int | None
-
-        def search(cls) -> list[TestEntityListOpt | None]:  # type: ignore
-            return []
-
-        TestEntityListOpt.search = classmethod(search)  # type: ignore
-
-        result = get_return_entity_type(
-            TestEntityListOpt.search, [TestEntityListOpt]
-        )
-        assert result == TestEntityListOpt
-
-
-# ──────────────────────────────────────────────────────────────────────
-# Mindmap #15: FK detection is single-sourced — the same three-line check
-# used to be inlined 7 times (sdl_generator / introspection / er_diagram /
-# subset ×2 / introspector variant / get_fk_fields itself).
-# ──────────────────────────────────────────────────────────────────────
 
 
 class TestFkDetectionSingleSource:

@@ -9,15 +9,16 @@ from __future__ import annotations
 
 import inspect
 import re
-import types
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Literal, Union, get_args, get_origin
+from typing import Any, Literal
 
 from pydantic import Field, create_model
 from sqlmodel import SQLModel, select
 
+from nexusx.annotation_utils import unwrap_func, unwrap_optional_strict
 from nexusx.decorator import query
+from nexusx.utils.naming import pascal_case
 from nexusx.utils.type_utils import get_fk_fields
 
 _ORDER_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
@@ -132,16 +133,6 @@ async def _create_session_context(session_factory: Any) -> Any:
     return session_context
 
 
-def _unwrap_optional_type(annotation: Any) -> Any:
-    """Unwrap Optional[T] to T."""
-    origin = get_origin(annotation)
-    if origin in (types.UnionType, Union):
-        args = [arg for arg in get_args(annotation) if arg is not type(None)]
-        if len(args) == 1:
-            return args[0]
-    return annotation
-
-
 def _get_primary_key_fields(entity: type[SQLModel]) -> list[tuple[str, Any]]:
     """Get primary key fields from an entity."""
     primary_keys: list[tuple[str, Any]] = []
@@ -168,7 +159,7 @@ def _get_primary_key_fields(entity: type[SQLModel]) -> list[tuple[str, Any]]:
                     break
 
         if has_primary_key and not has_foreign_key:
-            primary_keys.append((field_name, _unwrap_optional_type(field_info.annotation)))
+            primary_keys.append((field_name, unwrap_optional_strict(field_info.annotation)))
 
     return primary_keys
 
@@ -212,7 +203,7 @@ def _create_by_id_query(entity: type[SQLModel], session_factory: Any) -> Any:
             result = await session.exec(stmt)
             return result.first()
 
-    func = by_id.__func__ if hasattr(by_id, "__func__") else by_id
+    func = unwrap_func(by_id)
     func.__annotations__[primary_key_name] = primary_key_type
     by_id.__annotations__["return"] = entity | None
     func.__signature__ = inspect.Signature(
@@ -274,7 +265,7 @@ def _create_by_filter_query(
             result = await session.exec(stmt)
             return list(result.all())
 
-    func = by_filter.__func__ if hasattr(by_filter, "__func__") else by_filter
+    func = unwrap_func(by_filter)
     func.__annotations__["filter"] = filter_input_type
     by_filter.__annotations__["return"] = list[entity]
     func._filter_input_type = filter_input_type
@@ -306,7 +297,7 @@ def _create_by_keys_in_query(
             result = await session.exec(stmt)
             return list(result.all())
 
-    func = by_field_in.__func__ if hasattr(by_field_in, "__func__") else by_field_in
+    func = unwrap_func(by_field_in)
     # Machine-facing root: selections arrive from mounters' remote loaders and
     # may include DTO-side computed fields the entity never serves (dropped by
     # design, recomputed mounter-side). The executor exempts these roots from
@@ -353,7 +344,7 @@ def _create_page_by_keys_in_query(
     arg_name = f"{field_name}_list"
     method_name = f"page_by_{field_name}_in"
     resolved_orders = _resolve_page_orders(entity, page_config)
-    enum_name = f"{entity.__name__}{_pascal_case(field_name)}PageOrder"
+    enum_name = f"{entity.__name__}{pascal_case(field_name)}PageOrder"
     order_enum = Enum(enum_name, {name: name for name in resolved_orders})
     capability = BatchPageCapability(
         default_order=page_config.default_order,
@@ -567,7 +558,7 @@ def _create_page_by_keys_in_query(
         return_annotation=list[dict],
     )
     func_obj.__name__ = method_name
-    package_name = f"{entity.__name__}{_pascal_case(field_name)}PagePackage"
+    package_name = f"{entity.__name__}{pascal_case(field_name)}PagePackage"
     func_obj._pagination_root = PaginationRootMeta(
         entity=entity,
         fk_field=field_name,
@@ -577,10 +568,6 @@ def _create_page_by_keys_in_query(
         page_capability=capability,
     )
     return page_by_field_in
-
-
-def _pascal_case(value: str) -> str:
-    return "".join(part[:1].upper() + part[1:] for part in value.split("_") if part)
 
 
 def _column_name_from_term(entity: type[SQLModel], field: Any) -> str:
@@ -790,7 +777,7 @@ def add_standard_queries(
                     f"is not a column on {entity.__name__}"
                 )
                 raise ValueError(msg)
-            field_type = _unwrap_optional_type(
+            field_type = unwrap_optional_strict(
                 entity.model_fields[field_name].annotation
             )
             method_name = f"by_{field_name}_in"

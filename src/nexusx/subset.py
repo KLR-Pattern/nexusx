@@ -36,6 +36,9 @@ from pydantic import BaseModel, create_model, model_validator
 from pydantic.fields import FieldInfo
 from sqlmodel import SQLModel
 
+from nexusx import annotation_utils as au
+from nexusx.federation.remote_ref import RemoteRef, _contains_remote_ref, register_pending_subset
+from nexusx.loader.pagination import Paged
 from nexusx.resolver import POST_PREFIX, RESOLVE_PREFIX  # noqa: F401
 from nexusx.utils.type_utils import is_fk_field_info
 
@@ -281,41 +284,26 @@ def _extract_methods(namespace: dict[str, Any]) -> dict[str, Any]:
 def _unwrap_annotation(anno: Any) -> type | None:
     """Unwrap Optional / list / Annotated to the innermost concrete type.
 
-    Returns the innermost type if it's a real class, otherwise None.
+    Returns the innermost type if it's a real class, otherwise None (string
+    annotations, real multi-arm unions, non-type leaves).
     """
-    import typing
-
-    # Resolve string annotations lazily — can't resolve here
     if isinstance(anno, str):
         return None
 
-    origin = get_origin(anno)
-
-    # Unwrap Annotated[X, ...] → X
-    if origin is typing.Annotated:
-        args = get_args(anno)
-        if args:
-            return _unwrap_annotation(args[0])
-        return None
-
-    # Unwrap Union / Optional[X, None] → X
-    if origin is type(None):
-        return None
-    args = get_args(anno)
-    if args:
-        non_none = [a for a in args if a is not type(None)]
-        if non_none and len(non_none) == 1 and len(args) > 1:
-            return _unwrap_annotation(non_none[0])
+    anno = au.strip_annotated(anno)
 
     # Unwrap list[X] → X
-    if origin is list:
+    if au.is_list(anno):
         args = get_args(anno)
-        if args:
-            return _unwrap_annotation(args[0])
+        return _unwrap_annotation(args[0]) if args else None
+
+    # Unwrap Optional[X] → X (a real union has no single inner type → None)
+    if au.is_union(anno):
+        inner = au.unwrap_optional_strict(anno)
+        return None if inner is anno else _unwrap_annotation(inner)
 
     # Base case: concrete type
-    if isinstance(anno, type):
-        return anno
+    return anno if isinstance(anno, type) else None
 
     return None
 
@@ -591,15 +579,11 @@ def _build_config_overrides(config: SubsetConfig) -> dict[str, Any]:
 def _is_remote_ref(obj: Any) -> bool:
     """True if ``obj`` is a ``RemoteRef`` (a deferred remote-type reference).
 
-    Prefers ``isinstance`` (precise) when federation is importable; falls back
-    to a name-based check so subset.py keeps working if federation is not
-    installed. Replaces a bare ``type(obj).__name__ == "RemoteRef"`` check that
-    any unrelated class named ``RemoteRef`` would trip.
+    ``nexusx.federation`` is importable without the ``httpx`` extra (the
+    transport imports it lazily), so this is a plain isinstance — the former
+    ``try/except ImportError`` was an import-cycle workaround, not optional-
+    dependency handling (spec 026 R10).
     """
-    try:
-        from nexusx.federation.remote_ref import RemoteRef
-    except ImportError:
-        return type(obj).__name__ == "RemoteRef"
     return isinstance(obj, RemoteRef)
 
 
@@ -612,10 +596,6 @@ def _annotation_remote_ref(anno: Any) -> Any:
     DTO (specs/016 γ-path). SubsetMeta resolves string annotations before
     calling this helper.
     """
-    try:
-        from nexusx.federation.remote_ref import _contains_remote_ref
-    except ImportError:
-        return None
     return _contains_remote_ref(anno)
 
 
@@ -628,10 +608,6 @@ def _annotation_paged(anno: Any) -> Any:
     """
     metadata = getattr(anno, "__metadata__", None)
     if not metadata:
-        return None
-    try:
-        from nexusx.loader.pagination import Paged
-    except ImportError:
         return None
     for meta in metadata:
         if isinstance(meta, Paged):
@@ -735,13 +711,7 @@ class SubsetMeta(type):
         from pydantic import ConfigDict
 
         # Register for later resolution.
-        try:
-            from nexusx.federation.remote_ref import register_pending_subset
-            register_pending_subset(
-                name, None, source_ref, list(field_names), dict(namespace),
-            )
-        except ImportError:
-            pass  # federation not installed; class stays as placeholder
+        register_pending_subset(name, None, source_ref, list(field_names), dict(namespace))
 
         # Build placeholder: body fields only, RemoteRef → Any.
         annotations = _get_namespace_annotations(namespace)

@@ -31,6 +31,7 @@ from typing import Annotated, Any, Literal, Union, get_args, get_origin, get_typ
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo as PydanticFieldInfo
 
+from nexusx.annotation_utils import strip_annotated
 from nexusx.type_converter import (
     SCALAR_TYPE_MAP,
     describe_literal_values,
@@ -39,9 +40,9 @@ from nexusx.type_converter import (
 )
 from nexusx.use_case.compose_schema import (
     ArgumentInfo,
+    ComposeField,
     DuplicateTypeError,
     EnumValueInfo,
-    FieldInfo,
     SQLModelInDtoFieldError,
     TypeInfo,
     TypeRef,
@@ -49,6 +50,7 @@ from nexusx.use_case.compose_schema import (
     list_of,
     non_null,
 )
+from nexusx.use_case.context import is_from_context_annotation as _is_from_context_annotation
 
 __all__ = [
     "ComposeTypeMapper",
@@ -76,6 +78,7 @@ _SCALAR_DESCRIPTIONS: dict[str, str] = {
     "DateTime": "ISO-8601 datetime scalar.",
     "Date": "ISO-8601 date scalar.",
     "Time": "ISO-8601 time scalar.",
+    "Decimal": "Exact decimal scalar (serialized as a string, e.g. \"19.99\").",
 }
 
 # Built-in types we deliberately refuse to map. ``bytes`` / ``Decimal`` /
@@ -88,18 +91,11 @@ _UNSUPPORTED_BUILTIN_TYPES: tuple[type, ...] = (bytes,)
 def is_from_context_annotation(annotation: Any) -> bool:
     """Return ``True`` when ``annotation`` is ``Annotated[T, FromContext(...)]``.
 
-    Migrated from the legacy ``use_case/server.py`` inline check. Kept as a
-    standalone helper so the schema builder and the executor share one source
-    of truth for the ``FromContext`` detection rule.
+    Canonical implementation lives in :mod:`nexusx.use_case.context` (shared
+    with the REST router and the CLI — spec 026 R6); kept here as the name the
+    compose schema builder / executor import.
     """
-    # Local import keeps the marker class out of the module-import graph for
-    # callers that only want scalar mapping.
-    from nexusx.use_case.context import FromContext
-
-    if get_origin(annotation) is not Annotated:
-        return False
-    metadata = get_args(annotation)[1:]
-    return any(isinstance(meta, FromContext) for meta in metadata)
+    return _is_from_context_annotation(annotation)
 
 
 # ``literal_allowed_values`` / ``describe_literal_values`` and the Literal
@@ -190,7 +186,7 @@ class ComposeTypeMapper:
         registers as INPUT_OBJECT instead of OBJECT (use this for method-arg
         type refs, not return types). Scalars and enums are unaffected.
         """
-        py_type = _strip_annotated(py_type)
+        py_type = strip_annotated(py_type)
         origin = get_origin(py_type)
 
         # Optional[T] / T | None  (PEP 604 union or typing.Union[T, None])
@@ -321,7 +317,7 @@ class ComposeTypeMapper:
 
         raise UnsupportedTypeError(
             f"Type {py_type!r} is not supported in compose schemas. "
-            "Supported: scalars (int/float/str/bool/UUID/datetime), enums, "
+            "Supported: scalars (int/float/str/bool/UUID/Decimal/datetime/date/time), enums, "
             "Pydantic BaseModel subclasses, and list/Optional/Literal wrappers."
         )
 
@@ -502,7 +498,7 @@ class ComposeTypeMapper:
 
     def _build_field_info(
         self, field_name: str, field_type: Any, cls: type[BaseModel]
-    ) -> FieldInfo:
+    ) -> ComposeField:
         # Description can come from two sources in Pydantic v2:
         #   - Annotated metadata: ``x: Annotated[int, Field(description="...")]``
         #   - Default value FieldInfo: ``x: int = Field(description="...")``
@@ -512,7 +508,7 @@ class ComposeTypeMapper:
             pydantic_field = cls.model_fields.get(field_name)
             if pydantic_field is not None and pydantic_field.description:
                 description = pydantic_field.description
-        return FieldInfo(
+        return ComposeField(
             name=field_name,
             type_ref=self.map_python_type(field_type),
             # Literal constraints are invisible in the GraphQL type system —
@@ -546,13 +542,6 @@ class ComposeTypeMapper:
 # ---------------------------------------------------------------------------
 # Module-private helpers
 # ---------------------------------------------------------------------------
-
-
-def _strip_annotated(py_type: Any) -> Any:
-    """Peel one layer of ``Annotated[T, ...]`` if present."""
-    if get_origin(py_type) is Annotated:
-        return get_args(py_type)[0]
-    return py_type
 
 
 def _iter_field_types(cls: type[BaseModel]) -> list[tuple[str, Any]]:

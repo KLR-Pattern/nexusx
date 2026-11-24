@@ -14,10 +14,11 @@ from typing import Any, ForwardRef, get_args, get_origin
 
 from pydantic import BaseModel, create_model
 
+from nexusx.annotation_utils import is_list_annotation
 from nexusx.core_builder import FieldResolution, build_model
 from nexusx.loader.pagination import PaginatedPackage
 from nexusx.query_parser import FieldSelection
-from nexusx.utils.type_utils import coerce_to_dict, get_field_type, is_list_annotation
+from nexusx.utils.type_utils import coerce_to_dict, get_field_type
 
 logger = logging.getLogger(__name__)
 
@@ -120,12 +121,17 @@ def _cache_key(
     selection: FieldSelection | None,
     model_name: str,
     federation_namespace: dict[str, type] | None,
+    cache_scope: Any = None,
 ) -> tuple:
     """Stable hashable key capturing every input that shapes the built model.
 
     ``relation_entity_resolver`` is a callable (not hashable) and intentionally
-    excluded — its result is determined by the ErManager's stable relationship
-    registry. ``federation_namespace`` types are keyed by ``id()``.
+    excluded — its result is determined by the ErManager's relationship
+    registry, which ``cache_scope`` identifies (``id()`` of the registry
+    object; the executor passes its ErManager). Two registries in one process
+    can hold different relationships for the same entity class, so without
+    the scope the first registry's model would be served to the second
+    (issue #160 DESIGN_6). ``federation_namespace`` types are keyed by ``id()``.
 
     paged values are NOT in the key (specs/020): the model is a pure shape
     container (paged fields are plain ``result_type``, no marker); paged params
@@ -137,7 +143,7 @@ def _cache_key(
     """
     ns = federation_namespace or {}
     ns_key = tuple(sorted((k, id(v)) for k, v in ns.items()))
-    return (entity, model_name, _selection_structure_repr(selection), ns_key)
+    return (entity, model_name, _selection_structure_repr(selection), ns_key, id(cache_scope))
 
 
 def _selection_structure_repr(selection: FieldSelection | None) -> str:
@@ -162,6 +168,7 @@ def build_response_model(
     federation_namespace: dict[str, type] | None = None,
     relation_entity_resolver: RelationshipEntityResolver | None = None,
     _selection: FieldSelection | None = None,
+    _cache_scope: Any = None,
 ) -> type[BaseModel]:
     """Build a Pydantic model dynamically based on field selection tree.
 
@@ -206,7 +213,7 @@ def build_response_model(
         selection = _field_tree_to_selection(field_tree)
 
     key = _cache_key(
-        entity, selection, model_name, federation_namespace,
+        entity, selection, model_name, federation_namespace, _cache_scope,
     )
     cached = _MODEL_CACHE.get(key)
     if cached is not None:
@@ -285,6 +292,7 @@ def serialize_with_model(
     value_accessor: Any = None,
     relation_entity_resolver: RelationshipEntityResolver | None = None,
     _selection: FieldSelection | None = None,
+    _cache_scope: Any = None,
 ) -> Any:
     """Serialize data using dynamically built Pydantic model.
 
@@ -323,6 +331,7 @@ def serialize_with_model(
         federation_namespace=federation_namespace,
         relation_entity_resolver=relation_entity_resolver,
         _selection=_selection,
+        _cache_scope=_cache_scope,
     )
 
     if isinstance(value, list):
@@ -333,6 +342,7 @@ def serialize_with_model(
                 federation_namespace=federation_namespace,
                 value_accessor=value_accessor,
                 relation_entity_resolver=relation_entity_resolver,
+                _cache_scope=_cache_scope,
             )
             for item in value
         ]
@@ -343,6 +353,7 @@ def serialize_with_model(
         federation_namespace=federation_namespace,
         value_accessor=value_accessor,
         relation_entity_resolver=relation_entity_resolver,
+        _cache_scope=_cache_scope,
     )
 
 
@@ -375,6 +386,7 @@ def _validate_and_dump(
     federation_namespace: dict[str, type] | None = None,
     value_accessor: Any = None,
     relation_entity_resolver: RelationshipEntityResolver | None = None,
+    _cache_scope: Any = None,
 ) -> dict[str, Any]:
     """Validate value with model and dump to dict.
 
@@ -437,6 +449,7 @@ def _validate_and_dump(
                         federation_namespace=federation_namespace,
                         value_accessor=value_accessor,
                         relation_entity_resolver=relation_entity_resolver,
+                        _cache_scope=_cache_scope,
                     )
                     for it in nested_value.items
                 ]
@@ -456,6 +469,7 @@ def _validate_and_dump(
                     federation_namespace=federation_namespace,
                     value_accessor=value_accessor,
                     relation_entity_resolver=relation_entity_resolver,
+                    _cache_scope=_cache_scope,
                 )
 
     try:

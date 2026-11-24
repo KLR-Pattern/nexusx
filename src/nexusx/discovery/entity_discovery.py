@@ -7,15 +7,12 @@ that have @query/@mutation decorators, and traverse relationships to find relate
 from __future__ import annotations
 
 from collections import deque
-from typing import TYPE_CHECKING
 
 from nexusx.response_builder import (
     get_relation_entity,
     get_relationship_names,
 )
-
-if TYPE_CHECKING:
-    pass
+from nexusx.scanning.method_scanner import iter_entity_callables
 
 
 class EntityDiscovery:
@@ -72,11 +69,8 @@ class EntityDiscovery:
         root_entities: set[type] = set()
 
         for subclass in self._all_subclasses:
-            for name in dir(subclass):
-                attr = getattr(subclass, name, None)
-                if hasattr(attr, "_graphql_query") or hasattr(attr, "_graphql_mutation"):
-                    root_entities.add(subclass)
-                    break
+            if any(ec.kind is not None for ec in iter_entity_callables(subclass)):
+                root_entities.add(subclass)
 
         return root_entities
 

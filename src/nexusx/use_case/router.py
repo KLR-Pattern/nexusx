@@ -14,8 +14,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, create_model
 
 from nexusx.use_case.business import USE_CASE_METHODS_ATTR, UseCaseService, get_return_type
-from nexusx.use_case.context import FromContext
+from nexusx.use_case.context import FromContext, is_from_context_annotation, unwrap_from_context
 from nexusx.use_case.types import UseCaseAppConfig
+from nexusx.utils.naming import snake_case
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -29,29 +30,9 @@ _CAMEL_TO_SNAKE_RE = re.compile(r"(?<!^)(?=[A-Z])")
 _RESERVED_ROUTE_KEYS = frozenset({"endpoint", "methods"})
 
 
-def _camel_to_snake(name: str) -> str:
-    """PascalCase / camelCase -> snake_case."""
-    return _CAMEL_TO_SNAKE_RE.sub("_", name).lower()
-
-
 def _service_to_url_segment(service_cls: type[UseCaseService]) -> str:
     """UserService -> user_service."""
-    return _camel_to_snake(service_cls.__name__)
-
-
-def _is_from_context(annotation: Any) -> bool:
-    """Return True if the annotation is Annotated[..., FromContext()]."""
-    if get_origin(annotation) is Annotated:
-        for arg in get_args(annotation):
-            if isinstance(arg, FromContext):
-                return True
-    return False
-
-
-def _unwrap_from_context_type(annotation: Any) -> Any:
-    """Extract the inner type from Annotated[T, FromContext()]."""
-    args = get_args(annotation)
-    return args[0] if args else annotation
+    return snake_case(service_cls.__name__)
 
 
 def _classify_params(
@@ -70,8 +51,8 @@ def _classify_params(
         if name == "cls":
             continue
         hint = hints.get(name, param.annotation)
-        if _is_from_context(hint):
-            context_params[name] = _unwrap_from_context_type(hint)
+        if is_from_context_annotation(hint):
+            context_params[name] = unwrap_from_context(hint)
         else:
             body_params.append(name)
 
@@ -98,7 +79,7 @@ def _build_request_model(
         else:
             fields[pname] = (anno, default)
 
-    snake = _camel_to_snake(method_name)
+    snake = snake_case(method_name)
     model_name = f"{service_cls.__name__}{snake.title().replace('_', '')}Request"
     return create_model(model_name, **fields)
 

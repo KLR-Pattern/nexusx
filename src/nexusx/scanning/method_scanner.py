@@ -18,8 +18,10 @@ invisible. Name collisions are rejected eagerly at scan time (see
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
+from nexusx.annotation_utils import unwrap_func
 from nexusx.scanning.errors import (
     DuplicateEntityError,
     DuplicateMethodError,
@@ -33,6 +35,60 @@ _RESERVED_ROOT_NAMES = frozenset({"Query", "Mutation", "Subscription"})
 
 # Shape of a grouped method map: entity_name -> method_name -> (entity, method).
 GroupedMethods = dict[str, dict[str, tuple[type, Callable[..., Any]]]]
+
+QUERY_MARKER = "_graphql_query"
+MUTATION_MARKER = "_graphql_mutation"
+
+
+@dataclass(frozen=True, slots=True)
+class EntityCallable:
+    """One callable attribute of an entity class, as found by ``dir()``.
+
+    ``attr`` is the attribute as retrieved (a bound classmethod or plain
+    function — what executors call); ``func`` is the same thing unwrapped to
+    the underlying function (what introspection / signature reads use).
+    """
+
+    name: str
+    attr: Callable[..., Any]
+    func: Callable[..., Any]
+
+    @property
+    def kind(self) -> str | None:
+        """``"query"`` / ``"mutation"`` when marked by ``@query`` / ``@mutation``,
+        else ``None``."""
+        if hasattr(self.attr, QUERY_MARKER):
+            return "query"
+        if hasattr(self.attr, MUTATION_MARKER):
+            return "mutation"
+        return None
+
+
+def iter_entity_callables(entity: type) -> list[EntityCallable]:
+    """The **one** ``dir(entity)`` scan every consumer shares (spec 026 R3).
+
+    Returns every callable attribute in ``dir()`` order with its underlying
+    function unwrapped, so callers filter by function-attribute markers
+    (``_graphql_query`` / ``_graphql_mutation`` / ``_pagination_root`` /
+    ``_filter_input_type`` / ``_nexusx_federation_batch_root``) instead of
+    re-walking the class. Attributes that raise on ``getattr`` are skipped —
+    the most lenient of the behaviours the nine former call sites had.
+    """
+    found: list[EntityCallable] = []
+    for attr_name in dir(entity):
+        try:
+            attr = getattr(entity, attr_name)
+        except Exception:
+            continue
+        if not callable(attr):
+            continue
+        found.append(EntityCallable(attr_name, attr, unwrap_func(attr)))
+    return found
+
+
+def iter_operations(entity: type) -> list[tuple[EntityCallable, str]]:
+    """``[(callable, kind)]`` for the entity's ``@query`` / ``@mutation`` methods."""
+    return [(ec, kind) for ec in iter_entity_callables(entity) if (kind := ec.kind) is not None]
 
 
 class MethodScanner:
@@ -65,21 +121,11 @@ class MethodScanner:
             query_methods: list[tuple[Callable[..., Any], str]] = []
             mutation_methods: list[tuple[Callable[..., Any], str]] = []
 
-            for attr_name in dir(entity):
-                try:
-                    attr = getattr(entity, attr_name)
-                except Exception:
-                    continue
-                if not callable(attr):
-                    continue
-
-                if hasattr(attr, "_graphql_query"):
-                    func = attr.__func__ if hasattr(attr, "__func__") else attr
-                    query_methods.append((attr, func.__name__))
-
-                if hasattr(attr, "_graphql_mutation"):
-                    func = attr.__func__ if hasattr(attr, "__func__") else attr
-                    mutation_methods.append((attr, func.__name__))
+            for ec, kind in iter_operations(entity):
+                if kind == "query":
+                    query_methods.append((ec.attr, ec.func.__name__))
+                else:
+                    mutation_methods.append((ec.attr, ec.func.__name__))
 
             # Entities without any GraphQL method produce no group — skip them
             # entirely (no group type, no root mount, no name validation).

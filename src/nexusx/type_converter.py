@@ -5,8 +5,11 @@ from __future__ import annotations
 import types
 import uuid
 from datetime import date, datetime, time
+from decimal import Decimal
 from enum import Enum
 from typing import Annotated, Any, Literal, Union, get_args, get_origin
+
+from nexusx import annotation_utils
 
 # The single Python-type → GraphQL-scalar-name table (module-level so
 # compose-side consumers can share it without importing the SQLModel-aware
@@ -20,6 +23,11 @@ SCALAR_TYPE_MAP: dict[Any, str] = {
     date: "Date",
     time: "Time",
     uuid.UUID: "UUID",
+    # spec 026 / issue #160 DESIGN_1: a named custom scalar on BOTH paths.
+    # Compose used to reject Decimal with a generic UnsupportedTypeError while
+    # entity-first silently mapped it to String. Wire value is unchanged —
+    # pydantic's model_dump(mode="json") already serialised Decimal as a string.
+    Decimal: "Decimal",
 }
 
 
@@ -192,54 +200,33 @@ class TypeConverter:
         """
         self._entity_names = entity_names
 
+    # Structural annotation predicates live in the leaf module
+    # ``nexusx.annotation_utils`` (spec 026 R1 — one implementation for every
+    # path); these methods stay as the entity-first-facing names.
+
     def is_optional(self, type_hint: Any) -> bool:
         """Check if type hint is Optional[T] (Union with None)."""
-        origin = get_origin(type_hint)
-        # Handle both Union (typing module) and UnionType (| syntax in Python 3.10+)
-        if origin is Union or origin is types.UnionType:
-            args = get_args(type_hint)
-            return type(None) in args
-        return False
+        return annotation_utils.is_optional(type_hint)
 
     def unwrap_optional(self, type_hint: Any) -> Any:
-        """Extract T from Optional[T]."""
-        origin = get_origin(type_hint)
-        # Handle both Union (typing module) and UnionType (| syntax in Python 3.10+)
-        if origin is Union or origin is types.UnionType:
-            args = get_args(type_hint)
-            non_none = [a for a in args if a is not type(None)]
-            return non_none[0] if non_none else type_hint
-        return type_hint
+        """Extract T from Optional[T] (first non-None arm of a union)."""
+        return annotation_utils.unwrap_optional(type_hint)
 
     def is_list_type(self, type_hint: Any) -> bool:
         """Check if type is list[T]."""
-        return get_origin(type_hint) is list
+        return annotation_utils.is_list(type_hint)
 
     def get_list_inner_type(self, type_hint: Any) -> Any:
         """Extract T from list[T], handling Optional inside list."""
-        args = get_args(type_hint)
-        if not args:
-            return type_hint
-
-        inner = args[0]
-        # Handle list[Optional[T]]
-        if self.is_optional(inner):
-            inner = self.unwrap_optional(inner)
-        return inner
+        return annotation_utils.list_inner(type_hint)
 
     def is_mapped_wrapper(self, type_hint: Any) -> bool:
         """Check if type is SQLAlchemy Mapped wrapper."""
-        origin = get_origin(type_hint)
-        if origin is None:
-            return False
-
-        origin_name = getattr(origin, "__name__", "") or getattr(origin, "_name", "")
-        return origin_name == "Mapped" or str(origin).endswith("Mapped")
+        return annotation_utils.is_mapped_wrapper(type_hint)
 
     def unwrap_mapped(self, type_hint: Any) -> Any:
         """Extract inner type from Mapped[T]."""
-        args = get_args(type_hint)
-        return args[0] if args else type_hint
+        return annotation_utils.unwrap_mapped(type_hint)
 
     def get_scalar_type_name(self, type_hint: Any) -> str | None:
         """Get GraphQL scalar name (Int, String, etc.) or None if not a scalar."""
@@ -283,20 +270,15 @@ class TypeConverter:
         if self.is_mapped_wrapper(type_hint):
             type_hint = self.unwrap_mapped(type_hint)
 
-        origin = get_origin(type_hint)
-
         # Handle list of entities
-        if origin is list:
+        if self.is_list_type(type_hint):
             inner = self.get_list_inner_type(type_hint)
             return self.is_entity_type(inner)
 
         # Handle Optional[Entity] (Union or UnionType)
-        if origin is Union or origin is types.UnionType:
-            args = get_args(type_hint)
-            non_none = [a for a in args if a is not type(None)]
-            if non_none:
-                return self.is_entity_type(non_none[0])
-            return False
+        if self.is_optional(type_hint):
+            inner = self.unwrap_optional(type_hint)
+            return self.is_entity_type(inner)
 
         # Handle single entity
         return self.is_entity_type(type_hint)

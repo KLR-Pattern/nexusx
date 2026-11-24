@@ -21,7 +21,6 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
-import re
 from typing import TYPE_CHECKING, Any, get_args, get_origin, get_type_hints
 
 if TYPE_CHECKING:
@@ -31,24 +30,10 @@ if TYPE_CHECKING:
 
 from nexusx.core_builder import SelectionError
 from nexusx.use_case.business import USE_CASE_METHODS_ATTR
+from nexusx.use_case.context import unwrap_from_context
 from nexusx.use_case.selection import apply_selection
 from nexusx.use_case.serialization import serialize_result as _serialize_result
-
-_CAMEL_TO_SNAKE_RE = re.compile(r"(?<!^)(?=[A-Z])")
-
-
-def _camel_to_snake(name: str) -> str:
-    return _CAMEL_TO_SNAKE_RE.sub("_", name).lower()
-
-
-def _unwrap_from_context(annotation: Any) -> Any:
-    """Extract the inner type from Annotated[T, FromContext()]."""
-
-    origin = get_origin(annotation)
-    if origin is not None:
-        args = get_args(annotation)
-        return args[0] if args else annotation
-    return annotation
+from nexusx.utils.naming import snake_case
 
 
 def _param_help(name: str, annotation: Any) -> str:
@@ -104,7 +89,7 @@ def _build_command(
         if anno is inspect.Parameter.empty:
             anno = str
         help_text = _param_help(name, anno)  # before unwrap, while Annotated is visible
-        anno = _unwrap_from_context(anno)
+        anno = unwrap_from_context(anno)
         default = param.default if param.default is not inspect.Parameter.empty else ...
         param_infos.append((name, anno, default, help_text))
 
@@ -196,7 +181,7 @@ def create_use_case_cli(
     app = typer.Typer(name=name, help=f"{name} CLI", no_args_is_help=True)
 
     for service_cls in config.services:
-        service_name = _camel_to_snake(service_cls.__name__).replace("_", "-")
+        service_name = snake_case(service_cls.__name__).replace("_", "-")
         subgroup = typer.Typer(
             name=service_name,
             help=service_cls.__doc__ or f"{service_cls.__name__} commands",

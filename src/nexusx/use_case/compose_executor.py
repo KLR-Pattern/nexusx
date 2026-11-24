@@ -31,6 +31,7 @@ from typing import Any, Union, get_args, get_origin
 from graphql import DocumentNode, FieldNode, OperationDefinitionNode, parse
 from pydantic import BaseModel, TypeAdapter
 
+from nexusx.annotation_utils import unwrap_func
 from nexusx.query_parser import FieldSelection, QueryParser, find_nested_alias
 from nexusx.use_case.business import UseCaseService
 from nexusx.use_case.compose_schema import ComposeSchema
@@ -488,7 +489,7 @@ def _build_kwargs(
 ) -> dict[str, Any]:
     """Combine GraphQL args + FromContext values into the method's kwargs."""
     unwrapped = inspect.unwrap(method)
-    func = unwrapped.__func__ if hasattr(unwrapped, "__func__") else unwrapped
+    func = unwrap_func(unwrapped)
     sig = inspect.signature(func)
     hints = _safe_hints(func)
 

@@ -13,6 +13,7 @@ from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel
 
+from nexusx import annotation_utils as au
 from nexusx.subset import get_subset_source
 from nexusx.use_case.business import (
     USE_CASE_METHODS_ATTR,  # noqa: F401
@@ -134,19 +135,10 @@ def _type_to_legacy_name(anno: Any) -> str:
 
 
 def _is_optional_type(anno: Any) -> bool:
-    """Check if a type annotation is Optional (X | None)."""
+    """Check if a type annotation is Optional (X | None). A bare ``None`` annotation counts."""
     if anno is None:
         return True
-
-    origin = get_origin(anno)
-
-    import types as _types
-
-    if origin is typing.Union or isinstance(anno, _types.UnionType):
-        args = get_args(anno)
-        return any(a is type(None) for a in args)
-
-    return False
+    return au.is_optional(anno)
 
 
 def _is_fk_field(field_name: str, dto_class: type[BaseModel]) -> bool:
@@ -365,41 +357,13 @@ def _get_selection_model(anno: Any) -> type[BaseModel] | None:
     if anno is None or anno is inspect.Parameter.empty or isinstance(anno, str):
         return None
 
-    core_types = _collect_core_types(anno)
+    core_types = au.core_types(anno)
     pydantic_types = [
-        tp for tp in core_types if isinstance(tp, type) and issubclass(tp, BaseModel)
+        tp for tp in core_types if au.safe_issubclass(tp, BaseModel)
     ]
     if len(pydantic_types) == 1:
         return pydantic_types[0]
     return None
-
-
-def _collect_core_types(tp: Any) -> list[type]:
-    """Extract all concrete types from a possibly-wrapped annotation."""
-    if tp is None or tp is inspect.Parameter.empty or isinstance(tp, str):
-        return []
-    if isinstance(tp, type):
-        return [tp]
-
-    origin = get_origin(tp)
-
-    if origin is list:
-        args = get_args(tp)
-        return _collect_core_types(args[0]) if args else []
-
-    import types as _types
-
-    if origin is typing.Union or isinstance(tp, _types.UnionType):
-        results: list[type] = []
-        for arg in get_args(tp):
-            results.extend(_collect_core_types(arg))
-        return results
-
-    if origin is typing.Annotated:
-        args = get_args(tp)
-        return _collect_core_types(args[0]) if args else []
-
-    return [tp] if isinstance(tp, type) else []
 
 
 def _build_selection_example(

@@ -10,6 +10,7 @@ import typing
 from nexusx.federation.relationship import parse_qualified_name
 from nexusx.loader.registry import ErManager, RelationshipInfo
 from nexusx.relationship import is_virtual_entity
+from nexusx.scanning.method_scanner import iter_entity_callables
 from nexusx.voyager.render import DiagramRenderer
 from nexusx.voyager.styling import (
     member_service_colors,
@@ -18,11 +19,11 @@ from nexusx.voyager.styling import (
 )
 from nexusx.voyager.type import (
     PK,
-    FieldInfo,
     FieldType,
     Link,
     MethodInfo,
     SchemaNode,
+    VoyagerField,
 )
 from nexusx.voyager.type_helper import (
     full_class_name,
@@ -54,24 +55,15 @@ def _discover_methods(entity_kls: type) -> tuple[list[MethodInfo], list[MethodIn
     """Scan entity for @query/@mutation methods, return (queries, mutations)."""
     queries: list[MethodInfo] = []
     mutations: list[MethodInfo] = []
-    for attr_name in dir(entity_kls):
-        try:
-            attr = getattr(entity_kls, attr_name)
-        except Exception:
+    for ec in iter_entity_callables(entity_kls):
+        kind = ec.kind
+        if kind is None:
             continue
-        if not callable(attr):
-            continue
-        func = getattr(attr, '__func__', attr)
-        if getattr(attr, '_graphql_query', False):
-            queries.append(MethodInfo(
-                name=func.__name__,
-                return_type=_get_return_type_name(func),
-            ))
-        elif getattr(attr, '_graphql_mutation', False):
-            mutations.append(MethodInfo(
-                name=func.__name__,
-                return_type=_get_return_type_name(func),
-            ))
+        info = MethodInfo(
+            name=ec.func.__name__,
+            return_type=_get_return_type_name(ec.func),
+        )
+        (queries if kind == "query" else mutations).append(info)
     return queries, mutations
 
 
@@ -177,20 +169,20 @@ class ErDiagramDotBuilder:
             )
         return full_name
 
-    def _get_entity_fields(self, entity_kls: type) -> list[FieldInfo]:
+    def _get_entity_fields(self, entity_kls: type) -> list[VoyagerField]:
         """Extract fields from an entity class's model_fields and relationships."""
         full_name = full_class_name(entity_kls)
         rels = self.rel_name_set.get(full_name, {})
         rel_names = set(rels.keys())
 
-        fields: list[FieldInfo] = []
+        fields: list[VoyagerField] = []
 
         # 1. Add regular model fields (skip relationship field names)
         for k, v in entity_kls.model_fields.items():
             if k in rel_names:
                 continue
             anno = v.annotation
-            fields.append(FieldInfo(
+            fields.append(VoyagerField(
                 is_object=False,
                 name=k,
                 from_base=False,
@@ -205,7 +197,7 @@ class ErDiagramDotBuilder:
                 continue
             target_type = rel_info.target_entity.__name__
             type_name = f'list[{target_type}]' if rel_info.is_list else target_type
-            fields.append(FieldInfo(
+            fields.append(VoyagerField(
                 is_object=True,
                 name=rel_name,
                 from_base=False,

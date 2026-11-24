@@ -28,3 +28,33 @@ class FromContext:
     """
 
     pass
+
+
+# ──────────────────────────────────────────────────────────
+# FromContext detection — the one implementation (spec 026 R6)
+# ──────────────────────────────────────────────────────────
+
+from typing import Annotated, Any, get_args, get_origin  # noqa: E402
+
+
+def is_from_context_annotation(annotation: Any) -> bool:
+    """True when ``annotation`` is ``Annotated[T, FromContext(...)]``.
+
+    Shared by the compose schema builder / executor, the REST router and the
+    CLI (three private copies before spec 026).
+    """
+    if get_origin(annotation) is not Annotated:
+        return False
+    return any(isinstance(meta, FromContext) for meta in get_args(annotation)[1:])
+
+
+def unwrap_from_context(annotation: Any) -> Any:
+    """``Annotated[T, FromContext(...)]`` → ``T``; any other annotation unchanged.
+
+    Only strips the ``Annotated`` shell — a ``list[int]`` parameter stays
+    ``list[int]`` (the former CLI helper returned ``int`` for it).
+    """
+    if get_origin(annotation) is not Annotated:
+        return annotation
+    args = get_args(annotation)
+    return args[0] if args else annotation
