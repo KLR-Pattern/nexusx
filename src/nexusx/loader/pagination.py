@@ -6,7 +6,7 @@ Adapted from pydantic-resolve's graphql.pagination.types module.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
@@ -88,7 +88,7 @@ class PageArgs:
     @property
     def effective_limit(self) -> int | None:
         """Resolve the effective page size. ``None`` = unbounded (fetch_all)."""
-        if self.fetch_all:
+        if self.fetch_all or self.limit is None:
             return None
         return min(self.limit, self.max_page_size)
 
@@ -131,7 +131,7 @@ class Paged:
     direction: str | None = None
     fetch_all: bool = False
 
-    def params_key(self) -> tuple:
+    def params_key(self) -> tuple[Any, ...]:
         return (self.limit, self.offset, self.order, self.direction, self.fetch_all)
 
     def clamp(self, max_page_size: int | None) -> Paged:
@@ -194,8 +194,10 @@ class _PagedOverride:
         if fetch_all is None:
             fetch_all = raw.get("fetch_all")
         fetch_all = bool(fetch_all) if fetch_all is not None else False
-        order = order.value if hasattr(order, "value") else order
-        direction = direction.value if hasattr(direction, "value") else direction
+        if order is not None and hasattr(order, "value"):
+            order = order.value
+        if direction is not None and hasattr(direction, "value"):
+            direction = direction.value
         limit, offset, order, direction = (
             _clean(limit), _clean(offset), _clean(order), _clean(direction),
         )
@@ -212,7 +214,7 @@ class _PagedOverride:
 
 def _build_pagination_model(pagination_selection: set[str]) -> type[BaseModel]:
     """Create a Pagination model containing only the selected fields."""
-    fields = {}
+    fields: dict[str, Any] = {}
     if "has_more" in pagination_selection:
         fields["has_more"] = (bool, False)
     if "total_count" in pagination_selection:
@@ -221,7 +223,7 @@ def _build_pagination_model(pagination_selection: set[str]) -> type[BaseModel]:
     if not fields:
         return Pagination
 
-    return create_model("Pagination", **fields)
+    return cast(type[BaseModel], create_model("Pagination", **fields))
 
 
 def create_result_type(
@@ -244,7 +246,7 @@ def create_result_type(
     model_name = f"{getattr(item_type, '__name__', 'Item')}Result"
 
     fields: dict[str, Any] = {
-        "items": (list[item_type], Field(default_factory=list)),
+        "items": (cast(Any, list)[item_type], Field(default_factory=list)),
     }
 
     if pagination_selection:
@@ -260,13 +262,12 @@ def create_result_type(
     # carries it — absence keeps the pre-existing behavior (and the
     # ``test_no_from_attributes`` contract).
     if getattr(item_type, "model_config", {}).get("from_attributes"):
-        return create_model(
-            model_name,
-            __config__=ConfigDict(from_attributes=True),
-            **fields,
+        return cast(
+            type[BaseModel],
+            create_model(model_name, __config__=ConfigDict(from_attributes=True), **fields),
         )
 
-    return create_model(model_name, **fields)
+    return cast(type[BaseModel], create_model(model_name, **fields))
 
 
 @dataclass
@@ -280,7 +281,7 @@ class PaginatedPackage:
     this type; the ``items``/``pagination`` dict convention is gone.
     """
 
-    items: list = field(default_factory=list)
+    items: list[Any] = field(default_factory=list)
     pagination: Any = None
 
 

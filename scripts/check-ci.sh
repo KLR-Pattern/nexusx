@@ -3,6 +3,7 @@ set -euo pipefail
 
 uv sync --all-extras
 uv run ruff check src/
+./scripts/check-mypy.sh
 uv run pytest tests/ -v
 
 # Template guard: verify the skill's reference template still imports against

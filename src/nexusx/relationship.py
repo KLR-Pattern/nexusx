@@ -107,7 +107,7 @@ class Relationship(RelationshipBase):
     fk: str
     target: Any
     name: str
-    loader: Callable
+    loader: Callable[..., Any]
     description: str | None = None
 
 

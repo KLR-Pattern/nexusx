@@ -35,7 +35,8 @@ calling them on the composed manager raises an explicit error.
 # annotations (ErManager | None etc.) evaluable at runtime, consistent with
 # registry.py.
 
-from typing import Any
+from collections.abc import Iterator
+from typing import Any, cast
 
 from aiodataloader import DataLoader
 
@@ -62,39 +63,39 @@ class _CompositeFedRegistryView:
     def __init__(self, members: list[ErManager]):
         self._members = members
 
-    def _frs(self):
+    def _frs(self) -> Iterator[Any]:
         for m in self._members:
             fr = getattr(m, "_fed_registry", None)
             if fr is not None:
                 yield fr
 
-    def qualified_of(self, cls):
+    def qualified_of(self, cls: type) -> str | None:
         for fr in self._frs():
             qn = fr.qualified_of(cls)
             if qn:
-                return qn
+                return cast(str, qn)
         return None
 
-    def all_classes(self):
-        classes: set = set()
+    def all_classes(self) -> set[type]:
+        classes: set[type] = set()
         for fr in self._frs():
             classes.update(fr.all_classes())
         return classes
 
-    def service_colors(self):
-        colors: dict = {}
+    def service_colors(self) -> dict[str, str]:
+        colors: dict[str, str] = {}
         for fr in self._frs():
             colors.update(fr.service_colors())
         return colors
 
-    def has(self, qn):
+    def has(self, qn: str) -> bool:
         return any(fr.has(qn) for fr in self._frs())
 
-    def get(self, qn):
+    def get(self, qn: str) -> type | None:
         for fr in self._frs():
             cls = fr.get(qn)
             if cls:
-                return cls
+                return cast(type, cls)
         return None
 
 
@@ -148,7 +149,7 @@ class ComposedErManager:
         # Cross-boundary relationship overlay: source entity → {rel_name: RelationshipInfo}
         self._cross_rels: dict[type, dict[str, RelationshipInfo]] = {}
         # Cross-boundary loader instance cache (composed-owned, cleared by clear_cache)
-        self._cross_loader_cache: dict[type, DataLoader] = {}
+        self._cross_loader_cache: dict[type, DataLoader[Any, Any]] = {}
         # _fed_registry aggregate view (created lazily)
         self._fed_registry_view: _CompositeFedRegistryView | None = None
         # Member grouping map (specs/022, created lazily): cls → (service_name, color)
@@ -229,7 +230,7 @@ class ComposedErManager:
     def _member_for(self, entity: type) -> ErManager | None:
         return self._route.get(entity)
 
-    def _get_cross_loader(self, loader_cls: type[DataLoader]) -> DataLoader:
+    def _get_cross_loader(self, loader_cls: type[DataLoader[Any, Any]]) -> DataLoader[Any, Any]:
         """Cross-boundary loader instances are cached by the composed manager
         (not via member.get_loader)."""
         if loader_cls not in self._cross_loader_cache:
@@ -270,12 +271,14 @@ class ComposedErManager:
         entity: type,
         rel_name: str,
         type_key: frozenset[str] | None = None,
-    ) -> DataLoader | None:
+    ) -> DataLoader[Any, Any] | None:
         """Cross-boundary relationships → composed-owned loader; local →
         delegate to the member."""
         cross = self._cross_rels.get(entity, {}).get(rel_name)
-        if cross is not None and cross.loader is not None:
-            return self._get_cross_loader(cross.loader)
+        if cross is not None:
+            loader_cls = plain_loader_of(cross)
+            if loader_cls is not None:
+                return self._get_cross_loader(loader_cls)
         member = self._member_for(entity)
         if member is None:
             return None
@@ -283,7 +286,7 @@ class ComposedErManager:
 
     def get_loader_by_name(
         self, name: str, type_key: frozenset[str] | None = None
-    ) -> DataLoader | None:
+    ) -> DataLoader[Any, Any] | None:
         """Look up a loader by relationship name.
 
         Same-name relationships across members raise on ambiguity — aligned
@@ -328,12 +331,12 @@ class ComposedErManager:
 
     def get_loader(
         self,
-        loader_cls: type[DataLoader],
+        loader_cls: type[DataLoader[Any, Any]],
         *,
         type_key: frozenset[str] | None = None,
         force_split: bool = False,
-        params_key: tuple | None = None,
-    ) -> DataLoader:
+        params_key: tuple[Any, ...] | None = None,
+    ) -> DataLoader[Any, Any]:
         """Reverse-route member loaders; cross-boundary loaders are
         composed-owned.
 
@@ -410,7 +413,7 @@ class ComposedErManager:
             def __init__(
                 self,
                 context: dict[str, Any] | None = None,
-                loader_instances: dict[type, DataLoader] | None = None,
+                loader_instances: dict[type, DataLoader[Any, Any]] | None = None,
             ):
                 super().__init__(
                     loader_registry=composed,

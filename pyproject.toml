@@ -65,7 +65,48 @@ ignore = ["B008"]  # Loader()/Collector() as default args is the intended API pa
 
 [tool.mypy]
 python_version = "3.10"
-strict = true
+# Modules cleared under --strict are listed in the override below and are the
+# ones CI checks (`scripts/check-ci.sh` / ci.yml pass them as targets, with
+# follow_imports=silent so their not-yet-cleared imports do not block); the
+# rest are checked at mypy's default level when you run `mypy src/nexusx`
+# locally, until each is cleared (issue #160 M1 → M2 → M4). The config used to
+# claim `strict = true` globally while 487 errors were outstanding — it now
+# says what is true.
+strict = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+follow_imports = "silent"
+
+[[tool.mypy.overrides]]
+# Cleared in 7.1.0 (spec 026): the leaf helpers, the loader layer, scanning.
+module = [
+    "nexusx.annotation_utils",
+    "nexusx.decorator",
+    "nexusx.relationship",
+    "nexusx.context",
+    "nexusx.discovery.*",
+    "nexusx.scanning.*",
+    "nexusx.utils.*",
+    "nexusx.loader.registry",
+    "nexusx.loader.factories",
+    "nexusx.loader.composed",
+    "nexusx.loader.pagination",
+    "nexusx.loader.query_meta",
+]
+# mypy 2.1 applies ``strict`` inside an override globally (verified: an override
+# for an unrelated module tightened every other module), so the strict bundle is
+# spelled out per flag here.
+disallow_untyped_defs = true
+disallow_untyped_calls = true
+disallow_any_generics = true
+disallow_any_unimported = true
+disallow_subclassing_any = true
+no_implicit_optional = true
+warn_return_any = true
+warn_unused_ignores = true
+strict_equality = true
+extra_checks = true
+check_untyped_defs = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

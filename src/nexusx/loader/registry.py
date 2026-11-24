@@ -12,7 +12,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, cast, runtime_checkable
 
 from aiodataloader import DataLoader
 from pydantic import BaseModel
@@ -81,8 +81,8 @@ class RelationshipInfo(ABC):
     def is_paginated(self) -> bool:
         """Active pagination shape ({items, pagination} in the schema)."""
 
-    def loader_classes(self) -> tuple[type[DataLoader], ...]:
-        """Every DataLoader class this variant carries (empty for coalesced)."""
+    def loader_classes(self) -> tuple[type[DataLoader[Any, Any]], ...]:
+        """Every DataLoader[Any, Any] class this variant carries (empty for coalesced)."""
         return ()
 
 
@@ -92,8 +92,8 @@ class LocalRelationship(RelationshipInfo):
     anytime); ``page_loader`` expresses ASSEMBLY (declared ``order_by``),
     not capability. The two are orthogonal (plan §三, scenario 4)."""
 
-    loader: type[DataLoader]  # every local rel is built with a loader
-    page_loader: type[DataLoader] | None = None  # assembled iff order_by declared
+    loader: type[DataLoader[Any, Any]]  # every local rel is built with a loader
+    page_loader: type[DataLoader[Any, Any]] | None = None  # assembled iff order_by declared
     sort_field: str | None = None  # sort column for pagination
     page_capability: BatchPageCapability | None = None  # local order profiles
     max_page_size: int = 100
@@ -106,7 +106,7 @@ class LocalRelationship(RelationshipInfo):
     def is_paginated(self) -> bool:
         return self.is_list and self.page_loader is not None
 
-    def loader_classes(self) -> tuple[type[DataLoader], ...]:
+    def loader_classes(self) -> tuple[type[DataLoader[Any, Any]], ...]:
         return (self.loader, self.page_loader) if self.page_loader else (self.loader,)
 
 
@@ -115,7 +115,7 @@ class RemotePlainRelationship(RelationshipInfo):
     """Remote, un-paged: the member exposes only ``by_<key>_in`` — there is
     no pagination channel on the wire. Plain fetch via fetch_remote_subtree()."""
 
-    loader: type[DataLoader]
+    loader: type[DataLoader[Any, Any]]
     target_service: str | None = None
 
     @property
@@ -126,7 +126,7 @@ class RemotePlainRelationship(RelationshipInfo):
     def is_paginated(self) -> bool:
         return False
 
-    def loader_classes(self) -> tuple[type[DataLoader], ...]:
+    def loader_classes(self) -> tuple[type[DataLoader[Any, Any]], ...]:
         return (self.loader,)
 
 
@@ -137,8 +137,8 @@ class RemotePagedRelationship(RelationshipInfo):
     ``page_capability`` have NO defaults — construction IS the commitment;
     a "declared paged remote without a loader" is unconstructible."""
 
-    loader: type[DataLoader]
-    page_loader: type[DataLoader]
+    loader: type[DataLoader[Any, Any]]
+    page_loader: type[DataLoader[Any, Any]]
     page_capability: BatchPageCapability  # specs/014
     target_service: str | None = None
     max_page_size: int = 100
@@ -151,7 +151,7 @@ class RemotePagedRelationship(RelationshipInfo):
     def is_paginated(self) -> bool:
         return True
 
-    def loader_classes(self) -> tuple[type[DataLoader], ...]:
+    def loader_classes(self) -> tuple[type[DataLoader[Any, Any]], ...]:
         return (self.loader, self.page_loader)
 
 
@@ -179,7 +179,7 @@ class RemoteCoalescedRelationship(RelationshipInfo):
 _LoadingRelationship = (LocalRelationship, RemotePlainRelationship, RemotePagedRelationship)
 
 
-def plain_loader_of(rel: RelationshipInfo) -> type[DataLoader] | None:
+def plain_loader_of(rel: RelationshipInfo) -> type[DataLoader[Any, Any]] | None:
     """The variant's non-paged loader class; ``None`` for coalesced.
 
     The one place that knows which variants carry a loader, so lookups stop
@@ -202,7 +202,7 @@ def _expect_single_pair(pairs: Any, message: str) -> tuple[Any, Any]:
     pair_list = list(pairs)
     if len(pair_list) != 1:
         raise NotImplementedError(message)
-    return pair_list[0]
+    return cast(tuple[Any, Any], pair_list[0])
 
 
 def _extract_sort_field(order_by: Any) -> str:
@@ -224,10 +224,10 @@ def _extract_sort_field(order_by: Any) -> str:
     if hasattr(order_by, "element"):
         inner = order_by.element
         if hasattr(inner, "key"):
-            return inner.key
+            return cast(str, inner.key)
 
     if hasattr(order_by, "key"):
-        return order_by.key
+        return cast(str, order_by.key)
 
     raise ValueError(
         f"Unable to extract sort field from order_by clause: {order_by}. "
@@ -335,9 +335,8 @@ def _extract_extra_filters(
     """
     from sqlalchemy import inspect as sa_inspect
     from sqlalchemy.sql import operators
-    from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
+    from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList, ColumnClause
     from sqlalchemy.sql.functions import Function
-    from sqlalchemy.sql.schema import ColumnClause
     from sqlalchemy.sql.selectable import Selectable
     from sqlalchemy.sql.visitors import iterate
 
@@ -358,8 +357,10 @@ def _extract_extra_filters(
     rel_desc = f"{source_kls.__name__}.{rel.key}"
     # Target-side readable tables — includes parent tables for joined-table
     # inheritance; plus the secondary table for M2M.
-    target_tables: set = set(sa_inspect(target_kls).tables)
-    allowed_tables: set = set(target_tables)
+    mapper = sa_inspect(target_kls)
+    assert mapper is not None
+    target_tables: set[Any] = set(mapper.tables)
+    allowed_tables: set[Any] = set(target_tables)
     if use_secondaryjoin:
         if rel.secondary is not None:
             allowed_tables.add(rel.secondary)
@@ -367,12 +368,12 @@ def _extract_extra_filters(
     def _is_column(x: Any) -> bool:
         return isinstance(x, ColumnClause)
 
-    def _col_sig(col: Any) -> tuple:
+    def _col_sig(col: Any) -> tuple[Any, ...]:
         # schema-qualified: same table name in two schemas must not collide
         return (col.table.schema, col.table.name, col.key)
 
-    def _pair_keys(pairs: Any) -> set[tuple]:
-        keys: set[tuple] = set()
+    def _pair_keys(pairs: Any) -> set[tuple[Any, ...]]:
+        keys: set[tuple[Any, ...]] = set()
         for left_col, right_col in pairs:
             keys.add((*_col_sig(left_col), *_col_sig(right_col)))
             keys.add((*_col_sig(right_col), *_col_sig(left_col)))
@@ -387,7 +388,7 @@ def _extract_extra_filters(
             return clauses
         return [expr]
 
-    def _collect(join_expr: Any, pair_keys: set, join_side: str) -> list[Any]:
+    def _collect(join_expr: Any, pair_keys: set[Any], join_side: str) -> list[Any]:
         extras: list[Any] = []
         for clause in _top_level_clauses(join_expr):
             if (
@@ -488,7 +489,7 @@ def _extract_extra_filters(
 def _inspect_relationships(
     entity_kls: type[SQLModel],
     all_entities: set[type[SQLModel]],
-    session_factory: Callable,
+    session_factory: Callable[..., Any],
 ) -> list[RelationshipInfo]:
     """Inspect a single entity's ORM relationships and create loaders."""
     from sqlalchemy import inspect
@@ -499,9 +500,7 @@ def _inspect_relationships(
     except Exception:
         # Not a mapped entity (no table=True)
         return []
-
-    # Only process entities with actual table mappings
-    if not hasattr(mapper, "relationships"):
+    if mapper is None or not hasattr(mapper, "relationships"):
         return []
 
     results: list[RelationshipInfo] = []
@@ -717,12 +716,12 @@ def _inspect_relationships(
 
 
 def _build_custom_relationship_info(rel: Relationship) -> RelationshipInfo:
-    """Convert a custom Relationship to a RelationshipInfo with a DataLoader class."""
+    """Convert a custom Relationship to a RelationshipInfo with a DataLoader[Any, Any] class."""
     loader_fn = rel.loader
 
-    class _CustomLoader(DataLoader):
-        async def batch_load_fn(self, keys):
-            return await loader_fn(keys)
+    class _CustomLoader(DataLoader[Any, Any]):
+        async def batch_load_fn(self, keys: list[Any]) -> list[Any]:
+            return cast(list[Any], await loader_fn(keys))
 
     _CustomLoader.__name__ = f"CustomLoader_{rel.name}"
     _CustomLoader.__qualname__ = f"CustomLoader_{rel.name}"
@@ -753,7 +752,7 @@ class ErManager:
 
     def __init__(
         self,
-        session_factory: Callable,
+        session_factory: Callable[..., Any],
         base: type | None = None,
         entities: list[type[SQLModel]] | None = None,
         split_loader_by_type: bool = False,
@@ -764,12 +763,13 @@ class ErManager:
     ):
         if base is not None and entities is not None:
             raise ValueError("base and entities are mutually exclusive")
-        if base is None and entities is None:
-            raise ValueError("Either base or entities must be provided")
-
         if base is not None:
             from nexusx.discovery import EntityDiscovery
-            entities = EntityDiscovery(base).discover(include_all=True)
+            resolved_entities = list(EntityDiscovery(base).discover(include_all=True))
+        elif entities is not None:
+            resolved_entities = list(entities)
+        else:
+            raise ValueError("Either base or entities must be provided")
 
         self._session_factory = session_factory
         self._split_mode = split_loader_by_type
@@ -800,7 +800,7 @@ class ErManager:
         # specs/016 γ-path: mounter-side DTO RemoteLoaders keyed by owner DTO +
         # field name. The owner is required because unrelated DTOs may legally
         # use the same field name for different remote services.
-        self._dto_loaders: dict[tuple[type, str], type[DataLoader]] = {}
+        self._dto_loaders: dict[tuple[type, str], type[DataLoader[Any, Any]]] = {}
         self._mounted_services: dict[str, str] = {}
         self._pending_remote_rels: list[tuple[type, Any]] = []
         self._fed_registry: Any = None
@@ -816,19 +816,19 @@ class ErManager:
         # Cache of instantiated loaders.
         # Default mode: {loader_cls: instance}
         # Split mode: {loader_cls: {type_key: instance}}
-        self._loader_instances: dict = {}
+        self._loader_instances: dict[Any, Any] = {}
         # Frozen flag: set True on first create_resolver(). After that,
         # add_virtual_entities() raises RuntimeError — the registry and
         # loader wiring cannot be safely mutated once a Resolver exists.
         self._frozen: bool = False
 
-        all_entities = set(entities)
-        for entity in entities:
+        all_entities = set(resolved_entities)
+        for entity in resolved_entities:
             rels = _inspect_relationships(entity, all_entities, session_factory)
             self._registry[entity] = {r.name: r for r in rels}
 
         # Register custom relationships from __relationships__
-        for entity in entities:
+        for entity in resolved_entities:
             custom_rels = get_custom_relationships(entity)
             entity_rels = self._registry.setdefault(entity, {})
             declared_names = set(entity_rels)
@@ -842,8 +842,10 @@ class ErManager:
                 if isinstance(rel, RemoteRelationship):
                     # Federated relationship: defer wiring to federate().
                     self._pending_remote_rels.append((entity, rel))
-                else:
+                elif isinstance(rel, Relationship):
                     entity_rels[rel.name] = _build_custom_relationship_info(rel)
+                else:  # pragma: no cover — only two RelationshipBase kinds exist
+                    raise TypeError(f"Unsupported __relationships__ entry {type(rel).__name__}")
 
         self._validate_pagination()
 
@@ -915,8 +917,10 @@ class ErManager:
                 declared_names.add(rel.name)
                 if isinstance(rel, RemoteRelationship):
                     self._pending_remote_rels.append((entity, rel))
-                else:
+                elif isinstance(rel, Relationship):
                     entity_rels[rel.name] = _build_custom_relationship_info(rel)
+                else:  # pragma: no cover — only two RelationshipBase kinds exist
+                    raise TypeError(f"Unsupported __relationships__ entry {type(rel).__name__}")
             self._registry[entity] = entity_rels
         self._version += 1  # entity set changed; invalidate GraphQL views
 
@@ -1016,7 +1020,7 @@ class ErManager:
         return dtos
 
     @property
-    def session_factory(self) -> Callable:
+    def session_factory(self) -> Callable[..., Any]:
         """The async session factory loaders (and member batch roots) use."""
         return self._session_factory
 
@@ -1038,7 +1042,7 @@ class ErManager:
         self,
         owner_dto: type,
         field_name: str,
-        loader_cls: type[DataLoader],
+        loader_cls: type[DataLoader[Any, Any]],
     ) -> None:
         """Register a γ-path DTO RemoteLoader for one DTO field.
 
@@ -1052,7 +1056,7 @@ class ErManager:
         self,
         owner_dto: type | str,
         field_name: str | None = None,
-    ) -> type[DataLoader] | None:
+    ) -> type[DataLoader[Any, Any]] | None:
         """Look up a γ DTO RemoteLoader.
 
         The two-argument form is the precise runtime API. The one-argument
@@ -1061,7 +1065,9 @@ class ErManager:
         across all owner DTOs and will be removed in 8.0.
         """
         if field_name is not None:
-            return self._dto_loaders.get((owner_dto, field_name))
+            # (a str owner_dto here is the deprecated one-arg form; the key
+            # simply does not match, exactly as before)
+            return self._dto_loaders.get((cast(type, owner_dto), field_name))
         warnings.warn(
             "ErManager.get_dto_loader(<field_name>) is deprecated; pass the owner "
             "DTO class and the field name — get_dto_loader(owner_dto, field_name). "
@@ -1090,12 +1096,12 @@ class ErManager:
 
     def get_loader(
         self,
-        loader_cls: type[DataLoader],
+        loader_cls: type[DataLoader[Any, Any]],
         type_key: frozenset[str] | None = None,
         force_split: bool = False,
-        params_key: tuple | None = None,
-    ) -> DataLoader:
-        """Get or create a DataLoader instance (cached per request).
+        params_key: tuple[Any, ...] | None = None,
+    ) -> DataLoader[Any, Any]:
+        """Get or create a DataLoader[Any, Any] instance (cached per request).
 
         In split mode, creates separate instances per type_key so each
         can have its own _query_meta for column pruning.
@@ -1117,13 +1123,15 @@ class ErManager:
             # Default mode / no type_key / no params: shared instance per loader_cls
             if loader_cls not in self._loader_instances:
                 self._loader_instances[loader_cls] = loader_cls()
-            return self._loader_instances[loader_cls]
+            return cast(DataLoader[Any, Any], self._loader_instances[loader_cls])
 
         # Split mode: per-(type_key, params_key) instances
-        cache_key: tuple = (type_key, params_key)
+        cache_key: tuple[Any, ...] = (type_key, params_key)
         if loader_cls not in self._loader_instances:
             self._loader_instances[loader_cls] = {}
-        inner: dict[tuple, DataLoader] = self._loader_instances[loader_cls]
+        inner: dict[tuple[Any, ...], DataLoader[Any, Any]] = self._loader_instances[
+            loader_cls
+        ]
         if cache_key not in inner:
             inner[cache_key] = loader_cls()
         return inner[cache_key]
@@ -1136,8 +1144,8 @@ class ErManager:
         self,
         name: str,
         type_key: frozenset[str] | None = None,
-    ) -> DataLoader | None:
-        """Get a DataLoader by relationship name.
+    ) -> DataLoader[Any, Any] | None:
+        """Get a DataLoader[Any, Any] by relationship name.
 
         Searches all registered entities for a relationship with the given name.
         Returns the first match, or None if not found.
@@ -1174,8 +1182,8 @@ class ErManager:
         entity: type[SQLModel],
         rel_name: str,
         type_key: frozenset[str] | None = None,
-    ) -> DataLoader | None:
-        """Get a DataLoader for a specific entity's relationship.
+    ) -> DataLoader[Any, Any] | None:
+        """Get a DataLoader[Any, Any] for a specific entity's relationship.
 
         Returns None if the entity or relationship is not registered.
         """
@@ -1283,7 +1291,7 @@ class ErManager:
             resolver = Resolver(context={"user_id": current_user.id})
             result = await resolver.resolve(dtos)
 
-        Each instance holds its own DataLoader cache and contextvar state,
+        Each instance holds its own DataLoader[Any, Any] cache and contextvar state,
         so concurrent requests are isolated.
 
         The first call to ``create_resolver()`` **freezes** the registry —
@@ -1304,7 +1312,8 @@ class ErManager:
             def __init__(
                 self,
                 context: dict[str, Any] | None = None,
-                loader_instances: dict[type[DataLoader], DataLoader] | None = None,
+                loader_instances: dict[type[DataLoader[Any, Any]], DataLoader[Any, Any]]
+                | None = None,
             ):
                 super().__init__(
                     loader_registry=er_manager,
@@ -1347,20 +1356,20 @@ class LoaderRegistry(Protocol):
     def get_relationship(self, entity: type, name: str) -> Any | None: ...
     def get_loader_for_entity(
         self, entity: type, rel_name: str, type_key: frozenset[str] | None = None
-    ) -> DataLoader | None: ...
+    ) -> DataLoader[Any, Any] | None: ...
 
     # — 按 name / 按 class 兜底 —
     def get_loader_by_name(
         self, name: str, type_key: frozenset[str] | None = None
-    ) -> DataLoader | None: ...
+    ) -> DataLoader[Any, Any] | None: ...
     def get_loader(
         self,
-        loader_cls: type[DataLoader],
+        loader_cls: type[DataLoader[Any, Any]],
         *,
         type_key: frozenset[str] | None = None,
         force_split: bool = False,
-        params_key: tuple | None = None,
-    ) -> DataLoader: ...
+        params_key: tuple[Any, ...] | None = None,
+    ) -> DataLoader[Any, Any]: ...
 
     # — federation γ（DTO loader；组合体返回中性/聚合）—
     def get_dto_loader(
