@@ -19,6 +19,7 @@ from collections.abc import Iterable, Iterator
 from enum import Enum
 from typing import Any
 
+from nexusx.loader.registry import page_capability_of
 from nexusx.scanning.method_scanner import iter_entity_callables
 from nexusx.utils.naming import pascal_case
 
@@ -112,7 +113,7 @@ def federation_order_enum_layout(
         for entity in entities:
             ent_name = entity.__name__
             for rel_name, rel_info in loader_registry.get_relationships(entity).items():
-                capability = getattr(rel_info, "page_capability", None)
+                capability = page_capability_of(rel_info)
                 if capability is None:
                     continue
                 has_fed_paged = True

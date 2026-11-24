@@ -27,6 +27,7 @@ from nexusx import AutoQueryConfig, GraphQLHandler
 from nexusx.federation import RemoteRelationship, RemoteService
 from nexusx.federation.http import GraphQLTransport
 from nexusx.federation.introspect import build_federable_app
+from nexusx.loader.registry import RemotePagedRelationship
 from nexusx.standard_queries import (
     BatchPageConfig,
     Direction,
@@ -118,7 +119,12 @@ def test_order_enum_layout_naming_and_direction():
             PageOrderDescriptor(name="NEWEST"),
         ],
     )
-    rel = SimpleNamespace(target_entity=_Review, page_capability=cap)
+    # A real RemotePagedRelationship — the variant pagination_schema reads.
+    rel = RemotePagedRelationship(
+        name="reviews", direction="ONETOMANY", fk_field="id",
+        target_entity=_Review, is_list=True,  # type: ignore[arg-type]
+        loader=object, page_loader=object, page_capability=cap,
+    )
     registry = SimpleNamespace(
         get_relationships=lambda e: {"reviews": rel} if e is _Product else {}
     )
@@ -153,12 +159,15 @@ def test_order_enum_layout_disambiguates_same_target_different_orders():
             orders=[PageOrderDescriptor(name=n) for n in names],
         )
 
-    rel_reviews = SimpleNamespace(
-        target_entity=_Review, page_capability=_cap("HIGHEST_RATING", "NEWEST")
-    )
-    rel_by_user = SimpleNamespace(
-        target_entity=_Review, page_capability=_cap("USER_RATING")
-    )
+    def _rel(name: str, cap: BatchPageCapability) -> RemotePagedRelationship:
+        return RemotePagedRelationship(
+            name=name, direction="ONETOMANY", fk_field="id",
+            target_entity=_Review, is_list=True,  # type: ignore[arg-type]
+            loader=object, page_loader=object, page_capability=cap,
+        )
+
+    rel_reviews = _rel("reviews", _cap("HIGHEST_RATING", "NEWEST"))
+    rel_by_user = _rel("by_user", _cap("USER_RATING"))
     registry = SimpleNamespace(
         get_relationships=lambda e: (
             {"reviews": rel_reviews, "by_user": rel_by_user} if e is _Product else {}
@@ -196,8 +205,11 @@ def test_order_enum_layout_dedupes_same_target_same_orders():
     )
     registry = SimpleNamespace(
         get_relationships=lambda e: (
-            {"reviews": SimpleNamespace(target_entity=_Review, page_capability=cap),
-             "also_reviews": SimpleNamespace(target_entity=_Review, page_capability=cap)}
+            {name: RemotePagedRelationship(
+                name=name, direction="ONETOMANY", fk_field="id",
+                target_entity=_Review, is_list=True,  # type: ignore[arg-type]
+                loader=object, page_loader=object, page_capability=cap,
+            ) for name in ("reviews", "also_reviews")}
             if e is _Product else {}
         )
     )

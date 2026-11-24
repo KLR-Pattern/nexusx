@@ -17,6 +17,7 @@ from pydantic import BaseModel, create_model
 from nexusx.annotation_utils import is_list_annotation
 from nexusx.core_builder import FieldResolution, build_model
 from nexusx.loader.pagination import PaginatedPackage
+from nexusx.loader.registry import RelationshipInfo
 from nexusx.query_parser import FieldSelection
 from nexusx.utils.type_utils import coerce_to_dict, get_field_type
 
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 # on the entity's SQLAlchemy mapper / __annotations__). Returns a duck-typed
 # RelationshipInfo-like object with ``.target_entity`` (type) and ``.is_list``
 # (bool); None when no federation relationship matches. specs/018 T002b.
-RelationshipEntityResolver = Callable[[type, str], Any]
+RelationshipEntityResolver = Callable[[type, str], RelationshipInfo | type | None]
 
 
 class ERFieldResolver:
@@ -54,19 +55,13 @@ class ERFieldResolver:
             if self._rel_resolver is not None
             else None
         )
-        if fed_rel is not None:
+        if isinstance(fed_rel, RelationshipInfo):
             return FieldResolution(
                 annotation=get_field_type(entity, field_name),
-                nested_type=getattr(fed_rel, "target_entity", None),
-                nested_shape=_list_shape(
-                    bool(getattr(fed_rel, "is_list", False))
-                ),
-                # 2026-11 variants: polymorphic shape. Relationship variants
-                # carry is_paginated natively; non-relationship objects
-                # flowing here (wire fragments) report False — matching the
-                # previous getattr-default behavior. Full pipeline
-                # unification is the plan §七.1 follow-up.
-                is_paginated=bool(getattr(fed_rel, "is_paginated", False)),
+                nested_type=fed_rel.target_entity,
+                nested_shape=_list_shape(fed_rel.is_list),
+                # 2026-11 variants: polymorphic shape — the variant knows.
+                is_paginated=fed_rel.is_paginated,
             )
         # SQLAlchemy / SQLModel / annotations fallback. ``get_relation_entity``
         # also returns scalar field types (str/int, extracted from annotations),
@@ -572,11 +567,10 @@ def get_relation_entity(
         except Exception:
             resolved = None
         if resolved is not None:
-            # Resolver returns a RelationshipInfo-like object; callers of this
-            # function want the target type. Unwrap defensively (specs/018 T002b).
-            target = getattr(resolved, "target_entity", None)
-            if target is not None:
-                return target
+            # The resolver returns a RelationshipInfo (callers want its target
+            # type) or, by contract, a bare class (specs/018 T002b).
+            if isinstance(resolved, RelationshipInfo):
+                return resolved.target_entity
             if isinstance(resolved, type):
                 return resolved
             return None

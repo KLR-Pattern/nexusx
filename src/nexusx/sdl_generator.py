@@ -10,6 +10,7 @@ from sqlmodel import SQLModel
 
 from nexusx.annotation_utils import unwrap_func
 from nexusx.introspection import QUERY_META_PARAM
+from nexusx.loader.registry import page_capability_of
 from nexusx.scanning.method_scanner import iter_entity_callables
 from nexusx.type_converter import (
     SCALAR_TYPE_MAP,
@@ -489,10 +490,7 @@ class SDLGenerator:
             for rel_name, rel_info in rels.items():
                 if rel_name in rendered_rel_names:
                     continue
-                target_entity = getattr(rel_info, "target_entity", None)
-                if target_entity is None or not hasattr(target_entity, "__name__"):
-                    continue
-                target = target_entity.__name__
+                target = rel_info.target_entity.__name__
                 if is_active_paginated_relationship(rel_info):
                     # Federated/local paginated to-many via the registry path —
                     # render as {Target}Result. Federation REMOTE_PAGED rels
@@ -577,7 +575,7 @@ class SDLGenerator:
         = member ``default_order``) and ``direction``; local / coalesced
         paginated relationships keep just the volume trio. specs/014.
         """
-        capability = getattr(rel_info, "page_capability", None)
+        capability = page_capability_of(rel_info)
         if capability is None:
             return "(limit: Int, offset: Int = 0, fetchAll: Boolean)"
         enum_name = self._fed_order_field_name.get((entity.__name__, rel_name))

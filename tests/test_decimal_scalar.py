@@ -11,7 +11,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from sqlmodel import Field, SQLModel
+from sqlmodel import SQLModel
 
 from nexusx import GraphQLHandler, query
 from nexusx.execution.argument_builder import ArgumentBuilder

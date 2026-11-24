@@ -21,7 +21,7 @@ class NoteChild(NoteBase, table=True):
     __tablename__ = "note_child"
     __test__ = False
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     parent_id: int = Field(foreign_key="note_parent.id")
     parent: Optional["NoteParent"] = Relationship(back_populates="children")
 
@@ -30,7 +30,7 @@ class NoteParent(NoteBase, table=True):
     __tablename__ = "note_parent"
     __test__ = False
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     # order_by declared → this list relationship renders as a Result-wrapped
     # paginated field (the thing PAGINATION_CONTRACT_NOTE is keyed on)
     children: list[NoteChild] = Relationship(

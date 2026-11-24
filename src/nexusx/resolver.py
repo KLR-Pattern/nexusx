@@ -56,6 +56,7 @@ from nexusx.context import (
 )
 from nexusx.loader.pagination import PageArgs, PageLoadCommand, PaginatedPackage
 from nexusx.loader.registry import (
+    LocalRelationship,
     RemoteCoalescedRelationship,
     RemotePagedRelationship,
     RemotePlainRelationship,
@@ -907,7 +908,7 @@ class Resolver:
         """
         from nexusx.utils.type_compat import is_compatible_type
 
-        if getattr(rel_info, "direction", "") != "CUSTOM":
+        if not isinstance(rel_info, LocalRelationship) or rel_info.direction != "CUSTOM":
             return False
         raw_target = (
             list[rel_info.target_entity] if rel_info.is_list else rel_info.target_entity
@@ -1650,7 +1651,9 @@ class Resolver:
             first_dto = entries[0][5]
             first_rel = entries[0][3]
 
-            is_custom = getattr(first_rel, "direction", "") == "CUSTOM"
+            is_custom = (
+                isinstance(first_rel, LocalRelationship) and first_rel.direction == "CUSTOM"
+            )
             is_list = first_rel.is_list
             fk_field = first_rel.fk_field
             # A non-coalesced service-boundary rel: fetch the whole sub-tree via
@@ -1696,7 +1699,9 @@ class Resolver:
                     group_field_name
                 )
                 merged = paged_default
-                first_page_loader = getattr(first_rel, "page_loader", None)
+                first_page_loader = (
+                    first_rel.page_loader if isinstance(first_rel, LocalRelationship) else None
+                )
                 use_page_loader = (
                     merged is not None and first_page_loader is not None
                 )

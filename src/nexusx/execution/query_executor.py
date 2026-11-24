@@ -13,7 +13,7 @@ from sqlmodel import SQLModel
 from nexusx.annotation_utils import unwrap_func
 from nexusx.execution.argument_builder import ArgumentBuilder
 from nexusx.loader.pagination import KeyedPaginatedPackage, PaginatedPackage
-from nexusx.loader.registry import RemoteCoalescedRelationship
+from nexusx.loader.registry import RemoteCoalescedRelationship, page_capability_of
 from nexusx.query_parser import (
     FieldSelection,
     ParsedOperation,
@@ -683,7 +683,7 @@ class QueryExecutor:
         """
         rel_info = self._registry.get_relationship(entity, fname)
         if rel_info is not None:
-            target = getattr(rel_info, "target_entity", None)
+            target = rel_info.target_entity
             if isinstance(target, type) and hasattr(target, "model_fields"):
                 return target, rel_info
             return None, None
@@ -1043,8 +1043,5 @@ def _rel_default_paged(rel_info: Any) -> Any:
     """
     from nexusx.loader.pagination import Paged
 
-    order = None
-    cap = getattr(rel_info, "page_capability", None)
-    if cap is not None:
-        order = getattr(cap, "default_order", None)
-    return Paged(order=order)
+    cap = page_capability_of(rel_info)
+    return Paged(order=cap.default_order if cap is not None else None)

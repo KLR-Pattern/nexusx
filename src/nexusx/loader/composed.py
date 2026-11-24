@@ -43,6 +43,7 @@ from nexusx.loader.registry import (
     ErManager,
     RelationshipInfo,
     _build_custom_relationship_info,
+    plain_loader_of,
 )
 from nexusx.relationship import Relationship
 
@@ -165,16 +166,12 @@ class ComposedErManager:
                 self._route[cls] = m
             for _entity, rels in m.get_all_relationships().items():
                 for rel_info in rels.values():
-                    # Register BOTH loader and page_loader: the pagination
-                    # path fetches instances via page_loader (a separate
-                    # class — registering only loader would KeyError on
-                    # paged queries).
-                    for _lk in (
-                        getattr(rel_info, "loader", None),
-                        getattr(rel_info, "page_loader", None),
-                    ):
-                        if _lk is not None:
-                            self._loader_owner[_lk] = m
+                    # loader_classes() carries BOTH loader and page_loader:
+                    # the pagination path fetches instances via page_loader
+                    # (a separate class — registering only loader would
+                    # KeyError on paged queries).
+                    for _lk in rel_info.loader_classes():
+                        self._loader_owner[_lk] = m
 
         # Duplicate member service_name check (specs/022 FR-009): a
         # duplicated grouping key would merge two members' entities into one
@@ -243,12 +240,7 @@ class ComposedErManager:
         cls_set: set[type] = set()
         for rels in self._cross_rels.values():
             for rel_info in rels.values():
-                # Guarded read: loader does not exist on every variant
-                # (Coalesced has no loader fields). _cross_rels only holds
-                # locally-built customs today — keep the read defensive.
-                loader_cls = getattr(rel_info, "loader", None)
-                if loader_cls is not None:
-                    cls_set.add(loader_cls)
+                cls_set.update(rel_info.loader_classes())
         return cls_set
 
     # ── Query interface consumed by the Resolver (route by entity + cross-boundary overlay) ──
@@ -329,7 +321,7 @@ class ComposedErManager:
         for rels in self._cross_rels.values():
             rel_info = rels.get(name)
             if rel_info is not None:
-                loader_cls = getattr(rel_info, "loader", None)
+                loader_cls = plain_loader_of(rel_info)
                 if loader_cls is not None:
                     return self._get_cross_loader(loader_cls)
         return None
@@ -362,10 +354,7 @@ class ComposedErManager:
             for m in self._members:
                 for _entity, rels in m.get_all_relationships().items():
                     for rel_info in rels.values():
-                        if loader_cls in (
-                            getattr(rel_info, "loader", None),
-                            getattr(rel_info, "page_loader", None),
-                        ):
+                        if loader_cls in rel_info.loader_classes():
                             owner = m
                             break
                     if owner is not None:

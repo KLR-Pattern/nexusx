@@ -78,7 +78,7 @@ class TestGuardRounds:
         async with Client(mcp, elicitation_handler=answer) as client:
             data = await _call_tool(client, _MUTATION)
 
-        assert asked == [f"Confirm mutation: _ConfService.do_thing. "
+        assert asked == ["Confirm mutation: _ConfService.do_thing. "
                          "Decline to abort without executing."]
         assert data["data"]["_ConfService"]["do_thing"]["done"] is True
         assert _ConfService.calls == ["do_thing"]

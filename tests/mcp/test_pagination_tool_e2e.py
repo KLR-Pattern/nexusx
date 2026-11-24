@@ -19,11 +19,10 @@ import json
 from typing import Optional
 
 import pytest
+from fastmcp import Client
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import Field, Relationship, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
-
-from fastmcp import Client
 
 from nexusx.mcp import Application
 from nexusx.mcp.server import (
@@ -45,7 +44,7 @@ class PEChild(PEBase, table=True):
     __tablename__ = "pe_child"
     __test__ = False
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     parent_id: int = Field(foreign_key="pe_parent.id")
     parent: Optional["PEParent"] = Relationship(back_populates="children")
 
@@ -54,7 +53,7 @@ class PEParent(PEBase, table=True):
     __tablename__ = "pe_parent"
     __test__ = False
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     # order_by 声明 → children 渲染为 Result-wrapped 分页字段（契约的靶子）
     children: list[PEChild] = Relationship(
         back_populates="parent",
@@ -70,7 +69,7 @@ class PMChild(PMBase, table=True):
     __tablename__ = "pm_child"
     __test__ = False
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     parent_id: int = Field(foreign_key="pm_parent.id")
     parent: Optional["PMParent"] = Relationship(back_populates="children")
 
@@ -79,7 +78,7 @@ class PMParent(PMBase, table=True):
     __tablename__ = "pm_parent"
     __test__ = False
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     children: list[PMChild] = Relationship(
         back_populates="parent",
         sa_relationship_kwargs={"order_by": "PMChild.id"},

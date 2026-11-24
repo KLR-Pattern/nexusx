@@ -12,10 +12,10 @@ provider 是 019 的核心:gql 知识封装在 executor 注入的闭包里,Resol
 不读 field_sel.arguments。
 """
 
-from types import SimpleNamespace
 
 from nexusx.execution.query_executor import QueryExecutor
-from nexusx.loader.pagination import Paged
+from nexusx.loader.pagination import BatchPageCapability, Paged
+from nexusx.loader.registry import LocalRelationship, RemotePagedRelationship
 from nexusx.query_parser import FieldSelection
 
 
@@ -32,13 +32,24 @@ def _field_sel(args: dict) -> FieldSelection:
     return root
 
 
-def _rel(default_order: str | None = None) -> SimpleNamespace:
-    """Fake RelationshipInfo with only the fields _rel_default_paged reads."""
-    cap = SimpleNamespace(default_order=default_order) if default_order else None
-    return SimpleNamespace(
-        page_capability=cap, is_list=True, page_loader=object(),
-        default_page_size=20, max_page_size=100,
+def _rel(default_order: str | None = None) -> RemotePagedRelationship | LocalRelationship:
+    """A real relationship variant — the type ``_rel_default_paged`` reads.
+
+    With a default order it is a federation-paginated rel (carries a
+    ``BatchPageCapability``); without one it is a local paged rel with no
+    order profile. (Used to be a SimpleNamespace fake — the review's point
+    about duck-typing, issue #160 DESIGN_5.)
+    """
+    common = dict(
+        name="reviews", direction="ONETOMANY", fk_field="id",
+        target_entity=object, is_list=True,
     )
+    if default_order:
+        return RemotePagedRelationship(
+            **common, loader=object, page_loader=object,
+            page_capability=BatchPageCapability(default_order=default_order, orders=[]),
+        )
+    return LocalRelationship(**common, loader=object, page_loader=object)
 
 
 def test_gql_limit_overrides_default():

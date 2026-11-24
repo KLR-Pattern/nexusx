@@ -1145,11 +1145,10 @@ class ErManager:
             )
 
         _, rel_info = matches[0]
-        # Coalesced rels carry no loader (resolved inside the member's
-        # nested fetch) — the bare ``.loader`` read below would AttributeError.
-        if isinstance(rel_info, RemoteCoalescedRelationship):
-            return None
-        return self.get_loader(rel_info.loader, type_key=type_key)
+        loader_cls = plain_loader_of(rel_info)
+        if loader_cls is None:
+            return None  # coalesced: resolved inside the member's nested fetch
+        return self.get_loader(loader_cls, type_key=type_key)
 
     def get_loader_for_entity(
         self,
@@ -1167,11 +1166,10 @@ class ErManager:
         rel_info = entity_rels.get(rel_name)
         if rel_info is None:
             return None
-        # Coalesced rels carry no loader — return None instead of crashing
-        # on the field that does not exist on that variant.
-        if isinstance(rel_info, RemoteCoalescedRelationship):
-            return None
-        return self.get_loader(rel_info.loader, type_key=type_key)
+        loader_cls = plain_loader_of(rel_info)
+        if loader_cls is None:
+            return None  # coalesced: no loader by type
+        return self.get_loader(loader_cls, type_key=type_key)
 
     async def initialize(
         self,
